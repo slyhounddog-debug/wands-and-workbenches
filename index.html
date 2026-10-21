@@ -36,6 +36,8 @@
     <div id="wizPause" class="pauseNote px hidden"><i data-ic="ic_pause" data-s="36"></i><div><b>WIZARD PAUSED</b><span>The Builder is in the Skill Tree. The wilds and the factory wait until it closes (T or Esc).</span></div></div>
     <div id="facNote" class="pauseNote px hidden"><i data-ic="ic_pause" data-s="36"></i><div><b>FACTORY PAUSED</b><span>The Wizard is in the Skill Tree. The factory and the wilds wait until it closes (Y or Esc).</span></div></div>
     <div id="debug" class="px hidden"></div>
+    <!-- after the skill tree closes the game holds for a beat before resuming -->
+    <div id="andBanner" class="hidden">AND...</div>
 
     <!-- builder side -->
     <div id="hudL" class="hud">
@@ -47,6 +49,7 @@
         <div class="clabel"><i data-ic="ic_hand" data-s="16"></i>HANDS</div>
         <div id="handTxt"></div>
       </div>
+      <div class="card px pin hidden" id="pinL"></div>
       <div class="iconbtns">
         <button id="btnTree" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>T</kbd></button>
         <button id="btnDemo" class="px" title="Demolish mode"><i data-ic="ic_bomb" data-s="28"></i><kbd>B</kbd></button>
@@ -67,6 +70,7 @@
         <div class="bar arm"><i data-ic="ic_shield" data-s="14"></i><div id="armFill"></div><span id="armTxt"></span></div>
       </div>
       <div class="iconbtns right"><button id="btnTreeR" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>Y</kbd></button></div>
+      <div class="card px pin hidden" id="pinR"></div>
     </div>
     <div id="toastR" class="toasts"></div>
 
@@ -75,10 +79,10 @@
         <h3><i data-ic="ic_wrench" data-s="16"></i>BUILDER</h3>
         <div><kbd>WASD</kbd> walk &nbsp; <kbd>CLICK</kbd> pick up (hold for more)</div>
         <div><kbd>E</kbd> use / rotate / tap to crank</div>
-        <div><kbd>RIGHT-CLICK</kbd> throw along the lead line (hold = rapid)</div>
+        <div><kbd>RIGHT-CLICK</kbd> throw (hold = rapid, <kbd>SHIFT</kbd> = whole stack)</div>
         <div><kbd>1</kbd>-<kbd>=</kbd> <kbd>Z</kbd><kbd>C</kbd><kbd>V</kbd> or wheel: pick a building</div>
         <div><kbd>R</kbd> rotate &nbsp; <kbd>ENTER</kbd> place in front</div>
-        <div><kbd>B</kbd> demolish (full refund) &nbsp; <kbd>ESC</kbd> cancel</div>
+        <div><kbd>B</kbd> demolish &nbsp; <kbd>TAB</kbd> cycle targets &nbsp; <kbd>ESC</kbd> cancel</div>
       </div>
       <div class="hcol">
         <h3><i data-ic="ic_hat" data-s="16"></i>WIZARD</h3>
@@ -109,6 +113,9 @@
       <div id="pauseSet" class="panel px hidden"></div>
     </div>
   </div>
+
+  <!-- never fail silently: caught errors count up here (click for the list) -->
+  <div id="errBadge" class="px hidden" onclick="this.classList.toggle('open')"><span>!</span><b>0</b><div id="errList"></div></div>
 
   <!-- ===== front flow ===== -->
   <div id="loading" class="overlay">

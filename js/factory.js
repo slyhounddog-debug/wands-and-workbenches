@@ -140,6 +140,21 @@ FA.burst = function (x, y, col, n) {
     G.fac.parts.push({ x, y, z: 0.3, vx: Math.cos(a) * s, vy: Math.sin(a) * s, vz: 2 + Math.random() * 3, t: 0.8, col });
   }
 };
+// every element has its own particle pattern (so it reads without colour): air swirls up as rings, water falls as
+// drops, fire flickers upward, earth tumbles as heavy chunks. render.js draws the matching shape (p.el)
+const EL_PART = {
+  air:   (a, s) => ({ vx: Math.cos(a) * s * 0.7, vy: Math.sin(a) * s * 0.7, vz: 1 + Math.random(), g: -1, spin: 1 }),
+  water: (a, s) => ({ vx: Math.cos(a) * s * 0.6, vy: Math.sin(a) * s * 0.6, vz: 3 + Math.random() * 2, g: 14 }),
+  fire:  (a, s) => ({ vx: Math.cos(a) * s * 0.3, vy: Math.sin(a) * s * 0.3, vz: 1.5 + Math.random() * 2, g: -3 }),
+  earth: (a, s) => ({ vx: Math.cos(a) * s * 0.9, vy: Math.sin(a) * s * 0.9, vz: 2.5 + Math.random() * 2, g: 18, bounce: 1 }),
+};
+FA.eburst = function (x, y, el, n) {
+  if (!EL_PART[el]) return FA.burst(x, y, '#ffffff', n);
+  for (let i = 0; i < (n || 10); i++) {
+    const a = Math.random() * 6.283, o = EL_PART[el](a, 1 + Math.random() * 2);
+    G.fac.parts.push(Object.assign({ x, y, z: 0.3, t: 0.8 + Math.random() * 0.3, col: Math.random() < 0.3 ? '#ffffff' : ELEM[el].color, el }, o));
+  }
+};
 FA.pop = function (x, y, text, col) { G.fac.pops.push({ x, y, text, col: col || '#fff', t: 0 }); };
 // an icon pop instead of words: a row of [spriteKey, number?] floating up
 FA.ipop = function (x, y, ic) { G.fac.pops.push({ x, y, ic, t: 0 }); };
@@ -315,14 +330,31 @@ FA.enterPortal = function (c, kind) {   // returns false if this portal doesn't 
 };
 FA.bank = function (kind) {
   G.bank[kind] = (G.bank[kind] || 0) + 1;
+  (G.bankLog || (G.bankLog = [])).push(kind);
+  if (G.bankLog.length > CFG.bankUndoMax) G.bankLog.shift();
   G.bankTotal = (G.bankTotal || 0) + 1;
   G.stats.banked[kind] = (G.stats.banked[kind] || 0) + 1;
   const f = G.fac, p = FA.portal('skill');
   f.skillFlash = 0.5;
   f.log.skill.push(f.t);
   FA.ipop(p.x + 0.5, p.y + 1, [[kind]]);
-  AU.sfx('bank');
+  if (ELEM[kind]) { FA.eburst(p.x + 0.5, p.y + 1, kind, 6); AU.sfx('el_' + kind); } else AU.sfx('bank');
   UI.changed();
+};
+FA.unbank = function () {
+  const log = G.bankLog || [];
+  while (log.length) {
+    const k = log.pop();
+    if (!(G.bank[k] > 0)) continue;   // already spent on a skill
+    G.bank[k]--; G.bankTotal = Math.max(0, (G.bankTotal || 0) - 1);
+    if (G.stats.banked[k]) G.stats.banked[k]--;
+    const p = FA.portal('skill');
+    FA.dropAt(k, p.x - 0.4, p.y + 1);
+    G.fac.skillFlash = 0.4;
+    UI.changed();
+    return k;
+  }
+  return null;
 };
 FA.deliver = function (kind) {
   const f = G.fac, p = FA.portal('spell');
@@ -330,6 +362,7 @@ FA.deliver = function (kind) {
   G.w.run.deliveries++;
   G.w.run.spells[kind] = (G.w.run.spells[kind] || 0) + 1;
   f.flash = 0.5; f.flashCol = ITEMS[kind].color || '#fff';
+  if (ELEM[kind]) FA.eburst(p.x + 0.5, p.y + 1, kind, 8);
   f.log.spell.push(f.t);
   G.flags['sent_' + kind] = true;
   FA.ipop(p.x + 0.5, p.y + 1, [[kind]]);
@@ -392,26 +425,51 @@ FA.logiSides = function (b) {
 };
 FA.updLogi = function (b, dt) {
   if (b.cd > 0) { b.cd -= dt; return; }
-  if (!b.out.length) return;
+  if (!b.out.length) { b.blocked = false; return; }
   const sides = FA.logiSides(b), n = sides.length, r0 = (b.rr || 0) % n;
   for (let i = 0; i < n; i++) {
-    if (FA.pushSide(b, sides[(r0 + i) % n])) { b.rr = (r0 + i + 1) % n; b.cd = FA.beltTime() * 0.4; return; }
+    if (FA.pushSide(b, sides[(r0 + i) % n])) { b.rr = (r0 + i + 1) % n; b.cd = FA.beltTime() * 0.4; b.blocked = false; return; }
   }
+  // a crate pointing at nothing is just storing, not blocked
+  const fd = DIRS[b.dir];
+  b.blocked = FA.def(b).kind !== 'crate' || !!FA.cell(b.x + fd[0], b.y + fd[1]);
 };
-// what's holding a building up, for the status icons: 'jam' (output has nowhere to go) or 'starve' (waiting on inputs)
+// what every machine is doing right now (render.js turns it into an outline, an icon and an animation speed):
+// 'work', 'missing' (has some inputs, not all), 'starve' (has nothing to work with), 'jam' (output waiting: whatever
+// is in front won't take it), 'full' (output buffer full: stopped), 'off' (no power), or null (idle and fine)
 FA.state = function (b) {
   if (!b.done) return null;
-  const d = FA.def(b);
-  if (d.kind === 'harness') return b.powered && b.out.length >= CFG.buffer ? 'jam' : null;
-  if (d.kind === 'crafter') {
-    if (b.draw > 0 && !b.powered) return null;   // the NO POWER icon already says it
-    if (b.out.length >= CFG.buffer) return 'jam';
-    return !b.recipe || FA.crafterReady(b) === 0 ? 'starve' : null;
+  const d = FA.def(b), k = d.kind;
+  if (k === 'harness') {
+    if (b.out.length >= CFG.buffer) return 'full';
+    if (!b.powered) return 'off';
+    return b.out.length && b.blocked ? 'jam' : 'work';
   }
-  if (d.kind === 'splitter' || d.kind === 'sorter') return b.out.length >= 2 ? 'jam' : null;
-  if (d.kind === 'crate') return b.out.length >= CFG.crateCap ? 'jam' : null;
-  if (d.kind === 'station') return b.bat == null || b.bat <= 0 ? 'starve' : null;
-  if (d.kind === 'charger') return b.bat != null && b.bat < CFG.batteryMax && FA.fuelTotal(b) <= 0 ? 'starve' : null;
+  if (k === 'crafter') {
+    if (b.out.length >= CFG.buffer) return 'full';
+    if (b.out.length && b.blocked) return 'jam';
+    if (!b.recipe) return 'starve';
+    if (b.draw > 0 && !b.powered) return 'off';
+    if (FA.crafterReady(b) !== 0) return 'work';
+    return Object.keys(CFG.recipes[b.recipe].in).some(i => (b.inv[i] || 0) > 0) ? 'missing' : 'starve';
+  }
+  if (k === 'splitter' || k === 'sorter') return b.out.length >= 2 ? 'full' : b.out.length ? (b.blocked ? 'jam' : 'work') : null;
+  if (k === 'crate') return b.out.length >= CFG.crateCap ? 'full' : b.out.length && b.blocked ? 'jam' : null;
+  if (k === 'station') return b.bat == null ? 'starve' : b.bat <= 0 ? 'missing' : G.fac.demand > 0 ? 'work' : null;
+  if (k === 'charger') {
+    if (b.bat == null) return null;
+    if (b.bat >= CFG.batteryMax) return 'full';
+    return FA.fuelTotal(b) > 0 ? 'work' : 'starve';
+  }
+  return null;
+};
+// how fast a machine animates in each state (stopped machines freeze, starving ones crawl)
+FA.stateSpeed = { work: 1, missing: 0.45, starve: 0.15, jam: 0.6, full: 0, off: 0 };
+// the first ingredient a crafter is still short of (shown as a ghost over it)
+FA.missingOf = function (b) {
+  if (!b.recipe) return null;
+  const R = CFG.recipes[b.recipe];
+  for (const k in R.in) if ((b.inv[k] || 0) < R.in[k]) return k;
   return null;
 };
 FA.rate = which => G.fac.log[which].length;   // portal entries in the last minute
@@ -459,15 +517,15 @@ FA.update = function (dt) {
     if (b.pop > 0) b.pop -= dt;
     if (!b.done) continue;
     const d = FA.def(b);
-    b.anim += dt;
+    b.anim += dt * (b.st === undefined || b.st === null ? 1 : FA.stateSpeed[b.st]);
     if (d.kind === 'harness') {
       if (b.out.length < CFG.buffer && b.powered) {
         b.timer += dt; f.working++;
-        if (b.timer >= FA.cycle(b.type)) { b.timer = 0; b.out.push({ kind: d.elem }); b.pop = 0.25; G.stats.packets++; }
+        if (b.timer >= FA.cycle(b.type)) { b.timer = 0; b.out.push({ kind: d.elem }); b.pop = 0.25; G.stats.packets++; FA.eburst(b.x + 0.5, b.y + 0.5, d.elem, 4); }
       }
-      FA.tryOut(b);
+      b.blocked = b.out.length > 0 && !FA.tryOut(b);
     } else if (d.kind === 'crafter') {
-      FA.tryOut(b);
+      b.blocked = b.out.length > 0 && !FA.tryOut(b);
       b.od = FA.overdrive(b);
       const w = FA.crafterReady(b);
       if (w !== 0) {
@@ -492,7 +550,11 @@ FA.update = function (dt) {
     } else if (d.kind === 'charger') FA.updCharger(b, dt);
     else if (FA.isLogi(b)) FA.updLogi(b, dt);
     const st = FA.state(b);
-    if (st === b.st) b.stT += dt; else { b.st = st; b.stT = 0; }
+    if (st === b.st) {
+      const was = b.stT; b.stT += dt;
+      // a state that holds for a moment chirps (only for machines near the Builder, so a big factory isn't a choir)
+      if (was < 0.2 && b.stT >= 0.2 && st && b.seen && Math.hypot(G.bd.x - b.x - 0.5, G.bd.y - b.y - 0.5) < CFG.stateSoundR) AU.sfx('st_' + st);
+    } else { b.seen = b.st !== undefined; b.st = st; b.stT = 0; }
   }
 
   // belts: advance, then hand items forward (two passes so chains flow)
@@ -533,9 +595,12 @@ FA.update = function (dt) {
     o.t += dt;
     if (o.z > 0 || o.vz > 0) { o.z += o.vz * dt; o.vz -= 14 * dt; if (o.z <= 0) { o.z = 0; o.vz = Math.abs(o.vz) > 2 ? -o.vz * 0.35 : 0; } }
   }
+  FA.gatherFloor(dt);
   for (let i = f.parts.length - 1; i >= 0; i--) {
     const p = f.parts[i];
-    p.t -= dt; p.x += p.vx * dt * 0.5; p.y += p.vy * dt * 0.5; p.z += p.vz * dt; p.vz -= 9 * dt;
+    p.t -= dt; p.x += p.vx * dt * 0.5; p.y += p.vy * dt * 0.5; p.z += p.vz * dt; p.vz -= (p.g === undefined ? 9 : p.g) * dt;
+    if (p.spin) { const a = dt * 6, vx = p.vx; p.vx = vx * Math.cos(a) - p.vy * Math.sin(a); p.vy = vx * Math.sin(a) + p.vy * Math.cos(a); }
+    if (p.bounce && p.z < 0) { p.z = 0; p.vz = Math.abs(p.vz) * 0.4; p.bounce = 0; }
     if (p.t <= 0) f.parts.splice(i, 1);
   }
   for (let i = f.pops.length - 1; i >= 0; i--) { f.pops[i].t += dt; if (f.pops[i].t > 1.1) f.pops.splice(i, 1); }
@@ -543,6 +608,20 @@ FA.update = function (dt) {
   if (G.bd.squash > 0) G.bd.squash -= dt;
 };
 
+// resting floor items slide toward the nearest item of the same kind, so loose packets settle into piles
+FA.gatherFloor = function (dt) {
+  const fl = G.fac.floor;
+  for (const o of fl) {
+    if (o.z > 0 || o.t < 0.6) continue;
+    let best = null, bd = 1.1;
+    for (const q of fl) {
+      if (q === o || q.kind !== o.kind || q.z > 0) continue;
+      const d = Math.hypot(q.x - o.x, q.y - o.y);
+      if (d < bd) { bd = d; best = q; }
+    }
+    if (best && bd > 0.18) { const k = Math.min(1, 0.7 * dt / bd); o.x += (best.x - o.x) * k; o.y += (best.y - o.y) * k; }
+  }
+};
 FA.updCharger = function (c, dt) {
   if (c.bat == null || c.bat >= CFG.batteryMax) return;
   const act = Object.keys(c.fuel).filter(k => c.fuel[k] > 0);
@@ -555,6 +634,54 @@ FA.updCharger = function (c, dt) {
 };
 
 // ---------- throwing ----------
+// will this receiver take a thrown item of kind k? (portal / belt / building / blueprint / the Stockpile Zone)
+FA.accepts = (o, k) => (o === 'zone' ? !!RES[k] : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item && k !== 'battery' : FA.canInsert(o, k));
+// every receiver in throwing range that would take kind k, with a priority (lower = preferred)
+FA.throwList = function (k) {
+  const bd = G.bd, out = [];
+  const add = (x, y, obj, prio) => { const d = Math.hypot(x - bd.x, y - bd.y); if (d >= 0.4 && d <= CFG.throwRange) out.push({ x, y, obj, prio, d }); };
+  for (const p of FA.portalCells(G.fac.w, G.fac.h)) { const c = FA.cell(p.x, p.y); if (FA.portalTakes(c, k)) add(p.x + 0.5, p.y + 0.5, c, 0.8); }
+  for (const b of G.fac.bld) if (FA.canInsert(b, k)) add(b.x + 0.5, b.y + 0.5, b, b.done && FA.isLogi(b) ? 1.4 : 1);
+  if (RES[k]) { const z = FA.zone(); add((z.x0 + z.x1 + 1) / 2, (z.y0 + z.y1 + 1) / 2, 'zone', 1.1); }
+  if (k !== 'battery') for (const bl of G.fac.belts) if (!bl.item) add(bl.x + 0.5, bl.y + 0.5, bl, 2.2);
+  return out;
+};
+// ---------- deliberate target selection (pad right stick / Tab): G.lock pins one target until it stops being valid ----------
+// holding something: cycle the receivers that take it (best first). Empty-handed: cycle what's in reach to pick or use
+FA.lockList = function () {
+  const bd = G.bd, h = G.hands;
+  if (h) return FA.throwList(h.kind).sort((a, b) => a.d * a.prio - b.d * b.prio).map(c => ({ thr: true, held: h.kind, x: c.x, y: c.y, obj: c.obj }));
+  const out = [];
+  for (const c of FA.candidates()) {
+    const d = Math.hypot(c.x - bd.x, c.y - bd.y);
+    if (d > c.r) continue;
+    if (FA.actionFor(c, 'pick').fn || FA.actionFor(c, 'use').fn) out.push({ thr: false, c, d });
+  }
+  return out.sort((a, b) => a.d - b.d);
+};
+FA.lockKey = l => (l.thr ? l.obj : l.c.o);
+FA.cycleLock = function (dir) {
+  const list = FA.lockList();
+  if (!list.length) { G.lock = null; AU.sfx('error'); return; }
+  const i = G.lock ? list.findIndex(l => FA.lockKey(l) === FA.lockKey(G.lock) && l.thr === G.lock.thr) : -1;
+  G.lock = list[i < 0 ? (dir > 0 ? 0 : list.length - 1) : ((i + dir) % list.length + list.length) % list.length];
+  G.lock.n = list.length;
+  AU.sfx('blip');
+};
+// the lock if it still makes sense for this mode ('throw' / 'pick' / 'use'), otherwise null
+FA.lockValid = function (mode) {
+  const l = G.lock, h = G.hands;
+  if (!l) return null;
+  if (l.thr) {
+    if (mode !== 'throw' || !h || h.kind !== l.held || !FA.accepts(l.obj, h.kind) || Math.hypot(l.x - G.bd.x, l.y - G.bd.y) > CFG.throwRange) return null;
+    return l;
+  }
+  if (mode === 'throw') return null;
+  const c = l.c;
+  if (c.kind === 'floor' && G.fac.floor.indexOf(c.o) < 0) return null;
+  if (Math.hypot(c.x - G.bd.x, c.y - G.bd.y) > c.r) return null;
+  return FA.actionFor(c, mode).fn ? l : null;
+};
 FA.throwTarget = function (aimX, aimY) {
   const bd = G.bd, h = G.hands;
   if (!h) return null;
@@ -565,36 +692,30 @@ FA.throwTarget = function (aimX, aimY) {
     if (d > CFG.throwRange) { dx *= CFG.throwRange / d; dy *= CFG.throwRange / d; }
     const tx = bd.x + dx, ty = bd.y + dy, c = FA.cell(Math.floor(tx), Math.floor(ty));
     if (c && c.type !== 'belt') return { x: Math.floor(tx) + 0.5, y: Math.floor(ty) + 0.5, obj: c };
+    if (!c && FA.reserved(Math.floor(tx), Math.floor(ty))) return { x: tx, y: ty, obj: 'zone' };
     return { x: tx, y: ty, obj: c || null };
   }
+  const lk = FA.lockValid('throw');
+  if (lk) return { x: lk.x, y: lk.y, obj: lk.obj };   // the pad player picked this one on purpose
   const fm = Math.hypot(bd.fx, bd.fy) || 1, fx = bd.fx / fm, fy = bd.fy / fm;
   let best = null, bs = 1e9;
-  const consider = (x, y, obj, prio) => {
-    const dx = x - bd.x, dy = y - bd.y, d = Math.hypot(dx, dy);
-    if (d < 0.4 || d > CFG.throwRange) return;
-    const cos = (dx * fx + dy * fy) / d;
-    if (cos < 0.45) return;
-    const s = d * (1.7 - cos) * prio;
-    if (s < bs) { bs = s; best = { x, y, obj }; }
-  };
-  for (const p of FA.portalCells(G.fac.w, G.fac.h)) {
-    const c = FA.cell(p.x, p.y);
-    if (FA.portalTakes(c, k)) consider(p.x + 0.5, p.y + 0.5, c, 0.8);
+  for (const c of FA.throwList(k)) {
+    const dx = c.x - bd.x, dy = c.y - bd.y, cos = (dx * fx + dy * fy) / c.d;
+    if (cos < 0.45) continue;
+    const sc = c.d * (1.7 - cos) * c.prio;
+    if (sc < bs) { bs = sc; best = c; }
   }
-  for (const b of G.fac.bld) if (FA.canInsert(b, k)) consider(b.x + 0.5, b.y + 0.5, b, b.done && FA.isLogi(b) ? 1.4 : 1);
-  if (RES[k]) { const z = FA.zone(); consider((z.x0 + z.x1 + 1) / 2, (z.y0 + z.y1 + 1) / 2, 'zone', 1.1); }
-  if (k !== 'battery') for (const bl of G.fac.belts) if (!bl.item) consider(bl.x + 0.5, bl.y + 0.5, bl, 2.2);
-  if (best) return best;
+  if (best) return { x: best.x, y: best.y, obj: best.obj };
   return { x: Math.max(0.3, Math.min(G.fac.w - 0.3, bd.x + fx * 2.6)), y: Math.max(0.3, Math.min(G.fac.h - 0.3, bd.y + fy * 2.6)), obj: null };
 };
-FA.throwOne = function (aimX, aimY) {
+FA.throwOne = function (aimX, aimY, cd) {
   const bd = G.bd;
   if (!G.hands || bd.throwCd > 0) return false;
   const tg = FA.throwTarget(aimX, aimY);
   const it = FA.takeOne();
   const d = Math.hypot(tg.x - bd.x, tg.y - bd.y);
   G.fac.flying.push({ kind: it.kind, charge: it.charge, sx: bd.x, sy: bd.y, x: bd.x, y: bd.y, z: 0.8, tx: tg.x, ty: tg.y, t: 0, T: 0.28 + d * 0.045, h: 0.9 + d * 0.22, fromBuilder: true });
-  bd.throwCd = CFG.throwRepeat; bd.squash = 0.18;
+  bd.throwCd = cd || CFG.throwRepeat; bd.squash = 0.18;
   bd.fx = tg.x - bd.x || bd.fx; bd.fy = tg.y - bd.y || bd.fy;
   AU.sfx('throw');
   return true;
@@ -692,7 +813,7 @@ FA.crank = function () {
   if (!g) return;
   g.t += CFG.crankBoost;
   G.bd.squash = 0.15;
-  FA.burst(g.b.x + 0.5, g.b.y + 0.5, ELEM[g.el].color, 4);
+  FA.eburst(g.b.x + 0.5, g.b.y + 0.5, g.el, 4);
   AU.sfx('crank');
 };
 FA.updGather = function (dt) {
@@ -704,8 +825,8 @@ FA.updGather = function (dt) {
     bd.gather = null;
     if (FA.canHold(g.el)) FA.addHands(g.el, 1); else FA.dropAt(g.el, bd.x, bd.y);
     G.flags.gathered = true; G.stats.packets++;
-    AU.sfx('pickup');
-    FA.burst(g.b.x + 0.5, g.b.y + 0.5, ELEM[g.el].color);
+    AU.sfx('el_' + g.el);
+    FA.eburst(g.b.x + 0.5, g.b.y + 0.5, g.el, 12);
     FA.ipop(g.b.x + 0.5, g.b.y + 0.5, [[g.el]]);
   }
 };
@@ -726,14 +847,30 @@ FA.candidates = function () {
 };
 // mode 'pick' (left-click / A: take one item) or 'use' (E / X: crank, gather, rotate, switch recipe, set a filter).
 // Nothing here puts an item down: throwing is the only way to get rid of what you hold.
+// the kind of item a pick target would hand over (for sweeping and same-kind priority)
+FA.itemOf = c => (c.kind === 'floor' ? c.o.kind : c.kind === 'pile' ? c.o : c.kind === 'belt' ? c.o.item && c.o.item.kind : c.kind === 'bld' && c.o.out && c.o.out.length ? c.o.out[0].kind : null);
+// holding pick sweeps: the nearest thing in reach that hands over the same kind as the stack in hand
+FA.sweepTarget = function (kind) {
+  const bd = G.bd;
+  let best = null, bs = 1e9;
+  for (const c of FA.candidates()) {
+    const d = Math.hypot(c.x - bd.x, c.y - bd.y);
+    if (d > c.r + 0.5 || d >= bs || FA.itemOf(c) !== kind) continue;
+    const a = FA.actionFor(c, 'pick');
+    if (a.fn && a.rep) { bs = d; best = c; }
+  }
+  return best;
+};
 FA.findTarget = function (mode) {
-  const bd = G.bd, fm = Math.hypot(bd.fx, bd.fy) || 1;
+  const lk = FA.lockValid(mode);
+  if (lk) return lk.c;
+  const bd = G.bd, fm = Math.hypot(bd.fx, bd.fy) || 1, hk = G.hands && G.hands.kind;
   let best = null, bs = 1e9, info = null, is = 1e9;
   for (const c of FA.candidates()) {
     const dx = c.x - bd.x, dy = c.y - bd.y, d = Math.hypot(dx, dy);
     if (d > c.r) continue;
     const cos = d > 0.01 ? (dx * bd.fx + dy * bd.fy) / (d * fm) : 1;
-    const s = d - cos * 0.45 - (c.kind === 'floor' ? 0.3 : 0), a = FA.actionFor(c, mode);
+    const s = d - cos * 0.45 - (c.kind === 'floor' ? 0.3 : 0) - (hk && FA.itemOf(c) === hk ? 0.5 : 0), a = FA.actionFor(c, mode);
     if (a.fn) { if (s < bs) { bs = s; best = c; } }
     else if (a.label && s < is) { is = s; info = c; }
   }

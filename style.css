@@ -317,3 +317,34 @@ button.big.slot em { grid-column: 2; grid-row: 1 / 4; align-self: center; font-s
 #studio-intro-skip { position: absolute; right: clamp(22px, 4.4vw, 72px); bottom: clamp(22px, 5vh, 64px); font: 12px/1 'Press Start 2P', 'Courier New', monospace; padding: 12px 18px; color: #2a0e5c;
   background: linear-gradient(180deg, #ffe45e, #ff6bd6); border: 3px solid #fff; border-radius: 12px; box-shadow: 0 0 0 3px #7b3fc9, 0 5px 0 3px #4a1f8c; cursor: pointer; animation: studio-skip-pulse 1.4s ease-in-out infinite; }
 @keyframes studio-skip-pulse { 50% { transform: scale(1.06); } }
+
+/* ===== pinned skill-tree node cards (one per side) ===== */
+.card.pin { width: 290px; }
+.card.pin .clabel span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.card.pin .pr { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+.card.pin .pr b { font: 12px var(--display); color: var(--rose); min-width: 44px; }
+.card.pin .pr i { font-style: normal; font-size: 18px; color: var(--muted); }
+.card.pin .pr.eta b { color: var(--gold); }
+.card.pin .pa { display: flex; align-items: center; gap: 6px; margin-top: 6px; padding: 4px 6px; background: var(--panel-lo); animation: blink2 1.2s steps(2) infinite; }
+.card.pin .pa em { font: 12px var(--display); font-style: normal; color: var(--gold); }
+.tree .node.pinned { outline: 4px solid var(--sky); }
+.tree .node { position: relative; }
+.tree .node .pinMark { position: absolute; top: -8px; right: -6px; }
+.bankRow .undo { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; padding: 2px 6px; background: var(--panel-lo); }
+#bossBar #bossWeak .next { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; opacity: .65; font: 8px var(--display); animation: none; }
+
+/* ===== the beat after the skill tree closes ===== */
+#andBanner { position: absolute; left: 0; right: 0; top: 340px; text-align: center; font: 96px var(--display); color: var(--gold); z-index: 60; pointer-events: none;
+  text-shadow: 8px 0 var(--ink), -8px 0 var(--ink), 0 8px var(--ink), 0 -8px var(--ink), 8px 8px var(--ink), -8px -8px var(--ink), 8px -8px var(--ink), -8px 8px var(--ink), 0 16px #00000066; }
+#andBanner.go { animation: andPop 1s steps(6) both; }
+@keyframes andPop { 0% { transform: scale(1.8); opacity: 0; } 20% { transform: scale(1); opacity: 1; } 80% { opacity: 1; } 100% { transform: scale(1.1); opacity: 0; } }
+
+/* ===== error badge ===== */
+#errBadge { position: absolute; left: 16px; top: 250px; z-index: 90; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #5a1a2a; cursor: pointer; }
+#errBadge span { font: 16px var(--display); color: var(--gold); }
+#errBadge b { font: 12px var(--display); color: var(--cream); }
+#errBadge.pulse { animation: blinkRed 0.5s steps(2) 3; }
+#errList { display: none; position: absolute; top: 100%; left: 0; width: 520px; max-height: 300px; overflow: auto; padding: 8px 10px; background: var(--panel); font-size: 17px; }
+#errBadge.open #errList { display: block; }
+#errList div { margin-bottom: 4px; }
+#errList i { font: 8px var(--display); font-style: normal; color: var(--muted); margin-right: 8px; }

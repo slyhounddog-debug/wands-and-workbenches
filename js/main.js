@@ -20,7 +20,7 @@ function blankState(slot) {
     bank: {}, bankTotal: 0,
     credits: { station: 0, charger: 0 },
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0 },
-    flags: {}, quest: 0,
+    flags: {}, quest: 0, bankLog: [], pins: { L: null, R: null }, lock: null,
     hands: null, swapped: false, selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
@@ -33,14 +33,26 @@ Main.newGame = function (slot) {
   UI.help(true); G.helpT = 25;
   Main.save();
 };
-Main.loadGame = function (slot) {
-  const s = UI.slotInfo(slot);
+Main.loadGame = function (slot, useBak) {
+  const s = UI.slotInfo(slot, useBak);
   if (!s || s.old) return;
+  try { Main.applySave(slot, s); }
+  catch (e) {
+    if (!useBak && UI.slotInfo(slot, true)) { UI.err('Save in slot ' + slot + ' would not load (' + e.message + '): loaded the backup instead'); Main.loadGame(slot, true); return; }
+    UI.err('Could not load slot ' + slot + ': ' + e.message);
+    Main.toTitle(true);
+    return;
+  }
+  if (s.fromBak) UI.err('The save in slot ' + slot + ' was damaged: loaded the last good backup');
+};
+Main.applySave = function (slot, s) {
   G = blankState(slot);
   G.xp = s.xp || 0; G.tree = s.tree || {}; G.stock = Object.assign(G.stock, s.stock || {});
   G.bank = s.bank || {}; G.bankTotal = s.bankTotal || 0;
   G.credits = Object.assign(G.credits, s.credits || {}); G.stats = Object.assign(G.stats, s.stats || {});
   G.flags = s.flags || {}; G.quest = s.quest || 0; G.placeDir = s.placeDir || 0;
+  G.bankLog = Array.isArray(s.bankLog) ? s.bankLog.filter(k => ITEMS[k]) : [];
+  G.pins = Object.assign({ L: null, R: null }, s.pins || {});
   if ((s.qv || 1) < 2 && G.quest >= 13) G.quest += 2;
   G.hands = s.hands && ITEMS[s.hands.kind] ? s.hands : null;
   G.w = WZ.fresh();
@@ -49,14 +61,27 @@ Main.loadGame = function (slot) {
   if (s.bd && FA.inb(Math.floor(s.bd.x), Math.floor(s.bd.y))) { G.bd.x = s.bd.x; G.bd.y = s.bd.y; }
   Main.enter();
 };
+// a save that parses and has the essentials (used to decide what's safe to keep as the backup)
+Main.saveOk = s => !!s && s.v >= 4 && !!s.fac && !!s.stock && isFinite(s.xp);
 Main.save = function () {
   if (!G) return;
+  const key = 'wands2_save_slot' + G.slot;
   try {
-    localStorage.setItem('wands2_save_slot' + G.slot, JSON.stringify({
-      v: SAVE_VERSION, qv: QUEST_VERSION, xp: G.xp, tree: G.tree, stock: G.stock, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
+    // shards still lying in the wilds count as banked in the save, so quitting mid-run never loses them
+    const loose = G.w ? G.w.drops.filter(d => d.kind === 'shard').reduce((a, d) => a + d.val, 0) : 0;
+    const data = JSON.stringify({
+      v: SAVE_VERSION, qv: QUEST_VERSION, xp: G.xp, tree: G.tree, stock: Object.assign({}, G.stock, { shard: G.stock.shard + loose }), bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
       flags: G.flags, quest: G.quest, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: FA.toJSON(), at: Date.now(),
-    }));
-  } catch (e) { /* storage unavailable */ }
+      bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins,
+    });
+    if (!Main.saveOk(JSON.parse(data))) throw new Error('the new save failed its own check');
+    // rolling backup: the save we're about to replace becomes the backup, if it was good
+    const prev = localStorage.getItem(key);
+    if (prev) { let ok = false; try { ok = Main.saveOk(JSON.parse(prev)); } catch (e) { ok = false; } if (ok) localStorage.setItem(key + '_bak', prev); }
+    localStorage.setItem(key, data);
+  } catch (e) {
+    if (!Main.saveErrAt || Date.now() - Main.saveErrAt > 30000) { Main.saveErrAt = Date.now(); UI.err('Autosave failed: ' + e.message); }
+  }
 };
 Main.enter = function () {
   STATE = 'play';
@@ -70,8 +95,8 @@ Main.enter = function () {
   Main.metrics = { t: 0, next: 0, samples: [] };
   AU.music(true); AU.hold(false);
 };
-Main.toTitle = function () {
-  Main.save();
+Main.toTitle = function (noSave) {
+  if (!noSave && G) { WZ.bankLooseShards(); Main.save(); }
   STATE = 'menu';
   UI.show('game', false); UI.show('menu', true);
   UI.menuPage('menuMain');
@@ -110,8 +135,8 @@ function handleMouseFactory(dt) {
   const [tx, ty] = hoverTile(R.fv), [px, py] = hoverPoint(R.fv);
   const sel = G.selected, bd = G.bd;
   // right mouse: throw along the lead line (hold = rapid), or cancel the current tool
-  if (m.r && G.hands) throwAlongAim();
-  else if (m.rp) { if (G.demolish) G.demolish = false; else if (sel !== 'hand') UI.select('hand'); }
+  if (m.r && G.hands && !IN.shift() && !(bd.burst > 0)) throwAlongAim();
+  else if (m.rp && !(IN.shift() && G.hands)) { if (G.demolish) G.demolish = false; else if (sel !== 'hand') UI.select('hand'); }
   if (m.lp) {
     if (G.demolish) FA.demolish(tx, ty);
     else if (sel === 'hand') {   // left click picks up: walk to the thing under the cursor and take one
@@ -128,11 +153,12 @@ function handleMouseFactory(dt) {
     }
   } else if (m.l && sel === 'hand' && !G.demolish && !bd.target) {   // hold to keep taking
     G.mRepeat -= dt;
-    const thing = G.mRepeat <= 0 && FA.thingAt(tx, ty, px, py);
-    if (thing && FA.distTo(thing) < CFG.reach - 0.25) {
+    // with something in hand, holding sweeps up the same kind nearby; empty-handed it repeats on the hovered thing
+    const thing = G.mRepeat <= 0 && (G.hands ? FA.sweepTarget(G.hands.kind) : FA.thingAt(tx, ty, px, py));
+    if (thing && FA.distTo(thing) < CFG.reach + 0.5) {
       const a = FA.actionFor(thing, 'pick');
       if (a.fn && a.rep) a.fn();
-      G.mRepeat = CFG.pickRepeat;
+      G.mRepeat = G.hands ? CFG.sweepRepeat : CFG.pickRepeat;
     }
   } else if (m.l && sel === 'belt' && G.drag && !G.demolish) {
     if ((tx !== G.drag.x || ty !== G.drag.y) && FA.inb(tx, ty)) {
@@ -157,12 +183,15 @@ function handleMouseWizard() {
   G.w.target = { x: Math.max(0.5, Math.min(CFG.WW - 0.5, px)), y: Math.max(0.5, Math.min(CFG.WH - 0.5, py)) };
 }
 
-function placeInFront() {
+// returns true if it did something; quiet = don't complain yet (the input buffer will retry)
+function placeInFront(quiet) {
   const [tx, ty] = frontTile(), sel = G.selected;
-  if (G.demolish) { FA.demolish(tx, ty); return; }
-  if (sel === 'hand') { UI.toast('Pick a building first (1 to 9, 0, - or LB/RB).', 'L', 'ic_hand'); return; }
-  if (sel === 'belt') { FA.placeBelt(tx, ty, G.placeDir); return; }
-  if (!FA.place(sel, tx, ty, G.placeDir) && FA.unlocked(sel)) { UI.toast('Something is already there.', 'L', 'ic_x'); AU.sfx('error'); }
+  if (G.demolish) { FA.demolish(tx, ty); return true; }
+  if (sel === 'hand') { UI.toast('Pick a building first (1 to 9, 0, - or LB/RB).', 'L', 'ic_hand'); return true; }
+  if (!FA.unlocked(sel) && sel !== 'belt') { FA.place(sel, tx, ty, G.placeDir); return true; }   // says what to unlock
+  if (sel === 'belt' ? FA.placeBelt(tx, ty, G.placeDir) : FA.place(sel, tx, ty, G.placeDir)) return true;
+  if (!quiet) { FA.ipop(tx + 0.5, ty + 0.5, [['ic_x']]); AU.sfx('error'); }
+  return false;
 }
 
 Main.controls = function (dt) {
@@ -182,6 +211,10 @@ Main.controls = function (dt) {
   const pickHeld = (G.swapped && IN.down('Period')) || (p0 && p0.aHeld);
   const throwHeld = (G.swapped && IN.down('Comma')) || (p0 && p0.bHeld);
   let roll = IN.hit(G.swapped ? 'Space' : 'Period') || (G.swapped && IN.hit('KeyE')) || (p1 && p1.a);
+  // throw the whole stack: Shift + right-click (Shift + , when swapped), or LT + B on a pad
+  const stackThrow = (IN.shift() && ((IN.mouse.rp && mouseInFactory() && !G.swapped) || (G.swapped && IN.hit('Comma')))) || (p0 && p0.b && p0.ltHeld);
+  // pick a target on purpose: right stick / R3 on a pad, Tab / Shift+Tab on the keyboard
+  const cyc = (p0 && p0.cyc) || (IN.hit('Tab') ? (IN.shift() ? -1 : 1) : 0);
 
   if (IN.hit('Escape')) {
     if (UI.treeOpen.L || UI.treeOpen.R) { UI.openTree('L', false); UI.openTree('R', false); }
@@ -221,13 +254,22 @@ Main.controls = function (dt) {
     UI.swapRing(null);
   }
 
-  // an open skill tree (either side) freezes both halves, so nobody acts until it closes
-  const frozen = UI.treeOpen.L || UI.treeOpen.R;
+  // an open skill tree (either side) freezes both halves, so nobody acts until it closes (and for the "And..." beat after)
+  const inTree = UI.treeOpen.L || UI.treeOpen.R, frozen = inTree || Main.graceT > 0;
+  if (inTree && (IN.hit('KeyQ') || (p0 && p0.x) || (p1 && p1.x))) UI.undoBank();   // Q / pad X: take the last deposit back out
   if (frozen) { bix = 0; biy = 0; use = false; pick = false; wix = 0; wiy = 0; roll = false; }
 
-  handleMouseFactory(dt);
-  handleMouseWizard();
+  if (!frozen) { handleMouseFactory(dt); handleMouseWizard(); }
   if (!frozen) {
+    if (cyc) FA.cycleLock(cyc);
+    if (stackThrow && G.hands && !G.bd.gather) {   // a burst at one aim point, one item every throwStackGap
+      const a = R.aim || aimNow();
+      if (a) { G.bd.burst = G.hands.n; G.bd.burstAim = { x: a.x, y: a.y }; }
+    }
+    if (G.bd.burst > 0) {
+      if (!G.hands) G.bd.burst = 0;
+      else if (FA.throwOne(G.bd.burstAim.x, G.bd.burstAim.y, CFG.throwStackGap)) G.bd.burst--;
+    }
     // pick / use presses are buffered: if nothing is in reach yet (still walking up to it), keep trying for
     // CFG.inputBuffer seconds before giving up and showing why
     const press = mode => {
@@ -236,7 +278,10 @@ Main.controls = function (dt) {
       return a;
     };
     const building = G.selected !== 'hand' || G.demolish;
-    if (G.ibuf && !use && !pick) {
+    if (G.ibuf && G.ibuf.mode === 'place') {   // a place-in-front that hit a taken tile retries while the Builder settles
+      G.ibuf.t -= dt;
+      if (placeInFront(G.ibuf.t > 0) || G.ibuf.t <= 0) G.ibuf = null;
+    } else if (G.ibuf && !use && !pick) {
       const b = G.ibuf;
       b.t -= dt;
       if (b.mode === 'pick' && building) G.ibuf = null;
@@ -251,17 +296,17 @@ Main.controls = function (dt) {
     if (use) press('use');
     // A / . picks up one item (holding keeps grabbing); with a building selected it places in front instead
     if (pick) {
-      if (building) placeInFront();
+      if (building) { if (!placeInFront(true)) G.ibuf = { mode: 'place', t: CFG.inputBuffer }; }
       else { const a = press('pick'); G.pRepeat = a && a.fn && a.rep ? CFG.pickRepeat * 1.5 : 0; }
     } else if (pickHeld && !building && G.pRepeat > 0) {
       G.pRepeat -= dt;
       if (G.pRepeat <= 0) {
-        const t = FA.findTarget('pick'), a = t && FA.actionFor(t, 'pick');
-        if (a && a.rep && a.fn) { a.fn(); G.pRepeat = CFG.pickRepeat; }
+        const t = G.hands ? FA.sweepTarget(G.hands.kind) : FA.findTarget('pick'), a = t && FA.actionFor(t, 'pick');
+        if (a && a.rep && a.fn) { a.fn(); G.pRepeat = G.hands ? CFG.sweepRepeat : CFG.pickRepeat; }
       }
     } else if (!pickHeld) G.pRepeat = 0;
-    if (throwHeld) throwAlongAim();
-    if (IN.hit('Enter')) placeInFront();
+    if (throwHeld && !(G.bd.burst > 0) && !(p0 && p0.ltHeld)) throwAlongAim();
+    if (IN.hit('Enter') && !placeInFront(true)) G.ibuf = { mode: 'place', t: CFG.inputBuffer };
     if (p0 && p0.aHeld && G.selected === 'belt' && !G.demolish) {
       const tx = Math.floor(G.bd.x), ty = Math.floor(G.bd.y), key = tx + ',' + ty;
       if (G.lastFeet !== key) {
@@ -278,8 +323,10 @@ Main.controls = function (dt) {
 // ---------- per-frame simulation ----------
 Main.step = function (dt, ctl) {
   ctl = ctl || Main.controls(dt);
-  // the whole game (machines, belts, Builder, wilds) freezes while anyone has a skill tree open
-  const frozen = UI.treeOpen.L || UI.treeOpen.R;
+  // the whole game (machines, belts, Builder, wilds) freezes while anyone has a skill tree open, then for the "And..." beat
+  const inTree = UI.treeOpen.L || UI.treeOpen.R;
+  if (!inTree && Main.graceT > 0) { Main.graceT -= dt; if (Main.graceT <= 0) UI.and(false); }
+  const frozen = inTree || Main.graceT > 0;
   if (!frozen) {
     FA.moveBuilder(dt, ctl.bix, ctl.biy);
     FA.update(dt);
@@ -298,6 +345,18 @@ Main.step = function (dt, ctl) {
   Main.updateFocus();
   G.saveT += dt;
   if (G.saveT > CFG.autosave || (UI.dirty && G.saveT > 1.5)) { G.saveT = 0; UI.dirty = false; Main.save(); }
+};
+// the skill tree just closed: drop every buffered / held input (nobody should act on a press from before the pause),
+// then hold the game for a beat with a big "And..." so both players are ready when it resumes
+Main.graceT = 0;
+Main.treeClosed = function () {
+  if (!G) return;
+  G.ibuf = null; G.pRepeat = 0; G.mRepeat = 0; G.drag = null; G.lock = null;
+  G.bd.target = null; G.bd.then = null; G.bd.burst = 0;
+  G.w.target = null; G.w.rollBuf = 0;
+  IN.squelch();
+  Main.graceT = CFG.graceTime;
+  UI.and(true);
 };
 // one sample per second of the running totals; the debug overlay turns the last two minutes into rates
 Main.metrics = { t: 0, next: 0, samples: [] };
@@ -343,6 +402,8 @@ Main.questHint = function () {
   return out;
 };
 Main.updateFocus = function () {
+  if (G.lock && !(G.lock.thr ? FA.lockValid('throw') : (FA.lockValid('pick') || FA.lockValid('use')))) G.lock = null;
+  if (G.lock && G.lastInput === 'mouse') G.lock = null;   // the mouse picks exact things anyway
   const bd = G.bd, hov = G.lastInput === 'mouse' && mouseInFactory();
   // prompts: what the pick button (left-click / A) and the use button (E / X) would do right now
   let tp = null;
@@ -369,7 +430,7 @@ Main.updateFocus = function () {
   R.hint = qh.f; R.whint = qh.w;
   UI.setHint(qh.slot && G.selected !== qh.slot ? qh.slot : null, qh.tree);
   R.aim = null;
-  const frozen = UI.treeOpen.L || UI.treeOpen.R;
+  const frozen = UI.treeOpen.L || UI.treeOpen.R || Main.graceT > 0;
   if (G.hands && !frozen) R.aim = aimNow();
   R.ghost = null; R.demo = null;
   if (frozen) return;
@@ -428,13 +489,15 @@ function frame(ts) {
   lastTs = ts;
   IN.pollPads();
   if (STATE === 'play' && G) {
-    if (!G.paused) Main.step(dt);
-    else AU.hum(0);
-    if (G) {
-      ctx.clearRect(0, 0, CFG.W, CFG.H);
-      R.drawFactory(ctx, G.paused ? 0 : dt);
-      R.drawWorld(ctx, G.paused ? 0 : dt);
-    }
+    try {
+      if (!G.paused) Main.step(dt);
+      else AU.hum(0);
+      if (G) {
+        ctx.clearRect(0, 0, CFG.W, CFG.H);
+        R.drawFactory(ctx, G.paused ? 0 : dt);
+        R.drawWorld(ctx, G.paused ? 0 : dt);
+      }
+    } catch (e) { R.defer = null; UI.err(e); }
   } else {
     AU.hum(0); AU.mix(0, 0, false);
     if (STATE !== 'intro') drawBackdrop(ts);
@@ -443,6 +506,8 @@ function frame(ts) {
 }
 
 // ---------- boot ----------
+window.addEventListener('error', e => { if (window.UI && UI.err) UI.err(e.error || e.message); });
+window.addEventListener('unhandledrejection', e => { if (window.UI && UI.err) UI.err(e.reason || 'unhandled promise rejection'); });
 window.addEventListener('DOMContentLoaded', () => {
   ctx = $('cv').getContext('2d');
   ctx.imageSmoothingEnabled = false;

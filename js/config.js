@@ -21,7 +21,12 @@ const CFG = {
   builder: { speed: 5.0, accel: 42, friction: 34, radius: 0.24 },
   reach: 1.75, pickRepeat: 0.2,
   tipRadius: 3.5,            // building info panels only show within this many tiles of the Builder (or when hovered)
-  inputBuffer: 0.1,          // a pick / use press with nothing in reach keeps trying this long (taps just before arriving still land)
+  inputBuffer: 0.1,          // pick / use / place / roll presses that can't happen yet keep trying this long
+  sweepRepeat: 0.07,         // holding pick sweeps up identical nearby items this fast
+  throwStackGap: 0.05,       // seconds between items when throwing a whole stack (Shift + right-click / LT + B)
+  graceTime: 1,              // after the skill tree closes, the game waits this long ("And...") before resuming
+  bankUndoMax: 200,          // how many Skill Portal deposits the tree's undo remembers
+  stateSoundR: 7,            // machines within this many tiles of the Builder chirp when their state changes
   throwRange: 6.5, throwRepeat: 0.15,
   portalGap: 0.22,
   wizard: {
@@ -32,6 +37,7 @@ const CFG = {
     respawn: 120, vacuum: 2, minSpawnDist: 8,
     spawnStart: 2.1, spawnMul: 0.96, spawnFloor: 0.55, cap: 160,
     ringMin: 19, ringMax: 26, hpPerMin: 0.12, touchCd: 0.9,
+    sepPad: 0.12, sepForce: 4,  // monsters keep (rad + rad + sepPad) apart so packs stay readable
     slowTerrain: 0.55,        // speed multiplier on bog tiles (wizard + monsters); water can't be entered at all
   },
   harvest: {      // node counts are 50% up on the original 60/35/25
@@ -51,7 +57,8 @@ const CFG = {
   },
   // spell damage vs a foe's weak / resisted element (combo spells count every element they contain)
   weakMul: 2, resistMul: 0.5,
-  elite: { hp: 5, speed: 0.85, dmg: 1.5, xp: 6, shardBonus: 0.35, minTime: 90, base: 0.015, perMin: 0.004, perDist: 0.02, max: 0.08 },
+  // pity: after this many elites in a row without the bonus shard, the next one has it
+  elite: { hp: 5, speed: 0.85, dmg: 1.5, xp: 6, shardBonus: 0.35, pity: 3, minTime: 90, base: 0.015, perMin: 0.004, perDist: 0.02, max: 0.08 },
   boss: {
     weakMul: 1.6, otherMul: 0.4,            // the Chimera shrugs off everything except its current weakness
     slamEvery: 4.5, slamDelay: 1.0, slamR: 2.4, slamDmg: 24,

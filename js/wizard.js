@@ -169,7 +169,14 @@ WZ.fresh = function () {
     t: 0,
   };
 };
-WZ.reenter = function () { G.w = WZ.fresh(); };
+// shards are precious: any still lying in the wilds when the run ends go to the Stockpile anyway
+WZ.bankLooseShards = function () {
+  const w = G && G.w;
+  if (!w) return;
+  for (const dr of w.drops) if (dr.kind === 'shard') { G.stock.shard += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; }
+  w.drops = w.drops.filter(dr => dr.kind !== 'shard');
+};
+WZ.reenter = function () { WZ.bankLooseShards(); G.w = WZ.fresh(); };
 
 // ---------- helpers ----------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -204,6 +211,14 @@ WZ.puff = function (x, y, col, n) {
   for (let i = 0; i < (n || 8); i++) {
     const a = Math.random() * 6.283, s = rand(1.5, 4);
     G.w.fx_.push({ type: 'spark', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, z: 0.3, vz: rand(2, 5), col, t: 0, dur: rand(0.35, 0.6) });
+  }
+};
+WZ.epuff = function (x, y, el, n) {
+  for (let i = 0; i < (n || 8); i++) {
+    const a = Math.random() * 6.283, s = rand(1.5, 3.5);
+    const f = { type: 'spark', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, z: 0.3, vz: rand(2, 5), col: Math.random() < 0.3 ? '#ffffff' : ELEM[el].color, t: 0, dur: rand(0.4, 0.7), el };
+    if (el === 'air') { f.vz = rand(1, 2); f.g = -1; f.spin = 1; } else if (el === 'water') f.g = 16; else if (el === 'fire') { f.vz = rand(1, 3); f.g = -3; f.vx *= 0.4; f.vy *= 0.4; } else f.g = 20;
+    G.w.fx_.push(f);
   }
 };
 WZ.damage = function (d) {   // armor soaks damage first
@@ -282,7 +297,10 @@ WZ.kill = function (e) {
   if (e.boss) { WZ.bossDown(e); return; }
   WZ.drop('xp', e.x, e.y, e.xp * WZ.gems());
   if (e.elite) {
-    const n = 1 + (Math.random() < CFG.elite.shardBonus ? 1 : 0);
+    // the bonus shard is random, but never dry for more than CFG.elite.pity elites in a row
+    const dry = G.stats.eliteDry || 0, bonus = dry >= CFG.elite.pity || Math.random() < CFG.elite.shardBonus;
+    G.stats.eliteDry = bonus ? 0 : dry + 1;
+    const n = 1 + (bonus ? 1 : 0);
     for (let i = 0; i < n; i++) WZ.drop('shard', e.x, e.y, 1);
     G.stats.elites = (G.stats.elites || 0) + 1; w.run.elites++;
     WZ.ring(e.x, e.y, 2.2, '#ffd23a', 0.45);
@@ -374,7 +392,7 @@ WZ.cast = function (spell) {
     w.fx_.push({ type: 'title', x: px, y: py, text: SPELLS[spell].toUpperCase() + '!', col: SPELL_COL[spell], t: 0, dur: 1.2 });
   }
   // when it bursts at his feet, the Spell Portal back in the factory feels it (harder for higher tiers)
-  WZ.later((combo ? 0.8 : 0.55) * 0.6, () => FA.thump(Math.max(1, ctx.el.length), SPELL_COL[spell] || '#ffffff'));
+  WZ.later((combo ? 0.8 : 0.55) * 0.6, () => { FA.thump(Math.max(1, ctx.el.length), SPELL_COL[spell] || '#ffffff'); ctx.el.forEach(el => WZ.epuff(G.w.x, G.w.y, el, combo ? 6 : 8)); });
   WZ.ctx = ctx;
   const cone = (n, spread, f) => {
     const a = WZ.aim(), base = Math.atan2(a[1], a[0]);
@@ -628,14 +646,15 @@ WZ.bossAI = function (e, dt, d) {
   if (ph !== e.phase) {
     e.phase = ph; e.weak = e.order[ph];
     e.weakFlash = G.fac.weakFlash = B.weakFlash;   // both the Chimera and the Spell Portal flash the new element
-    WZ.ring(e.x, e.y, 5, ELEM[e.weak].color, 0.7); w.shake = Math.max(w.shake, 0.4);
-    AU.sfx('roar');
+    AU.sfx('weak'); AU.sfx('el_' + e.weak);
+    WZ.ring(e.x, e.y, 5, ELEM[e.weak].color, 0.7); w.shake = Math.max(w.shake, 0.4); WZ.epuff(e.x, e.y, e.weak, 16);
   }
   e.slamT -= dt; e.sumT -= dt; e.volT -= dt;
   if (e.slamT <= 0 && d < 10) {   // telegraphed slam where the Wizard stands: roll or walk out
     e.slamT = B.slamEvery;
     const x = w.x, y = w.y;
     w.fx_.push({ type: 'warn', x, y, r: B.slamR, t: 0, dur: B.slamDelay, col: '#ff4a8a' });
+    AU.sfx('warn');
     WZ.later(B.slamDelay, () => {
       WZ.boom(x, y, B.slamR, '#ff4a8a'); AU.sfx('slam'); G.w.shake = Math.max(G.w.shake, 0.3);
       if (!G.w.dead && Math.hypot(G.w.x - x, G.w.y - y) < B.slamR) { if (G.w.roll > 0) WZ.dodge(); else WZ.damage(B.slamDmg); }
@@ -651,6 +670,7 @@ WZ.bossAI = function (e, dt, d) {
   }
   if (e.sumT <= 0) { e.sumT = B.summonEvery; WZ.foesNear(e, B.summonN); WZ.ring(e.x, e.y, 3, '#ff4a8a', 0.4); }
 };
+WZ.nextWeak = e => (e && e.order && e.phase < 3 ? e.order[e.phase + 1] : null);
 WZ.bossDown = function (e) {
   const w = G.w, B = CFG.boss;
   w.boss = null;
@@ -743,13 +763,18 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   }
   for (const f of w.fx_) {
     f.t += dt;
-    if (f.type === 'spark') { f.x += f.vx * dt * 0.5; f.y += f.vy * dt * 0.5; f.z += f.vz * dt; f.vz -= 12 * dt; if (f.z < 0) { f.z = 0; f.vz = 0; } }
+    if (f.type === 'spark') {
+      f.x += f.vx * dt * 0.5; f.y += f.vy * dt * 0.5; f.z += f.vz * dt; f.vz -= (f.g === undefined ? 12 : f.g) * dt;
+      if (f.spin) { const a = dt * 6, vx = f.vx; f.vx = vx * Math.cos(a) - f.vy * Math.sin(a); f.vy = vx * Math.sin(a) + f.vy * Math.cos(a); }
+      if (f.z < 0) { f.z = 0; f.vz = 0; }
+    }
   }
   w.fx_ = w.fx_.filter(f => f.t < f.dur);
   if (w.dead) { w.shrine = null; w.dig = null; return; }
   w.time += dt;
   if (w.hurtT > 0) w.hurtT -= dt;
   if (w.mashT > 0) w.mashT -= dt;
+  if (w.hp < WZ.maxHp() * 0.3) { w.heartT = (w.heartT || 0) - dt; if (w.heartT <= 0) { w.heartT = 0.4 + w.hp / WZ.maxHp() * 2.5; AU.sfx('heart'); } }
   if (w.rollCd > 0) w.rollCd -= dt;
 
   // timers
@@ -774,6 +799,9 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   if (rollPressed && sh && m === 0) { WZ.shrineTap(sh); w.mashAt = w.t; rollPressed = false; }
   else if (rollPressed && w.dig && m === 0) { WZ.mash(w.dig); w.mashAt = w.t; rollPressed = false; }
   else if (rollPressed && m === 0 && w.t - (w.mashAt || -9) < 0.35) rollPressed = false;   // extra mashes after it's dug don't roll him off
+  // a roll pressed a moment too early (still rolling / cooling down) is kept for CFG.inputBuffer seconds
+  if (rollPressed && (w.rollCd > 0 || w.roll > 0)) { w.rollBuf = CFG.inputBuffer; rollPressed = false; }
+  else if (w.rollBuf > 0) { w.rollBuf -= dt; if (w.rollCd <= 0 && w.roll <= 0) { rollPressed = true; w.rollBuf = 0; } }
   if (rollPressed && w.rollCd <= 0 && w.roll <= 0) {
     w.roll = CFG.wizard.rollTime; w.rollCd = CFG.wizard.rollCd;
     w.rdx = m > 0 ? dx : w.fx; w.rdy = m > 0 ? dy : w.fy;
@@ -865,13 +893,16 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     if (e.detour > 0) { e.detour -= dt; const px = -uy * e.side, py = ux * e.side; ux = px; uy = py; }   // last-resort sidestep
     else if (d > 1.5) { const f = WZ.flowDir(e, d); if (f) { ux = f[0]; uy = f[1]; steered = true; } }
     let mx = ux * s, my = uy * s;
-    // light separation from neighbours
+    // soft separation: bodies keep (rad + rad + sepPad) apart, so packs stay readable and don't land hits in one clump
     for (let j = i + 1; j < en.length; j++) {
       const o = en[j]; if (o.dead) continue;
-      const ox = e.x - o.x, oy = e.y - o.y;
-      if (Math.abs(ox) > 0.7 || Math.abs(oy) > 0.7) continue;
+      const ox = e.x - o.x, oy = e.y - o.y, want = e.rad + o.rad + cfg.sepPad;
+      if (Math.abs(ox) > want || Math.abs(oy) > want) continue;
       const od = Math.hypot(ox, oy) || 0.01;
-      if (od < 0.7) { const push = (0.7 - od) * 3; mx += ox / od * push; my += oy / od * push; o.x -= ox / od * push * dt; o.y -= oy / od * push * dt; }
+      if (od >= want) continue;
+      const push = (want - od) * cfg.sepForce, wo = o.boss ? 0.1 : e.boss ? 1.6 : 1;   // the boss shoves, nobody shoves it
+      if (!e.boss) { mx += ox / od * push; my += oy / od * push; }
+      WZ.slide(o, o.x - ox / od * push * dt * wo, o.y - oy / od * push * dt * wo, 0.3);
     }
     if (WZ.slide(e, e.x + (mx + e.kx) * dt, e.y + (my + e.ky) * dt, 0.3) && !(e.detour > 0) && !steered) {
       e.detour = 0.5 + Math.random() * 0.6; e.side = e.side || (Math.random() < 0.5 ? 1 : -1);
@@ -881,8 +912,9 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     e.face = (ex - ey) >= 0 ? 1 : -1;
     // touch damage
     const reach = e.rad + 0.45;
-    if (d < reach && e.cd <= 0 && w.roll <= 0 && w.hurtT <= 0) {
-      e.cd = cfg.touchCd;
+    if (d < reach && e.cd <= 0 && w.roll <= 0 && w.hurtT > 0) e.cd = rand(0.15, 0.45);   // queued: strike a little later
+    else if (d < reach && e.cd <= 0 && w.roll <= 0 && w.hurtT <= 0) {
+      e.cd = cfg.touchCd * rand(0.85, 1.3);
       WZ.damage(e.dmg);
       if (!e.boss) { e.kx -= ex / d * 6; e.ky -= ey / d * 6; }   // bump the attacker back a little
     } else if (d < reach && e.cd <= 0 && w.roll > 0) { e.cd = 0.3; WZ.dodge(); }

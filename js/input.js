@@ -4,7 +4,7 @@ const IN = {
   keys: new Set(), pressed: new Set(),
   mouse: { x: 0, y: 0, l: false, r: false, lp: false, rp: false, inside: false },
   wheel: 0,
-  pad: [null, null], prevBtn: [[], []],
+  pad: [null, null], prevBtn: [[], []], prevRs: [0, 0], padBlock: [false, false],
   padList: [],
   anyKey: false,
 };
@@ -61,22 +61,35 @@ IN.pollPads = function () {
   for (let p = 0; p < 2; p++) {
     const g = list[p];
     if (!g) { IN.pad[p] = null; IN.prevBtn[p] = []; continue; }
-    const b = g.buttons.map(x => x.pressed);
+    let b = g.buttons.map(x => x.pressed);
+    // after IN.squelch, buttons that were already down count as up until everything is released
+    if (IN.padBlock[p]) { if (b.some(Boolean)) b = b.map(() => false); else IN.padBlock[p] = false; }
     const prev = IN.prevBtn[p];
     const edge = i => b[i] && !prev[i];
     let ix = g.axes[0] || 0, iy = g.axes[1] || 0;
     if (Math.hypot(ix, iy) < 0.25) { ix = 0; iy = 0; }
     if (b[14]) ix = -1; if (b[15]) ix = 1; if (b[12]) iy = -1; if (b[13]) iy = 1;
+    // right stick flicked left / right (or R3) cycles the Builder's target
+    const rs = g.axes[2] || 0, rsDir = rs > 0.6 ? 1 : rs < -0.6 ? -1 : 0;
+    const cyc = (rsDir && rsDir !== IN.prevRs[p] ? rsDir : 0) || (edge(11) ? 1 : 0);
+    IN.prevRs[p] = rsDir;
     IN.pad[p] = {
-      ix, iy,
+      ix, iy, cyc,
       a: edge(0), b: edge(1), x: edge(2), y: edge(3), lb: edge(4), rb: edge(5),
-      xHeld: !!b[2], aHeld: !!b[0], bHeld: !!b[1], startHeld: !!b[9], back: edge(8),
+      xHeld: !!b[2], aHeld: !!b[0], bHeld: !!b[1], ltHeld: !!b[6], startHeld: !!b[9], back: edge(8),
       any: b.some(Boolean),
     };
     IN.prevBtn[p] = b;
   }
 };
 
+// forget everything currently pressed or held (the skill tree closing): held keys and pad buttons must be pressed again
+IN.squelch = function () {
+  IN.keys.clear(); IN.pressed.clear();
+  IN.mouse.l = IN.mouse.r = IN.mouse.lp = IN.mouse.rp = false;
+  IN.padBlock = [true, true];
+};
+IN.shift = () => IN.down('ShiftLeft') || IN.down('ShiftRight');
 IN.endFrame = function () {
   IN.pressed.clear();
   IN.mouse.lp = false; IN.mouse.rp = false; IN.mouse.mv = false;

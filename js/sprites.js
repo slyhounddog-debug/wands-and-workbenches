@@ -117,12 +117,16 @@ task(() => {
 
 // ---------- items ----------
 task(() => {
+  // every element has its own silhouette, so packets read without colour: air = ring, water = drop, fire = flame, earth = block
+  const PK = {
+    air:   ['..oooo..', '.occcco.', 'occoocco', 'oco..oco', 'oco..oco', 'occoocco', '.occwco.', '..oooo..'],
+    water: ['...oo...', '..occo..', '..occo..', '.occcco.', 'occwccco', 'occwccco', '.occcco.', '..oooo..'],
+    fire:  ['.o...o..', 'oco.oco.', 'occoocco', 'occcccco', 'occwccco', 'occwccco', '.occcco.', '..oooo..'],
+    earth: ['oooooooo', 'owwccCCo', 'owcccCCo', 'occccCCo', 'occccCCo', 'oCCCCCCo', 'oCCCCCCo', 'oooooooo'],
+  };
   Object.keys(ELEM).forEach(k => {
     const e = ELEM[k];
-    reg('pk_' + k, mk(8, 8, x => {
-      circ(x, 4, 4, 3.6, e.dark); circ(x, 4, 4, 2.8, e.color);
-      x.fillStyle = '#fff'; x.fillRect(2, 2, 2, 1); x.fillRect(2, 3, 1, 1);
-    }), 4, 4);
+    reg('pk_' + k, mapSprite(PK[k], { o: '#1a0f28', c: e.color, C: e.dark, w: '#ffffff' }), 4, 4);
   });
   reg('it_wood', mk(8, 8, x => {
     x.fillStyle = '#6e3f1c'; x.fillRect(0, 2, 8, 5); x.fillStyle = '#a8683a'; x.fillRect(0, 2, 8, 3);
@@ -444,7 +448,12 @@ task(() => {
   icon('rotate', ['..www.w', '.w...ww', 'w...www', 'w......', 'w.....w', '.w...w.', '..www..']);
   icon('chart', ['o......', 'o....g.', 'o...gg.', 'o.g.gg.', 'o.gggg.', 'ogggggg', 'ooooooo']);
   // tiny element-weakness pips shown over foes
-  for (const k in ELEM) reg('wk_' + k, mapSprite(['..o..', '.oco.', 'occco', '.oco.', '..o..'], { o: '#1a0f28', c: ELEM[k].color }), 2.5, 5);
+  // (same shapes as the packets: ring / drop / flame / block)
+  const WK = { air: ['.ooo.', 'oc.co', 'o...o', 'oc.co', '.ooo.'], water: ['..o..', '.oco.', 'occco', 'occco', '.ooo.'],
+    fire: ['o.o.o', 'ococo', 'occco', 'occco', '.ooo.'], earth: ['ooooo', 'occco', 'occco', 'occco', 'ooooo'] };
+  for (const k in ELEM) reg('wk_' + k, mapSprite(WK[k], { o: '#1a0f28', c: ELEM[k].color }), 2.5, 5);
+  icon('full', ['ooooooo', 'orrrrro', 'owwwwwo', 'orrrrro', 'owwwwwo', 'orrrrro', 'ooooooo']);   // output buffer full
+  icon('pin', ['..rrr..', '.rRrrr.', '.rrrrr.', '..rrr..', '...o...', '...o...', '...o...']);
   // reeds for bog tiles
   reg('reeds', mapSprite(['.g...g.', '.g.g.g.', 'gg.g.gg', '.g.gg.g', '.gg.g.g', '..g.gg.', 'GGGGGGG'], pal), 3.5, 7);
   // a conveyor icon for the hotbar / tree

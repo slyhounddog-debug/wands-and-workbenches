@@ -4,6 +4,19 @@
 // without one, the synth plays.
 const AU = (() => {
   let ctx = null, sfxG = null, musG = null, musicOn = false, nextT = 0, step = 0, timer = null;
+  // audio hierarchy: important cues go to hiG and duck everything on loG (hum, pickups, clicks) and the music;
+  // midG is everything else. cur = where tone() / noise() send by default while a sfx is being built
+  let hiG = null, midG = null, loG = null, duckG = null, cur = null;
+  const HI = new Set(['deliver', 'portalDrop', 'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'weak', 'warn', 'heart', 'hurt', 'die', 'roar', 'slam', 'volley', 'alert', 'dodge', 'victory']);
+  const LO = new Set(['pickup', 'drop', 'blip', 'crank', 'gem', 'place', 'throw', 'thud', 'dig', 'rustle', 'craft', 'bank', 'shard',
+    'st_work', 'st_missing', 'st_starve', 'st_jam', 'st_full', 'st_off']);
+  const reps = {};   // name -> { t, n }: rapid repeats of a low sound get quieter
+  function duck(depth) {
+    if (!ctx) return;
+    const t = ctx.currentTime, g = duckG.gain;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(depth, t + 0.03); g.linearRampToValueAtTime(1, t + 0.7);
+  }
   const settings = { sfx: 0.7, music: 0.5 };
   const lastPlay = {};
 
@@ -45,6 +58,7 @@ const AU = (() => {
   function applyVol() {
     if (!ctx) return;
     sfxG.gain.value = settings.sfx;
+    if (loG) loG.gain.value = 0.75 * settings.sfx;
     musG.gain.value = held ? 0 : settings.music * 0.6;
   }
   function hold(on) {
@@ -66,7 +80,13 @@ const AU = (() => {
     if (!AC) return;
     ctx = new AC();
     sfxG = ctx.createGain(); musG = ctx.createGain();
-    sfxG.connect(ctx.destination); musG.connect(ctx.destination);
+    sfxG.connect(ctx.destination);
+    duckG = ctx.createGain(); duckG.connect(ctx.destination);   // music + low sounds pass through the ducker
+    musG.connect(duckG);
+    hiG = ctx.createGain(); hiG.gain.value = 1.15; hiG.connect(sfxG);
+    midG = ctx.createGain(); midG.connect(sfxG);
+    loG = ctx.createGain(); loG.gain.value = 0.75; loG.connect(duckG);
+    cur = midG;
     applyVol();
     decodeCustom();
   }
@@ -80,7 +100,7 @@ const AU = (() => {
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.exponentialRampToValueAtTime(vol || 0.15, t0 + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g); g.connect(dest || sfxG);
+    o.connect(g); g.connect(dest || cur || sfxG);
     o.start(t0); o.stop(t0 + dur + 0.05);
   }
   function noise(dur, vol, hp, delay, dest) {
@@ -90,7 +110,7 @@ const AU = (() => {
     const s = ctx.createBufferSource(); s.buffer = b;
     const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp || 800;
     const g = ctx.createGain(); g.gain.value = vol || 0.1;
-    s.connect(f); f.connect(g); g.connect(dest || sfxG); s.start(ctx.currentTime + (delay || 0));
+    s.connect(f); f.connect(g); g.connect(dest || cur || sfxG); s.start(ctx.currentTime + (delay || 0));
   }
   const N = s => 261.63 * Math.pow(2, s / 12);
 
@@ -99,8 +119,20 @@ const AU = (() => {
     const now = ctx.currentTime;
     if (lastPlay[name] && now - lastPlay[name] < 0.05) return;
     lastPlay[name] = now;
+    // which bus: HI cuts through (and ducks the rest), LO sits under; repeats of a LO sound fade down
+    let bus = HI.has(name) ? hiG : LO.has(name) ? loG : midG;
+    if (bus === loG) {
+      const r = reps[name] || (reps[name] = { t: 0, n: 0 });
+      r.n = now - r.t < 0.35 ? Math.min(6, r.n + 1) : 0; r.t = now;
+      if (r.n) { const g = ctx.createGain(); g.gain.value = Math.max(0.3, 1 - r.n * 0.13); g.connect(loG); bus = g; }
+    }
+    if (HI.has(name)) duck(name === 'heart' || name === 'dodge' ? 0.6 : 0.35);
     const c = clip(name);
-    if (c) { OV.playClip(ctx, c, c.p, sfxG); return; }
+    if (c) { OV.playClip(ctx, c, c.p, bus); return; }
+    cur = bus;
+    try { play(name); } finally { cur = midG; }
+  }
+  function play(name) {
     switch (name) {
       case 'blip': tone(660, 0.07, 'square', 0.06); break;
       case 'pickup': tone(520, 0.08, 'triangle', 0.12); tone(780, 0.09, 'triangle', 0.1, 0, 0.06); break;
@@ -124,6 +156,22 @@ const AU = (() => {
         tone(f, 0.15, 'triangle', 0.07, 2.6); tone(f * 1.5, 0.09, 'sine', 0.04, 2.2, 0.04); noise(0.16, 0.05, 2600);
         break;
       }
+      // element motifs: one short phrase per element, so each is recognisable by ear
+      case 'el_air': tone(N(19), 0.12, 'sine', 0.07, 1.25); tone(N(26), 0.14, 'sine', 0.05, 1.2, 0.07); break;
+      case 'el_water': tone(N(24), 0.08, 'triangle', 0.08); tone(N(19), 0.08, 'triangle', 0.07, 0, 0.07); tone(N(16), 0.12, 'triangle', 0.06, 0.9, 0.14); break;
+      case 'el_fire': noise(0.12, 0.06, 1800); tone(N(7), 0.1, 'sawtooth', 0.05, 1.6); tone(N(14), 0.08, 'sawtooth', 0.04, 1.4, 0.06); break;
+      case 'el_earth': tone(N(-12), 0.14, 'square', 0.08, 0.8); tone(N(-5), 0.12, 'square', 0.06, 0.8, 0.09); noise(0.08, 0.05, 300, 0.02); break;
+      // machine states (quiet chirps when a machine near the Builder changes state)
+      case 'st_work': tone(N(19), 0.05, 'triangle', 0.035); tone(N(24), 0.06, 'triangle', 0.03, 0, 0.04); break;
+      case 'st_missing': tone(N(12), 0.07, 'triangle', 0.04); tone(N(14), 0.07, 'triangle', 0.035, 0, 0.08); break;
+      case 'st_starve': tone(N(7), 0.14, 'sine', 0.04, 0.8); break;
+      case 'st_jam': tone(N(10), 0.05, 'square', 0.03); tone(N(10), 0.05, 'square', 0.03, 0, 0.08); break;
+      case 'st_full': tone(N(4), 0.09, 'square', 0.035); tone(N(-1), 0.12, 'square', 0.035, 0, 0.09); break;
+      case 'st_off': tone(N(0), 0.22, 'sawtooth', 0.03, 0.5); break;
+      // danger / big moments (high bus)
+      case 'heart': tone(70, 0.1, 'sine', 0.2, 0.7); tone(62, 0.12, 'sine', 0.16, 0.7, 0.16); break;
+      case 'warn': tone(N(24), 0.07, 'square', 0.06); tone(N(24), 0.07, 'square', 0.06, 0, 0.12); tone(N(24), 0.07, 'square', 0.06, 0, 0.24); break;
+      case 'weak': tone(110, 0.5, 'sawtooth', 0.1, 0.6); [0, 7, 12].forEach((s2, i) => tone(N(s2 + 12), 0.2, 'square', 0.06, 0, 0.12 + i * 0.07)); break;
       case 'dodge': tone(1500, 0.07, 'square', 0.04, 1.5); tone(2250, 0.1, 'sine', 0.05, 1.3, 0.05); break;
       case 'dig': tone(100 + Math.random() * 50, 0.07, 'square', 0.07, 0.6); noise(0.06, 0.06, 500); break;
       case 'rustle': noise(0.1, 0.07, 3200); tone(900 + Math.random() * 200, 0.04, 'triangle', 0.03); break;
@@ -157,7 +205,7 @@ const AU = (() => {
     if (Math.abs(v - humLvl) < 0.02) return;
     humLvl = v;
     if (!hum && clip('hum')) {
-      const g = ctx.createGain(); g.gain.value = 0; g.connect(sfxG);
+      const g = ctx.createGain(); g.gain.value = 0; g.connect(loG);
       const node = OV.playClip(ctx, clip('hum'), Object.assign({}, clip('hum').p, { loop: true }), g);
       hum = { g, clip: true, stop() { node.src.stop(); } };
     }
@@ -169,7 +217,7 @@ const AU = (() => {
       const o2g = ctx.createGain(); o2g.gain.value = 0.2;
       const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = 3; lg.gain.value = 70;
       lfo.connect(lg); lg.connect(lp.frequency);
-      o1.connect(lp); o2.connect(o2g); o2g.connect(lp); lp.connect(g); g.connect(sfxG);
+      o1.connect(lp); o2.connect(o2g); o2g.connect(lp); lp.connect(g); g.connect(loG);
       o1.start(); o2.start(); lfo.start();
       hum = { g, lfo, stop() { o1.stop(); o2.stop(); lfo.stop(); g.disconnect(); } };
     }
@@ -232,8 +280,8 @@ const AU = (() => {
     if (!on && timer) { clearInterval(timer); timer = null; setTrack(null); }
   }
   loadCustom();
-  // every sfx() name, read off its switch so the dev tool's list can never miss one
-  const SFX_NAMES = (sfx + '').match(/case '\w+'/g).map(s => s.slice(6, -1));
+  // every sfx() name, read off play()'s switch so the dev tool's list can never miss one
+  const SFX_NAMES = (play + '').match(/case '\w+'/g).map(s => s.slice(6, -1));
   return {
     settings, init, sfx, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep,
     names: { sfx: SFX_NAMES, loops: ['music', 'music_boss', 'hum'] },

@@ -223,7 +223,12 @@ R.drawFactory = function (main, dt) {
   list.push({ d: ps.x + ps.y + 2, t: 'portal', o: 'spell' });
   list.push({ d: pk.x + pk.y + 2, t: 'portal', o: 'skill' });
   for (const k2 in piles) list.push({ d: piles[k2].x + piles[k2].y, o: k2, t: 'pile' });
-  for (const o of f.floor) list.push({ d: o.x + o.y, o, t: 'floor' });
+  const piles2 = [];
+  for (const o of f.floor) {
+    const g = o.z <= 0 && piles2.find(q => q.kind === o.kind && Math.abs(q.x - o.x) < 0.45 && Math.abs(q.y - o.y) < 0.45);
+    if (g) g.items.push(o); else piles2.push({ kind: o.kind, x: o.x, y: o.y, items: [o] });
+  }
+  for (const g of piles2) list.push({ d: g.x + g.y, o: g, t: g.items.length > 1 ? 'floorG' : 'floor' });
   for (const o of f.flying) list.push({ d: o.x + o.y + 0.5, o, t: 'fly' });
   list.push({ d: bd.x + bd.y, o: bd, t: 'builder' });
   list.sort((a, b) => a.d - b.d);
@@ -252,7 +257,8 @@ R.drawFactory = function (main, dt) {
       case 'bld': R.drawBuilding(ctx, v, it.o, t); break;
       case 'portal': R.drawPortal(ctx, v, t, it.o); break;
       case 'pile': R.drawPile(ctx, v, it.o, piles[it.o]); break;
-      case 'floor': R.drawFloor(ctx, v, it.o, t); break;
+      case 'floor': R.drawFloor(ctx, v, it.o.items[0], t); break;
+      case 'floorG': R.drawFloorPile(ctx, v, it.o, t); break;
       case 'fly': R.drawFly(ctx, v, it.o, t); break;
       case 'builder': R.drawBuilder(ctx, v, bd, t); break;
     }
@@ -261,10 +267,12 @@ R.drawFactory = function (main, dt) {
   if (R.ghost) R.drawGhost(ctx, v, R.ghost, t);
   if (R.demo) R.drawDemo(ctx, v, R.demo, t);
   if (R.aim && G.hands && !bd.gather) R.drawAim(ctx, v, R.aim, t);
+  R.drawLock(ctx, v, t);
 
   for (const p of f.parts) {
     const s = R.toScreen(v, p.x, p.y);
     ctx.globalAlpha = Math.min(1, p.t * 2); ctx.fillStyle = p.col;
+    if (p.el) { R.elPix(ctx, p.el, Math.round(s[0] / P) * P, Math.round((s[1] - p.z * 22) / P) * P, P); continue; }
     const sz = p.dust ? (p.t > 0.25 ? 8 : 4) : 4;
     ctx.fillRect(Math.round((s[0] - sz / 2) / P) * P, Math.round((s[1] - p.z * 22) / P) * P, sz, sz);
   }
@@ -500,7 +508,54 @@ R.drawBuilding = function (ctx, v, b, t) {
     diamond(ctx, p[0], p[1], v.hw * 0.7, v.hh * 0.7); ctx.stroke();
   }
   // throughput: a building stuck for a moment shows why (orange ! = output blocked, grey ? = waiting on inputs)
-  if (b.st && b.stT > 1.5 && Math.sin(t * 4) > -0.6) dspr(ctx, SP[b.st === 'jam' ? 'ic_jam' : 'ic_starve'], p[0] - 44, top + 72, 4);
+  R.drawState(ctx, v, b, t, p, top);
+};
+// machine state language, shown the moment it changes: outline colour AND dash pattern (readable without colour),
+// an icon, plus the animation speed (FA.stateSpeed) and a chirp (FA.update)
+const ST = {
+  work:    { col: '#5ad06a', dash: [16, 8], w: 4 },      // flowing dashes (only drawn up close)
+  missing: { col: '#ffd23a', dash: [12, 8], w: 4 },      // + a ghost of the missing ingredient
+  starve:  { col: '#a8b0c0', dash: [4, 8], w: 4 },       // dotted + grey ?
+  jam:     { col: '#ff8a2b', dash: [24, 6], w: 6 },      // long dashes + orange !
+  full:    { col: '#e8384a', dash: [], w: 8 },           // thick solid + stacked bars
+  off:     { col: '#9a5ad0', dash: [8, 4, 2, 4], w: 6 }, // dash-dot + the no-power bolt
+};
+R.drawState = function (ctx, v, b, t, p, top) {
+  const st = b.st, S = ST[st];
+  if (!S) return;
+  const blink = Math.sin(t * (st === 'full' || st === 'off' ? 9 : 5)) > -0.3;
+  if (st !== 'work' || R.inTip(b)) {
+    ctx.strokeStyle = S.col; ctx.lineWidth = S.w; ctx.setLineDash(S.dash); ctx.lineDashOffset = st === 'work' ? -Math.floor(t * 8) * 4 : 0;
+    if (st === 'work' || blink) { diamond(ctx, p[0], p[1], v.hw * 0.98, v.hh * 0.98); ctx.stroke(); }
+    ctx.setLineDash([]);
+  }
+  if (!blink) return;
+  const ix = p[0] - 44, iy = top + 72;
+  if (st === 'missing') { const k = FA.missingOf(b); dspr(ctx, k ? itemSprite(k) : SP.it_battery, ix, iy, 4, 0.75); }
+  else if (st === 'starve') dspr(ctx, SP.ic_starve, ix, iy, 4);
+  else if (st === 'jam') dspr(ctx, SP.ic_jam, ix, iy, 4);
+  else if (st === 'full') dspr(ctx, SP.ic_full, ix, iy, 4);
+};
+// one particle in its element's shape (u = one art pixel): air ring, water drop, fire spark, earth chunk
+R.elPix = function (ctx, el, x, y, u) {
+  if (el === 'air') { ctx.fillRect(x - u, y - u, 3 * u, u); ctx.fillRect(x - u, y + u, 3 * u, u); ctx.fillRect(x - u, y, u, u); ctx.fillRect(x + u, y, u, u); }
+  else if (el === 'water') { ctx.fillRect(x, y - u, u, u); ctx.fillRect(x - u, y, 3 * u, 2 * u); }
+  else if (el === 'fire') { ctx.fillRect(x, y - u, u, 3 * u); ctx.fillRect(x - u, y, 3 * u, u); }
+  else ctx.fillRect(x - u, y - u, 2 * u, 2 * u);
+};
+// outline whatever a thrown item would land in: a tile, a whole portal, or the Stockpile Zone
+R.outlineObj = function (ctx, v, o, col, t, k) {
+  k = k || 1;
+  ctx.strokeStyle = col; ctx.lineWidth = 6; ctx.setLineDash([14, 8]); ctx.lineDashOffset = -Math.floor(t * 8) * 4;
+  const quad = (x0, y0, x1, y1) => {
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, c = R.toScreen(v, cx, cy);
+    const pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(q => { const sp = R.toScreen(v, q[0], q[1]); return [c[0] + (sp[0] - c[0]) * k, c[1] + (sp[1] - c[1]) * k]; });
+    ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.closePath(); ctx.stroke();
+  };
+  if (o === 'zone') { const z = FA.zone(); quad(z.x0, z.y0, z.x1 + 1, z.y1 + 1); }
+  else if (o.type === 'portal') { const q = FA.portal(o.which); quad(q.x, q.y, q.x + 1, q.y + 2); }
+  else quad(o.x, o.y, o.x + 1, o.y + 1);
+  ctx.setLineDash([]);
 };
 R.chip = function (ctx, x, y, kind, n) {
   pbox(ctx, x - 32, y - 20, 64, 32, '#2b1d48');
@@ -576,6 +631,12 @@ R.drawPortal = function (ctx, v, t, which) {
   if (boss) {   // the element that hurts the boss right now, floating in the middle of the portal
     const sc = wfl && Math.sin(t * 12) > 0 ? 1.3 : 1;
     dsprSq(ctx, itemSprite(boss.weak), base[0], base[1] - 52 + (Math.sin(t * 4) > 0 ? 0 : 4), 4, sc, sc);
+    const nx = WZ.nextWeak(boss);
+    if (nx) {
+      pbox(ctx, base[0] + 36, base[1] - 132, 64, 40, '#2b1d48');
+      ctx.fillStyle = '#c8b8e8'; ctx.fillRect(base[0] + 44, base[1] - 116, 12, 8); ctx.fillRect(base[0] + 56, base[1] - 120, 4, 16);
+      dspr(ctx, itemSprite(nx), base[0] + 80, base[1] - 98, 3, 0.8);
+    }
   }
   dspr(ctx, SP[skill ? 'ic_skill' : 'ic_portal'], base[0], base[1] - 160, 4);
   const q = f.portalQ.filter(e => e.which === which).length;
@@ -624,6 +685,12 @@ R.drawFloor = function (ctx, v, o, t) {
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(Math.round((p[0] - 12) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 24, 8);
   const bob = o.z > 0 ? o.z * 26 : (Math.sin(t * 3 + o.x * 5) > 0 ? 8 : 4);
   R.item(ctx, o.kind, p[0], p[1] - bob, 4, t);
+};
+R.drawFloorPile = function (ctx, v, g, t) {
+  const p = R.toScreen(v, g.x, g.y), n = g.items.length;
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(Math.round((p[0] - 16) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 32, 8);
+  for (let i = 0; i < Math.min(n, 4); i++) R.item(ctx, g.kind, p[0] + (i % 2 ? 4 : -4), p[1] - 6 - i * 10, 4, t, i === Math.min(n, 4) - 1);
+  txt(ctx, '' + n, p[0] + 24, p[1] - 10, 12, '#ffffff', 'center', 'd');
 };
 R.drawFly = function (ctx, v, o, t) {
   const p = R.toScreen(v, o.x, o.y);
@@ -688,8 +755,22 @@ R.drawAim = function (ctx, v, a, t) {
     const k = i / 24, x = s[0] + (e[0] - s[0]) * k, y = s[1] - 70 + (e[1] - s[1] + 70) * k - Math.sin(k * Math.PI) * h;
     ctx.fillRect(Math.round(x / 4) * 4 - 4, Math.round(y / 4) * 4 - 4, 8, 8);
   }
-  ctx.strokeStyle = a.obj ? '#9dff9d' : '#ffffff'; ctx.lineWidth = 6;
-  diamond(ctx, e[0], e[1], 24, 12); ctx.stroke();
+  const hd = G.hands, ok = !!(hd && a.obj && FA.accepts(a.obj, hd.kind)), col = !a.obj ? '#ffffff' : ok ? '#9dff9d' : '#ff6a6a';
+  if (a.obj && a.obj.type !== 'belt') R.outlineObj(ctx, v, a.obj, col, t, 1.04);
+  else { ctx.strokeStyle = col; ctx.lineWidth = 6; diamond(ctx, e[0], e[1], 24, 12); ctx.stroke(); }
+  if (hd) dspr(ctx, itemSprite(hd.kind), e[0], e[1] - 10 + (Math.sin(t * 6) > 0 ? 0 : 4), 4, 0.5);   // where it will land
+  if (a.obj && !ok) dspr(ctx, SP.ic_x, e[0], e[1] - 40, 4);
+};
+// a pad / Tab-picked target: cyan corner brackets, plus the cycle key while there's more than one choice
+R.drawLock = function (ctx, v, t) {
+  const l = G.lock;
+  if (!l || G.lastInput === 'mouse') return;
+  const valid = l.thr ? FA.lockValid('throw') : (FA.lockValid('pick') || FA.lockValid('use'));
+  if (!valid) return;
+  const col = Math.sin(t * 8) > 0 ? '#7be0ff' : '#ffffff';
+  if (l.thr) R.outlineObj(ctx, v, l.obj, col, t, 1.2);
+  else { const p = R.toScreen(v, l.c.x, l.c.y); ctx.strokeStyle = col; ctx.lineWidth = 8; diamond(ctx, p[0], p[1], v.hw * 1.15, v.hh * 1.15); ctx.stroke(); }
+  if (l.n > 1) { const p = R.toScreen(v, l.thr ? l.x : l.c.x, l.thr ? l.y : l.c.y); R.iprompt(ctx, p[0], p[1] + 44, R.padMode ? 'RS' : 'TAB', ['ic_swap']); }
 };
 // the button label for the Builder's pick (take one item) and use (crank / rotate / switch) actions
 R.key = which => which === 'pick' ? (R.padMode ? 'A' : G.swapped ? '.' : 'LMB') : (R.padMode ? 'X' : G.swapped ? '/' : 'E');
@@ -1098,7 +1179,9 @@ R.drawFx = function (ctx, v, f) {
     ctx.globalAlpha = 1;
   } else if (f.type === 'spark') {
     ctx.globalAlpha = 1 - fr; ctx.fillStyle = f.col;
-    ctx.fillRect(snap(s[0] - 3), Math.round((s[1] - f.z * 30 - 3) / 3) * 3, 6, 6); ctx.globalAlpha = 1;
+    if (f.el) R.elPix(ctx, f.el, snap(s[0]), Math.round((s[1] - f.z * 30) / 3) * 3, 3);
+    else ctx.fillRect(snap(s[0] - 3), Math.round((s[1] - f.z * 30 - 3) / 3) * 3, 6, 6);
+    ctx.globalAlpha = 1;
   } else if (f.type === 'beam') {
     ctx.globalAlpha = (1 - fr) * 0.7; ctx.fillStyle = f.col;
     const wdt = Math.round((28 * (1 - fr) + 9) / 3) * 3;

@@ -707,7 +707,19 @@ R.drawBuilder = function (ctx, v, bd, t) {
   const spr = carrying ? (bd.moving && step > 0 ? SP.builderC2 : SP.builderC) : (bd.moving && step > 0 ? SP.builder2 : SP.builder);
   const sq = bd.squash > 0 ? Math.sin(bd.squash * 25) * 0.12 : 0;
   const flip = (bd.fx - bd.fy) < -0.1;
-  dsprSq(ctx, spr, p[0], p[1] - hop, S, 1 + sq, 1 - sq, 1, flip);
+  // playful walk: the body pivots at the hips and leans back and forth with each step, stretching taller on the
+  // push-off and skewing off-axis, so it reads as if his legs were swinging
+  const ph = bd.bob, w = bd.moving ? 1 : 0, g = bd.gather ? 1 : 0;
+  const lean = (w * Math.sin(ph) * 0.16 + g * Math.sin(ph * 1.5) * 0.06) * (flip ? -1 : 1);
+  const stretch = w * Math.abs(Math.sin(ph)) * 0.14, skew = w * Math.sin(ph + 1.2) * 0.14 * (flip ? -1 : 1);
+  const pv = spr.ay * S * 0.35;   // pivot height above the feet
+  ctx.save();
+  ctx.translate(snap(p[0]), Math.round((p[1] - hop - pv) / R.px) * R.px);
+  ctx.rotate(lean);
+  ctx.transform(1, 0, skew, 1, 0, 0);
+  ctx.scale((1 + sq) * (1 - stretch * 0.45) * (flip ? -1 : 1), (1 - sq) * (1 + stretch));
+  ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S + pv, spr.c.width * S, spr.c.height * S);
+  ctx.restore();
   const h = G.hands;
   if (h) {
     const n = Math.min(h.n, 8), y0 = p[1] - 72 - hop;

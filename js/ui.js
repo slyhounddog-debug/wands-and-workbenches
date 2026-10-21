@@ -477,13 +477,6 @@ UI.buy = function (id) {
   AU.sfx('buy');
   const label = n.name + (n.tiers ? ' ' + G.tree[id] : '');
   UI.toast('Unlocked: ' + label, 'L', n.icon); UI.toast('Unlocked: ' + label, 'R', n.icon);
-  if (id === 'batteries') {
-    G.credits.station = (G.credits.station || 0) + 1;
-    G.credits.charger = (G.credits.charger || 0) + 1;
-    FA.stash();   // resources go home, anything else is set down: nothing vanishes
-    FA.addHands('battery', 1, CFG.batteryMax);
-    UI.toast('Next Station and Charger are free (keys 0 and -). A charged Battery is in your hands!', 'L', 'ic_gift');
-  }
   if (id === 'hearty') G.w.hp = Math.min(WZ.maxHp(), G.w.hp + CFG.upgrade.hearty);
   if (id === 'expand') {
     const sz = CFG.factorySizes[Math.min(G.tree.expand, CFG.factorySizes.length - 1)];
@@ -682,7 +675,7 @@ const HOWTO = {
     ['Hands', 'The Builder carries one stack (5 at first). <b>Left-click</b> (pad <b>A</b>) picks up <b>one item at a time</b>: hold it to keep grabbing. <b>Right-click</b> (pad <b>B</b>) throws one item along the dotted lead line: it aims at machines, blueprints, belts, portals or the Stockpile. Throwing is the only way to put things in. Nothing ever vanishes.'],
     ['Building', 'Pick a building (keys <b>1</b> to <b>-</b> or the wheel), <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
     ['Machines', 'Harnessers make element packets by themselves, or stand next to one and press <b>E</b>, then <b>tap E</b> to crank one out by hand (no power needed). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
-    ['Power', 'Water, Fire and Earth Harnessers and the Forge use power. Craft a Battery at the Forge (2 Iron Ore), charge it at a Charger by feeding it packets (more kinds = faster), then haul it to a Battery Station. A charged Station right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, <b>Heavy Batteries</b> make every Battery last 50% longer in a Station.'],
+    ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with a charged Battery in a Battery Station and a Charger beside it: a Battery drains while anything needs power, so carry it to the Charger and throw element packets at it to refill it (hand-gathered packets are free). Craft a Battery at the Forge (2 Iron Ore), charge it at a Charger by feeding it packets (more kinds = faster), then haul it to a Battery Station. A charged Station right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, <b>Heavy Batteries</b> make every Battery last 50% longer in a Station.'],
     ['Growing', 'The floor starts small. <b>Factory Expansion</b> in the Skill Tree makes it bigger, pushing the Stockpile further from the portals.'],
     ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> deals items out of its front, right and left in turn. The <b>Sorter</b> sends one item kind out the front (E while holding it) and the rest out the sides. The <b>Storage Crate</b> holds 30 packets or spells and feeds them out of its arrow. E turns any of them (a Sorter with a filter clears it first).'],
     ['Reading the floor', 'Every machine shows its state the moment it changes, with an outline, an icon, how fast it animates and a little chirp: <b>green flowing dashes</b> working (up close), <b>yellow dashes</b> + a ghost of the missing ingredient, <b>grey dots</b> + <b>?</b> starved, <b>orange long dashes</b> + <b>!</b> output jammed, <b>thick red</b> + stacked bars output full (stopped), <b>purple dash-dot</b> + bolt no power. Each portal shows how many items it took in the last minute.'],

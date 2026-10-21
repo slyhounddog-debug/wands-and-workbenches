@@ -13,7 +13,7 @@ window.addEventListener('resize', fit);
 
 // ---------- new / load / save ----------
 const SAVE_VERSION = 4;
-const QUEST_VERSION = 2;   // v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2
+const QUEST_VERSION = 3;   // v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1
 function blankState(slot) {
   return {
     slot, xp: 0, tree: {}, stock: { wood: CFG.start.wood, stone: CFG.start.stone, iron: CFG.start.iron, shard: 0 },
@@ -54,6 +54,7 @@ Main.applySave = function (slot, s) {
   G.bankLog = Array.isArray(s.bankLog) ? s.bankLog.filter(k => ITEMS[k]) : [];
   G.pins = Object.assign({ L: null, R: null }, s.pins || {});
   if ((s.qv || 1) < 2 && G.quest >= 13) G.quest += 2;
+  if ((s.qv || 1) < 3 && G.quest >= 6 && G.quest <= 10) G.quest += 1;
   G.hands = s.hands && ITEMS[s.hands.kind] ? s.hands : null;
   G.w = WZ.fresh();
   FA.fromJSON(s.fac || {});

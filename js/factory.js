@@ -67,6 +67,8 @@ FA.initial = function () {
   const sy = FA.spellY(), w = sz[0];
   FA.makeBuilding('air', w - 7, sy, true, false, 0);
   for (let x = w - 6; x <= w - 2; x++) FA.addBelt(x, sy, 0);
+  const st = FA.makeBuilding('station', 8, sy + 2, true, false, 0); st.bat = CFG.batteryMax;   // a full Battery already inside
+  FA.makeBuilding('charger', 10, sy + 2, true, false, 0);
   G.bd = FA.freshBuilder();
 };
 FA.freshBuilder = () => ({ x: 5.5, y: G.fac.h - 6.5, vx: 0, vy: 0, fx: 1, fy: 0, target: null, then: null, stuckT: 0, gather: null,
@@ -630,7 +632,7 @@ FA.updCharger = function (c, dt) {
   const dur = CFG.chargeBase / Math.pow(CFG.chargeBoost, nt - 1);
   c.bat = Math.min(CFG.batteryMax, c.bat + CFG.batteryMax / dur * dt);
   for (const k of act) c.fuel[k] = Math.max(0, c.fuel[k] - dt / act.length);
-  if (c.bat >= CFG.batteryMax) { FA.ipop(c.x + 0.5, c.y + 0.5, [['battery'], ['ic_check']]); AU.sfx('charge'); c.pop = 0.4; }
+  if (c.bat >= CFG.batteryMax) { G.flags.recharged = true; FA.ipop(c.x + 0.5, c.y + 0.5, [['battery'], ['ic_check']]); AU.sfx('charge'); c.pop = 0.4; }
 };
 
 // ---------- throwing ----------

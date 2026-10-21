@@ -81,8 +81,9 @@ UI.batteryStatus = function () {
 UI.handsHtml = function () {
   const h = G.hands;
   if (!h) return '<span class="dim">empty</span>';
-  const extra = h.kind === 'battery' ? ' <b>' + Math.round(h.charge / CFG.batteryMax * 100) + '%</b>' : ' <b>x' + h.n + '</b><span class="dim">/' + FA.stackMax(h.kind) + '</span>';
-  return UI.img(h.kind, 24) + '<span>' + itemName(h.kind) + extra + '</span>';
+  // counts use the display font: Pixelify Sans 5s and 6s read like 8s at this size
+  const extra = h.kind === 'battery' ? Math.round(h.charge / CFG.batteryMax * 100) + '%' : 'x' + h.n + '<i>/' + FA.stackMax(h.kind) + '</i>';
+  return UI.img(h.kind, 24) + '<span>' + itemName(h.kind) + '</span><span class="cnt">' + extra + '</span>';
 };
 UI.updateHud = function (dt) {
   const f = G.fac, w = G.w;
@@ -280,7 +281,7 @@ UI.nodeCost = function (n) {
   const L = UI.nodeLevel(n);
   if (L >= UI.nodeMax(n)) return null;
   if (!n.tiers) return { xp: n.xp, pay: n.pay };
-  const xp = n.tiers[L], kinds = n.kinds[L], pay = {}, per = Math.ceil(xp / kinds.length);
+  const xp = n.tiers[L], kinds = n.kinds[L], pay = {}, per = Math.ceil(xp / kinds.length * (L === 0 ? CFG.firstTierPay : 1));
   kinds.forEach(k => { pay[k] = per; });
   Object.assign(pay, (n.combos && n.combos[L]) || {});
   return { xp, pay };
@@ -307,6 +308,7 @@ UI.openTree = function (side, open) {
   UI.treeOpen[side] = open;
   $(side === 'L' ? 'treeL' : 'treeR').classList.toggle('hidden', !open);
   if (open) { UI.renderTree(side); UI.help(false); AU.sfx('blip'); }
+  else if (UI.tipNode && UI.tipNode.side === side) UI.showNodeTip(side, null);
 };
 UI.renderTree = function (side) {
   const el = $(side === 'L' ? 'treeL' : 'treeR');
@@ -329,15 +331,81 @@ UI.renderTree = function (side) {
     }
     h += '</div>';
   });
-  h += '</div><div class="treeInfo" id="treeInfo' + side + '">Hover a skill to read about it. Costs are XP plus spells banked in the Skill Portal.</div>';
-  h += '<p class="hint">' + (side === 'L' ? 'T' : 'Y') + ' / Esc closes. The Wizard\'s world is paused while the tree is open.</p>';
+  h += '</div><div class="treeInfo">Hover a skill to see what it does and its numbers now and after buying. Costs are XP plus spells banked in the Skill Portal.</div>';
+  h += '<p class="hint">' + (side === 'L' ? 'T' : 'Y') + ' / Esc closes. The whole game (factory and wilds) is paused while the tree is open.</p>';
   el.innerHTML = h;
   el.querySelector('[data-close]').onclick = () => UI.openTree(side, false);
   el.querySelectorAll('.node').forEach(nd => {
     const n = CFG.tree.find(t => t.id === nd.dataset.id);
     nd.onclick = () => UI.buy(n.id);
-    nd.onmouseenter = () => { $('treeInfo' + side).innerHTML = '<b>' + n.name + '</b>: ' + (n.desc || ('Each tier: ' + n.per + '.')); };
+    nd.onmouseenter = () => UI.showNodeTip(side, n.id);
+    nd.onmouseleave = () => UI.showNodeTip(side, null);
   });
+  el.onscroll = () => UI.showNodeTip(side, null);
+  if (UI.tipNode && UI.tipNode.side === side) UI.showNodeTip(side, UI.tipNode.id);   // a purchase re-rendered the node under the cursor
+};
+
+// ---------- skill-tree hover card: what a node does + its numbers now and after the next purchase ----------
+const fPct = v => '+' + Math.round(v * 1000) / 10 + '%';
+const fSec = v => v.toFixed(2) + 's';
+UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a plain fact, null = maxed out
+  const L = UI.nodeLevel(n), up = CFG.upgrade[n.id], nx = L < UI.nodeMax(n) ? L + 1 : null;
+  const row = (label, f) => [label, f(L), nx === null ? null : f(nx)];
+  switch (n.id) {
+    case 'expand': return [row('Factory floor', l => CFG.factorySizes[Math.min(l, CFG.factorySizes.length - 1)].join('x'))];
+    case 'swift': return [row('Harnesser speed', l => fPct(up * l)), row('Air Pocket every', l => fSec(CFG.buildings.air.cycle / (1 + up * l))), row('Water Drop every', l => fSec(CFG.buildings.water.cycle / (1 + up * l)))];
+    case 'belts': return [row('Belt speed', l => fPct(up * l)), row('Time per tile', l => fSec(CFG.beltTime / (1 + up * l)))];
+    case 'satchel': return [row('Hand stack', l => '' + (CFG.satchel + up * l))];
+    case 'zoomies': return [row('Wizard speed', l => fPct(up * l))];
+    case 'hearty': return [row('Wizard max HP', l => '' + (CFG.wizard.hp + up * l))];
+    case 'gems': return [row('XP from kills', l => 'x' + (1 + up * l).toFixed(2))];
+  }
+  const rows = [];
+  if (ITEMS[n.id] && ITEMS[n.id].spell) {
+    const r = CFG.recipes[n.id];
+    rows.push(['Forge recipe', UI.recipeHtml(n.id)], ['Craft', r.time + 's, ' + r.power + ' power'], ['Damage', n.dmg]);
+    rows.push(['Elements', SPELL_EL[n.id].map(k => UI.img(k, 16)).join('')], ['Banked now', '' + (G.bank[n.id] || 0)]);
+    return rows;
+  }
+  for (const id in CFG.buildings) {
+    const d = CFG.buildings[id];
+    if (d.unlock !== n.id) continue;
+    const info = d.kind === 'harness' ? '1 per ' + fSec(FA.cycle(id)) + (d.power ? ', ' + d.power + ' power' : ', no power') : Object.keys(d.cost).map(k => UI.img(k, 14) + d.cost[k]).join(' ');
+    rows.push([d.name, info]);
+  }
+  for (const id in CFG.recipes) if (CFG.recipes[id].tier === n.id) rows.push([recipeName(id), UI.recipeHtml(id)]);
+  return rows;
+};
+UI.nodeTipHtml = function (n) {
+  const L = UI.nodeLevel(n), max = UI.nodeMax(n), cost = UI.nodeCost(n), reqs = UI.nodeReqs(n);
+  const state = n.tiers ? 'TIER ' + L + '/' + max : G.tree[n.id] ? 'OWNED' : 'LOCKED';
+  let h = '<div class="tth">' + UI.img(n.icon, 32) + '<div><b>' + n.name + '</b><small>' + state + '</small></div></div>';
+  h += '<p>' + (n.tiers ? 'Each tier: ' + n.per + '.' : n.desc) + '</p>';
+  const rows = UI.nodeStats(n);
+  if (rows.length) {
+    if (n.tiers) h += '<div class="ttr ttc"><span></span><em>NOW</em><em>' + (cost ? 'NEXT' : '') + '</em></div>';
+    h += rows.map(r => r[2] === undefined
+      ? '<div class="ttr wide"><span>' + r[0] + '</span><em>' + r[1] + '</em></div>'
+      : '<div class="ttr"><span>' + r[0] + '</span><em>' + r[1] + '</em><em class="' + (r[2] === null ? 'max' : 'up') + '">' + (r[2] === null ? 'MAX' : r[2]) + '</em></div>').join('');
+  }
+  if (!cost) h += '<div class="ttf done">' + UI.img('ic_check', 12) + (n.tiers ? 'MAXED' : 'OWNED') + '</div>';
+  else if (reqs.length) h += '<div class="ttf req">' + UI.img('ic_lock', 12) + 'Needs ' + reqs.map(r => CFG.tree.find(t => t.id === r).name).join(', ') + '</div>';
+  else h += '<div class="ttf">' + UI.costHtml(cost) + '</div><div class="ttn">' + (n.tiers && L === 0 ? 'First tier: half the usual spells. ' : '') + (UI.canAfford(cost) ? 'Click to buy.' : 'Not enough yet.') + '</div>';
+  return h;
+};
+UI.tipNode = null;
+UI.showNodeTip = function (side, id) {
+  const el = $('nodeTip'), nd = id && $(side === 'L' ? 'treeL' : 'treeR').querySelector('.node[data-id="' + id + '"]');
+  UI.tipNode = nd ? { side, id } : null;
+  if (!nd) { el.classList.add('hidden'); return; }
+  el.innerHTML = UI.nodeTipHtml(CFG.tree.find(t => t.id === id));
+  el.classList.remove('hidden');
+  // beside the node (in stage px), flipped to its left when it would leave this half of the screen
+  const st = $('stage').getBoundingClientRect(), k = st.width / CFG.W, r = nd.getBoundingClientRect();
+  const x0 = (r.left - st.left) / k, x1 = (r.right - st.left) / k, y = (r.top - st.top) / k;
+  const hi = (side === 'L' ? 0 : CFG.HALF) + CFG.HALF, w = el.offsetWidth, hgt = el.offsetHeight;
+  el.style.left = (x1 + 12 + w <= hi - 8 ? x1 + 12 : x0 - 12 - w) + 'px';
+  el.style.top = Math.max(8, Math.min(CFG.H - hgt - 8, y)) + 'px';
 };
 UI.buy = function (id) {
   const n = CFG.tree.find(t => t.id === id);
@@ -525,16 +593,18 @@ UI.buildMenu = function () {
   $('mNew').onclick = () => UI.slotPage('new');
   $('mLoad').onclick = () => UI.slotPage('load');
   $('mHow').onclick = () => UI.howPage();
-  $('mSet').onclick = () => {
-    const s = AU.settings;
-    $('menuSet').innerHTML = '<h2>SETTINGS</h2><label>' + UI.img('ic_sound', 24) + 'SOUND <b id="vS">' + Math.round(s.sfx * 100) + '%</b><input id="sS" type="range" min="0" max="100" value="' + Math.round(s.sfx * 100) + '"></label><label>' + UI.img('ic_music', 24) + 'MUSIC <b id="vM">' + Math.round(s.music * 100) + '%</b><input id="sM" type="range" min="0" max="100" value="' + Math.round(s.music * 100) + '"></label><button class="big ghost back">BACK</button>';
-    $('sS').oninput = e => { AU.setSfx(e.target.value / 100); $('vS').textContent = e.target.value + '%'; };
-    $('sS').onchange = () => AU.sfx('pickup');
-    $('sM').oninput = e => { AU.setMusic(e.target.value / 100); $('vM').textContent = e.target.value + '%'; };
-    $('menuSet').querySelector('.back').onclick = () => UI.menuPage('menuMain');
-    UI.menuPage('menuSet');
-  };
+  $('mSet').onclick = () => { UI.settingsPage($('menuSet'), () => UI.menuPage('menuMain')); UI.menuPage('menuSet'); };
   document.querySelectorAll('#menu button').forEach(b => b.addEventListener('mouseenter', () => AU.sfx('blip')));
+};
+// volume sliders, shared by the title menu and the pause menu
+UI.settingsPage = function (box, back) {
+  const s = AU.settings, row = (k, icon, label) => '<label>' + UI.img(icon, 24) + label + ' <b>' + Math.round(s[k] * 100) + '%</b><input data-k="' + k + '" type="range" min="0" max="100" value="' + Math.round(s[k] * 100) + '"></label>';
+  box.innerHTML = '<h2>SETTINGS</h2>' + row('sfx', 'ic_sound', 'SOUND') + row('music', 'ic_music', 'MUSIC') + '<button class="big ghost back">BACK</button>';
+  box.querySelectorAll('input').forEach(inp => {
+    inp.oninput = () => { (inp.dataset.k === 'sfx' ? AU.setSfx : AU.setMusic)(inp.value / 100); inp.previousElementSibling.textContent = inp.value + '%'; };
+  });
+  box.querySelector('[data-k="sfx"]').onchange = () => AU.sfx('pickup');
+  box.querySelector('.back').onclick = back;
 };
 UI.slotPage = function (mode) {
   const box = $('menuSlots');

@@ -70,7 +70,9 @@ Scripts are plain globals loaded in order (config → audio → sprites → inpu
 - Tracks: Factory Expansion (5), Swift Harnessing (8, +12.5%), Swift Belts (6, +15%), Bigger Satchel (5, +1), Wizard Zoomies (6, +6%), Hearty Hat (8, +12 HP), Gem Wisdom (8, +12.5% XP).
 - Whole tree ≈ **3,406 XP** (the original 3,196, i.e. 4× the spec's 795, plus Logistics 60 and Summoning 150) and ≈ 3,320 element packets. Monster XP is a third of the original (slime 1, shroom 1.33, sprite 1.67), so maxing the tree takes ~12× as long as the original design.
 - `G.tree[id]` is `true` for unlocks and a tier number for upgrades — read levels with `lvl(id)`. Recipe unlocks: `CFG.recipes[id].tier` (spell recipes use their own spell id).
-- **Opening either skill tree pauses the Wizard's world** (`Main.step` skips `WZ.update`); the factory keeps running.
+- **Opening either skill tree pauses the whole game**: `Main.step` skips `FA.moveBuilder`, `FA.update` (machines, belts, flying items) and `WZ.update`, zeroes both players' inputs and stops play-time/metrics. Toasts, goals and the music keep going.
+- **Hover cards**: hovering a tree node shows `#nodeTip` beside it (`UI.showNodeTip` / `UI.nodeTipHtml`): description, a NOW / NEXT table from `UI.nodeStats` (upgrade effects computed from `CFG.upgrade`; unlocked buildings + recipes; spell recipe, craft time and the `dmg` blurb from the spell's tree node, which must be kept in sync with `WZ.cast`), then the cost.
+- Tier 1 of every upgrade track asks for `CFG.firstTierPay` (0.5) of the usual packets (`UI.nodeCost`).
 
 ## Design direction & deviations from spec v5.0 (intentional — keep them)
 
@@ -97,7 +99,7 @@ The user has asked, over several passes, for: a fleshed-out, active, rewarding f
 19. **Logistics**: Splitter, Sorter, Storage Crate (unlocked by the Logistics node). Belts already merge, so there is no merger. Crates never take raw resources, so the Stockpile still can't feed belts by proxy.
 20. **Readable factory**: jam/starve icons, portal per-minute rates, faded product ghosts in empty output slots, recipe purpose shown at the crafter you stand at / hover, "STARVED" / "BLOCKED" in the inspector.
 21. **Goal pointers**: gold arrows in both halves, edge pointers with distance in the wilds, blinking hotbar slot / tree buttons.
-22. **Pause clarity**: opening a skill tree shows a big "WIZARD PAUSED" banner on the right (or "WILDS PAUSED, factory running" on the left).
+22. **Pause clarity**: opening a skill tree freezes both halves and shows a big "WIZARD PAUSED" banner on the right (or "FACTORY PAUSED" on the left). The pause menu (Esc) has Resume / Settings (`UI.settingsPage`, shared with the title menu) / Save & Title and holds the music (`AU.hold`). Losing window focus or hiding the tab opens the pause menu and suspends the audio context (`AU.sleep`); audio wakes on focus, the game waits for Resume.
 23. **Spell arrival**: a mini portal opens over the Wizard, the spell drops through, then bursts; combos also show their name under him, and the Builder gets a hit report at the Spell Portal.
 24. **Audio follows play**: factory hum drone and music layers driven by working machines, monsters near the Wizard and the boss.
 25. **Minimap** (bottom-right of the wilds, iso diamond): landmarks by type/state, the Wizard, the boss and the current goal target.
@@ -112,6 +114,7 @@ Still true from the original spec: no money (resources + XP + banked spells only
 - Toasts: `UI.toast(text, 'L'|'R', iconKey)` — plain ASCII text, icon as a sprite key.
 - Use `UI.changed()` after state changes that should trigger a prompt autosave.
 - Keep strings ASCII (the pixel fonts lack most symbols/emoji).
+- **Numbers players must read go in Press Start 2P, at 12px or more (16px preferred)**: Pixelify Sans draws 3, 5, 6 and 8 almost identically, and Press Start 2P below 12px turns 6 into G when the stage is scaled down.
 - Match the existing style: compact functions, short comments only where intent isn't obvious, no frameworks.
 
 ## Ideas / known gaps

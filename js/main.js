@@ -68,7 +68,7 @@ Main.enter = function () {
   UI.show('victory', false);
   R.fcam.x = G.bd.x; R.fcam.y = G.bd.y; R.wcam.x = G.w.x; R.wcam.y = G.w.y;
   Main.metrics = { t: 0, next: 0, samples: [] };
-  AU.music(true);
+  AU.music(true); AU.hold(false);
 };
 Main.toTitle = function () {
   Main.save();
@@ -106,7 +106,7 @@ function throwAlongAim() {
 
 function handleMouseFactory(dt) {
   const m = IN.mouse;
-  if (!mouseInFactory() || UI.treeOpen.L) { if (!m.l) G.drag = null; return; }
+  if (!mouseInFactory() || UI.treeOpen.L || UI.treeOpen.R) { if (!m.l) G.drag = null; return; }
   const [tx, ty] = hoverTile(R.fv), [px, py] = hoverPoint(R.fv);
   const sel = G.selected, bd = G.bd;
   // right mouse: throw along the lead line (hold = rapid), or cancel the current tool
@@ -152,7 +152,7 @@ function handleMouseFactory(dt) {
 
 function handleMouseWizard() {
   const m = IN.mouse;
-  if (!G.swapped || !m.moved || m.x < CFG.HALF || !m.l || UI.treeOpen.R) return;
+  if (!G.swapped || !m.moved || m.x < CFG.HALF || !m.l || UI.treeOpen.L || UI.treeOpen.R) return;
   const [px, py] = hoverPoint(R.wv);
   G.w.target = { x: Math.max(0.5, Math.min(CFG.WW - 0.5, px)), y: Math.max(0.5, Math.min(CFG.WH - 0.5, py)) };
 }
@@ -221,12 +221,13 @@ Main.controls = function (dt) {
     UI.swapRing(null);
   }
 
-  if (UI.treeOpen.L) { bix = 0; biy = 0; use = false; pick = false; }
-  if (UI.treeOpen.R) { wix = 0; wiy = 0; roll = false; }
+  // an open skill tree (either side) freezes both halves, so nobody acts until it closes
+  const frozen = UI.treeOpen.L || UI.treeOpen.R;
+  if (frozen) { bix = 0; biy = 0; use = false; pick = false; wix = 0; wiy = 0; roll = false; }
 
   handleMouseFactory(dt);
   handleMouseWizard();
-  if (!UI.treeOpen.L) {
+  if (!frozen) {
     if (use) FA.interact('use');
     // A / . picks up one item (holding keeps grabbing); with a building selected it places in front instead
     const building = G.selected !== 'hand' || G.demolish;
@@ -258,20 +259,22 @@ Main.controls = function (dt) {
 // ---------- per-frame simulation ----------
 Main.step = function (dt, ctl) {
   ctl = ctl || Main.controls(dt);
-  FA.moveBuilder(dt, ctl.bix, ctl.biy);
-  FA.update(dt);
-  // the wilds freeze while anyone has the skill tree open, so the Wizard can't die while you shop
-  if (!UI.treeOpen.L && !UI.treeOpen.R) WZ.update(dt, ctl.wix, ctl.wiy, ctl.roll);
+  // the whole game (machines, belts, Builder, wilds) freezes while anyone has a skill tree open
+  const frozen = UI.treeOpen.L || UI.treeOpen.R;
+  if (!frozen) {
+    FA.moveBuilder(dt, ctl.bix, ctl.biy);
+    FA.update(dt);
+    WZ.update(dt, ctl.wix, ctl.wiy, ctl.roll);
+  }
   if (!G) return;   // a victory screen button may have gone to the title mid-step
   if (G.w.dead && !G.w.deadHandled) { G.w.deadHandled = true; setTimeout(() => { if (G && G.w.dead) UI.showResults(); }, 900); }
-  G.stats.time += dt;
-  Main.sample(dt);
+  if (!frozen) { G.stats.time += dt; Main.sample(dt); }
   // the soundtrack follows the game: factory activity, monsters crowding the Wizard, the Chimera
   const w = G.w;
   let near = 0;
   if (!w.dead) for (const e of w.enemies) if (Math.abs(e.x - w.x) < 10 && Math.abs(e.y - w.y) < 10) near++;
   AU.mix(Math.min(1, G.fac.working / 8), Math.min(1, near / 8), !!w.boss);
-  AU.hum(Math.min(1, G.fac.working / 10));
+  AU.hum(frozen ? 0 : Math.min(1, G.fac.working / 10));
   UI.updateHud(dt);
   Main.updateFocus();
   G.saveT += dt;
@@ -347,9 +350,10 @@ Main.updateFocus = function () {
   R.hint = qh.f; R.whint = qh.w;
   UI.setHint(qh.slot && G.selected !== qh.slot ? qh.slot : null, qh.tree);
   R.aim = null;
-  if (G.hands && !UI.treeOpen.L) R.aim = aimNow();
+  const frozen = UI.treeOpen.L || UI.treeOpen.R;
+  if (G.hands && !frozen) R.aim = aimNow();
   R.ghost = null; R.demo = null;
-  if (UI.treeOpen.L) return;
+  if (frozen) return;
   const [gx, gy] = useMouseAim() || (G.lastInput === 'mouse' && mouseInFactory()) ? hoverTile(R.fv) : frontTile();
   if (G.demolish) {
     const c = FA.cell(gx, gy);
@@ -366,6 +370,8 @@ Main.pause = function (on) {
   if (!G) return;
   G.paused = on;
   UI.show('pause', on);
+  UI.show('pauseMain', true); UI.show('pauseSet', false);
+  AU.hold(on);   // the music waits with the game
 };
 
 // ---------- backdrop for non-play screens (8-bit sunset + meadow) ----------
@@ -426,9 +432,20 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btnSwap').onclick = () => UI.toast('Hold X (or Start on a pad) for 1.5 seconds to swap jobs.', 'L', 'ic_swap');
   $('btnHelp').onclick = () => UI.help();
   $('pResume').onclick = () => Main.pause(false);
+  $('pSet').onclick = () => {
+    UI.settingsPage($('pauseSet'), () => { UI.show('pauseSet', false); UI.show('pauseMain', true); });
+    UI.show('pauseMain', false); UI.show('pauseSet', true);
+  };
   $('pQuit').onclick = () => { Main.pause(false); Main.toTitle(); };
   window.addEventListener('beforeunload', () => { if (STATE === 'play') Main.save(); });
-  document.addEventListener('visibilitychange', () => { if (document.hidden && STATE === 'play') Main.save(); });
+  // losing focus or switching tabs pauses play and silences all audio until the window is back
+  const away = () => { if (STATE === 'play' && G && !G.paused) Main.pause(true); AU.sleep(true); };
+  window.addEventListener('blur', away);
+  window.addEventListener('focus', () => AU.sleep(false));
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { if (STATE === 'play') Main.save(); away(); }
+    else if (document.hasFocus()) AU.sleep(false);
+  });
   requestAnimationFrame(frame);
 
   const fonts = document.fonts && document.fonts.load

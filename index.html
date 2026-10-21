@@ -31,8 +31,8 @@
       <div class="bn"><i data-ic="ic_crown" data-s="16"></i>PRIMAL CHIMERA<span id="bossWeak"></span></div>
       <div class="bar"><div id="bossFill"></div><span id="bossTxt"></span></div>
     </div>
-    <div id="wizPause" class="px hidden"><i data-ic="ic_pause" data-s="36"></i><div><b>WIZARD PAUSED</b><span>The Builder is in the Skill Tree. The wilds wait until it closes (T or Esc).</span></div></div>
-    <div id="facNote" class="px hidden"><i data-ic="ic_pause" data-s="24"></i><span><b>WILDS PAUSED</b> while the Wizard shops. The factory keeps running!</span></div>
+    <div id="wizPause" class="pauseNote px hidden"><i data-ic="ic_pause" data-s="36"></i><div><b>WIZARD PAUSED</b><span>The Builder is in the Skill Tree. The wilds and the factory wait until it closes (T or Esc).</span></div></div>
+    <div id="facNote" class="pauseNote px hidden"><i data-ic="ic_pause" data-s="36"></i><div><b>FACTORY PAUSED</b><span>The Wizard is in the Skill Tree. The factory and the wilds wait until it closes (Y or Esc).</span></div></div>
     <div id="debug" class="px hidden"></div>
 
     <!-- builder side -->
@@ -84,24 +84,27 @@
         <div>Spells fire by themselves when the factory delivers them.</div>
         <div>Stand near trees and rocks: spells harvest them too.</div>
         <div>Water blocks you. Bog slows you. The map shows landmarks.</div>
-        <div><kbd>Y</kbd> skill tree (pauses the wilds) &nbsp; hold <kbd>X</kbd> swap</div>
+        <div><kbd>Y</kbd> skill tree (pauses the game) &nbsp; hold <kbd>X</kbd> swap</div>
       </div>
       <div class="hfoot"><i data-ic="ic_pad" data-s="16"></i> Pad 1 = Builder (A pick up / place, B throw, X use, LB/RB pick, Back demolish). Pad 2 = Wizard (A roll). <kbd>H</kbd> hides this.</div>
     </div>
 
     <div id="treeL" class="tree hidden"></div>
     <div id="treeR" class="tree right hidden"></div>
+    <div id="nodeTip" class="px hidden"></div>
 
     <div id="swapRing" class="px hidden"><div id="swapFill"></div><i data-ic="ic_swap" data-s="36"></i><span>SWAP</span></div>
 
     <div id="results" class="panel px hidden"></div>
     <div id="victory" class="overlay hidden"></div>
     <div id="pause" class="overlay hidden">
-      <div class="panel px">
+      <div id="pauseMain" class="panel px">
         <h2>PAUSED</h2>
         <button id="pResume" class="big">RESUME</button>
+        <button id="pSet" class="big ghost">SETTINGS</button>
         <button id="pQuit" class="big ghost">SAVE &amp; TITLE</button>
       </div>
+      <div id="pauseSet" class="panel px hidden"></div>
     </div>
   </div>
 

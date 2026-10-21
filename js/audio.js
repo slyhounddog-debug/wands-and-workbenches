@@ -11,10 +11,21 @@ const AU = (() => {
   } catch (e) { /* ignore */ }
   function clamp01(v, d) { return typeof v === 'number' && isFinite(v) ? Math.max(0, Math.min(1, v)) : d; }
 
+  let held = false;   // the pause menu holds the music (no new notes, gain at 0)
   function applyVol() {
     if (!ctx) return;
     sfxG.gain.value = settings.sfx;
-    musG.gain.value = settings.music * 0.6;
+    musG.gain.value = held ? 0 : settings.music * 0.6;
+  }
+  function hold(on) {
+    held = on;
+    if (ctx) musG.gain.setTargetAtTime(on ? 0 : settings.music * 0.6, ctx.currentTime, 0.05);
+  }
+  // focus lost / tab hidden: suspend the whole audio clock, so music and SFX resume exactly where they were
+  function sleep(on) {
+    if (!ctx) return;
+    if (on && ctx.state === 'running') ctx.suspend();
+    else if (!on && ctx.state === 'suspended') ctx.resume();
   }
   function saveSettings() {
     try { localStorage.setItem('wands_settings', JSON.stringify(settings)); } catch (e) { /* ignore */ }
@@ -134,6 +145,7 @@ const AU = (() => {
   const PAT = [0, 1, 2, 3, 2, 1, 0, 1];
   function schedule() {
     if (!ctx || !musicOn) return;
+    if (held) { nextT = ctx.currentTime + 0.1; return; }
     const STEP = bossOn ? 0.3 : 0.5 - mixC * 0.08;
     while (nextT < ctx.currentTime + 0.5) {
       const chord = (bossOn ? CH_BOSS : CH)[Math.floor(step / 8) % 4], k = step % 8, d = Math.max(0, nextT - ctx.currentTime);
@@ -165,7 +177,7 @@ const AU = (() => {
     if (!on && timer) { clearInterval(timer); timer = null; }
   }
   return {
-    settings, init, sfx, music, jingleNote, jingleEnd, hum: setHum, mix,
+    settings, init, sfx, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep,
     setSfx(v) { settings.sfx = v; applyVol(); saveSettings(); },
     setMusic(v) { settings.music = v; applyVol(); saveSettings(); },
   };

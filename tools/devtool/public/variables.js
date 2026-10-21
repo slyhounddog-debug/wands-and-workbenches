@@ -21,7 +21,7 @@ const NOTES = {
   buildings: 'Costs, cycle time and power draw.', recipes: 'Inputs, craft time and power per recipe.', upgrade: 'What one tier of each upgrade track is worth.',
 };
 
-const DEF = {};       // path -> default number
+export const DEF = {};       // path -> default number
 const entries = [];   // { path, group, label, value }
 let values = {};      // path -> overridden number
 const rows = new Map();
@@ -62,7 +62,7 @@ function pushLive(path) {
 }
 preview.onBoot.push(() => { const w = preview.win(); if (w && w.OV && w.__wands) w.OV.tune(w.__wands.CFG, values); });
 
-function setValue(path, v) {
+export function setValue(path, v) {
   if (!isFinite(v)) return;
   if (Math.abs(v - DEF[path]) < 1e-12) delete values[path]; else values[path] = v;
   pushLive(path);
@@ -137,6 +137,9 @@ function resetAll() {
   updateCount(); filter(); saver.schedule();
   say('All variables back to their defaults.');
 }
+
+// the value the preview / game will use for a CFG path: the saved override, else the shipped default
+export const getV = path => path in values ? values[path] : DEF[path];
 
 export function init(saved) {
   values = {};

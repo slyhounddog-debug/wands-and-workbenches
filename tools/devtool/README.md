@@ -1,7 +1,7 @@
 # Wands & Workbenches dev tool
 
-A local editor for the game with three tabs: **Layout** (move, resize, restyle and re-word the DOM UI),
-**Variables** (every number in `CFG` on a slider) and **Audio** (replace any sound with an uploaded clip, then trim and edit it).
+A local editor for the game with four tabs: **Layout** (move, resize, restyle and re-word the DOM UI),
+**Variables** (every number in `CFG` on a slider), **Formulas** (the game's maths as charts and tables) and **Audio** (replace any sound with an uploaded clip, then trim and edit it).
 
 ```
 node tools/devtool/server.mjs          # http://localhost:8090/   (PORT=8097 node ... for a second copy)
@@ -36,6 +36,7 @@ The preview is not for playing seriously: it is muted, starts from a fixture, an
 | `public/index.html`, `tool.css`, `shell.js`, `common.js`, `preview.js` | The page, tabs, helpers and the shared preview (screen, size, Edit/Play, Freeze, Reload). |
 | `public/layout.js`, `layout-host.js`, `layout-model.js` | Layout tab: side panel / undo / autosave, the in-preview picker + overlay + steps, and the shared model, sanitiser and CSS generator. |
 | `public/variables.js` | Variables tab. |
+| `public/formulas.js`, `fcharts.js` | Formulas tab (nine sections) and its canvas chart / table helpers. |
 | `public/audiotab.js` | Audio tab. |
 
 | API | |
@@ -86,6 +87,18 @@ the shipped ones. Edits apply live to the preview's `CFG` (the game reads most v
 and landmark counts, factory sizes): press Reload screen. Skipped on purpose: `W`, `H`, `HALF`, `FT`, `WT` (the 8-bit
 renderer's layout constants). Spell numbers live in `CFG.spells`, so they are here too. Saved paths that no longer
 exist in `CFG` are reported and ignored.
+
+## Formulas tab
+
+Nine sections (spawn pressure, spells vs foes and the Chimera, harnessers / belts / machine planner, power and chargers, XP gems,
+skill-tree cost and time to afford, creature Eggs, scheduled events, Wizard survival). Each one copies the game's real formula
+(named in its blurb) and plots it with hover tooltips plus a table, so a mechanic can be tested without building the situation in game.
+Sliders with a solid orange edge when changed are real `CFG` variables: they are the same store as the Variables tab (same
+autosave to `overrides/tuning.json`, same live push into the preview), and each section has **Reset this formula's variables**.
+Dashed **what-if** sliders (run minute, tier, load, income...) only exist on this page and are remembered in the browser.
+The Eggs table has inline inputs for each creature's `n`, craft time and packet costs. A new section = one `add({ id, title, blurb,
+params, draw })` in `formulas.js`; keep its maths in step with the game code it mirrors. The tree section's scale boxes are what-ifs:
+`costScale` is applied when the game starts, so it is not live on this page.
 
 ## Audio tab
 

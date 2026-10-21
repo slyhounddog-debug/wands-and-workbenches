@@ -198,6 +198,7 @@ WZ.hurtE = function (e, d, kx, ky, quiet) {
   }
   if (e.hp <= 0) WZ.kill(e);
 };
+WZ.icon = (x, y, k) => G.w.fx_.push({ type: 'icon', x: x + rand(-0.2, 0.2), y, k, t: 0, dur: 0.7 });   // a sprite floating up
 WZ.num = (x, y, text, col) => G.w.fx_.push({ type: 'num', x: x + rand(-0.2, 0.2), y: y + rand(-0.2, 0.2), text: String(text), col, t: 0, dur: 0.7 });
 WZ.puff = function (x, y, col, n) {
   for (let i = 0; i < (n || 8); i++) {
@@ -220,7 +221,7 @@ WZ.dodge = function () {
   const w = G.w;
   if (w.t < (w.dodgeAt || 0)) return;
   w.dodgeAt = w.t + CFG.wizard.dodgeCd;
-  WZ.num(w.x, w.y - 0.4, 'DODGE!', '#bfe9ff');
+  WZ.ring(w.x, w.y, 1.3, '#ffffff', 0.25); WZ.puff(w.x, w.y, '#bfe9ff', 6);
   AU.sfx('dodge');
 };
 // ---------- forage spots: mash the roll button while standing still to dig / search ----------
@@ -244,7 +245,6 @@ WZ.mash = function (o) {
   if (o.kind === 'bush') {   // a pickup tumbles out of the bush: walk over it to use it
     const kind = Math.random() < def.potion ? 'potion' : 'armor', s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y];
     w.pickups.push({ kind, x: s[0], y: s[1], z: 1.6, t: 0 });
-    WZ.num(o.x, o.y - 0.6, itemName(kind).toUpperCase() + '!', ITEMS[kind].color);
   } else {
     for (const k in def.drop) for (let i = 0; i < def.drop[k]; i++) WZ.drop(k, o.x, o.y, 1);
     for (const k in def.bonus) if (Math.random() < def.bonus[k]) WZ.drop(k, o.x, o.y, 1);
@@ -517,10 +517,8 @@ WZ.spawn = function () {
 WZ.announce = function (e, key) {
   const def = CFG.enemies[e.type], el = e.weak;
   if (key === 'elite') {
-    UI.toast('ELITE ' + def.name + '! Weak to ' + ELEM_WORD[el] + '. Drops Aether Shards', 'R', 'ic_crown');
     UI.toast('Elite near the Wizard: send ' + ELEM_WORD[el] + '!', 'L', el);
   } else {
-    UI.toast(def.name + ': weak to ' + ELEM_WORD[el] + ', resists ' + ELEM_WORD[def.resist], 'R', el);
     UI.toast('The Wizard meets ' + def.name + 's: send ' + ELEM_WORD[el] + ' spells!', 'L', el);
   }
   AU.sfx('alert');
@@ -535,9 +533,23 @@ WZ.claim = function (m) {
   for (let i = 0; i < 3; i++) WZ.drop('xp', m.x, m.y, M.xpBonus / 3 * WZ.gems());
   G.stats.landmarks = (G.stats.landmarks || 0) + 1; w.run.marks++;
   WZ.ring(m.x, m.y, 4, '#c890ff', 0.6); WZ.puff(m.x, m.y, '#c890ff', 18);
-  const msg = WZ.markName(m) + ' claimed! ' + n + ' Aether Shards';
-  UI.toast(msg, 'R', 'shard'); UI.toast(msg + ' are on their way to the Stockpile', 'L', 'shard');
-  AU.sfx('chest'); UI.changed();
+  AU.sfx('chest'); UI.changed();   // the shards themselves fly out and pop up at the factory's shard pile
+};
+// the shrine mini-game: a ring shrinks toward the crystal over shrineCycle seconds; pressing while it overlaps the
+// target ring scores a hit, a miss just restarts the ring. shrineHits hits claim it. It can't be failed.
+WZ.shrineAt = function () {
+  const w = G.w;
+  return WZ.marks.find(m => m.type === 'shrine' && w.lm[m.id].state === 'active') || null;
+};
+WZ.shrineRing = s => 1 - (s.ph || 0);   // ring size, 1 = outer edge, 0 = the crystal
+WZ.shrineTap = function (m) {
+  const w = G.w, M = CFG.marks, s = w.lm[m.id];
+  if (Math.abs(WZ.shrineRing(s) - M.shrineTarget) <= M.shrineTol) {
+    s.hits = (s.hits || 0) + 1; s.flash = 0.3; s.ph = 0;
+    WZ.ring(m.x, m.y, 1.2 + s.hits * 0.5, ELEM[m.el].color, 0.4); WZ.puff(m.x, m.y, ELEM[m.el].color, 8);
+    AU.sfx('shrine');
+    if (s.hits >= M.shrineHits) WZ.claim(m);
+  } else { s.miss = 0.25; s.ph = 0; AU.sfx('thud'); }
 };
 WZ.foesNear = (m, n) => {
   for (let i = 0; i < n; i++) {
@@ -550,7 +562,7 @@ WZ.updMarks = function (dt) {
   w.shrine = null;
   for (const m of WZ.marks) {
     const s = w.lm[m.id];
-    if (s.state === 'done') continue;
+    if (s.state === 'done' && m.type !== 'shrine') continue;   // claimed shrines keep boosting
     const d = Math.hypot(w.x - m.x, w.y - m.y);
     if (m.type === 'camp') {
       if (s.state === 'idle' && d < M.campWake) {
@@ -558,7 +570,6 @@ WZ.updMarks = function (dt) {
         const sp = WZ.dryNear(m.x, m.y, 12, [1, 2.5]) || [m.x, m.y];
         WZ.makeEnemy(WZ.pickType(sp[0], sp[1]), sp[0], sp[1], true).mark = m.id;
         WZ.foesNear(m, M.campFoes - 1 + Math.floor(w.time / 180));
-        UI.toast('Monster Camp! Clear it for Aether Shards', 'R', 'ic_flag');
         UI.toast('The Wizard stirred up a Monster Camp: send firepower!', 'L', 'ic_flag');
         AU.sfx('alert');
       } else if (s.state === 'active' && !w.enemies.some(e => e.mark === m.id && !e.dead)) WZ.claim(m);
@@ -573,7 +584,6 @@ WZ.updMarks = function (dt) {
             g.hp = g.maxHp = g.maxHp * 2; g.mark = m.id; g.guard = true;
             WZ.foesNear(m, 4);
             WZ.ring(m.x, m.y, 5, '#b07aff', 0.6); w.shake = 0.4;
-            UI.toast('The Crypt Guardian wakes! Slay it for 5 Aether Shards', 'R', 'ic_skull');
             UI.toast('Crypt Guardian (weak to ' + ELEM_WORD[g.weak] + ') is after the Wizard!', 'L', g.weak);
             AU.sfx('roar');
           }
@@ -583,16 +593,13 @@ WZ.updMarks = function (dt) {
         if (s.sp <= 0) { s.sp = M.cryptMinions; WZ.foesNear(m, 2); }
         if (!w.enemies.some(e => e.guard && e.mark === m.id && !e.dead)) WZ.claim(m);
       }
-    } else {   // shrines are never used up: while the Wizard stands on one, its element's harnessers run faster
-      const near = d < M.shrineR, pct = Math.round(M.shrineBoost * 100), el = ELEM_WORD[m.el];
-      if (near) w.shrine = m.el;
-      if (near && !s.near && w.t >= s.t) {
-        s.t = w.t + 20;   // don't repeat the toasts while he steps on and off
-        UI.toast(WZ.markName(m) + ': ' + el + ' Harnessers run ' + pct + '% faster while you stand here', 'R', m.el);
-        UI.toast('The Wizard is at the ' + WZ.markName(m) + ': ' + el + ' Harnessers +' + pct + '%!', 'L', m.el);
-        AU.sfx('shrine');
-      }
-      s.near = near;
+    } else {   // shrines: claimed with the ring mini-game, then they boost their element's harnessers while he stands on them
+      const near = d < M.shrineR;
+      if (s.flash > 0) s.flash -= dt;
+      if (s.miss > 0) s.miss -= dt;
+      if (s.state === 'done') { if (near) w.shrine = m.el; }
+      else if (near) { s.state = 'active'; s.ph = ((s.ph || 0) + dt / M.shrineCycle) % 1; }
+      else if (s.state === 'active') { s.state = 'idle'; s.ph = 0; s.hits = 0; }   // walked off: cancelled
     }
   }
 };
@@ -622,8 +629,6 @@ WZ.bossAI = function (e, dt, d) {
     e.phase = ph; e.weak = e.order[ph];
     e.weakFlash = G.fac.weakFlash = B.weakFlash;   // both the Chimera and the Spell Portal flash the new element
     WZ.ring(e.x, e.y, 5, ELEM[e.weak].color, 0.7); w.shake = Math.max(w.shake, 0.4);
-    const msg = 'The Chimera shifts: now weak to ' + ELEM_WORD[e.weak].toUpperCase() + '!';
-    UI.toast(msg, 'R', e.weak); UI.toast(msg, 'L', e.weak);
     AU.sfx('roar');
   }
   e.slamT -= dt; e.sumT -= dt; e.volT -= dt;
@@ -764,8 +769,10 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   const m = Math.hypot(dx, dy);
   if (m > 0) { dx /= m; dy /= m; w.fx = dx; w.fy = dy; }
   // standing still at a forage spot, the roll button digs instead (move while pressing it to roll away)
-  w.dig = w.roll > 0 ? null : WZ.forageAt(w.x, w.y);
-  if (rollPressed && w.dig && m === 0) { WZ.mash(w.dig); w.mashAt = w.t; rollPressed = false; }
+  const sh = w.roll > 0 ? null : WZ.shrineAt();
+  w.dig = w.roll > 0 || sh ? null : WZ.forageAt(w.x, w.y);
+  if (rollPressed && sh && m === 0) { WZ.shrineTap(sh); w.mashAt = w.t; rollPressed = false; }
+  else if (rollPressed && w.dig && m === 0) { WZ.mash(w.dig); w.mashAt = w.t; rollPressed = false; }
   else if (rollPressed && m === 0 && w.t - (w.mashAt || -9) < 0.35) rollPressed = false;   // extra mashes after it's dug don't roll him off
   if (rollPressed && w.rollCd <= 0 && w.roll <= 0) {
     w.roll = CFG.wizard.rollTime; w.rollCd = CFG.wizard.rollCd;
@@ -817,7 +824,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     } else {
       if (w.armor >= CFG.wizard.armorMax) { p.full = true; continue; }
       const got = Math.min(def.armor, CFG.wizard.armorMax - w.armor);
-      w.armor += got; WZ.num(w.x, w.y, '+' + Math.round(got) + ' armor', '#9fc4ff');
+      w.armor += got; WZ.num(w.x, w.y, '+' + Math.round(got), '#9fc4ff');
     }
     WZ.puff(p.x, p.y, ITEMS[p.kind].color, 12);
     AU.sfx('powerup');
@@ -947,9 +954,9 @@ WZ.update = function (dt, ix, iy, rollPressed) {
       dr.mag = true;
     }
     if (d < 0.45 && dr.t > 0.3) {
-      if (dr.kind === 'xp') { G.xp += dr.val; G.stats.xpEarned += dr.val; w.run.xp += dr.val; AU.sfx('gem'); WZ.num(w.x, w.y - 0.3, '+' + (Math.round(dr.val * 10) / 10) + ' XP', '#9be8ff'); }
-      else if (dr.kind === 'shard') { G.stock.shard += dr.val; w.run.shards += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; AU.sfx('shard'); WZ.num(w.x, w.y - 0.3, '+1 Shard', '#e0b8ff'); UI.changed(); }
-      else { G.stock[dr.kind] += dr.val; w.run.harvested += dr.val; G.stats.harvested += dr.val; AU.sfx('pickup'); WZ.num(w.x, w.y - 0.3, '+' + dr.val + ' ' + RES[dr.kind].name, '#ffe9b8'); }
+      if (dr.kind === 'xp') { G.xp += dr.val; G.stats.xpEarned += dr.val; w.run.xp += dr.val; AU.sfx('gem'); }
+      else if (dr.kind === 'shard') { G.stock.shard += dr.val; w.run.shards += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; AU.sfx('shard'); WZ.icon(w.x, w.y, 'shard'); FA.pileIn('shard'); UI.changed(); }
+      else { G.stock[dr.kind] += dr.val; w.run.harvested += dr.val; G.stats.harvested += dr.val; AU.sfx('pickup'); WZ.icon(w.x, w.y, dr.kind); FA.pileIn(dr.kind); }
       w.drops.splice(i, 1);
     } else if (dr.t > 120 && dr.kind !== 'shard') w.drops.splice(i, 1);
   }

@@ -441,6 +441,7 @@ task(() => {
   icon('jam', ['ooooooo', 'oOOOOOo', 'oOOwOOo', 'oOOwOOo', 'oOOOOOo', 'oOOwOOo', 'ooooooo']);         // output blocked
   icon('starve', ['ooooooo', 'oqwwwqo', 'oqqqwqo', 'oqqwwqo', 'oqqwqqo', 'oqqqqqo', 'oqqwqqo', 'ooooooo']);  // waiting on inputs
   icon('pause', ['ooo.ooo', 'owo.owo', 'owo.owo', 'owo.owo', 'owo.owo', 'ooo.ooo']);
+  icon('rotate', ['..www.w', '.w...ww', 'w...www', 'w......', 'w.....w', '.w...w.', '..www..']);
   icon('chart', ['o......', 'o....g.', 'o...gg.', 'o.g.gg.', 'o.gggg.', 'ogggggg', 'ooooooo']);
   // tiny element-weakness pips shown over foes
   for (const k in ELEM) reg('wk_' + k, mapSprite(['..o..', '.oco.', 'occco', '.oco.', '..o..'], { o: '#1a0f28', c: ELEM[k].color }), 2.5, 5);

@@ -103,6 +103,48 @@ R.item = function (ctx, kind, x, y, S, t, glow) {
   }
   dspr(ctx, itemSprite(kind), x, y, S);
 };
+// ----- icons instead of words: sprites drawn crisp at full resolution in the deferred pass -----
+R.spr = k => SP[k] || itemSprite(k);
+R.icS = s => Math.max(2, Math.floor(26 / Math.max(s.c.width, s.c.height)));   // scale an icon to ~26px
+// a row of [spriteKey, number?] centred on x, bottoms on y
+R.iconRow = function (c, x, y, list, alpha) {
+  const items = list.map(e => { const s = R.spr(e[0]), n = e[1] == null ? null : String(e[1]); return { s, n, w: (s ? s.c.width * R.icS(s) : 0) + (n ? 6 + n.length * 14 : 0) }; });
+  let x0 = Math.round(x - (items.reduce((a, e) => a + e.w, 0) + (items.length - 1) * 8) / 2);
+  c.imageSmoothingEnabled = false;
+  for (const e of items) {
+    c.globalAlpha = alpha == null ? 1 : alpha;
+    if (e.s) { const S = R.icS(e.s), w = e.s.c.width * S, h = e.s.c.height * S; c.drawImage(e.s.c, x0, Math.round(y - h), w, h); x0 += w; }
+    if (e.n) { drawText(c, e.n, x0 + 4, y - 2, 12, '#ffffff', 'left', 'd'); x0 += 6 + e.n.length * 14; }
+    x0 += 8;
+  }
+  c.globalAlpha = 1;
+};
+// a prompt bubble with a key cap and icons (no words). mash = the key cap bounces as if being hammered
+R.iprompt = function (ctx, x, y, key, ic, maxX, minX, mash) {
+  const draw = c => {
+    c.font = '12px ' + FONT_D;
+    const kb = key ? Math.max(24, Math.ceil(c.measureText(key).width) + 12) : 0;
+    const sprs = (ic || []).map(R.spr).filter(Boolean);
+    const iw = sprs.reduce((a, s) => a + s.c.width * R.icS(s) + 6, 0);
+    const w = Math.round(kb + 16 + iw + (key && sprs.length ? 8 : 0)), h = 40, p = 4;
+    const x0 = Math.round(Math.max((minX || 0) + 8, Math.min((maxX || CFG.HALF) - w - 8, x - w / 2))), y0 = Math.round(y - h / 2);
+    c.fillStyle = '#1a0f28'; c.fillRect(x0 + p, y0, w - 2 * p, h); c.fillRect(x0, y0 + p, w, h - 2 * p);
+    c.fillStyle = '#fff6e0'; c.fillRect(x0 + p, y0 + p, w - 2 * p, h - 2 * p);
+    let cx = x0 + 8;
+    if (key) {
+      const dn = mash && Math.floor(performance.now() / 110) % 2 ? 3 : 0;
+      c.fillStyle = '#1a0f28'; c.fillRect(cx, y0 + 7, kb + 4, 26);
+      c.fillStyle = dn ? '#d98a20' : '#ffb43a'; c.fillRect(cx + 2, y0 + 9 + dn, kb, 20 - dn);
+      c.fillStyle = '#3a2410'; c.textAlign = 'center'; c.font = '12px ' + FONT_D; c.fillText(key, cx + 2 + kb / 2, y0 + 25 + dn);
+      cx += kb + 12;
+    }
+    c.imageSmoothingEnabled = false;
+    for (const s of sprs) { const S = R.icS(s), sw = s.c.width * S, sh = s.c.height * S; c.drawImage(s.c, cx, Math.round(y0 + h / 2 - sh / 2), sw, sh); cx += sw + 6; }
+  };
+  if (R.defer) R.defer.push(draw); else draw(ctx);
+};
+// close enough to the Builder (or hovered / focused) to show a building's info panel
+R.inTip = b => R.isNear(b) || Math.hypot(G.bd.x - b.x - 0.5, G.bd.y - b.y - 0.5) < CFG.tipRadius;
 R.flush = function (main, x0) {
   main.save();
   main.beginPath(); main.rect(x0, 0, CFG.HALF, CFG.H); main.clip();
@@ -171,8 +213,6 @@ R.drawFactory = function (main, dt) {
     ctx.fillStyle = '#c49258';
     ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.closePath(); ctx.fill();
     ctx.strokeStyle = '#f4d898'; ctx.lineWidth = 8; ctx.setLineDash([16, 16]); ctx.lineDashOffset = -Math.floor(t * 4) * 8; ctx.stroke(); ctx.setLineDash([]);
-    const lp = R.toScreen(v, z.x0 + 0.4, z.y0 + 0.4);
-    txt(ctx, 'STOCKPILE', lp[0], lp[1], 12, '#fff2cc', 'center', 'd');
   }
 
   const piles = FA.piles();
@@ -217,6 +257,7 @@ R.drawFactory = function (main, dt) {
       case 'builder': R.drawBuilder(ctx, v, bd, t); break;
     }
   }
+  R.drawShrineStreams(ctx, v, t);
   if (R.ghost) R.drawGhost(ctx, v, R.ghost, t);
   if (R.demo) R.drawDemo(ctx, v, R.demo, t);
   if (R.aim && G.hands && !bd.gather) R.drawAim(ctx, v, R.aim, t);
@@ -234,14 +275,14 @@ R.drawFactory = function (main, dt) {
     const y = p[1] - 124;
     pbox(ctx, p[0] - 40, y - 12, 80, 24, '#2b1d48');
     ctx.fillStyle = ELEM[g.el].color; ctx.fillRect(Math.round((p[0] - 36) / P) * P, y - 8, Math.round(72 * fr / P) * P, 16);
-    txt(ctx, 'TAP ' + R.key('use') + '!', p[0], y - 22 + (Math.sin(t * 14) > 0 ? 0 : 4), 16, '#ffe36b', 'center', 'd');
   }
   if (R.hint && !UI.treeOpen.L) R.drawHint(ctx, v, R.hint, t);
   if (R.focus && !UI.treeOpen.L) R.drawFocus(ctx, v, R.focus, t);
   for (const p of f.pops) {
-    const s = R.toScreen(v, p.x, p.y);
-    ctx.globalAlpha = Math.max(0, 1 - Math.max(0, p.t - 0.6) / 0.5);
-    txt(ctx, p.text, s[0], s[1] - 70 - Math.floor(p.t * 10) * 4, 12, p.col, 'center', 'd');
+    const s = R.toScreen(v, p.x, p.y), a = Math.max(0, 1 - Math.max(0, p.t - 0.6) / 0.5), y = s[1] - 70 - Math.floor(p.t * 10) * 4;
+    if (p.ic) { R.defer.push(c => R.iconRow(c, s[0], y + 8, p.ic, a)); continue; }
+    ctx.globalAlpha = a;
+    txt(ctx, p.text, s[0], y, 12, p.col, 'center', 'd');
     ctx.globalAlpha = 1;
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -250,6 +291,23 @@ R.drawFactory = function (main, dt) {
   R.flush(main, 0);
 };
 
+// while the Wizard stands on a claimed shrine, its element streams out of the Spell Portal into every boosted harnesser
+R.drawShrineStreams = function (ctx, v, t) {
+  const el = G.w.shrine;
+  if (!el) return;
+  const ps = FA.portal('spell'), a = R.toScreen(v, ps.x + 0.5, ps.y + 1), col = ELEM[el].color;
+  for (const b of G.fac.bld) {
+    if (!b.done || FA.def(b).elem !== el) continue;
+    const q = R.toScreen(v, b.x + 0.5, b.y + 0.5), lift = 120 + Math.hypot(q[0] - a[0], q[1] - a[1]) * 0.25;
+    for (let i = 0; i < 4; i++) {
+      const k = (t * 0.7 + i / 4 + b.id * 0.13) % 1;
+      const x = a[0] + (q[0] - a[0]) * k, y = a[1] - 80 + (q[1] - 50 - a[1] + 80) * k - Math.sin(k * Math.PI) * lift;
+      const px = Math.round(x / 4) * 4, py = Math.round(y / 4) * 4;
+      ctx.fillStyle = ELEM[el].dark; ctx.fillRect(px - 8, py - 8, 16, 16);
+      ctx.fillStyle = i % 2 ? '#ffffff' : col; ctx.fillRect(px - 4, py - 4, 8, 8);
+    }
+  }
+};
 R.reflect = function (ctx, s, x, y, S, alpha) {
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -327,12 +385,14 @@ R.drawBuilding = function (ctx, v, b, t) {
     ctx.strokeStyle = '#78c8ff'; ctx.lineWidth = 4; ctx.setLineDash([12, 8]); ctx.lineDashOffset = -Math.floor(t * 6) * 4;
     diamond(ctx, p[0], p[1], v.hw * 0.95, v.hh * 0.95); ctx.stroke(); ctx.setLineDash([]);
     const cost = d.cost, tot = Object.values(cost).reduce((a, b2) => a + b2, 0), got = Object.values(b.got).reduce((a, b2) => a + b2, 0);
+    if (!R.inTip(b)) return;   // what a blueprint still needs only shows when the Builder is close
     R.bar(ctx, p[0], top + 76, 72, got / tot, '#7be0ff');
     const need = FA.needOf(b), keys = Object.keys(need);
     let x0 = p[0] - (keys.length - 1) * 34;
     for (const k of keys) { R.chip(ctx, x0, top + 52, k, need[k]); x0 += 68; }
     return;
   }
+  const tip = R.inTip(b);   // info panels (recipes, battery bars, counts) only near the Builder
   const glow = d.kind === 'harness' ? ELEM[d.elem].color : d.kind === 'crafter' ? (b.recipe ? ITEMS[CFG.recipes[b.recipe].out].color : '#888') : null;
   const working = (d.kind === 'harness' && b.out.length < CFG.buffer && b.powered) || (d.kind === 'crafter' && b.prog > 0 && b.powered);
   if (glow && working && Math.sin(b.anim * 4) > -0.3) {
@@ -351,11 +411,8 @@ R.drawBuilding = function (ctx, v, b, t) {
     }
     if (b.out.length < CFG.buffer) R.bar(ctx, p[0], base + 2, 48, b.timer / FA.cycle(b.type), ELEM[d.elem].color, 8);
     if (!b.powered && d.power > 0) R.noPower(ctx, p[0], top + 20, t);
-    else if (FA.shrineBoost(b.type) > 1) {   // the Wizard is at this element's shrine: a pulsing rim + rising sparks
-      if (Math.sin(t * 6) > -0.3) { ctx.strokeStyle = ELEM[d.elem].color; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw * 0.95, v.hh * 0.95); ctx.stroke(); }
-      ctx.fillStyle = ELEM[d.elem].color;
-      for (let i = 0; i < 3; i++) { const ph = (t * 0.9 + i / 3) % 1; ctx.fillRect(Math.round((p[0] - 28 + i * 28) / 4) * 4, Math.round((base - 20 - ph * 90) / 4) * 4, 8, 8); }
-      dspr(ctx, SP.ic_up, p[0] + 40, top + 44 + (Math.sin(t * 5) > 0 ? 0 : 4), 4);
+    else if (FA.shrineBoost(b.type) > 1 && Math.sin(t * 6) > -0.3) {   // shrine boost: a pulsing rim (the stream from the portal is drawn in R.drawShrineStreams)
+      ctx.strokeStyle = ELEM[d.elem].color; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw * 0.95, v.hh * 0.95); ctx.stroke();
     }
   }
   if (d.kind === 'crafter') {
@@ -379,11 +436,10 @@ R.drawBuilding = function (ctx, v, b, t) {
     if (b.recipe) {
       const R2 = CFG.recipes[b.recipe];
       const keys = Object.keys(R2.in), w = keys.length * 56 + 64;
-      // standing at (or hovering) a crafter says what its product is for
-      if (R.isNear(b)) txt(ctx, recipeName(b.recipe) + ': ' + recipeUse(b.recipe), p[0], top - 12, 12, '#ffe9b8', 'center');
       // a faded ghost of the product waits in the empty output slot
       if (!b.out.length && b.prog <= 0) dspr(ctx, itemSprite(R2.out), p[0] + 44, base - 28 + (Math.sin(t * 3) > 0 ? 0 : 4), 4, 0.35);
       let x0 = p[0] - w / 2;
+      if (tip) {   // the recipe card: inputs (have/need) > product
       pbox(ctx, x0 - 4, top, w + 8, 48, '#2b1d48');
       for (const k of keys) {
         const have = Math.min(b.inv[k] || 0, 9), ok = (b.inv[k] || 0) >= R2.in[k];
@@ -395,8 +451,9 @@ R.drawBuilding = function (ctx, v, b, t) {
       ctx.fillRect(Math.round((x0 + 2) / 4) * 4, top + 20, 12, 8); ctx.fillRect(Math.round((x0 + 14) / 4) * 4, top + 16, 4, 16); ctx.fillRect(Math.round((x0 + 18) / 4) * 4, top + 20, 4, 8);
       R.item(ctx, R2.out, x0 + 40, top + 40, 3, t, false);
       if (b.prog > 0) R.bar(ctx, p[0], top + 52, 84, b.prog / R2.time, ITEMS[R2.out].color);
+      }
       if (b.draw > 0 && !b.powered) R.noPower(ctx, p[0], top - 16, t);
-    } else txt(ctx, 'no recipe yet', p[0], top + 30, 12, '#dddddd', 'center', 'd');
+    } else dspr(ctx, SP.ic_lock, p[0], top + 44, 4);
     b.out.slice(0, 3).forEach((o, i) => R.item(ctx, o.kind, p[0] + 44, base - 28 - i * 16, 4, t));
     if (b.od) {   // Adjacency Overdrive: sparks jump across from the charged Station beside it
       for (const dd of DIRS) {
@@ -412,18 +469,20 @@ R.drawBuilding = function (ctx, v, b, t) {
   if (b.type === 'station') {
     const fr = b.bat == null ? 0 : b.bat / CFG.batteryMax;
     if (b.bat != null) dspr(ctx, SP.it_battery, p[0], base - 44, 4);
-    R.bar(ctx, p[0], top + 52, 64, fr, b.bat > 0 ? '#3ad06b' : '#8a8a8a');
+    if (tip) R.bar(ctx, p[0], top + 52, 64, fr, b.bat > 0 ? '#3ad06b' : '#8a8a8a');
     if (b.bat != null && b.bat > 0 && Math.sin(t * 8) > 0) {
       ctx.fillStyle = '#fff07a';
       for (let i = 0; i < 5; i++) ctx.fillRect(Math.round((p[0] - 20 + i * 10) / 4) * 4, Math.round((base - 84 + (i % 2 ? -8 : 8)) / 4) * 4, 8, 4);
     }
-    if (b.bat == null) txt(ctx, 'needs Battery', p[0], top + 44, 12, '#ffe0a0', 'center', 'd');
+    if (b.bat == null && Math.sin(t * 4) > 0) dspr(ctx, SP.it_battery, p[0], base - 44, 4, 0.4);   // a ghost Battery says what goes in
   }
   if (b.type === 'charger') {
     if (b.bat != null) dspr(ctx, SP.it_battery, p[0], base - 40, 4);
-    if (b.bat != null) R.bar(ctx, p[0], top + 52, 64, b.bat / CFG.batteryMax, b.bat >= CFG.batteryMax ? '#3ad06b' : '#ffd93a');
+    if (b.bat != null && b.bat >= CFG.batteryMax && Math.sin(t * 6) > 0) { ctx.strokeStyle = '#3ad06b'; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw * 0.9, v.hh * 0.9); ctx.stroke(); }   // full: come get it
+    if (b.bat == null && Math.sin(t * 4) > 0) dspr(ctx, SP.it_battery, p[0], base - 40, 4, 0.4);
     const ft = FA.fuelTotal(b);
-    if (ft > 0) R.bar(ctx, p[0], top + 66, 64, ft / CFG.fuelCap, '#ff8a3a', 8);
+    if (tip && b.bat != null) R.bar(ctx, p[0], top + 52, 64, b.bat / CFG.batteryMax, b.bat >= CFG.batteryMax ? '#3ad06b' : '#ffd93a');
+    if (tip && ft > 0) R.bar(ctx, p[0], top + 66, 64, ft / CFG.fuelCap, '#ff8a3a', 8);
   }
   if (d.kind === 'splitter' || d.kind === 'sorter') b.out.forEach((o, i) => R.item(ctx, o.kind, p[0] - 8 + i * 16, base - 52 - i * 8, 4, t));
   if (d.kind === 'sorter' || d.kind === 'crate') {
@@ -433,8 +492,7 @@ R.drawBuilding = function (ctx, v, b, t) {
     if (kind && lit) R.item(ctx, kind, p[0], fy, 4, t);
     else if (kind) dspr(ctx, itemSprite(kind), p[0], fy, 4, a);
     ctx.globalAlpha = a;
-    if (!kind && d.kind === 'sorter') txt(ctx, 'ANY', p[0], fy - 8, 12, '#c8b8e8', 'center', 'd');
-    if (d.kind === 'crate') txt(ctx, b.out.length + '/' + CFG.crateCap, p[0], fy - (kind ? 44 : 8), 12, b.out.length >= CFG.crateCap ? '#ffb43a' : '#ffffff', 'center', 'd');
+    if (d.kind === 'crate' && tip) txt(ctx, b.out.length + '/' + CFG.crateCap, p[0], fy - (kind ? 44 : 8), 12, b.out.length >= CFG.crateCap ? '#ffb43a' : '#ffffff', 'center', 'd');
     ctx.globalAlpha = 1;
   }
   if (d.kind === 'crafter' && b.type === 'altar' && b.prog > 0 && b.powered) {
@@ -518,9 +576,8 @@ R.drawPortal = function (ctx, v, t, which) {
   if (boss) {   // the element that hurts the boss right now, floating in the middle of the portal
     const sc = wfl && Math.sin(t * 12) > 0 ? 1.3 : 1;
     dsprSq(ctx, itemSprite(boss.weak), base[0], base[1] - 52 + (Math.sin(t * 4) > 0 ? 0 : 4), 4, sc, sc);
-    txt(ctx, 'BOSS WEAK: ' + ELEM_WORD[boss.weak].toUpperCase(), base[0], base[1] - 182, 12, weakCol, 'center', 'd');
   }
-  txt(ctx, skill ? 'SKILL PORTAL' : 'SPELL PORTAL', base[0], base[1] - 164, 12, skill ? '#ffe36b' : '#efe4ff', 'center', 'd');
+  dspr(ctx, SP[skill ? 'ic_skill' : 'ic_portal'], base[0], base[1] - 160, 4);
   const q = f.portalQ.filter(e => e.which === which).length;
   if (q) txt(ctx, q + ' queued', base[0], base[1] - 146, 12, '#ffe36b', 'center', 'd');
   else txt(ctx, FA.rate(which) + '/MIN', base[0], base[1] - 146, 12, FA.rate(which) ? '#bfffbf' : '#a898c8', 'center', 'd');
@@ -534,7 +591,7 @@ R.drawPile = function (ctx, v, k, pos) {
     const row = Math.floor(i / 5), col = i % 5;
     dspr(ctx, itemSprite(k), p[0] + (col - 2) * 12 + (row % 2) * 6, p[1] - row * 12 + ((col * 7) % 5) - 2, 4);
   }
-  txt(ctx, (RES[k].short || RES[k].name) + ' ' + n, p[0], p[1] + 30, 12, n > 0 ? (k === 'shard' ? '#e0b8ff' : '#ffffff') : '#ff9a9a', 'center', 'd');
+  txt(ctx, '' + n, p[0], p[1] + 30, 12, n > 0 ? (k === 'shard' ? '#e0b8ff' : '#ffffff') : '#ff9a9a', 'center', 'd');
 };
 // goal pointer in the factory: a bouncing arrow over the target, or an arrow on the edge pointing toward it
 R.drawHint = function (ctx, v, h, t) {
@@ -607,20 +664,20 @@ R.drawGhost = function (ctx, v, g, t) {
   const m = Math.hypot(sdx, sdy), nx = sdx / m, ny = sdy / m;
   ctx.fillStyle = '#ffffff';
   ctx.beginPath(); ctx.moveTo(ex + nx * 8, ey + ny * 8); ctx.lineTo(ex - nx * 12 - ny * 14, ey - ny * 12 + nx * 14); ctx.lineTo(ex - nx * 12 + ny * 14, ey - ny * 12 - nx * 14); ctx.fill();
-  if (g.type !== 'belt' && g.type !== 'hand' && G.credits[g.type] > 0) txt(ctx, 'FREE!', p[0], p[1] - 110, 16, '#7be0ff', 'center', 'd');
+  if (g.type !== 'belt' && g.type !== 'hand' && G.credits[g.type] > 0) dspr(ctx, SP.ic_gift, p[0], p[1] - 100 + (Math.sin(t * 6) > 0 ? 0 : 4), 4);
   // a Station beside a Forge / Cauldron (or the other way round) will overdrive it
   const pair = g.type === 'station' ? ['forge', 'cauldron'] : g.type === 'forge' || g.type === 'cauldron' ? ['station'] : null;
   if (g.ok && pair && DIRS.some(dd => { const c = FA.cell(g.x + dd[0], g.y + dd[1]); return c && pair.indexOf(c.type) >= 0; })) {
-    txt(ctx, 'OVERDRIVE +' + Math.round(CFG.overdrive * 100) + '%', p[0], p[1] - 136, 12, '#fff07a', 'center', 'd');
+    if (Math.sin(t * 10) > 0) dspr(ctx, SP.ic_bolt, p[0], p[1] - 120, 4);   // it will overdrive its neighbour
   }
-  txt(ctx, 'R rotates', p[0], p[1] + v.hh + 26, 12, '#ffffff', 'center', 'd');
+  if (!R.padMode) R.iprompt(ctx, p[0], p[1] + v.hh + 30, 'R', ['ic_rotate']);
 };
 R.drawDemo = function (ctx, v, g, t) {
   const p = R.toScreen(v, g.x + 0.5, g.y + 0.5);
   ctx.fillStyle = Math.sin(t * 10) > 0 ? 'rgba(255,60,60,0.45)' : 'rgba(255,60,60,0.3)';
   diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill();
   dspr(ctx, SP.ic_x, p[0], p[1] - 24, 4);
-  if (g.label) txt(ctx, g.label, p[0], p[1] - 74, 12, '#ffd0d0', 'center', 'd');
+  if (g.refund) R.defer.push(c => R.iconRow(c, p[0], p[1] - 70, g.refund));   // what demolishing gives back
 };
 R.drawAim = function (ctx, v, a, t) {
   const bd = G.bd, s = R.toScreen(v, bd.x, bd.y), e = R.toScreen(v, a.x, a.y);
@@ -650,7 +707,9 @@ R.drawFocus = function (ctx, v, f, t) {
     ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffec8c' : '#ffd23a'; ctx.lineWidth = 6;
     if (tg.kind === 'bld' || tg.kind === 'belt') { diamond(ctx, p[0], p[1], v.hw * 1.02, v.hh * 1.02); ctx.stroke(); }
     else if (tg.kind !== 'portal') { diamond(ctx, p[0], p[1], 28, 14); ctx.stroke(); }
-    R.prompt(ctx, p[0], p[1] - lift + (Math.sin(t * 3) > 0 ? 0 : 4), e.key ? R.key(e.key) : null, a.label, CFG.HALF * (R.org ? 2 : 1), R.org);
+    const py = p[1] - lift + (Math.sin(t * 3) > 0 ? 0 : 4), mx = CFG.HALF * (R.org ? 2 : 1);
+    if (a.ic) R.iprompt(ctx, p[0], py, e.key ? R.key(e.key) : null, a.ic, mx, R.org, e.key === 'use' && !!G.bd.gather);
+    else R.prompt(ctx, p[0], py, e.key ? R.key(e.key) : null, a.label, mx, R.org);
   });
 };
 R.prompt = function (ctx, x, y, key, label, maxX, minX) {
@@ -792,7 +851,7 @@ R.drawPickup = function (ctx, v, o, t) {
   if (o.z <= 0 && Math.sin(t * 5) > 0) { ctx.strokeStyle = col; ctx.lineWidth = 6; diamond(ctx, p[0], p[1], 27, 13); ctx.stroke(); }
   const y = p[1] - o.z * 50 - 9 - (o.z <= 0 && Math.sin(t * 3) > 0 ? 6 : 0);
   R.item(ctx, o.kind, p[0], y, 3, t);
-  if (o.full && o.z <= 0) txt(ctx, CFG.pickups[o.kind].heal ? 'HP FULL' : 'ARMOR FULL', p[0], p[1] - 54, 12, '#ffe0a0', 'center', 'd');
+  if (o.full && o.z <= 0) R.defer.push(c => R.iconRow(c, p[0], p[1] - 48, [[CFG.pickups[o.kind].heal ? 'ic_heart' : 'ic_shield'], ['ic_check']]));   // already full
 };
 R.drawEnemy = function (ctx, v, e) {
   const p = R.toScreen(v, e.x, e.y), S = CFG.WT.S, t = G.w.t;
@@ -846,43 +905,67 @@ R.drawForage = function (ctx, v, o) {
   if (o.prog > 0) R.hpBar(ctx, p[0], p[1] - h - 9, 42, o.prog / CFG.forage[o.kind].taps, '#ffe36b');
   if (w.dig === o && !w.dead) {
     ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffec8c' : '#ffd23a'; ctx.lineWidth = 6; diamond(ctx, p[0], p[1], 33, 15); ctx.stroke();
-    R.prompt(ctx, p[0], p[1] - h - 42 + (Math.sin(t * 3) > 0 ? 0 : 3), R.wkey(), 'Stand still + mash: ' + (o.kind === 'bush' ? 'search the bush' : 'dig the ' + WZ.forageName(o.kind)), CFG.W, CFG.HALF);
+    // key cap hammering away + what's inside (a bush hides a pickup)
+    const loot = o.kind === 'bush' ? ['potion'] : Object.keys(CFG.forage[o.kind].drop);
+    R.iprompt(ctx, p[0], p[1] - h - 42, R.wkey(), loot, CFG.W, CFG.HALF, true);
   }
 };
 // landmarks: camps wake when the Wizard walks up, shrines boost harnessers while he stands on them, crypts open if he waits at the door
 R.drawMark = function (ctx, v, m) {
-  const w = G.w, s = w.lm[m.id], p = R.toScreen(v, m.x, m.y), S = CFG.WT.S, t = w.t, done = s.state === 'done';
+  const w = G.w, s = w.lm[m.id], p = R.toScreen(v, m.x, m.y), S = CFG.WT.S, t = w.t, done = s.state === 'done', M = CFG.marks;
   const d = Math.hypot(w.x - m.x, w.y - m.y);
   ctx.fillStyle = done ? 'rgba(0,0,0,0.12)' : 'rgba(40,10,60,0.25)';
   diamond(ctx, p[0], p[1], 2.4 * v.hw, 2.4 * v.hh); ctx.fill();
-  let label = null, col = '#ffe9b8';
+  let ic = null;   // a row of icons over the landmark instead of a label
   if (m.type === 'camp') {
     dspr(ctx, SP.lm_camp, p[0], p[1], S, done ? 0.5 : 1);
     if (!done) for (let i = 0; i < 3; i++) {
       ctx.fillStyle = i ? '#ffe36b' : '#ff7a30';
       ctx.fillRect(snap(p[0] + Math.sin(t * 7 + i) * 3 - 6 + i * 3), Math.round((p[1] - 9 - ((t * 24 + i * 8) % 18)) / 3) * 3, 9 - i * 3, 9 - i * 3);
     }
-    if (s.state === 'idle') label = 'MONSTER CAMP';
-    else if (!done) { label = 'CLEAR THE CAMP: ' + w.enemies.filter(e => e.mark === m.id).length + ' LEFT'; col = '#ffb0a0'; }
+    if (s.state === 'active') ic = [['ic_skull', w.enemies.filter(e => e.mark === m.id).length]];   // foes left
   } else if (m.type === 'shrine') {
-    const on = w.shrine === m.el && d < CFG.marks.shrineR;
-    // the boost radius is always marked faintly; standing inside lights it up
-    ctx.strokeStyle = ELEM[m.el].color; ctx.lineWidth = on ? 6 : 3; ctx.globalAlpha = on ? (Math.sin(t * 8) > 0 ? 1 : 0.6) : 0.35;
-    diamond(ctx, p[0], p[1], CFG.marks.shrineR * v.hw * 1.4, CFG.marks.shrineR * v.hh * 1.4); ctx.stroke(); ctx.globalAlpha = 1;
+    const col = ELEM[m.el].color, R0 = M.shrineR * 1.4, on = done && w.shrine === m.el;
+    if (s.state === 'active') {
+      // the claim mini-game: the ring shrinks onto the crystal; it lights up while it lines up with the target ring
+      const k = WZ.shrineRing(s), hit = Math.abs(k - M.shrineTarget) <= M.shrineTol;
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6; ctx.globalAlpha = 0.7;
+      diamond(ctx, p[0], p[1], M.shrineTarget * R0 * v.hw, M.shrineTarget * R0 * v.hh); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = s.miss > 0 ? '#ff5a5a' : s.flash > 0 ? '#ffffff' : hit ? col : shade(col, 0.6); ctx.lineWidth = hit ? 9 : 6;
+      const kk = Math.round(k * 12) / 12;   // shrinks in chunky steps
+      diamond(ctx, p[0], p[1], kk * R0 * v.hw, kk * R0 * v.hh); ctx.stroke();
+      for (let i = 0; i < M.shrineHits; i++) {   // progress pips under the shrine
+        const x = p[0] + (i - (M.shrineHits - 1) / 2) * 24, y = p[1] + 27;
+        ctx.fillStyle = '#1a0f28'; diamond(ctx, x, y, 12, 9); ctx.fill();
+        ctx.fillStyle = i < (s.hits || 0) ? col : '#4a3a5a'; diamond(ctx, x, y, 7.5, 6); ctx.fill();
+      }
+      R.iprompt(ctx, p[0], p[1] - 150, R.wkey(), null, CFG.W, CFG.HALF, hit);
+    } else {
+      ctx.strokeStyle = col; ctx.lineWidth = on ? 6 : 3; ctx.globalAlpha = on ? (Math.sin(t * 8) > 0 ? 1 : 0.6) : 0.35;
+      diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4, M.shrineR * v.hh * 1.4); ctx.stroke(); ctx.globalAlpha = 1;
+    }
     dspr(ctx, SP.lm_shrine, p[0], p[1], S);
-    dspr(ctx, SP['cr_' + m.el], p[0], p[1] - 39 - (Math.sin(t * (on ? 8 : 3)) > 0 ? 3 : 0), S);
-    if (on) for (let i = 0; i < 3; i++) { const ph = (t * 1.2 + i / 3) % 1; ctx.fillStyle = ELEM[m.el].color; ctx.fillRect(snap(p[0] - 21 + i * 21), Math.round((p[1] - 15 - ph * 90) / 3) * 3, 6, 6); }
-    label = on ? ELEM_WORD[m.el].toUpperCase() + ' HARNESSERS +' + Math.round(CFG.marks.shrineBoost * 100) + '%' : ELEM_WORD[m.el].toUpperCase() + ' SHRINE: STAND HERE';
-    col = ELEM[m.el].color;
+    dspr(ctx, SP['cr_' + m.el], p[0], p[1] - 39 - (Math.sin(t * (on ? 8 : 3)) > 0 ? 3 : 0), S, done && !on ? 0.6 : 1);
+    if (on) {   // boosting: the shrine's power streams up into a little portal (and out of the factory's Spell Portal)
+      const top = p[1] - 168, rw = 27 + (Math.sin(t * 6) > 0 ? 3 : 0);
+      ctx.fillStyle = '#2a1050'; diamond(ctx, p[0], top, rw, rw / 2.5); ctx.fill();
+      ctx.strokeStyle = col; ctx.lineWidth = 6; ctx.stroke();
+      for (let i = 0; i < 5; i++) {
+        const ph = (t * 1.1 + i / 5) % 1, x = p[0] + Math.sin(ph * 9 + i) * 9 * (1 - ph);
+        ctx.fillStyle = i % 2 ? '#ffffff' : col;
+        ctx.fillRect(snap(x - 3), Math.round((p[1] - 45 - ph * (p[1] - 45 - top)) / 3) * 3, 6, 6);
+      }
+    }
   } else {
     dspr(ctx, SP.lm_crypt, p[0], p[1], S, done ? 0.6 : 1);
     if (s.state === 'idle') {
-      label = 'CRYPT: WAIT AT THE DOOR';
-      if (s.t > 0) R.hpBar(ctx, p[0], p[1] + 12, 48, s.t / CFG.marks.cryptHold, '#b07aff');
-    } else if (!done) { label = 'SLAY THE GUARDIAN'; col = '#ffb0a0'; }
+      if (s.t > 0) R.hpBar(ctx, p[0], p[1] + 12, 48, s.t / M.cryptHold, '#b07aff');
+      else if (d < 8 && Math.sin(t * 3) > 0) ic = [['ic_clock']];   // wait at the door
+    } else if (!done) ic = [['ic_skull']];
   }
-  if (done && d < 8) { label = 'CLAIMED'; col = '#a898c8'; }
-  if (label && d < 13) txt(ctx, label, p[0], p[1] - 110, 12, col, 'center', 'd');
+  if (done && d < 8 && m.type !== 'shrine') ic = [['ic_check']];
+  if (ic && d < 13) R.defer.push(c => R.iconRow(c, p[0], p[1] - 96, ic));
 };
 // goal pointer in the wilds: an arrow over the target, or a boxed pointer on the edge with the distance
 R.drawWHint = function (ctx, v, h, t) {
@@ -1048,6 +1131,9 @@ R.drawFx = function (ctx, v, f) {
       }
       ctx.globalAlpha = 1;
     }
+  } else if (f.type === 'icon') {   // a collected resource floating up off the Wizard
+    const a = 1 - Math.max(0, fr - 0.5) * 2, y = s[1] - 60 - Math.floor(fr * 6) * 6;
+    R.defer.push(c => R.iconRow(c, s[0], y, [[f.k]], a));
   } else if (f.type === 'title') {
     const q = R.toScreen(v, G.w.x, G.w.y);
     ctx.globalAlpha = 1 - Math.max(0, fr - 0.6) / 0.4;

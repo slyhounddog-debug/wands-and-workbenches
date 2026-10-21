@@ -334,7 +334,7 @@ Main.questHint = function () {
     const w = G.w;
     let best = null, bd = 1e9;
     if (h.harv) for (const o of WZ.harv) { if (o.broken || o.kind !== 'tree') continue; const d = Math.hypot(o.x - w.x, o.y - w.y); if (d < bd) { bd = d; best = o; } }
-    else for (const m of WZ.marks) { if (m.type === 'shrine' || w.lm[m.id].state === 'done') continue; const d = Math.hypot(m.x - w.x, m.y - w.y); if (d < bd) { bd = d; best = m; } }
+    else for (const m of WZ.marks) { if (w.lm[m.id].state === 'done') continue; const d = Math.hypot(m.x - w.x, m.y - w.y); if (d < bd) { bd = d; best = m; } }
     if (best) out.w = { x: best.x, y: best.y, lift: h.mark ? 120 : 90 };
   } else if (h.boss) {
     if (G.w.boss) out.w = { x: G.w.boss.x, y: G.w.boss.y, lift: 140 };
@@ -376,7 +376,10 @@ Main.updateFocus = function () {
   const [gx, gy] = useMouseAim() || (G.lastInput === 'mouse' && mouseInFactory()) ? hoverTile(R.fv) : frontTile();
   if (G.demolish) {
     const c = FA.cell(gx, gy);
-    if (c && c.type !== 'portal') R.demo = { x: gx, y: gy, label: c.type === 'belt' ? 'BELT: +1 WOOD' : CFG.buildings[c.type].name.toUpperCase() };
+    if (c && c.type !== 'portal') {
+      const cost = c.type === 'belt' ? { wood: 1 } : c.done ? FA.def(c).cost : c.got;
+      R.demo = { x: gx, y: gy, refund: c.free && c.done ? [['ic_gift']] : Object.keys(cost).filter(k => cost[k] > 0).map(k => [k, cost[k]]) };
+    }
     else R.demo = { x: gx, y: gy };
   } else if (G.selected !== 'hand' && FA.inb(gx, gy)) {
     const c = FA.cell(gx, gy);

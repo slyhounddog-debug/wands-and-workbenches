@@ -20,6 +20,7 @@ const CFG = {
   swapHold: 1.5, swapCooldown: 5,
   builder: { speed: 5.0, accel: 42, friction: 34, radius: 0.24 },
   reach: 1.75, pickRepeat: 0.2,
+  tipRadius: 3.5,            // building info panels only show within this many tiles of the Builder (or when hovered)
   inputBuffer: 0.1,          // a pick / use press with nothing in reach keeps trying this long (taps just before arriving still land)
   throwRange: 6.5, throwRepeat: 0.15,
   portalGap: 0.22,
@@ -61,7 +62,9 @@ const CFG = {
   marks: {        // landmarks in the wilds: the only source of Aether Shards besides elites
     camps: 9, shrines: 8, crypts: 4, spacing: 16,
     campWake: 8, campFoes: 6, campShards: 3,
-    shrineR: 2.6, shrineBoost: 0.25,   // standing at a shrine speeds up that element's harnessers
+    shrineR: 2.6, shrineBoost: 0.25,   // standing at a claimed shrine speeds up that element's harnessers
+    // claiming a shrine: a ring shrinks onto the crystal; press when it lines up. A miss just restarts the ring
+    shrineHits: 3, shrineCycle: 1.3, shrineTarget: 0.35, shrineTol: 0.11, shrineShards: 1,
     cryptHold: 1.5, cryptShards: 5, cryptMinions: 7, xpBonus: 6,
   },
   // forage spots in the wilds: the Wizard stands still at one and mashes the roll button to dig / search it.
@@ -289,7 +292,7 @@ const QUESTS = [
   { icon: 'battery', text: 'Power the factory: a charged Battery in a Battery Station', xp: 10, done: g => g.fac.gen > 0, hint: { make: 'station' } },
   { icon: 'b:forge', text: 'Build the Elemental Forge', xp: 12, done: g => FA.count('forge') >= 1, hint: { make: 'forge' } },
   { icon: 'flamethrower', text: 'Unlock a combo spell and deliver it from the Forge', xp: 15, done: g => g.flags.combo, hint: { combo: 2 } },
-  { icon: 'ic_flag', text: 'Wizard: claim a landmark (a camp or crypt, see the map) for Aether Shards', xp: 15, done: g => (g.stats.landmarks || 0) >= 1, hint: { mark: 1 } },
+  { icon: 'ic_flag', text: 'Wizard: claim a landmark (camp, shrine or crypt, see the map) for Aether Shards', xp: 15, done: g => (g.stats.landmarks || 0) >= 1, hint: { mark: 1 } },
   { icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter or Sorter to route packets', xp: 15, done: g => FA.count('splitter') + FA.count('sorter') >= 1, hint: { make: 'splitter' } },
   { icon: 'armor', text: 'Unlock the Armory and send Armor to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'anvil' } },
   { icon: 'ic_expand', text: 'Expand the factory floor once', xp: 15, done: g => (g.tree.expand || 0) >= 1, hint: { tree: 1 } },

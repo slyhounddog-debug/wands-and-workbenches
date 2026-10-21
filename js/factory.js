@@ -124,8 +124,6 @@ FA.onComplete = function (b, quiet) {
   if (FA.def(b).kind === 'crafter' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
   if (!quiet) {
     FA.burst(b.x + 0.5, b.y + 0.5, '#ffe36b', 22);
-    FA.pop(b.x + 0.5, b.y + 0.5, 'BUILT!', '#ffe36b');
-    UI.toast(FA.def(b).name + ' complete!', 'L', 'b:' + b.type);
     AU.sfx('complete');
     b.pop = 0.5;
   }
@@ -143,6 +141,10 @@ FA.burst = function (x, y, col, n) {
   }
 };
 FA.pop = function (x, y, text, col) { G.fac.pops.push({ x, y, text, col: col || '#fff', t: 0 }); };
+// an icon pop instead of words: a row of [spriteKey, number?] floating up
+FA.ipop = function (x, y, ic) { G.fac.pops.push({ x, y, ic, t: 0 }); };
+FA.pileIn = k => { const p = FA.piles()[k]; if (p) FA.ipop(p.x, p.y - 0.4, [[k]]); };   // a harvest reached the Stockpile
+FA.say = a => { if (a.ic) FA.ipop(G.bd.x, G.bd.y - 0.3, a.ic.map(k => [k])); else if (a.label) FA.pop(G.bd.x, G.bd.y - 0.3, a.label, '#ffd0a0'); };   // why an action can't happen
 
 // ---------- hands & floor items ----------
 FA.canHold = k => !G.hands || (G.hands.kind === k && G.hands.n < FA.stackMax(k));
@@ -193,8 +195,8 @@ FA.place = function (type, x, y, dir) {
   if (!FA.canPlace(x, y)) return false;
   const credit = G.credits[type] > 0;
   const b = FA.makeBuilding(type, x, y, credit, credit, dir);
-  if (credit) { G.credits[type]--; FA.burst(x + 0.5, y + 0.5, '#7be0ff', 20); UI.toast('Free ' + CFG.buildings[type].name + ' placed!', 'L', 'ic_gift'); AU.sfx('complete'); }
-  else { AU.sfx('place'); FA.pop(x + 0.5, y + 0.5, 'BLUEPRINT', '#bfe9ff'); }
+  if (credit) { G.credits[type]--; FA.burst(x + 0.5, y + 0.5, '#7be0ff', 20); FA.ipop(x + 0.5, y + 0.5, [['ic_gift']]); AU.sfx('complete'); }
+  else AU.sfx('place');
   b.pop = 0.4;
   UI.changed();
   return b;
@@ -230,7 +232,7 @@ FA.demolish = function (x, y) {
   }
   FA.setCell(x, y, null);
   FA.burst(cx, cy, '#ff9a8a');
-  FA.pop(cx, cy, 'REFUNDED', '#ffd0a0');
+  FA.ipop(cx, cy, c.type === 'belt' ? [['wood']] : Object.keys(FA.def(c).cost).map(k => [k]));   // what came back
   AU.sfx('drop');
   UI.changed();
   return true;
@@ -291,7 +293,7 @@ FA.insert = function (b, kind, charge) {
   else if (FA.isLogi(b)) b.out.push({ kind });
   else if (d.kind === 'station') {
     b.bat = charge || 0;
-    if (b.bat <= 0) UI.toast('That Battery is flat. Charge it at a Charger first.', 'L', 'battery');
+    if (b.bat <= 0) FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_x']]);
   } else if (d.kind === 'charger') {
     if (kind === 'battery') { b.bat = charge || 0; b.types = Object.keys(b.fuel).filter(k => b.fuel[k] > 0); }
     else { b.fuel[kind] += CFG.fuelPerPacket; if (b.bat != null && b.types.indexOf(kind) < 0) b.types.push(kind); }
@@ -318,7 +320,7 @@ FA.bank = function (kind) {
   const f = G.fac, p = FA.portal('skill');
   f.skillFlash = 0.5;
   f.log.skill.push(f.t);
-  FA.pop(p.x + 0.5, p.y + 1, '+1 ' + itemName(kind), ITEMS[kind].color);
+  FA.ipop(p.x + 0.5, p.y + 1, [[kind]]);
   AU.sfx('bank');
   UI.changed();
 };
@@ -330,17 +332,15 @@ FA.deliver = function (kind) {
   f.flash = 0.5; f.flashCol = ITEMS[kind].color || '#fff';
   f.log.spell.push(f.t);
   G.flags['sent_' + kind] = true;
-  FA.pop(p.x + 0.5, p.y + 1, BASIC_SPELL[kind] ? SPELLS[BASIC_SPELL[kind]] : itemName(kind), ITEMS[kind].color);
+  FA.ipop(p.x + 0.5, p.y + 1, [[kind]]);
   if (kind === 'sigil') WZ.summonBoss();
   else if (ITEMS[kind].pickup) {
     WZ.dropPickup(kind);
-    UI.toast(itemName(kind) + ' dropped beside the Wizard!', 'R', kind);
   } else {
     const spell = BASIC_SPELL[kind] || kind;
     if (!BASIC_SPELL[kind]) {
       G.flags.combo = true;
       if (CFG.recipes[kind] && Object.keys(CFG.recipes[kind].in).length === 3) G.flags.triple = true;
-      UI.toast(SPELLS[spell] + '!', 'R', kind);
     }
     WZ.cast(spell);
   }
@@ -350,11 +350,12 @@ FA.deliver = function (kind) {
 FA.landed = function (c) {
   const combo = ['gust', 'fireball', 'spray', 'boulder'].indexOf(c.spell) < 0;
   if (!combo && !c.weak) return;
-  let s = c.hits ? 'HIT ' + c.hits : 'NO TARGETS';
-  if (c.kills) s += '  KO ' + c.kills;
-  if (c.weak) s += '  WEAK x' + c.weak;
+  // icons: target = foes hit, skull = knocked out, bolt = weak hits (x = it hit nothing)
+  const list = c.hits ? [['ic_target', c.hits]] : [['ic_target'], ['ic_x']];
+  if (c.kills) list.push(['ic_skull', c.kills]);
+  if (c.weak) list.push(['ic_bolt', c.weak]);
   const p = FA.portal('spell');
-  FA.pop(p.x + 0.5, p.y + 1.8, s, c.weak ? '#ffe36b' : c.hits ? '#bfe9ff' : '#c8b8e8');
+  FA.ipop(p.x + 0.5, p.y + 1.8, list);
 };
 // the moment a spell bursts in the wilds, the Spell Portal answers: rings, sparks and a screen bump that grow with
 // the spell's tier (1 = basic, 2 = pair, 3 = triple, 4 = Nova)
@@ -480,14 +481,13 @@ FA.update = function (dt) {
             b.pop = 0.35;
             FA.burst(b.x + 0.5, b.y + 0.5, ITEMS[R.out].color, 10);
             AU.sfx('craft');
-            if (R.out === 'battery') UI.toast('Battery crafted. Grab it from the Forge (left-click / A).', 'L', 'battery');
           }
         }
       } else b.prog = 0;
     } else if (d.kind === 'station') {
       if (b.bat != null && f.demand > 0 && b.bat > 0) {
         b.bat = Math.max(0, b.bat - FA.drain() * dt);
-        if (b.bat === 0) UI.toast('A Battery ran flat. Haul it to a Charger!', 'L', 'battery');
+        if (b.bat === 0) FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_x']]);
       }
     } else if (d.kind === 'charger') FA.updCharger(b, dt);
     else if (FA.isLogi(b)) FA.updLogi(b, dt);
@@ -551,7 +551,7 @@ FA.updCharger = function (c, dt) {
   const dur = CFG.chargeBase / Math.pow(CFG.chargeBoost, nt - 1);
   c.bat = Math.min(CFG.batteryMax, c.bat + CFG.batteryMax / dur * dt);
   for (const k of act) c.fuel[k] = Math.max(0, c.fuel[k] - dt / act.length);
-  if (c.bat >= CFG.batteryMax) { UI.toast('Battery fully charged. Haul it to a Station!', 'L', 'battery'); AU.sfx('charge'); c.pop = 0.4; }
+  if (c.bat >= CFG.batteryMax) { FA.ipop(c.x + 0.5, c.y + 0.5, [['battery'], ['ic_check']]); AU.sfx('charge'); c.pop = 0.4; }
 };
 
 // ---------- throwing ----------
@@ -609,7 +609,7 @@ FA.land = function (o) {
   };
   if (c && c.type === 'portal') {
     if (FA.enterPortal(c, o.kind)) { if (o.fromBuilder && c.which === 'spell') G.flags.portalHand = true; }
-    else { bounce(); FA.pop(o.x, o.y, c.which === 'skill' ? 'SKILL PORTAL: SPELLS ONLY' : 'PORTAL WON\'T TAKE THAT', '#ffb0b0'); }
+    else { bounce(); FA.ipop(o.x, o.y, [[o.kind], ['ic_x']]); }
     return;
   }
   if (c && c.type === 'belt') {
@@ -617,10 +617,10 @@ FA.land = function (o) {
     return fell();
   }
   if (c) {
-    if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind, o.charge); AU.sfx('drop'); FA.pop(o.x, o.y, '+1 ' + itemName(o.kind), '#bfffbf'); return; }
+    if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind, o.charge); AU.sfx('drop'); FA.ipop(o.x, o.y, [[o.kind]]); return; }
     return bounce();
   }
-  if (FA.reserved(tx, ty) && RES[o.kind]) { G.stock[o.kind]++; FA.pop(o.x, o.y, '+1 ' + itemName(o.kind), '#ffe9b8'); AU.sfx('drop'); return; }
+  if (FA.reserved(tx, ty) && RES[o.kind]) { G.stock[o.kind]++; FA.ipop(o.x, o.y, [[o.kind]]); AU.sfx('drop'); return; }
   fell();
   AU.sfx('thud');
 };
@@ -646,7 +646,7 @@ FA.moveBuilder = function (dt, ix, iy) {
     const arrive = bd.then ? FA.distTo(bd.then) < CFG.reach - 0.25 : d < 0.12;
     if (arrive) {
       bd.target = null;
-      if (bd.then) { const t = bd.then; bd.then = null; const a = FA.actionFor(t, 'pick'); if (a.fn) a.fn(); else if (a.label) FA.pop(bd.x, bd.y - 0.2, a.label, '#ffe9b8'); }
+      if (bd.then) { const t = bd.then; bd.then = null; const a = FA.actionFor(t, 'pick'); if (a.fn) a.fn(); else FA.say(a); }
     } else { dx = tx; dy = ty; }
   }
   const m = Math.hypot(dx, dy);
@@ -706,7 +706,7 @@ FA.updGather = function (dt) {
     G.flags.gathered = true; G.stats.packets++;
     AU.sfx('pickup');
     FA.burst(g.b.x + 0.5, g.b.y + 0.5, ELEM[g.el].color);
-    FA.pop(g.b.x + 0.5, g.b.y + 0.5, '+1 ' + ELEM[g.el].name, ELEM[g.el].color);
+    FA.ipop(g.b.x + 0.5, g.b.y + 0.5, [[g.el]]);
   }
 };
 
@@ -740,33 +740,34 @@ FA.findTarget = function (mode) {
   return best || info;
 };
 // label, function, and whether holding the button repeats it (single pickups)
-const A = (label, fn, rep) => ({ label, fn, rep: !!rep });
-const NONE = A('', null), FULL = A('Hands full: right-click to throw', null);
+// ic = sprite keys the prompt shows instead of the label (the label is kept for anything that still wants words)
+const A = (label, fn, rep, ic) => ({ label, fn, rep: !!rep, ic });
+const NONE = A('', null), FULL = A('Hands full: right-click to throw', null, false, ['ic_hand', 'ic_x']);
 FA.actionFor = function (t, mode) {
   const h = G.hands, k = h && h.kind, f = G.fac, pick = mode === 'pick';
   switch (t.kind) {
     case 'floor': {
       const it = t.o;
       if (!pick || f.floor.indexOf(it) < 0) return NONE;
-      return FA.canHold(it.kind) ? A('Pick up ' + itemName(it.kind), () => FA.pickFloor(it), true) : FULL;
+      return FA.canHold(it.kind) ? A('Pick up ' + itemName(it.kind), () => FA.pickFloor(it), true, [it.kind]) : FULL;
     }
     case 'pile': {
       if (!pick) return NONE;
       const r = t.o;
       if (h && (k !== r || h.n >= FA.cap())) return FULL;
-      if (G.stock[r] <= 0) return A('No ' + RES[r].name + ': the Wizard must harvest more', null);
-      return A('Take ' + RES[r].name, () => FA.takePile(r), true);
+      if (G.stock[r] <= 0) return A('No ' + RES[r].name + ': the Wizard must harvest more', null, false, [r, 'ic_x']);
+      return A('Take ' + RES[r].name, () => FA.takePile(r), true, [r]);
     }
     case 'belt': {
       const b = t.o;
-      if (!pick) return A('Rotate belt', () => { b.dir = (b.dir + 1) % 4; AU.sfx('blip'); });
+      if (!pick) return A('Rotate belt', () => { b.dir = (b.dir + 1) % 4; AU.sfx('blip'); }, false, ['ic_rotate']);
       if (!b.item) return NONE;
-      if (FA.canHold(b.item.kind)) return A('Grab ' + itemName(b.item.kind), () => { if (b.item && FA.canHold(b.item.kind)) { FA.addHands(b.item.kind, 1); b.item = null; AU.sfx('pickup'); } }, true);
+      if (FA.canHold(b.item.kind)) return A('Grab ' + itemName(b.item.kind), () => { if (b.item && FA.canHold(b.item.kind)) { FA.addHands(b.item.kind, 1); b.item = null; AU.sfx('pickup'); } }, true, [b.item.kind]);
       return FULL;
     }
     case 'portal':
       if (!pick) return NONE;
-      return A(t.o.which === 'skill' ? 'Skill Portal: throw packets & spells in to bank them' : 'Spell Portal: throw packets, spells & pickups in', null);
+      return NONE;
     case 'bld': return FA.bldAction(t.o, pick);
   }
   return NONE;
@@ -776,34 +777,34 @@ FA.bldAction = function (b, pick) {
   if (!b.done) {
     if (!pick) return NONE;
     const need = FA.needOf(b);
-    return A(h && need[k] ? 'Throw ' + itemName(k) + ' in to build' : 'Needs ' + FA.needText(need), null);
+    return A(h && need[k] ? 'Throw ' + itemName(k) + ' in to build' : 'Needs ' + FA.needText(need), null, false, Object.keys(need));
   }
   if (pick) {
-    if (b.out.length) return FA.canHold(b.out[0].kind) ? A('Take ' + itemName(b.out[0].kind), () => FA.takeOut(b), true) : FULL;
+    if (b.out.length) return FA.canHold(b.out[0].kind) ? A('Take ' + itemName(b.out[0].kind), () => FA.takeOut(b), true, [b.out[0].kind]) : FULL;
     if ((d.kind === 'station' || d.kind === 'charger') && b.bat != null) {
       if (h) return FULL;
-      return A('Take Battery (' + Math.round(b.bat / CFG.batteryMax * 100) + '%)', () => { FA.addHands('battery', 1, b.bat); b.bat = null; if (b.types) b.types = []; AU.sfx('pickup'); });
+      return A('Take Battery (' + Math.round(b.bat / CFG.batteryMax * 100) + '%)', () => { FA.addHands('battery', 1, b.bat); b.bat = null; if (b.types) b.types = []; AU.sfx('pickup'); }, false, ['battery']);
     }
     return NONE;
   }
-  if (G.bd.gather && G.bd.gather.b === b) return A('Crank!', () => FA.crank());
-  const turn = A('Turn output', () => { b.dir = (b.dir + 1) % 4; b.pop = 0.2; AU.sfx('blip'); });
+  if (G.bd.gather && G.bd.gather.b === b) return A('Crank!', () => FA.crank(), false, [G.bd.gather.el]);
+  const turn = A('Turn output', () => { b.dir = (b.dir + 1) % 4; b.pop = 0.2; AU.sfx('blip'); }, false, ['ic_rotate']);
   if (d.kind === 'sorter') {
-    if (h && b.filter !== k) return A('Sort ' + itemName(k) + ' out the front', () => { b.filter = k; b.pop = 0.3; AU.sfx('blip'); UI.changed(); });
-    if (!h && b.filter) return A('Clear filter (' + itemName(b.filter) + ')', () => { b.filter = null; AU.sfx('blip'); UI.changed(); });
+    if (h && b.filter !== k) return A('Sort ' + itemName(k) + ' out the front', () => { b.filter = k; b.pop = 0.3; AU.sfx('blip'); UI.changed(); }, false, [k]);
+    if (!h && b.filter) return A('Clear filter (' + itemName(b.filter) + ')', () => { b.filter = null; AU.sfx('blip'); UI.changed(); }, false, [b.filter, 'ic_x']);
     return turn;
   }
-  if (d.kind === 'harness') return FA.canHold(d.elem) ? A('Hand-gather ' + ELEM[d.elem].name + ' (then tap to crank)', () => FA.startGather(b)) : FULL;
+  if (d.kind === 'harness') return FA.canHold(d.elem) ? A('Hand-gather ' + ELEM[d.elem].name + ' (then tap to crank)', () => FA.startGather(b), false, [d.elem]) : FULL;
   if (d.kind === 'crafter') {
     const list = FA.recipesFor(b.type);
     if (list.length > 1) {
       const nx = list[(list.indexOf(b.recipe) + 1) % list.length];
-      return A('Switch recipe to ' + recipeName(nx), () => { FA.setRecipe(b, nx); AU.sfx('blip'); });
+      return A('Switch recipe to ' + recipeName(nx), () => { FA.setRecipe(b, nx); AU.sfx('blip'); }, false, ['ic_swap', CFG.recipes[nx].out]);
     }
-    if (!list.length) return A('No recipe unlocked yet: see the Skill Tree', null);
+    if (!list.length) return A('No recipe unlocked yet: see the Skill Tree', null, false, ['ic_lock']);
   }
   if (FA.isLogi(b)) return turn;
-  return A(d.name, null);
+  return NONE;
 };
 FA.takePile = function (r) {   // one item per press (hold to keep grabbing)
   if (G.stock[r] <= 0 || !FA.canHold(r)) return;
@@ -815,11 +816,11 @@ FA.takePile = function (r) {   // one item per press (hold to keep grabbing)
 };
 // quiet: don't complain when there's nothing to do (the input buffer retries for a moment first)
 FA.interact = function (mode, quiet) {
-  if (mode !== 'pick' && G.bd.gather) { FA.crank(); return A('Crank!', FA.crank); }
+  if (mode !== 'pick' && G.bd.gather) { FA.crank(); return A('Crank!', FA.crank, false, [G.bd.gather.el]); }
   const t = FA.findTarget(mode);
   if (!t) return null;
   const a = FA.actionFor(t, mode);
-  if (a.fn) a.fn(); else if (a.label && !quiet) { FA.pop(G.bd.x, G.bd.y - 0.3, a.label, '#ffd0a0'); AU.sfx('error'); }
+  if (a.fn) a.fn(); else if (a.label && !quiet) { FA.say(a); AU.sfx('error'); }
   return a;
 };
 // click-to-interact: find what's under a tile

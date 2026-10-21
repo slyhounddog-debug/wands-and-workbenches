@@ -355,22 +355,24 @@ UI.renderTree = function (side) {
       else if (reqs.length) foot = '<div class="nf req">' + UI.img('ic_lock', 12) + 'needs ' + reqs.map(r => CFG.tree.find(t => t.id === r).name).join(', ') + '</div>';
       else foot = '<div class="nf">' + UI.costHtml(cost) + '</div>';
       const pinned = G.pins && G.pins[side] === n.id;
-      h += '<div class="node ' + cls + (pinned ? ' pinned' : '') + '" data-id="' + n.id + '">' + (pinned ? '<span class="pinMark">' + UI.img('ic_pin', 14) + '</span>' : '') + '<div class="ni">' + UI.img(n.icon, 32) + '</div><div class="nb"><div class="nn">' + n.name + lvlTxt + '</div>' + pips + foot + '</div></div>';
+      const focus = UI.padDriven[side] && UI.tfocus[side] === n.id;
+      h += '<div class="node ' + cls + (pinned ? ' pinned' : '') + (focus ? ' focus' : '') + '" data-id="' + n.id + '">' + (pinned ? '<span class="pinMark">' + UI.img('ic_pin', 14) + '</span>' : '') + '<div class="ni">' + UI.img(n.icon, 32) + '</div><div class="nb"><div class="nn">' + n.name + lvlTxt + '</div>' + pips + foot + '</div></div>';
     }
     h += '</div>';
   });
   h += '</div><div class="treeInfo">Hover a skill to see what it does and its numbers now and after buying. Costs are XP plus spells banked in the Skill Portal.</div>';
-  h += '<p class="hint">' + (side === 'L' ? 'T' : 'Y') + ' / Esc closes. The whole game (factory and wilds) is paused while the tree is open.</p>';
+  h += '<p class="hint">' + (side === 'L' ? 'T' : 'Y') + ' / Esc closes. The whole game (factory and wilds) is paused while the tree is open.' +
+    (IN.padList.length ? ' <kbd>STICK</kbd> move <kbd>A</kbd> buy <kbd>RB</kbd> pin <kbd>X</kbd> undo <kbd>B</kbd> close' : '') + '</p>';
   el.innerHTML = h;
   el.querySelector('[data-close]').onclick = () => UI.openTree(side, false);
   el.querySelectorAll('.node').forEach(nd => {
     const n = CFG.tree.find(t => t.id === nd.dataset.id);
     nd.onclick = () => UI.buy(n.id);
     nd.oncontextmenu = e => { e.preventDefault(); UI.pin(side, n.id); };
-    nd.onmouseenter = () => UI.showNodeTip(side, n.id);
+    nd.onmouseenter = () => { UI.padDriven[side] = false; el.querySelectorAll('.node.focus').forEach(x => x.classList.remove('focus')); UI.showNodeTip(side, n.id); };
     nd.onmouseleave = () => UI.showNodeTip(side, null);
   });
-  el.onscroll = () => UI.showNodeTip(side, null);
+  el.onscroll = () => UI.showNodeTip(side, UI.padDriven[side] ? UI.tfocus[side] : null);
   const ub = el.querySelector('[data-undo]');
   if (ub) ub.onclick = () => UI.undoBank();
   if (UI.tipNode && UI.tipNode.side === side) UI.showNodeTip(side, UI.tipNode.id);   // a purchase re-rendered the node under the cursor
@@ -493,6 +495,37 @@ UI.buy = function (id) {
   UI.updateHotbar(true);
   UI.changed();
 };
+// ---------- gamepad navigation: the stick / d-pad moves a focus ring between nodes, A buys, RB pins ----------
+UI.tfocus = { L: null, R: null };      // focused node id per side
+UI.padDriven = { L: false, R: false };  // the focus ring shows only while a pad (not the mouse) is driving
+UI.treeNav = function (side, dx, dy) {
+  const el = $(side === 'L' ? 'treeL' : 'treeR'), nodes = Array.from(el.querySelectorAll('.node'));
+  if (!nodes.length) return;
+  const cur = nodes.find(n => n.dataset.id === UI.tfocus[side]);
+  let next = nodes[0];
+  if (cur && (dx || dy)) {
+    const cr = cur.getBoundingClientRect(), cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2;
+    let bs = 1e9; next = null;
+    for (const n of nodes) {   // nearest node in that direction, favouring the same row / column
+      if (n === cur) continue;
+      const r = n.getBoundingClientRect(), x = r.left + r.width / 2 - cx, y = r.top + r.height / 2 - cy;
+      const along = dx ? x * dx : y * dy, perp = dx ? Math.abs(y) : Math.abs(x);
+      if (along < 8) continue;
+      const sc = along + perp * 2.5;
+      if (sc < bs) { bs = sc; next = n; }
+    }
+    if (!next) return;
+  } else if (cur && !dx && !dy) return;
+  UI.tfocus[side] = next.dataset.id; UI.padDriven[side] = true;
+  el.querySelectorAll('.node.focus').forEach(x => x.classList.remove('focus'));
+  next.classList.add('focus');
+  next.scrollIntoView({ block: 'nearest' });
+  UI.showNodeTip(side, next.dataset.id);
+  AU.sfx('blip');
+};
+UI.treeBuy = side => { if (UI.tfocus[side]) UI.buy(UI.tfocus[side]); };
+UI.treePin = side => { if (UI.tfocus[side]) UI.pin(side, UI.tfocus[side]); };
+
 // ---------- undo a Skill Portal deposit (Q / pad X in the tree): the item drops back out beside the portal ----------
 UI.undoKind = function () {
   const log = (G && G.bankLog) || [];

@@ -232,7 +232,7 @@ Main.controls = function (dt) {
   if (IN.hit('BracketLeft') || (p0 && p0.lb)) rot = -1;
   if (IN.hit('BracketRight') || (p0 && p0.rb)) rot = 1;
   if (IN.wheel && IN.mouse.x < CFG.HALF && !UI.treeOpen.L) rot = IN.wheel > 0 ? 1 : -1;
-  if (rot) UI.cycle(rot);
+  if (rot && !(UI.treeOpen.L || UI.treeOpen.R)) UI.cycle(rot);
   if (IN.hit('KeyB') || IN.hit('Delete') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt (full refund). Esc cancels.', 'L', 'ic_bomb'); }
   if (IN.hit('KeyR')) { G.placeDir = (G.placeDir + 1) % 4; AU.sfx('blip'); }
 
@@ -257,6 +257,7 @@ Main.controls = function (dt) {
   // an open skill tree (either side) freezes both halves, so nobody acts until it closes (and for the "And..." beat after)
   const inTree = UI.treeOpen.L || UI.treeOpen.R, frozen = inTree || Main.graceT > 0;
   if (inTree && (IN.hit('KeyQ') || (p0 && p0.x) || (p1 && p1.x))) UI.undoBank();   // Q / pad X: take the last deposit back out
+  if (inTree) Main.treePads(dt, p0, p1);
   if (frozen) { bix = 0; biy = 0; use = false; pick = false; wix = 0; wiy = 0; roll = false; }
 
   if (!frozen) { handleMouseFactory(dt); handleMouseWizard(); }
@@ -345,6 +346,26 @@ Main.step = function (dt, ctl) {
   Main.updateFocus();
   G.saveT += dt;
   if (G.saveT > CFG.autosave || (UI.dirty && G.saveT > 1.5)) { G.saveT = 0; UI.dirty = false; Main.save(); }
+};
+// a pad drives the tree on its own side (pad 1 = Builder = left tree, pad 2 = Wizard = right tree; a lone pad drives either):
+// stick or d-pad moves the focus ring (with key repeat), A buys, RB pins, B closes
+Main.nav = { L: { k: '', t: 0 }, R: { k: '', t: 0 } };
+Main.treePads = function (dt, p0, p1) {
+  for (const side of ['L', 'R']) {
+    if (!UI.treeOpen[side]) continue;
+    const pd = side === 'L' ? p0 : (p1 || (UI.treeOpen.L ? null : p0));
+    if (!pd) continue;
+    if (!UI.tfocus[side] || !UI.padDriven[side]) UI.treeNav(side, 0, 0);   // first touch: land on the first node
+    const ax = Math.abs(pd.ix) > Math.abs(pd.iy);
+    const dx = ax && Math.abs(pd.ix) > 0.5 ? Math.sign(pd.ix) : 0, dy = !ax && Math.abs(pd.iy) > 0.5 ? Math.sign(pd.iy) : 0;
+    const n = Main.nav[side], k = dx + ',' + dy;
+    if (!dx && !dy) { n.k = ''; n.t = 0; }
+    else if (k !== n.k) { n.k = k; n.t = 0.35; UI.treeNav(side, dx, dy); }
+    else if ((n.t -= dt) <= 0) { n.t = 0.12; UI.treeNav(side, dx, dy); }
+    if (pd.a) UI.treeBuy(side);
+    if (pd.rb) UI.treePin(side);
+    if (pd.b) UI.openTree(side, false);
+  }
 };
 // the skill tree just closed: drop every buffered / held input (nobody should act on a press from before the pause),
 // then hold the game for a beat with a big "And..." so both players are ready when it resumes

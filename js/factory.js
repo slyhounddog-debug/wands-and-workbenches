@@ -32,7 +32,15 @@ FA.reserved = (x, y) => { const z = FA.zone(); return x >= z.x0 && x <= z.x1 && 
 FA.cap = () => CFG.satchel + lvl('satchel') * CFG.upgrade.satchel;
 FA.stackMax = k => (ITEMS[k] && ITEMS[k].stack) || FA.cap();
 FA.beltTime = () => CFG.beltTime / (1 + CFG.upgrade.belts * lvl('belts'));
-FA.cycle = type => CFG.buildings[type].cycle / (1 + CFG.upgrade.swift * lvl('swift'));
+// the Wizard standing at a shrine speeds up that element's harnessers (G.w.shrine, set by WZ.updMarks)
+FA.shrineBoost = type => (G.w && G.w.shrine && G.w.shrine === CFG.buildings[type].elem ? 1 + CFG.marks.shrineBoost : 1);
+FA.cycle = type => CFG.buildings[type].cycle / (1 + CFG.upgrade.swift * lvl('swift')) / FA.shrineBoost(type);
+FA.drain = () => CFG.stationDrain / (G.tree.heavy ? 1 + CFG.heavyBattery : 1);
+// Adjacency Overdrive: a Forge or Cauldron with a charged Battery Station on one of its four sides crafts faster
+FA.overdrive = function (b) {
+  if (b.type !== 'forge' && b.type !== 'cauldron') return false;
+  return DIRS.some(d => { const c = FA.cell(b.x + d[0], b.y + d[1]); return !!c && c.type === 'station' && c.done && c.bat > 0; });
+};
 FA.def = b => CFG.buildings[b.type];
 FA.count = type => G.fac.bld.filter(b => b.type === type && b.done).length;
 FA.unlocked = id => {
@@ -49,7 +57,7 @@ FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 's
 FA.fresh = function (w, h) {
   const f = { w, h, grid: new Array(w * h).fill(null), bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
     portalQ: [], portalT: 0, nextId: 1, gen: 0, demand: 0, lowT: 0, flash: 0, flashCol: '#fff', skillFlash: 0, t: 0,
-    log: { spell: [], skill: [] }, working: 0 };
+    log: { spell: [], skill: [] }, working: 0, thumps: [], bump: 0, bumpAmp: 0, weakFlash: 0 };
   for (const p of FA.portalCells(w, h)) f.grid[p.y * w + p.x] = { type: 'portal', x: p.x, y: p.y, which: p.which };
   return f;
 };
@@ -348,6 +356,16 @@ FA.landed = function (c) {
   const p = FA.portal('spell');
   FA.pop(p.x + 0.5, p.y + 1.8, s, c.weak ? '#ffe36b' : c.hits ? '#bfe9ff' : '#c8b8e8');
 };
+// the moment a spell bursts in the wilds, the Spell Portal answers: rings, sparks and a screen bump that grow with
+// the spell's tier (1 = basic, 2 = pair, 3 = triple, 4 = Nova)
+FA.thump = function (tier, col) {
+  const f = G.fac, p = FA.portal('spell');
+  f.thumps.push({ t: 0, tier, col });
+  FA.burst(p.x + 0.5, p.y + 1, col, 4 + tier * 7);
+  if (tier >= 4) FA.burst(p.x + 0.5, p.y + 1, '#ffffff', 16);
+  f.bump = 0; f.bumpAmp = Math.max(f.bumpAmp, [0, 4, 10, 18, 30][tier] || 0);
+  f.flash = Math.max(f.flash, 0.15 + tier * 0.08); f.flashCol = col;
+};
 
 // ---------- logistics ----------
 // push the first buffered item out of side `di` (a belt, portal or machine there); never into a belt that feeds us
@@ -425,6 +443,9 @@ FA.update = function (dt) {
   f.t += dt;
   if (f.flash > 0) f.flash -= dt;
   if (f.skillFlash > 0) f.skillFlash -= dt;
+  if (f.weakFlash > 0) f.weakFlash -= dt;
+  if (f.bumpAmp > 0) { f.bump += dt; if (f.bump > 0.4) f.bumpAmp = 0; }
+  for (let i = f.thumps.length - 1; i >= 0; i--) { f.thumps[i].t += dt; if (f.thumps[i].t > 0.5 + f.thumps[i].tier * 0.12) f.thumps.splice(i, 1); }
   FA.power();
   if (f.demand > f.gen) {
     f.lowT -= dt;
@@ -446,11 +467,12 @@ FA.update = function (dt) {
       FA.tryOut(b);
     } else if (d.kind === 'crafter') {
       FA.tryOut(b);
+      b.od = FA.overdrive(b);
       const w = FA.crafterReady(b);
       if (w !== 0) {
         if (b.powered) {
           const R = CFG.recipes[b.recipe];
-          b.prog += dt; f.working++;
+          b.prog += dt * (b.od ? 1 + CFG.overdrive : 1); f.working++;
           if (b.prog >= R.time) {
             b.prog = 0;
             for (const k in R.in) b.inv[k] -= R.in[k];
@@ -464,7 +486,7 @@ FA.update = function (dt) {
       } else b.prog = 0;
     } else if (d.kind === 'station') {
       if (b.bat != null && f.demand > 0 && b.bat > 0) {
-        b.bat = Math.max(0, b.bat - CFG.stationDrain * dt);
+        b.bat = Math.max(0, b.bat - FA.drain() * dt);
         if (b.bat === 0) UI.toast('A Battery ran flat. Haul it to a Charger!', 'L', 'battery');
       }
     } else if (d.kind === 'charger') FA.updCharger(b, dt);
@@ -791,12 +813,13 @@ FA.takePile = function (r) {   // one item per press (hold to keep grabbing)
   G.bd.squash = 0.2;
   AU.sfx('pickup');
 };
-FA.interact = function (mode) {
-  if (mode !== 'pick' && G.bd.gather) { FA.crank(); return null; }
+// quiet: don't complain when there's nothing to do (the input buffer retries for a moment first)
+FA.interact = function (mode, quiet) {
+  if (mode !== 'pick' && G.bd.gather) { FA.crank(); return A('Crank!', FA.crank); }
   const t = FA.findTarget(mode);
   if (!t) return null;
   const a = FA.actionFor(t, mode);
-  if (a.fn) a.fn(); else if (a.label) { FA.pop(G.bd.x, G.bd.y - 0.3, a.label, '#ffd0a0'); AU.sfx('error'); }
+  if (a.fn) a.fn(); else if (a.label && !quiet) { FA.pop(G.bd.x, G.bd.y - 0.3, a.label, '#ffd0a0'); AU.sfx('error'); }
   return a;
 };
 // click-to-interact: find what's under a tile
@@ -820,6 +843,7 @@ FA.status = function (b) {
   if (d.kind === 'harness') {
     let st = 'producing';
     if (b.out.length >= CFG.buffer) st = 'BLOCKED: nothing takes its output. Belt it away or take it (click)'; else if (!b.powered) st = 'NO POWER';
+    else if (FA.shrineBoost(b.type) > 1) st = 'producing, SHRINE BOOST +' + Math.round(CFG.marks.shrineBoost * 100) + '% (the Wizard is at a ' + ELEM_WORD[d.elem] + ' Shrine)';
     return n + ': ' + b.out.length + '/' + CFG.buffer + ' ready, ' + st;
   }
   if (d.kind === 'crafter') {
@@ -831,12 +855,13 @@ FA.status = function (b) {
     else if (b.out.length >= CFG.buffer) s += '. BLOCKED: output full';
     else s += '. STARVED: waiting for inputs';
     if (b.out.length) s += '. ' + b.out.length + ' ready (click to take)';
+    if (b.od) s += '. OVERDRIVE +' + Math.round(CFG.overdrive * 100) + '% (Battery Station beside it)';
     return s;
   }
   if (d.kind === 'splitter') return n + ': ' + (b.out.length >= 2 ? 'BLOCKED: no free side to push into' : 'deals items out of its front, right and left');
   if (d.kind === 'sorter') return n + ': ' + (b.filter ? itemName(b.filter) + ' out the front, everything else out the sides' : 'no filter (E with an item in hand sets it)') + (b.out.length >= 2 ? '. BLOCKED' : '');
   if (d.kind === 'crate') return n + ': ' + b.out.length + '/' + CFG.crateCap + (b.out.length ? ', next out: ' + itemName(b.out[0].kind) : ', empty') + '. Feeds its arrow side; point it at nothing to just store';
-  if (d.kind === 'station') return n + ': ' + (b.bat == null ? 'empty, insert a charged Battery' : 'Battery ' + Math.round(b.bat) + '/' + CFG.batteryMax + (b.bat > 0 ? ', +10 power' : ' (flat)'));
+  if (d.kind === 'station') return n + ': ' + (b.bat == null ? 'empty, insert a charged Battery' : 'Battery ' + Math.round(b.bat) + '/' + CFG.batteryMax + (b.bat > 0 ? ', +10 power, lasts ' + Math.ceil(b.bat / FA.drain()) + 's under load' : ' (flat)'));
   if (d.kind === 'charger') {
     const act = Object.keys(b.fuel).filter(k => b.fuel[k] > 0);
     let s = n + ': ' + (b.bat == null ? 'no Battery' : 'Battery ' + Math.round(b.bat) + '/' + CFG.batteryMax);

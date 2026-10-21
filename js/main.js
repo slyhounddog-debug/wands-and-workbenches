@@ -228,12 +228,31 @@ Main.controls = function (dt) {
   handleMouseFactory(dt);
   handleMouseWizard();
   if (!frozen) {
-    if (use) FA.interact('use');
-    // A / . picks up one item (holding keeps grabbing); with a building selected it places in front instead
+    // pick / use presses are buffered: if nothing is in reach yet (still walking up to it), keep trying for
+    // CFG.inputBuffer seconds before giving up and showing why
+    const press = mode => {
+      const a = FA.interact(mode, true);
+      G.ibuf = a && a.fn ? null : { mode, t: CFG.inputBuffer };
+      return a;
+    };
     const building = G.selected !== 'hand' || G.demolish;
+    if (G.ibuf && !use && !pick) {
+      const b = G.ibuf;
+      b.t -= dt;
+      if (b.mode === 'pick' && building) G.ibuf = null;
+      else {
+        const a = FA.interact(b.mode, b.t > 0);
+        if ((a && a.fn) || b.t <= 0) {
+          G.ibuf = null;
+          if (b.mode === 'pick' && a && a.fn) G.pRepeat = a.rep ? CFG.pickRepeat * 1.5 : 0;
+        }
+      }
+    }
+    if (use) press('use');
+    // A / . picks up one item (holding keeps grabbing); with a building selected it places in front instead
     if (pick) {
       if (building) placeInFront();
-      else { const a = FA.interact('pick'); G.pRepeat = a && a.rep ? CFG.pickRepeat * 1.5 : 0; }
+      else { const a = press('pick'); G.pRepeat = a && a.fn && a.rep ? CFG.pickRepeat * 1.5 : 0; }
     } else if (pickHeld && !building && G.pRepeat > 0) {
       G.pRepeat -= dt;
       if (G.pRepeat <= 0) {
@@ -315,7 +334,7 @@ Main.questHint = function () {
     const w = G.w;
     let best = null, bd = 1e9;
     if (h.harv) for (const o of WZ.harv) { if (o.broken || o.kind !== 'tree') continue; const d = Math.hypot(o.x - w.x, o.y - w.y); if (d < bd) { bd = d; best = o; } }
-    else for (const m of WZ.marks) { if (w.lm[m.id].state === 'done') continue; const d = Math.hypot(m.x - w.x, m.y - w.y); if (d < bd) { bd = d; best = m; } }
+    else for (const m of WZ.marks) { if (m.type === 'shrine' || w.lm[m.id].state === 'done') continue; const d = Math.hypot(m.x - w.x, m.y - w.y); if (d < bd) { bd = d; best = m; } }
     if (best) out.w = { x: best.x, y: best.y, lift: h.mark ? 120 : 90 };
   } else if (h.boss) {
     if (G.w.boss) out.w = { x: G.w.boss.x, y: G.w.boss.y, lift: 140 };

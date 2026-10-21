@@ -349,6 +349,36 @@ task(() => {
     poly(x, [[3, 9], [6, 14], [5, 19], [1, 19]], '#8a54d0');
     poly(x, [[14, 10], [17, 19], [12, 19]], '#8a54d0');
   }), 9, 19);
+  // forage spots: the Wizard mashes the roll button at these
+  reg('mound', mk(20, 10, x => {
+    poly(x, [[0, 9], [3, 4], [7, 1], [13, 1], [17, 4], [20, 9]], '#7a5a2c');
+    poly(x, [[3, 4], [7, 1], [13, 1], [11, 4]], '#a8804a');
+    poly(x, [[0, 9], [3, 4], [6, 9]], '#5a4020');
+    x.fillStyle = '#c9a06a'; x.fillRect(8, 2, 2, 1); x.fillRect(13, 5, 2, 1);
+    x.fillStyle = '#9aa0a8'; x.fillRect(5, 6, 2, 2); x.fillRect(14, 7, 2, 1);
+    x.fillStyle = '#3c9e48'; x.fillRect(16, 2, 1, 2); x.fillRect(17, 3, 1, 1);
+  }), 10, 9);
+  reg('sticks', mk(20, 11, x => {
+    const stick = (x0, y0, x1, y1, col) => { x.strokeStyle = col; x.lineWidth = 2; x.beginPath(); x.moveTo(x0, y0); x.lineTo(x1, y1); x.stroke(); };
+    stick(1, 9, 15, 4, '#6e4423'); stick(4, 4, 19, 9, '#8a5a30'); stick(2, 7, 17, 7, '#a8683a');
+    stick(6, 2, 12, 10, '#c98a52'); stick(9, 3, 16, 5, '#8a5a30');
+    x.fillStyle = '#e4c08a'; x.fillRect(15, 3, 1, 1); x.fillRect(18, 8, 1, 1); x.fillRect(1, 8, 1, 1);
+    x.fillStyle = '#46b452'; x.fillRect(12, 1, 2, 1);
+  }), 10, 10);
+  const bushBody = x => {
+    circ(x, 11, 10, 7.5, '#2a7a36'); circ(x, 5, 12, 5, '#2a7a36'); circ(x, 17, 12, 5, '#2a7a36');
+    circ(x, 10, 7, 5, '#46b452'); circ(x, 15, 9, 3, '#46b452'); circ(x, 8, 5, 2, '#7bd462');
+  };
+  reg('fbush', mk(22, 17, x => {
+    bushBody(x);
+    x.fillStyle = '#ff4a6a'; [[6, 9], [13, 6], [16, 12], [9, 13], [3, 13], [18, 9]].forEach(p => x.fillRect(p[0], p[1], 2, 2));
+    x.fillStyle = '#ffd0dc'; x.fillRect(13, 6, 1, 1); x.fillRect(6, 9, 1, 1);
+    x.fillStyle = '#b8c8e0'; x.fillRect(11, 11, 2, 2);   // something shiny inside
+  }), 11, 16);
+  reg('fbush_bare', mk(22, 17, x => {
+    bushBody(x);
+    x.fillStyle = '#1e5a28'; x.fillRect(7, 9, 2, 2); x.fillRect(14, 11, 2, 2);
+  }), 11, 16);
   reg('pebbles', mk(10, 5, x => {
     circ(x, 3, 3, 2, '#9aa0a8'); circ(x, 7, 3.5, 1.5, '#b4bcc4'); circ(x, 5, 2, 1, '#c4ccd4');
   }), 5, 4);

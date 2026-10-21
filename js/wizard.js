@@ -34,6 +34,7 @@ WZ.terrain = null;   // Uint8: type*8 + shade
 WZ.bucket = null;    // per-tile arrays of decor / harvestables / landmarks
 WZ.palette = [];
 WZ.marks = [];       // landmarks: { id, type: 'camp'|'shrine'|'crypt', x, y, el? }
+WZ.forage = [];      // dirt mounds, stick piles and berry bushes: { kind, x, y, prog, broken, respawn }
 WZ.generate = function () {
   const WW = CFG.WW, WH = CFG.WH;
   // a small flat palette per terrain (8-bit look): 8 shade slots, but only 3 distinct steps
@@ -121,6 +122,17 @@ WZ.generate = function () {
       WZ.harv.push(h); add(h); c++;
     }
   }
+  // forage spots (dirt mounds, stick piles, berry bushes): stand still and mash the roll button to search them
+  WZ.forage = [];
+  const ground = { mound: [T_GRASS, T_DIRT, T_SAND, T_DARK], sticks: [T_GRASS, T_DARK, T_FLOWER], bush: [T_GRASS, T_DARK, T_FLOWER] };
+  for (const k of ['mound', 'sticks', 'bush']) {
+    for (let c = 0, tries = 0; c < CFG.forage[k].count && tries < 20000; tries++) {
+      const x = 2 + r() * (WW - 4), y = 2 + r() * (WH - 4);
+      if (ground[k].indexOf(tyAt(x, y)) < 0 || Math.hypot(x - SPAWN.x, y - SPAWN.y) < 4 || nearMark(x, y)) continue;
+      const o = { x, y, kind: k, prog: 0, lastT: 0, broken: false, respawn: 0, shake: 0, forage: true };
+      WZ.forage.push(o); add(o); c++;
+    }
+  }
 };
 
 // ---------- run state ----------
@@ -202,6 +214,44 @@ WZ.damage = function (d) {   // armor soaks damage first
   w.hurtT = 0.35; w.shake = Math.max(w.shake, 0.35);
   AU.sfx(soak > 0 && d <= 0 ? 'clank' : 'hurt');
   if (w.hp <= 0) { w.hp = 0; w.dead = true; AU.sfx('die'); WZ.puff(w.x, w.y, '#b58cff', 20); }
+};
+// a hit the roll's i-frames just swallowed: say so, so dodging feels deliberate
+WZ.dodge = function () {
+  const w = G.w;
+  if (w.t < (w.dodgeAt || 0)) return;
+  w.dodgeAt = w.t + CFG.wizard.dodgeCd;
+  WZ.num(w.x, w.y - 0.4, 'DODGE!', '#bfe9ff');
+  AU.sfx('dodge');
+};
+// ---------- forage spots: mash the roll button while standing still to dig / search ----------
+WZ.forageAt = function (x, y) {
+  let best = null, bd = CFG.forage.reach;
+  for (const o of WZ.forage) {
+    if (o.broken || Math.abs(o.x - x) > 2 || Math.abs(o.y - y) > 2) continue;
+    const d = Math.hypot(o.x - x, o.y - y);
+    if (d < bd) { bd = d; best = o; }
+  }
+  return best;
+};
+WZ.forageName = k => (k === 'mound' ? 'Dirt Mound' : k === 'sticks' ? 'Stick Pile' : 'Berry Bush');
+WZ.mash = function (o) {
+  const F = CFG.forage, def = F[o.kind], w = G.w;
+  o.prog += 1; o.lastT = w.t; o.shake = 0.12; w.mashT = 0.14;
+  WZ.puff(o.x, o.y, o.kind === 'mound' ? '#8a6a3c' : o.kind === 'sticks' ? '#c98a52' : '#46b452', 3);
+  AU.sfx(o.kind === 'bush' ? 'rustle' : 'dig');
+  if (o.prog < def.taps) return;
+  o.broken = true; o.prog = 0; o.respawn = o.kind === 'bush' ? F.bushRespawn : F.respawn;
+  if (o.kind === 'bush') {   // a pickup tumbles out of the bush: walk over it to use it
+    const kind = Math.random() < def.potion ? 'potion' : 'armor', s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y];
+    w.pickups.push({ kind, x: s[0], y: s[1], z: 1.6, t: 0 });
+    WZ.num(o.x, o.y - 0.6, itemName(kind).toUpperCase() + '!', ITEMS[kind].color);
+  } else {
+    for (const k in def.drop) for (let i = 0; i < def.drop[k]; i++) WZ.drop(k, o.x, o.y, 1);
+    for (const k in def.bonus) if (Math.random() < def.bonus[k]) WZ.drop(k, o.x, o.y, 1);
+  }
+  G.stats.foraged = (G.stats.foraged || 0) + 1;
+  WZ.puff(o.x, o.y, '#ffe9b8', 12);
+  AU.sfx('chest');
 };
 WZ.dropPickup = function (kind) {
   const w = G.w;
@@ -323,6 +373,8 @@ WZ.cast = function (spell) {
     w.shake = Math.max(w.shake, 0.25);
     w.fx_.push({ type: 'title', x: px, y: py, text: SPELLS[spell].toUpperCase() + '!', col: SPELL_COL[spell], t: 0, dur: 1.2 });
   }
+  // when it bursts at his feet, the Spell Portal back in the factory feels it (harder for higher tiers)
+  WZ.later((combo ? 0.8 : 0.55) * 0.6, () => FA.thump(Math.max(1, ctx.el.length), SPELL_COL[spell] || '#ffffff'));
   WZ.ctx = ctx;
   const cone = (n, spread, f) => {
     const a = WZ.aim(), base = Math.atan2(a[1], a[0]);
@@ -425,7 +477,6 @@ WZ.cast = function (spell) {
       break;
   }
   WZ.ctx = null;
-  WZ.shrines(ctx.el);
   WZ.later(1.1, () => FA.landed(ctx));
 };
 
@@ -488,16 +539,6 @@ WZ.claim = function (m) {
   UI.toast(msg, 'R', 'shard'); UI.toast(msg + ' are on their way to the Stockpile', 'L', 'shard');
   AU.sfx('chest'); UI.changed();
 };
-WZ.shrines = function (el) {   // a spell with the shrine's element, cast while the Wizard stands on it, wakes it
-  const w = G.w;
-  for (const m of WZ.marks) {
-    if (m.type !== 'shrine' || w.lm[m.id].state === 'done' || el.indexOf(m.el) < 0) continue;
-    if (Math.hypot(w.x - m.x, w.y - m.y) > CFG.marks.shrineR) continue;
-    const heal = Math.min(CFG.marks.shrineHeal, WZ.maxHp() - w.hp);
-    if (heal > 0) { w.hp += heal; WZ.num(w.x, w.y, '+' + Math.round(heal), '#6aff8a'); }
-    WZ.claim(m);
-  }
-};
 WZ.foesNear = (m, n) => {
   for (let i = 0; i < n; i++) {
     const s = WZ.dryNear(m.x, m.y, 12, [1.2, 3.5]);
@@ -506,6 +547,7 @@ WZ.foesNear = (m, n) => {
 };
 WZ.updMarks = function (dt) {
   const w = G.w, M = CFG.marks;
+  w.shrine = null;
   for (const m of WZ.marks) {
     const s = w.lm[m.id];
     if (s.state === 'done') continue;
@@ -541,12 +583,14 @@ WZ.updMarks = function (dt) {
         if (s.sp <= 0) { s.sp = M.cryptMinions; WZ.foesNear(m, 2); }
         if (!w.enemies.some(e => e.guard && e.mark === m.id && !e.dead)) WZ.claim(m);
       }
-    } else {
-      const near = d < M.shrineR;
-      if (near && !s.near) {
-        UI.toast(WZ.markName(m) + ': the factory must send a ' + ELEM_WORD[m.el] + ' spell while you stand here', 'R', m.el);
-        UI.toast('The Wizard is on a ' + WZ.markName(m) + ': send ' + ELEM_WORD[m.el] + ' now!', 'L', m.el);
-        AU.sfx('alert');
+    } else {   // shrines are never used up: while the Wizard stands on one, its element's harnessers run faster
+      const near = d < M.shrineR, pct = Math.round(M.shrineBoost * 100), el = ELEM_WORD[m.el];
+      if (near) w.shrine = m.el;
+      if (near && !s.near && w.t >= s.t) {
+        s.t = w.t + 20;   // don't repeat the toasts while he steps on and off
+        UI.toast(WZ.markName(m) + ': ' + el + ' Harnessers run ' + pct + '% faster while you stand here', 'R', m.el);
+        UI.toast('The Wizard is at the ' + WZ.markName(m) + ': ' + el + ' Harnessers +' + pct + '%!', 'L', m.el);
+        AU.sfx('shrine');
       }
       s.near = near;
     }
@@ -562,6 +606,7 @@ WZ.summonBoss = function () {
   e.boss = true; e.order = ELEMS.slice().sort(() => Math.random() - 0.5); e.phase = 0; e.weak = e.order[0];
   e.slamT = 3; e.sumT = 6; e.volT = 5;
   w.boss = e;
+  e.weakFlash = G.fac.weakFlash = CFG.boss.weakFlash;
   w.fx_.push({ type: 'beam', x: e.x, y: e.y, col: '#ff4a8a', t: 0, dur: 1.4 });
   WZ.ring(e.x, e.y, 6, '#ff4a8a', 0.8); w.shake = 0.8;
   const msg = 'The Primal Chimera rises! Weak to ' + ELEM_WORD[e.weak] + ' (it changes as it weakens)';
@@ -572,8 +617,10 @@ WZ.summonBoss = function () {
 WZ.bossAI = function (e, dt, d) {
   const B = CFG.boss, w = G.w;
   const ph = Math.min(3, Math.floor((1 - e.hp / e.maxHp) * 4));
+  if (e.weakFlash > 0) e.weakFlash -= dt;
   if (ph !== e.phase) {
     e.phase = ph; e.weak = e.order[ph];
+    e.weakFlash = G.fac.weakFlash = B.weakFlash;   // both the Chimera and the Spell Portal flash the new element
     WZ.ring(e.x, e.y, 5, ELEM[e.weak].color, 0.7); w.shake = Math.max(w.shake, 0.4);
     const msg = 'The Chimera shifts: now weak to ' + ELEM_WORD[e.weak].toUpperCase() + '!';
     UI.toast(msg, 'R', e.weak); UI.toast(msg, 'L', e.weak);
@@ -586,7 +633,7 @@ WZ.bossAI = function (e, dt, d) {
     w.fx_.push({ type: 'warn', x, y, r: B.slamR, t: 0, dur: B.slamDelay, col: '#ff4a8a' });
     WZ.later(B.slamDelay, () => {
       WZ.boom(x, y, B.slamR, '#ff4a8a'); AU.sfx('slam'); G.w.shake = Math.max(G.w.shake, 0.3);
-      if (!G.w.dead && G.w.roll <= 0 && Math.hypot(G.w.x - x, G.w.y - y) < B.slamR) WZ.damage(B.slamDmg);
+      if (!G.w.dead && Math.hypot(G.w.x - x, G.w.y - y) < B.slamR) { if (G.w.roll > 0) WZ.dodge(); else WZ.damage(B.slamDmg); }
     });
   }
   if (e.volT <= 0 && d < 15) {    // a ring of orbs in the current weakness colour
@@ -683,14 +730,21 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     if (h.flash > 0) h.flash -= dt;
     if (h.broken) { h.respawn -= dt; if (h.respawn <= 0) { h.broken = false; h.hp = h.maxHp; } }
   }
+  // forage spots grow back; a half-dug one slowly fills in again if the Wizard stops mashing
+  for (const o of WZ.forage) {
+    if (o.shake > 0) o.shake -= dt;
+    if (o.broken) { o.respawn -= dt; if (o.respawn <= 0) o.broken = false; }
+    else if (o.prog > 0 && w.t - o.lastT > 0.5) o.prog = Math.max(0, o.prog - CFG.forage.decay * dt);
+  }
   for (const f of w.fx_) {
     f.t += dt;
     if (f.type === 'spark') { f.x += f.vx * dt * 0.5; f.y += f.vy * dt * 0.5; f.z += f.vz * dt; f.vz -= 12 * dt; if (f.z < 0) { f.z = 0; f.vz = 0; } }
   }
   w.fx_ = w.fx_.filter(f => f.t < f.dur);
-  if (w.dead) return;
+  if (w.dead) { w.shrine = null; w.dig = null; return; }
   w.time += dt;
   if (w.hurtT > 0) w.hurtT -= dt;
+  if (w.mashT > 0) w.mashT -= dt;
   if (w.rollCd > 0) w.rollCd -= dt;
 
   // timers
@@ -709,6 +763,10 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   }
   const m = Math.hypot(dx, dy);
   if (m > 0) { dx /= m; dy /= m; w.fx = dx; w.fy = dy; }
+  // standing still at a forage spot, the roll button digs instead (move while pressing it to roll away)
+  w.dig = w.roll > 0 ? null : WZ.forageAt(w.x, w.y);
+  if (rollPressed && w.dig && m === 0) { WZ.mash(w.dig); w.mashAt = w.t; rollPressed = false; }
+  else if (rollPressed && m === 0 && w.t - (w.mashAt || -9) < 0.35) rollPressed = false;   // extra mashes after it's dug don't roll him off
   if (rollPressed && w.rollCd <= 0 && w.roll <= 0) {
     w.roll = CFG.wizard.rollTime; w.rollCd = CFG.wizard.rollCd;
     w.rdx = m > 0 ? dx : w.fx; w.rdy = m > 0 ? dy : w.fy;
@@ -820,7 +878,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
       e.cd = cfg.touchCd;
       WZ.damage(e.dmg);
       if (!e.boss) { e.kx -= ex / d * 6; e.ky -= ey / d * 6; }   // bump the attacker back a little
-    } else if (d < reach && e.cd <= 0 && w.roll > 0) e.cd = 0.3;
+    } else if (d < reach && e.cd <= 0 && w.roll > 0) { e.cd = 0.3; WZ.dodge(); }
   }
   w.enemies = en.filter(e => !e.dead);
 
@@ -853,7 +911,9 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     const p = w.eproj[i];
     p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
     if (p.life <= 0 || WZ.wet(p.x, p.y)) { w.eproj.splice(i, 1); continue; }
-    if (Math.hypot(p.x - w.x, p.y - w.y) < 0.55 && w.roll <= 0 && w.hurtT <= 0) { WZ.damage(p.dmg); w.eproj.splice(i, 1); }
+    const pd = Math.hypot(p.x - w.x, p.y - w.y);
+    if (w.roll > 0 && pd < 0.9 && !p.dodged) { p.dodged = true; WZ.dodge(); }   // rolled clean through it
+    else if (pd < 0.55 && w.roll <= 0 && w.hurtT <= 0) { WZ.damage(p.dmg); w.eproj.splice(i, 1); }
   }
 
   // zones

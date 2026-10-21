@@ -20,11 +20,12 @@ const CFG = {
   swapHold: 1.5, swapCooldown: 5,
   builder: { speed: 5.0, accel: 42, friction: 34, radius: 0.24 },
   reach: 1.75, pickRepeat: 0.2,
+  inputBuffer: 0.1,          // a pick / use press with nothing in reach keeps trying this long (taps just before arriving still land)
   throwRange: 6.5, throwRepeat: 0.15,
   portalGap: 0.22,
   wizard: {
     hp: 100, speed: 6.5, accel: 48, friction: 40, radius: 0.3,
-    rollTime: 0.45, rollSpeed: 2.3, rollCd: 1.1, armorMax: 100,
+    rollTime: 0.45, rollSpeed: 2.3, rollCd: 1.1, armorMax: 100, dodgeCd: 0.3,
   },
   world: {
     respawn: 120, vacuum: 2, minSpawnDist: 8,
@@ -55,13 +56,24 @@ const CFG = {
     slamEvery: 4.5, slamDelay: 1.0, slamR: 2.4, slamDmg: 24,
     volleyEvery: 6, volleyN: 10, volleyDmg: 10, volleySpeed: 6,
     summonEvery: 11, summonN: 3, shards: 6,
+    weakFlash: 1.4,                         // seconds the boss + Spell Portal flash the new weakness
   },
   marks: {        // landmarks in the wilds: the only source of Aether Shards besides elites
     camps: 9, shrines: 8, crypts: 4, spacing: 16,
     campWake: 8, campFoes: 6, campShards: 3,
-    shrineR: 2.6, shrineShards: 3, shrineHeal: 30,
+    shrineR: 2.6, shrineBoost: 0.25,   // standing at a shrine speeds up that element's harnessers
     cryptHold: 1.5, cryptShards: 5, cryptMinions: 7, xpBonus: 6,
   },
+  // forage spots in the wilds: the Wizard stands still at one and mashes the roll button to dig / search it.
+  // drop = resources always found, bonus = chance of one more of that kind; a bush gives one pickup (potion or armor)
+  forage: {
+    mound:  { count: 45, taps: 10, drop: { stone: 2 }, bonus: { iron: 0.35 } },
+    sticks: { count: 50, taps: 8,  drop: { wood: 3 },  bonus: { wood: 0.5 } },
+    bush:   { count: 26, taps: 4,  potion: 0.6 },   // otherwise Armor Plate
+    reach: 1.15, decay: 2.5, respawn: 150, bushRespawn: 240,
+  },
+  overdrive: 0.15,            // a charged Battery Station right beside a Forge or Cauldron: +15% crafting speed
+  heavyBattery: 0.5,          // Heavy Batteries node: a Station's Battery lasts 50% longer
   crateCap: 30,
   pickups: {
     potion: { heal: 35 }, elixir: { heal: 80 },
@@ -84,7 +96,7 @@ const CFG = {
     anvil:    { name: 'Armor Anvil', kind: 'crafter', cost: { wood: 9, stone: 12, iron: 6 }, unlock: 'armory',
                 desc: 'Hammers Iron Ore + Stone, heated by a Fire Ember, into Armor for the Wizard.' },
     station:  { name: 'Battery Station', kind: 'station', cost: { wood: 12, stone: 9, iron: 5 }, unlock: 'batteries',
-                desc: 'A charged Battery here generates +10 power for the whole factory. Drains while anything needs power.' },
+                desc: 'A charged Battery here generates +10 power for the whole factory. Drains while anything needs power. Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed.' },
     charger:  { name: 'Battery Charger', kind: 'charger', cost: { wood: 12, stone: 6, iron: 5 }, unlock: 'batteries',
                 desc: 'Recharges a Battery by burning element packets as fuel (15s each). More element types = faster. Uses no electricity.' },
     splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 6, stone: 3 }, unlock: 'logistics',
@@ -132,7 +144,8 @@ const CFG = {
     { id: 'forge',     col: 0, icon: 'b:forge',    name: 'Elemental Forge', xp: 90, req: ['fire'], pay: { air: 15, water: 15, fire: 15 }, desc: 'Unlock the Elemental Forge. Each combo spell is then unlocked on its own.' },
     { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 68, req: ['earth'], pay: { air: 18, fire: 30, earth: 20 }, desc: 'Unlock the Armor Anvil: armor pickups for the Wizard.' },
     { id: 'logistics', col: 0, icon: 'b:splitter', name: 'Logistics',       xp: 60, req: ['fire'], pay: { air: 20, water: 20, fire: 20 }, desc: 'Unlock the Splitter, the Sorter (needs an Aether Shard) and the Storage Crate.' },
-    { id: 'summon',    col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: ['nova'], pay: { air: 40, water: 40, fire: 40, earth: 40 }, desc: 'Unlock the Summoning Altar: craft a Boss Sigil and face the Primal Chimera. Beat it to win.' },
+    { id: 'heavy',     col: 0, icon: 'battery',    name: 'Heavy Batteries', xp: 120, req: ['armory'], pay: { air: 25, water: 25, fire: 30, earth: 30, magma: 2 }, desc: 'Batteries in a Station last 50% longer before they run flat. You still haul them by hand.' },
+    { id: 'summon',   col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: ['nova'], pay: { air: 40, water: 40, fire: 40, earth: 40 }, desc: 'Unlock the Summoning Altar: craft a Boss Sigil and face the Primal Chimera. Beat it to win.' },
     // col 1: Spells (each Forge recipe on its own).
     { id: 'flamethrower', col: 1, icon: 'flamethrower', name: 'Flamethrower',  xp: 45, req: ['forge'], pay: { air: 22, fire: 23 }, desc: 'Air + Fire: 8 fire bolts in a cone.' },
     { id: 'tempest',      col: 1, icon: 'tempest',      name: 'Tempest Chain', xp: 45, req: ['forge'], pay: { air: 22, water: 23 }, desc: 'Air + Water: chain lightning to 5 foes, slows nearby.' },
@@ -254,7 +267,7 @@ const recipeUse = id => {
   return n ? n.desc.replace(/^[^:]*:\s*/, '') : '';
 };
 const SPELL_KINDS = Object.keys(ITEMS).filter(k => ITEMS[k].elem || ITEMS[k].spell);   // what the Skill Portal banks
-// the elements each spell carries (for weaknesses and shrines)
+// the elements each spell carries (for weaknesses, and its tier: how hard it lands back at the Spell Portal)
 const SPELL_EL = { gust: ['air'], fireball: ['fire'], spray: ['water'], boulder: ['earth'] };
 for (const k in CFG.recipes) { const r = CFG.recipes[k]; if (ITEMS[r.out] && ITEMS[r.out].spell) SPELL_EL[r.out] = Object.keys(r.in); }
 
@@ -276,7 +289,7 @@ const QUESTS = [
   { icon: 'battery', text: 'Power the factory: a charged Battery in a Battery Station', xp: 10, done: g => g.fac.gen > 0, hint: { make: 'station' } },
   { icon: 'b:forge', text: 'Build the Elemental Forge', xp: 12, done: g => FA.count('forge') >= 1, hint: { make: 'forge' } },
   { icon: 'flamethrower', text: 'Unlock a combo spell and deliver it from the Forge', xp: 15, done: g => g.flags.combo, hint: { combo: 2 } },
-  { icon: 'ic_flag', text: 'Wizard: claim a landmark (camp, shrine or crypt, see the map) for Aether Shards', xp: 15, done: g => (g.stats.landmarks || 0) >= 1, hint: { mark: 1 } },
+  { icon: 'ic_flag', text: 'Wizard: claim a landmark (a camp or crypt, see the map) for Aether Shards', xp: 15, done: g => (g.stats.landmarks || 0) >= 1, hint: { mark: 1 } },
   { icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter or Sorter to route packets', xp: 15, done: g => FA.count('splitter') + FA.count('sorter') >= 1, hint: { make: 'splitter' } },
   { icon: 'armor', text: 'Unlock the Armory and send Armor to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'anvil' } },
   { icon: 'ic_expand', text: 'Expand the factory floor once', xp: 15, done: g => (g.tree.expand || 0) >= 1, hint: { tree: 1 } },

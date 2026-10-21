@@ -120,7 +120,9 @@ R.drawFactory = function (main, dt) {
   const cam = R.fcam;
   const k = Math.min(1, dt * 7);
   cam.x += (bd.x + bd.vx * 0.18 - cam.x) * k; cam.y += (bd.y + bd.vy * 0.18 - cam.y) * k;
-  const v = R.fv; setView(v, cam);
+  // a spell landing in the wilds bumps the factory view (sideways shake too for triples and the Nova)
+  const bmp = f.bumpAmp > 0 ? f.bumpAmp * Math.cos(f.bump * 40) * (1 - f.bump / 0.4) : 0;
+  const v = R.fv; setView(v, cam, f.bumpAmp >= 18 ? (Math.random() - 0.5) * bmp : 0, bmp);
   const t = f.t, W = f.w, H = f.h;
 
   // sky
@@ -311,6 +313,8 @@ R.drawBelt = function (ctx, v, b, t) {
   }
 };
 
+// the Builder is standing at it (its prompt is up) or the mouse is over it
+R.isNear = b => (R.focus && R.focus.list.some(e => e.t.kind === 'bld' && e.t.o === b)) || R.hoverB === b;
 R.drawBuilding = function (ctx, v, b, t) {
   const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), S = 4, d = FA.def(b);
   const spr = R.bldSprite(b);
@@ -347,6 +351,12 @@ R.drawBuilding = function (ctx, v, b, t) {
     }
     if (b.out.length < CFG.buffer) R.bar(ctx, p[0], base + 2, 48, b.timer / FA.cycle(b.type), ELEM[d.elem].color, 8);
     if (!b.powered && d.power > 0) R.noPower(ctx, p[0], top + 20, t);
+    else if (FA.shrineBoost(b.type) > 1) {   // the Wizard is at this element's shrine: a pulsing rim + rising sparks
+      if (Math.sin(t * 6) > -0.3) { ctx.strokeStyle = ELEM[d.elem].color; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw * 0.95, v.hh * 0.95); ctx.stroke(); }
+      ctx.fillStyle = ELEM[d.elem].color;
+      for (let i = 0; i < 3; i++) { const ph = (t * 0.9 + i / 3) % 1; ctx.fillRect(Math.round((p[0] - 28 + i * 28) / 4) * 4, Math.round((base - 20 - ph * 90) / 4) * 4, 8, 8); }
+      dspr(ctx, SP.ic_up, p[0] + 40, top + 44 + (Math.sin(t * 5) > 0 ? 0 : 4), 4);
+    }
   }
   if (d.kind === 'crafter') {
     if (b.type === 'forge' && b.prog > 0 && b.powered) R.flames(ctx, p[0] - 12, p[1] - 22, t);
@@ -370,8 +380,7 @@ R.drawBuilding = function (ctx, v, b, t) {
       const R2 = CFG.recipes[b.recipe];
       const keys = Object.keys(R2.in), w = keys.length * 56 + 64;
       // standing at (or hovering) a crafter says what its product is for
-      const near = (R.focus && R.focus.list.some(e => e.t.kind === 'bld' && e.t.o === b)) || R.hoverB === b;
-      if (near) txt(ctx, recipeName(b.recipe) + ': ' + recipeUse(b.recipe), p[0], top - 12, 12, '#ffe9b8', 'center');
+      if (R.isNear(b)) txt(ctx, recipeName(b.recipe) + ': ' + recipeUse(b.recipe), p[0], top - 12, 12, '#ffe9b8', 'center');
       // a faded ghost of the product waits in the empty output slot
       if (!b.out.length && b.prog <= 0) dspr(ctx, itemSprite(R2.out), p[0] + 44, base - 28 + (Math.sin(t * 3) > 0 ? 0 : 4), 4, 0.35);
       let x0 = p[0] - w / 2;
@@ -389,6 +398,16 @@ R.drawBuilding = function (ctx, v, b, t) {
       if (b.draw > 0 && !b.powered) R.noPower(ctx, p[0], top - 16, t);
     } else txt(ctx, 'no recipe yet', p[0], top + 30, 12, '#dddddd', 'center', 'd');
     b.out.slice(0, 3).forEach((o, i) => R.item(ctx, o.kind, p[0] + 44, base - 28 - i * 16, 4, t));
+    if (b.od) {   // Adjacency Overdrive: sparks jump across from the charged Station beside it
+      for (const dd of DIRS) {
+        const c = FA.cell(b.x + dd[0], b.y + dd[1]);
+        if (!c || c.type !== 'station' || !c.done || !(c.bat > 0)) continue;
+        const q = R.toScreen(v, b.x + 0.5 + dd[0] * 0.5, b.y + 0.5 + dd[1] * 0.5);
+        ctx.fillStyle = Math.sin(t * 17) > 0 ? '#fff07a' : '#ffffff';
+        for (let i = 0; i < 3; i++) ctx.fillRect(Math.round((q[0] - 8 + Math.sin(t * 23 + i * 2) * 10) / 4) * 4, Math.round((q[1] - 40 - i * 12) / 4) * 4, 8, 4);
+      }
+      if (Math.sin(t * 8) > -0.4) dspr(ctx, SP.ic_bolt, p[0] - 44, base - 12, 4);
+    }
   }
   if (b.type === 'station') {
     const fr = b.bat == null ? 0 : b.bat / CFG.batteryMax;
@@ -407,14 +426,16 @@ R.drawBuilding = function (ctx, v, b, t) {
     if (ft > 0) R.bar(ctx, p[0], top + 66, 64, ft / CFG.fuelCap, '#ff8a3a', 8);
   }
   if (d.kind === 'splitter' || d.kind === 'sorter') b.out.forEach((o, i) => R.item(ctx, o.kind, p[0] - 8 + i * 16, base - 52 - i * 8, 4, t));
-  if (d.kind === 'sorter') {
-    pbox(ctx, p[0] - 28, top + 12, 56, 44, '#2b1d48');
-    if (b.filter) R.item(ctx, b.filter, p[0], top + 48, 4, t, false);
-    else txt(ctx, 'ANY', p[0], top + 40, 12, '#c8b8e8', 'center', 'd');
-  }
-  if (d.kind === 'crate') {
-    if (b.out.length) R.item(ctx, b.out[0].kind, p[0] - 20, top + 64, 4, t, false);
-    txt(ctx, b.out.length + '/' + CFG.crateCap, p[0] + (b.out.length ? 16 : 0), top + 60, 12, b.out.length >= CFG.crateCap ? '#ffb43a' : '#ffffff', 'center', 'd');
+  if (d.kind === 'sorter' || d.kind === 'crate') {
+    // a tiny item floats over the tile: the Sorter's filter / the Crate's next item. Faint until you stand at or hover it
+    const lit = R.isNear(b), a = lit ? 1 : 0.45, fy = base - 84 + (Math.sin(t * 3 + b.x + b.y) > 0 ? 0 : 4);
+    const kind = d.kind === 'sorter' ? b.filter : b.out.length ? b.out[0].kind : null;
+    if (kind && lit) R.item(ctx, kind, p[0], fy, 4, t);
+    else if (kind) dspr(ctx, itemSprite(kind), p[0], fy, 4, a);
+    ctx.globalAlpha = a;
+    if (!kind && d.kind === 'sorter') txt(ctx, 'ANY', p[0], fy - 8, 12, '#c8b8e8', 'center', 'd');
+    if (d.kind === 'crate') txt(ctx, b.out.length + '/' + CFG.crateCap, p[0], fy - (kind ? 44 : 8), 12, b.out.length >= CFG.crateCap ? '#ffb43a' : '#ffffff', 'center', 'd');
+    ctx.globalAlpha = 1;
   }
   if (d.kind === 'crafter' && b.type === 'altar' && b.prog > 0 && b.powered) {
     ctx.strokeStyle = Math.sin(t * 10) > 0 ? '#ff4a8a' : '#c890ff'; ctx.lineWidth = 4;
@@ -456,9 +477,34 @@ R.drawPortal = function (ctx, v, t, which) {
   ctx.beginPath(); ctx.moveTo(d[0], d[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(c[0], c[1] + 16); ctx.lineTo(d[0], d[1] + 16); ctx.fill();
   const flash = Math.max(0, skill ? f.skillFlash : f.flash) * 2;
   const cols = skill ? ['#2a6a3a', '#5ad06a', '#c8ffb0', '#ffffff'] : ['#4a2890', '#8a4ad0', '#c890ff', '#ffffff'];
+  // while the Chimera is out, the Spell Portal wears its current weakness: a rim in that colour, flashing after a change
+  const boss = !skill && G.w.boss, weakCol = boss && ELEM[boss.weak].color, wfl = boss && f.weakFlash > 0;
+  if (boss) {
+    const k = wfl ? 1.45 + Math.ceil((1 - f.weakFlash / CFG.boss.weakFlash) * 4) / 4 * 0.5 : 1.3;
+    if (!wfl || Math.sin(t * 24) > 0) {
+      ctx.strokeStyle = wfl && Math.sin(t * 12) > 0 ? '#ffffff' : weakCol; ctx.lineWidth = wfl ? 12 : 8;
+      ctx.globalAlpha = wfl ? 1 : Math.sin(t * 4) > 0 ? 0.85 : 0.5;
+      ctx.beginPath();
+      [a, b, c, d].forEach((q, i) => { const x = base[0] + (q[0] - base[0]) * k, y = base[1] + (q[1] - base[1]) * k; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+      ctx.closePath(); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+  // spell-landing pulses: one ring per tier, each tier reaching further
+  if (!skill) for (const th of f.thumps) {
+    const dur = 0.5 + th.tier * 0.12;
+    for (let i = 0; i < th.tier; i++) {
+      const kk = th.t / dur - i * 0.12;
+      if (kk <= 0 || kk >= 1) continue;
+      const r = (1.1 + th.tier * 0.75) * Math.ceil(kk * 5) / 5;
+      ctx.globalAlpha = 1 - kk; ctx.strokeStyle = i % 2 ? '#ffffff' : th.col; ctx.lineWidth = 4 + th.tier * 2;
+      diamond(ctx, base[0], base[1], r * v.hw, r * v.hh); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
   ctx.save();
   ctx.translate(base[0], base[1] - 72);
   ctx.transform(-v.hw, v.hh, 0, 72, 0, 0);
+  if (boss) { ctx.fillStyle = wfl && Math.sin(t * 12) > 0 ? '#ffffff' : weakCol; ctx.beginPath(); ctx.ellipse(0, 0, 1.14, 1.18, 0, 0, 6.283); ctx.fill(); }
   // concentric flat rings (no gradients: chunky 8-bit bands)
   const rs = [1, 0.75, 0.5, 0.25];
   for (let i = 0; i < 4; i++) {
@@ -469,6 +515,11 @@ R.drawPortal = function (ctx, v, t, which) {
   for (let i = 0; i < 4; i++) { const an = t * 1.5 + i * 1.57; ctx.fillRect(Math.cos(an) * 0.6 - 0.06, Math.sin(an) * 0.6 - 0.06, 0.12, 0.12); }
   ctx.restore();
   if (flash > 0) { ctx.fillStyle = skill ? '#ffe36b' : '#ffffff'; ctx.globalAlpha = flash * 0.4; ctx.fillRect(base[0] - 64, base[1] - 140, 128, 136); ctx.globalAlpha = 1; }
+  if (boss) {   // the element that hurts the boss right now, floating in the middle of the portal
+    const sc = wfl && Math.sin(t * 12) > 0 ? 1.3 : 1;
+    dsprSq(ctx, itemSprite(boss.weak), base[0], base[1] - 52 + (Math.sin(t * 4) > 0 ? 0 : 4), 4, sc, sc);
+    txt(ctx, 'BOSS WEAK: ' + ELEM_WORD[boss.weak].toUpperCase(), base[0], base[1] - 182, 12, weakCol, 'center', 'd');
+  }
   txt(ctx, skill ? 'SKILL PORTAL' : 'SPELL PORTAL', base[0], base[1] - 164, 12, skill ? '#ffe36b' : '#efe4ff', 'center', 'd');
   const q = f.portalQ.filter(e => e.which === which).length;
   if (q) txt(ctx, q + ' queued', base[0], base[1] - 146, 12, '#ffe36b', 'center', 'd');
@@ -557,6 +608,11 @@ R.drawGhost = function (ctx, v, g, t) {
   ctx.fillStyle = '#ffffff';
   ctx.beginPath(); ctx.moveTo(ex + nx * 8, ey + ny * 8); ctx.lineTo(ex - nx * 12 - ny * 14, ey - ny * 12 + nx * 14); ctx.lineTo(ex - nx * 12 + ny * 14, ey - ny * 12 - nx * 14); ctx.fill();
   if (g.type !== 'belt' && g.type !== 'hand' && G.credits[g.type] > 0) txt(ctx, 'FREE!', p[0], p[1] - 110, 16, '#7be0ff', 'center', 'd');
+  // a Station beside a Forge / Cauldron (or the other way round) will overdrive it
+  const pair = g.type === 'station' ? ['forge', 'cauldron'] : g.type === 'forge' || g.type === 'cauldron' ? ['station'] : null;
+  if (g.ok && pair && DIRS.some(dd => { const c = FA.cell(g.x + dd[0], g.y + dd[1]); return c && pair.indexOf(c.type) >= 0; })) {
+    txt(ctx, 'OVERDRIVE +' + Math.round(CFG.overdrive * 100) + '%', p[0], p[1] - 136, 12, '#fff07a', 'center', 'd');
+  }
   txt(ctx, 'R rotates', p[0], p[1] + v.hh + 26, 12, '#ffffff', 'center', 'd');
 };
 R.drawDemo = function (ctx, v, g, t) {
@@ -656,7 +712,10 @@ R.drawWorld = function (main, dt) {
       if (ty === T_POND && ((x * 7 + y * 3 + Math.floor(wt * 2)) % 9) === 0) { ctx.fillStyle = '#bfe6ff'; ctx.fillRect(Math.round(sx / 3) * 3 - 9, Math.round(sy / 3) * 3, 18, 3); }
       if (ty === T_BOG && ((x * 5 + y * 11) % 4) === 0) { ctx.fillStyle = '#4a5a2a'; ctx.fillRect(Math.round(sx / 3) * 3 - 6, Math.round(sy / 3) * 3 - 3, 12, 6); }
       const b = bk[i];
-      if (b) for (let j = 0; j < b.length; j++) { const o = b[j]; if (!o.broken) objs.push({ d: o.x + o.y, t: o.lm ? 'lm' : o.deco ? 'deco' : 'harv', o }); }
+      if (b) for (let j = 0; j < b.length; j++) {
+        const o = b[j];
+        if (!o.broken || o.kind === 'bush') objs.push({ d: o.x + o.y, t: o.lm ? 'lm' : o.deco ? 'deco' : o.forage ? 'forage' : 'harv', o });
+      }
     }
   }
   for (const z of w.zones) R.drawZone(ctx, v, z);
@@ -686,6 +745,7 @@ R.drawWorld = function (main, dt) {
       ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(snap(p[0] - 6), Math.round(p[1] / 3) * 3 - 3, 12, 6);
       dspr(ctx, itemSprite(o.kind), p[0], p[1] - 6 + bob, 3);
     } else if (it.t === 'pick') R.drawPickup(ctx, v, o, wt);
+    else if (it.t === 'forage') R.drawForage(ctx, v, o);
     else if (it.t === 'lm') R.drawMark(ctx, v, o.lm);
     else if (it.t === 'enemy') R.drawEnemy(ctx, v, o);
     else if (it.t === 'wiz') R.drawWizard(ctx, v, o);
@@ -741,16 +801,26 @@ R.drawEnemy = function (ctx, v, e) {
   const lift = fly ? 12 : 0, sc = e.elite ? 1.4 : 1;
   const sw = e.boss ? 66 : 24 * sc;
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(snap(p[0] - sw / 2), Math.round(p[1] / 3) * 3 - 3, Math.round(sw / 3) * 3, e.boss ? 12 : 6);
-  if (e.boss) {   // aura in the colour of its current weakness
-    ctx.strokeStyle = ELEM[e.weak].color; ctx.lineWidth = 6; ctx.globalAlpha = Math.sin(t * 5) > 0 ? 0.9 : 0.5;
-    diamond(ctx, p[0], p[1], 72, 36); ctx.stroke(); ctx.globalAlpha = 1;
+  const wfl = e.boss && e.weakFlash > 0;
+  if (e.boss) {   // aura in the colour of its current weakness; right after a change it flashes and throws rings out
+    ctx.strokeStyle = wfl && Math.sin(t * 12) > 0 ? '#ffffff' : ELEM[e.weak].color; ctx.lineWidth = wfl ? 9 : 6;
+    ctx.globalAlpha = wfl ? 1 : Math.sin(t * 5) > 0 ? 0.9 : 0.5;
+    diamond(ctx, p[0], p[1], 72, 36); ctx.stroke();
+    if (wfl) {
+      const k = 1 + Math.ceil((1 - e.weakFlash / CFG.boss.weakFlash) * 5) / 5 * 1.4;
+      ctx.strokeStyle = ELEM[e.weak].color; ctx.globalAlpha = e.weakFlash / CFG.boss.weakFlash;
+      diamond(ctx, p[0], p[1], 72 * k, 36 * k); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
   } else if (e.elite) { ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffd23a' : '#ffa62a'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 27, 13); ctx.stroke(); }
   if (e.slow > 0) { ctx.strokeStyle = '#78c8ff'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 18 * sc, 9 * sc); ctx.stroke(); }
   const y = p[1] - hop - lift;
   dsprSq(ctx, spr, p[0], y, S, sc, sc, 1, e.face < 0);
   if (e.flash > 0) dsprSq(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, p[0], y, S, sc, sc, 0.85, e.face < 0);
   if (e.boss) {   // its belly glows with the element that hurts it
+    if (wfl && Math.sin(t * 12) > 0) dsprSq(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, p[0], y, S, sc, sc, 0.5, e.face < 0);
     ctx.fillStyle = ELEM[e.weak].color; ctx.fillRect(snap(p[0] - 6), Math.round((y - 24) / 3) * 3, 12, 9);
+    if (wfl) R.item(ctx, e.weak, p[0], y - spr.c.height * S - 12 + (Math.sin(t * 8) > 0 ? 0 : 6), 3, t);
     return;
   }
   const top = y - spr.c.height * S * sc;
@@ -758,7 +828,28 @@ R.drawEnemy = function (ctx, v, e) {
   if (e.elite) dspr(ctx, SP.ic_crown, p[0], top - 15, S);
   if (e.weak && (e.elite || CFG.enemies[e.type].weak)) dspr(ctx, SP['wk_' + e.weak], p[0] + (e.elite ? 30 : 21), top + 3, S);
 };
-// landmarks: camps wake when the Wizard walks up, shrines want a spell of their element, crypts open if he waits at the door
+// the Wizard's dig / search button: pad 2 A, the roll key otherwise
+R.wkey = () => (IN.pad[1] ? 'A' : G.swapped ? 'SPACE' : '.');
+// forage spots: a glint says "search me", a bar fills while he mashes, a searched bush stands bare until it regrows
+R.drawForage = function (ctx, v, o) {
+  const w = G.w, p = R.toScreen(v, o.x, o.y), S = CFG.WT.S, t = w.t;
+  if (p[0] < CFG.HALF - 60 || p[0] > CFG.W + 60) return;
+  if (o.broken) { dspr(ctx, SP.fbush_bare, p[0], p[1], S); return; }
+  const spr = SP[o.kind === 'bush' ? 'fbush' : o.kind], shake = o.shake > 0 ? (Math.random() < 0.5 ? -3 : 3) : 0, h = spr.c.height * S;
+  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(snap(p[0] - 21), Math.round(p[1] / 3) * 3 - 3, 42, 9);
+  dspr(ctx, spr, p[0] + shake, p[1], S);
+  if (o.shake > 0) dspr(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, p[0] + shake, p[1], S, 0.35);
+  if (Math.sin(t * 2.2 + o.x * 3.1) > 0.8) {
+    const gx = snap(p[0] + 12), gy = Math.round((p[1] - h + 6) / 3) * 3;
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(gx - 3, gy, 9, 3); ctx.fillRect(gx, gy - 3, 3, 9);
+  }
+  if (o.prog > 0) R.hpBar(ctx, p[0], p[1] - h - 9, 42, o.prog / CFG.forage[o.kind].taps, '#ffe36b');
+  if (w.dig === o && !w.dead) {
+    ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffec8c' : '#ffd23a'; ctx.lineWidth = 6; diamond(ctx, p[0], p[1], 33, 15); ctx.stroke();
+    R.prompt(ctx, p[0], p[1] - h - 42 + (Math.sin(t * 3) > 0 ? 0 : 3), R.wkey(), 'Stand still + mash: ' + (o.kind === 'bush' ? 'search the bush' : 'dig the ' + WZ.forageName(o.kind)), CFG.W, CFG.HALF);
+  }
+};
+// landmarks: camps wake when the Wizard walks up, shrines boost harnessers while he stands on them, crypts open if he waits at the door
 R.drawMark = function (ctx, v, m) {
   const w = G.w, s = w.lm[m.id], p = R.toScreen(v, m.x, m.y), S = CFG.WT.S, t = w.t, done = s.state === 'done';
   const d = Math.hypot(w.x - m.x, w.y - m.y);
@@ -774,10 +865,15 @@ R.drawMark = function (ctx, v, m) {
     if (s.state === 'idle') label = 'MONSTER CAMP';
     else if (!done) { label = 'CLEAR THE CAMP: ' + w.enemies.filter(e => e.mark === m.id).length + ' LEFT'; col = '#ffb0a0'; }
   } else if (m.type === 'shrine') {
-    if (!done && d < CFG.marks.shrineR + 0.4) { ctx.strokeStyle = ELEM[m.el].color; ctx.lineWidth = 6; ctx.globalAlpha = Math.sin(t * 8) > 0 ? 1 : 0.5; diamond(ctx, p[0], p[1], CFG.marks.shrineR * v.hw * 1.4, CFG.marks.shrineR * v.hh * 1.4); ctx.stroke(); ctx.globalAlpha = 1; }
+    const on = w.shrine === m.el && d < CFG.marks.shrineR;
+    // the boost radius is always marked faintly; standing inside lights it up
+    ctx.strokeStyle = ELEM[m.el].color; ctx.lineWidth = on ? 6 : 3; ctx.globalAlpha = on ? (Math.sin(t * 8) > 0 ? 1 : 0.6) : 0.35;
+    diamond(ctx, p[0], p[1], CFG.marks.shrineR * v.hw * 1.4, CFG.marks.shrineR * v.hh * 1.4); ctx.stroke(); ctx.globalAlpha = 1;
     dspr(ctx, SP.lm_shrine, p[0], p[1], S);
-    if (!done) dspr(ctx, SP['cr_' + m.el], p[0], p[1] - 39 - (Math.sin(t * 3) > 0 ? 3 : 0), S);
-    if (!done) { label = d < CFG.marks.shrineR ? 'NOW: SEND ' + ELEM_WORD[m.el].toUpperCase() + '!' : ELEM_WORD[m.el].toUpperCase() + ' SHRINE'; col = ELEM[m.el].color; }
+    dspr(ctx, SP['cr_' + m.el], p[0], p[1] - 39 - (Math.sin(t * (on ? 8 : 3)) > 0 ? 3 : 0), S);
+    if (on) for (let i = 0; i < 3; i++) { const ph = (t * 1.2 + i / 3) % 1; ctx.fillStyle = ELEM[m.el].color; ctx.fillRect(snap(p[0] - 21 + i * 21), Math.round((p[1] - 15 - ph * 90) / 3) * 3, 6, 6); }
+    label = on ? ELEM_WORD[m.el].toUpperCase() + ' HARNESSERS +' + Math.round(CFG.marks.shrineBoost * 100) + '%' : ELEM_WORD[m.el].toUpperCase() + ' SHRINE: STAND HERE';
+    col = ELEM[m.el].color;
   } else {
     dspr(ctx, SP.lm_crypt, p[0], p[1], S, done ? 0.6 : 1);
     if (s.state === 'idle') {
@@ -844,12 +940,17 @@ R.drawWizard = function (ctx, v, w) {
   if (w.dead) { ctx.save(); ctx.translate(snap(p[0]), p[1]); ctx.rotate(Math.PI / 2); ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S, spr.c.width * S, spr.c.height * S); ctx.restore(); return; }
   if (w.roll > 0) {
     const fr = 1 - w.roll / CFG.wizard.rollTime, step = Math.floor(fr * 8) / 8;   // somersault in 8 chunky frames
+    // i-frames: he strobes between see-through and a white silhouette, so it's clear he can't be hit
+    const ghost = Math.floor(w.roll * 30) % 2 === 0;
     ctx.save(); ctx.translate(snap(p[0]), p[1] - 24); ctx.rotate(step * 6.283 * (flip ? -1 : 1));
-    ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S + 24, spr.c.width * S, spr.c.height * S); ctx.restore();
+    ctx.globalAlpha = ghost ? 0.4 : 0.9;
+    ctx.drawImage(ghost ? spr.c : spr.white, -spr.ax * S, -spr.ay * S + 24, spr.c.width * S, spr.c.height * S); ctx.restore();
+    ctx.globalAlpha = 1;
     return;
   }
   const blink = w.hurtT > 0 && Math.floor(w.hurtT * 20) % 2;
-  dspr(ctx, spr, p[0], p[1] - bob, S, blink ? 0.4 : 1, flip);
+  if (w.mashT > 0) dsprSq(ctx, spr, p[0], p[1] - bob, S, 1.15, 0.85, blink ? 0.4 : 1, flip);   // squashed while digging
+  else dspr(ctx, spr, p[0], p[1] - bob, S, blink ? 0.4 : 1, flip);
   if (Math.sin(G.w.t * 6) > 0) { ctx.fillStyle = '#fff07a'; ctx.fillRect(snap(p[0] + (flip ? -27 : 21)), Math.round((p[1] - 48 - bob) / 3) * 3, 6, 6); }
   if (w.rollCd > 0) R.hpBar(ctx, p[0], p[1] + 9, 27, 1 - w.rollCd / CFG.wizard.rollCd, '#ffffff');
 };

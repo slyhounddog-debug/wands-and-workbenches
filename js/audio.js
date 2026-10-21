@@ -119,7 +119,15 @@ const AU = (() => {
       case 'hit': tone(180, 0.06, 'square', 0.04, 0.6); break;
       case 'kill': tone(400, 0.1, 'triangle', 0.07, 1.8); break;
       case 'hurt': tone(140, 0.25, 'sawtooth', 0.14, 0.5); break;
-      case 'roll': noise(0.22, 0.06, 2000); break;
+      case 'roll': {   // a quick whoosh, pitch-shifted a little each time so repeated rolls don't drone
+        const f = 480 + Math.random() * 240;
+        tone(f, 0.15, 'triangle', 0.07, 2.6); tone(f * 1.5, 0.09, 'sine', 0.04, 2.2, 0.04); noise(0.16, 0.05, 2600);
+        break;
+      }
+      case 'dodge': tone(1500, 0.07, 'square', 0.04, 1.5); tone(2250, 0.1, 'sine', 0.05, 1.3, 0.05); break;
+      case 'dig': tone(100 + Math.random() * 50, 0.07, 'square', 0.07, 0.6); noise(0.06, 0.06, 500); break;
+      case 'rustle': noise(0.1, 0.07, 3200); tone(900 + Math.random() * 200, 0.04, 'triangle', 0.03); break;
+      case 'shrine': [0, 7, 12, 19].forEach((s, i) => tone(N(s + 12), 0.22, 'sine', 0.08, 0, i * 0.06)); break;
       case 'gem': tone(1000 + Math.random() * 300, 0.07, 'sine', 0.05); break;
       case 'charge': tone(880, 0.1, 'sine', 0.08); tone(1320, 0.14, 'sine', 0.08, 0, 0.08); break;
       case 'throw': noise(0.12, 0.05, 2500); tone(500, 0.12, 'sine', 0.06, 1.6); break;

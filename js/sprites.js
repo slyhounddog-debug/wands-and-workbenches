@@ -460,6 +460,123 @@ task(() => {
   reg('belt', mapSprite(['oooooooooo', 'onnnnnnnno', 'oyNyNyNyNo', 'onnnnnnnno', 'oooooooooo', '.oa.oa.oa.'], pal), 5, 6);
 });
 
+// ---------- crafted creatures, eggs, Cores, Strongholds, Spawners ----------
+task(() => {
+  // basics come in three palettes each (the creature rolls one); the bigger ones are drawn with shapes
+  const variants = (name, rows, pals) => pals.forEach((p, i) => reg(i ? name + '_' + i : name, mapSprite(rows, p)));
+  variants('zephyr', ['....cccc....', '..cccwwccc..', '.ccwwwwwwcc.', '.cwwdwwdwwc.', '.cwwdwwdwwc.', '.cwwwwwwwwc.', '.cbwwwwwwbc.', '..cwwwwwwc..', '..bcwwwwcb..', '...bcwwcb...', '....bccb....', '.....bb.....'],
+    [{ c: '#d6f4ff', w: '#ffffff', b: '#9cd4f0', d: '#2b2230' }, { c: '#f2d6ff', w: '#fff4ff', b: '#cf9cf0', d: '#2b2230' }, { c: '#d6ffe6', w: '#f4fff8', b: '#9cf0bf', d: '#2b2230' }]);
+  variants('puddle', ['.....gg.....', '....gggg....', '..gggggggg..', '.ggwdgggwdg.', '.ggddgggddg.', 'gggggggggggg', 'gGgggggggggG', 'GGGGGGGGGGGG', '.GG.GGGG.GG.'],
+    [{ g: '#4aa8ff', G: '#2a72c8', w: '#ffffff', d: '#2b2230' }, { g: '#4ad8c8', G: '#2a9a98', w: '#ffffff', d: '#2b2230' }, { g: '#9a8aff', G: '#6a56d0', w: '#ffffff', d: '#2b2230' }]);
+  variants('cinder', ['.y........y.', '.yy......yy.', '..dddddddd..', '.dddddddddd.', '.dyydddyydd.', '.dyodddyodd.', '.dddddddddd.', '..dddwwddd..', '...dddddd...', '..dodddddod.', '.dd.dddd.dd.', '....dDDd..o.', '...DD..DD.oo'],
+    [{ d: '#3a2a30', D: '#241a20', o: '#ff7a30', y: '#ffd23a', w: '#fff0d0' }, { d: '#4a2a3a', D: '#2e1a26', o: '#ff4a6a', y: '#ffb04a', w: '#fff0d0' }, { d: '#2a3a3a', D: '#1a2626', o: '#ffb030', y: '#fff27a', w: '#fff0d0' }]);
+  variants('pebble', ['....aaaa....', '...aAAAAa...', '..aAyAAyAa..', '..aAAAAAAa..', 'aaaaAAAAaaaa', 'aAAaAggAaAAa', 'aAAaAAAAaAAa', '.aa.aAAAAa..', '....aAAAAa..', '...aaA..Aaa.', '...aa....aa.'],
+    [{ a: '#b58a4c', A: '#8a6a3c', y: '#ffe36b', g: '#7be07a' }, { a: '#a8a4b0', A: '#7a7686', y: '#ff9a6b', g: '#7bd0ff' }, { a: '#c8a070', A: '#9a7248', y: '#fff27a', g: '#ff7ad0' }]);
+  reg('phoenix', mk(24, 22, x => {
+    poly(x, [[12, 10], [1, 2], [3, 10], [0, 16], [10, 15]], '#e8381a'); poly(x, [[12, 10], [23, 2], [21, 10], [24, 16], [14, 15]], '#e8381a');
+    poly(x, [[12, 10], [4, 5], [5, 11]], '#ff9a3a'); poly(x, [[12, 10], [20, 5], [19, 11]], '#ff9a3a');
+    poly(x, [[9, 16], [12, 22], [15, 16]], '#ff9a3a'); poly(x, [[11, 17], [12, 22], [13, 17]], '#ffe36b');
+    circ(x, 12, 12, 5, '#ff7a30'); circ(x, 12, 13, 3, '#ffd23a'); circ(x, 12, 6, 3.5, '#ff9a3a');
+    poly(x, [[10, 3], [12, 0], [14, 3]], '#ffe36b'); poly(x, [[12, 6], [15, 7], [12, 9]], '#ffd23a');
+    x.fillStyle = '#2b2230'; x.fillRect(10, 5, 2, 2);
+  }), 12, 22);
+  reg('thunderhead', mk(26, 22, x => {
+    circ(x, 7, 9, 5, '#6a748f'); circ(x, 13, 7, 6, '#7d88a8'); circ(x, 19, 10, 5, '#6a748f'); circ(x, 13, 11, 5, '#8c98b8');
+    x.fillStyle = '#5a6380'; x.fillRect(4, 12, 18, 3); circ(x, 13, 7, 3.5, '#a8b4dc');
+    x.fillStyle = '#ffe36b'; x.fillRect(10, 6, 2, 2); x.fillRect(15, 6, 2, 2);
+    poly(x, [[14, 14], [10, 14], [12, 18], [9, 18], [12, 22], [12, 19], [15, 19]], '#fff27a');
+  }), 13, 22);
+  reg('lavagolem', mk(24, 24, x => {
+    x.fillStyle = '#3a2420'; x.fillRect(6, 3, 12, 8); x.fillRect(1, 9, 22, 7); x.fillRect(5, 15, 5, 8); x.fillRect(14, 15, 5, 8);
+    x.fillStyle = '#5a3830'; x.fillRect(6, 3, 12, 2); x.fillRect(1, 9, 22, 2);
+    x.fillStyle = '#ff7a30'; x.fillRect(11, 8, 2, 9); x.fillRect(4, 12, 6, 1); x.fillRect(15, 11, 6, 1); x.fillRect(7, 18, 1, 4); x.fillRect(16, 18, 1, 4);
+    x.fillStyle = '#ffe36b'; x.fillRect(8, 6, 3, 2); x.fillRect(14, 6, 3, 2); circ(x, 12, 13, 2, '#ffd23a');
+    x.fillStyle = '#ff4a1a'; x.fillRect(0, 12, 3, 3); x.fillRect(21, 12, 3, 3);
+  }), 12, 24);
+  reg('shambler', mk(22, 24, x => {
+    x.fillStyle = '#4a6a38'; x.fillRect(5, 1, 1, 6); x.fillRect(9, 0, 1, 7); x.fillRect(14, 1, 1, 6); x.fillRect(17, 2, 1, 5);
+    circ(x, 11, 12, 8, '#5a4228'); circ(x, 11, 14, 7, '#6e5232'); circ(x, 8, 10, 3, '#7e6240');
+    x.fillStyle = '#6a8a4a'; x.fillRect(4, 6, 3, 2); x.fillRect(15, 7, 3, 2); x.fillRect(10, 18, 3, 2);
+    x.fillStyle = '#5a4228'; x.fillRect(0, 14, 5, 5); x.fillRect(17, 14, 5, 5); x.fillRect(4, 20, 5, 4); x.fillRect(13, 20, 5, 4);
+    x.fillStyle = '#ffe36b'; x.fillRect(7, 10, 2, 2); x.fillRect(13, 10, 2, 2); x.fillStyle = '#2b2230'; x.fillRect(8, 15, 6, 1);
+  }), 11, 24);
+  reg('dragon', mk(34, 28, x => {
+    poly(x, [[14, 12], [2, 0], [4, 10], [0, 16], [12, 17]], '#8a2a1a'); poly(x, [[20, 12], [32, 0], [30, 10], [34, 16], [22, 17]], '#8a2a1a');
+    poly(x, [[14, 12], [5, 3], [6, 11]], '#c8402a'); poly(x, [[20, 12], [29, 3], [28, 11]], '#c8402a');
+    poly(x, [[12, 22], [3, 26], [8, 28], [14, 25]], '#c8402a'); x.fillStyle = '#ffd23a'; x.fillRect(2, 25, 2, 2);
+    x.fillStyle = '#6a2418'; x.fillRect(11, 22, 4, 6); x.fillRect(19, 22, 4, 6);
+    circ(x, 17, 17, 8, '#e0482a'); circ(x, 17, 19, 5, '#ffc070');
+    circ(x, 17, 8, 5, '#e0482a'); poly(x, [[14, 8], [17, 10], [20, 8], [19, 14], [15, 14]], '#c8402a');
+    poly(x, [[13, 4], [11, 0], [15, 3]], '#fff0c0'); poly(x, [[21, 4], [23, 0], [19, 3]], '#fff0c0');
+    x.fillStyle = '#ffe36b'; x.fillRect(14, 6, 2, 2); x.fillRect(19, 6, 2, 2); x.fillStyle = '#2b2230'; x.fillRect(15, 12, 5, 1);
+    x.fillStyle = '#ff9a2b'; x.fillRect(16, 14, 3, 2);
+  }), 17, 28);
+  reg('leviathan', mk(34, 22, x => {
+    for (let i = 0; i < 8; i++) { const t = i / 7, cx = 28 - i * 3.4, cy = 14 + Math.sin(t * 6) * 4.5, r = 4.2 - t * 1.6; circ(x, cx, cy, r, i % 2 ? '#3aa8c8' : '#6ad0e8'); }
+    poly(x, [[28, 11], [26, 4], [31, 9]], '#9af0ff'); poly(x, [[24, 11], [23, 5], [27, 10]], '#9af0ff');
+    circ(x, 30, 12, 4.5, '#6ad0e8'); poly(x, [[32, 12], [34, 14], [31, 15]], '#3aa8c8');
+    x.fillStyle = '#fff27a'; x.fillRect(29, 10, 2, 2); x.fillStyle = '#2b2230'; x.fillRect(30, 10, 1, 1);
+    x.fillStyle = '#fff27a'; x.fillRect(12, 8, 1, 4); x.fillRect(13, 11, 2, 1); x.fillRect(20, 15, 1, 4);
+  }), 17, 22);
+  reg('titan', mk(30, 30, x => {
+    x.fillStyle = '#7a4a34'; x.fillRect(8, 3, 14, 9); x.fillRect(2, 10, 26, 9); x.fillRect(6, 18, 7, 11); x.fillRect(17, 18, 7, 11);
+    x.fillStyle = '#c8704a'; x.fillRect(8, 3, 14, 3); x.fillRect(2, 10, 26, 3); x.fillRect(0, 9, 5, 5); x.fillRect(25, 9, 5, 5);
+    x.fillStyle = '#a05a3a'; x.fillRect(9, 13, 12, 5); x.fillRect(6, 18, 7, 2); x.fillRect(17, 18, 7, 2);
+    x.fillStyle = '#ffe36b'; x.fillRect(10, 7, 3, 2); x.fillRect(17, 7, 3, 2); x.fillStyle = '#ff7a30'; x.fillRect(13, 14, 4, 2);
+    x.fillStyle = '#4a2418'; x.fillRect(14, 3, 1, 3); x.fillRect(5, 12, 3, 1); x.fillRect(22, 14, 3, 1);
+  }), 15, 30);
+  reg('warden', mk(30, 32, x => {
+    x.fillStyle = '#6a5418'; x.fillRect(8, 20, 5, 11); x.fillRect(17, 20, 5, 11);
+    poly(x, [[6, 10], [24, 10], [27, 22], [3, 22]], '#d8a82a'); poly(x, [[8, 10], [22, 10], [24, 14], [6, 14]], '#ffe36b');
+    x.fillStyle = '#9a7418'; x.fillRect(0, 9, 6, 6); x.fillRect(24, 9, 6, 6);
+    poly(x, [[9, 11], [21, 11], [20, 4], [10, 4]], '#d8a82a'); x.fillStyle = '#2b2230'; x.fillRect(11, 7, 8, 2);
+    x.fillStyle = '#ff4a4a'; x.fillRect(12, 7, 2, 2); x.fillRect(16, 7, 2, 2);
+    poly(x, [[9, 4], [10, 0], [12, 3], [15, 0], [18, 3], [20, 0], [21, 4]], '#ffe36b');
+    x.fillStyle = '#fff'; x.fillRect(13, 15, 4, 4); x.fillStyle = '#2b2230'; x.fillRect(14, 16, 2, 2);
+  }), 15, 32);
+  // eggs: one per creature, a pip band or crown shows the tier
+  for (const id in CFG.creatures) {
+    const c = CFG.creatures[id];
+    reg('it_egg_' + id, mk(10, 12, x => {
+      x.fillStyle = '#1a0f28'; x.beginPath(); x.ellipse(5, 7, 5, 5.5, 0, 0, Math.PI * 2); x.fill();
+      x.fillStyle = c.col; x.beginPath(); x.ellipse(5, 7, 4, 4.5, 0, 0, Math.PI * 2); x.fill();
+      x.fillStyle = shade(c.col, 0.7); x.fillRect(5, 5, 3, 6);
+      x.fillStyle = '#ffffff'; x.fillRect(3, 4, 1, 2);
+      x.fillStyle = '#1a0f28'; for (let i = 0; i < c.tier; i++) x.fillRect(2 + i * 3 - (c.tier - 1), 8, 1, 1);
+      if (c.tier === 3) { x.fillStyle = '#ffe36b'; x.fillRect(3, 1, 4, 1); x.fillRect(4, 0, 2, 1); }
+    }), 5, 11);
+  }
+  reg('it_core', mapSprite(['...oooo...', '..oyyyyo..', '.oywwyyyo.', 'oywyyyyyyo', 'oyyyYYyyyo', 'oyyyYYyyyo', 'oyyyyyyyYo', '.oyyyyyYo.', '..oYYYYo..', '...oooo...'], { o: '#4a3408', y: '#ffd23a', Y: '#c8921a', w: '#ffffff' }), 5, 10);
+  reg('lm_keep', mk(40, 36, x => {
+    isoBox(x, 20, 33, 18, 3, '#9a9484', '#76705e', '#5e5a4c');
+    x.fillStyle = '#8a8474'; x.fillRect(4, 8, 9, 22); x.fillRect(27, 8, 9, 22); x.fillRect(12, 14, 16, 16);
+    x.fillStyle = '#a8a292'; x.fillRect(4, 8, 9, 2); x.fillRect(27, 8, 9, 2); x.fillRect(12, 14, 16, 2);
+    x.fillStyle = '#6a6454'; x.fillRect(11, 8, 2, 22); x.fillRect(34, 8, 2, 22);
+    x.fillStyle = '#8a8474'; for (let i = 0; i < 3; i++) { x.fillRect(4 + i * 4, 4, 2, 4); x.fillRect(27 + i * 4, 4, 2, 4); }
+    x.fillStyle = '#140a20'; x.fillRect(16, 20, 8, 10); x.fillRect(17, 19, 6, 1);
+    x.fillStyle = '#2a1840'; x.fillRect(16, 24, 8, 1);
+    x.fillStyle = '#140a20'; x.fillRect(7, 14, 2, 4); x.fillRect(30, 14, 2, 4);
+    x.fillStyle = '#6e4423'; x.fillRect(19, 2, 2, 12);
+  }), 20, 35);
+  // Creature Spawners: a hatchery base, a clutch of eggs, tier pips on the front
+  for (let t = 1; t <= 3; t++) {
+    const pip = ['#7bff9a', '#ffe36b', '#ff6a4a'][t - 1];
+    bsprite('b_spawner' + t, (x, cx, cy) => {
+      isoBox(x, cx, cy, 9, 5, '#d8c6a0', '#a8956a', '#867552');
+      isoBox(x, cx, cy - 5, 6, 3, '#c8b88c', '#988660', '#76684a');
+      x.fillStyle = '#fff5d8'; x.beginPath(); x.ellipse(cx, cy - 13, 4, 5.2, 0, 0, Math.PI * 2); x.fill();
+      x.fillStyle = '#d8c6a0'; x.fillRect(cx - 1, cy - 12, 3, 6); x.fillStyle = '#ffffff'; x.fillRect(cx - 3, cy - 16, 1, 2);
+      x.fillStyle = pip; for (let i = 0; i < t; i++) x.fillRect(cx - 8 + i * 3, cy - 3, 2, 2);
+      if (t >= 2) { x.fillStyle = '#fff5d8'; x.beginPath(); x.ellipse(cx - 6, cy - 9, 2, 2.6, 0, 0, Math.PI * 2); x.fill(); }
+      if (t >= 3) { x.fillStyle = '#fff5d8'; x.beginPath(); x.ellipse(cx + 6, cy - 9, 2, 2.6, 0, 0, Math.PI * 2); x.fill(); x.fillStyle = '#ffe36b'; x.fillRect(cx - 1, cy - 20, 3, 1); }
+    });
+  }
+  const ipal = { o: '#2b1d3e', w: '#ffffff', r: '#e8384a', R: '#a82a3a', y: '#ffd23a', b: '#4a8aff', B: '#2a5ac8', a: '#a8b0b8', A: '#6a7280' };
+  const icn = (name, rows) => reg('ic_' + name, mapSprite(rows, ipal), Math.max.apply(null, rows.map(r => r.length)) / 2, rows.length);
+  icn('keep', ['a.a.a.a', 'aaaaaaa', 'aAaaaAa', 'aAaoaAa', 'aAaoaAa', 'aaaoaaa', 'aaaaaaa']);
+  icn('magnet', ['wr...bw', 'rr...bb', 'rr...bb', 'rr...bb', 'rrr.bbb', '.rrrbb.', '..rrb..']);
+});
+
 SP.build = function (progress, done) {
   const tasks = SP.tasks.slice(); let i = 0;
   (function step() {

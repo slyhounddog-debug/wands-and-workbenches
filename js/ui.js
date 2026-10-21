@@ -108,7 +108,7 @@ UI.handsHtml = function () {
 UI.updateHud = function (dt) {
   const f = G.fac, w = G.w;
   const pulse = (id, v) => { if (cache['v' + id] !== undefined && v > cache['v' + id]) { const el = $(id); el.classList.remove('gain'); void el.offsetWidth; el.classList.add('gain'); } cache['v' + id] = v; };
-  for (const k of ['wood', 'stone', 'iron', 'shard']) {
+  for (const k of ['wood', 'stone', 'iron', 'shard', 'core']) {
     const id = 't' + k[0].toUpperCase() + k.slice(1);
     setHtml(id, UI.img(k, 24) + '<b>' + G.stock[k] + '</b>');
     pulse(id, G.stock[k]);
@@ -154,6 +154,7 @@ UI.updateHud = function (dt) {
   $('wizPause').classList.toggle('hidden', !tl || tr);
   $('facNote').classList.toggle('hidden', !tr || tl);
   UI.updateQuest();
+  UI.updateEvent();
   UI.updatePins(dt);
   UI.updateHotbar();
   UI.updateDebug(dt);
@@ -186,17 +187,41 @@ UI.updateQuest = function () {
   else $('qBar').style.display = 'none';
 };
 
+// the next scheduled event: shows from five minutes out (the toasts at 5 min / 2 min / 30 s are in WZ.evWarn)
+UI.updateEvent = function () {
+  const el = $('evCard'), info = WZ.evInfo();
+  const show = info && (info.active || info.left <= CFG.events.warn[0]);
+  el.classList.toggle('hidden', !show);
+  if (!show) { cache.ev = null; return; }
+  const p = info.plan, left = info.active ? null : Math.ceil(info.left);
+  const state = info.active ? 'NOW' : info.deferred ? 'DEFERRED ' + fmtTime(info.clear) : fmtTime(left);
+  const sig = p.n + '|' + state + '|' + (info.active ? Math.floor(info.active.t / 5) : 0);
+  if (cache.ev === sig) return;
+  cache.ev = sig;
+  const icon = { migration: 'ic_boot', stampede: 'ic_fast', hunt: 'ic_crown', bloom: 'ic_expand', storm: 'ic_bolt', brood: 'ic_skull' }[p.id];
+  el.classList.toggle('now', !!info.active);
+  el.classList.toggle('soon', !info.active && info.left <= CFG.events.warn[2]);
+  el.innerHTML = UI.img(icon, 24) + '<div class="eb"><div class="eh">CYCLE ' + p.cycle + (info.active ? ' EVENT' : ' NEXT EVENT') + '</div><div class="en">' + WZ.evName(p) + '</div></div>' +
+    '<div class="ef">' + (p.id === 'bloom' ? Object.keys(CFG.mutations).map(k => UI.img(CFG.mutations[k].ic, 20)) : p.el.map(k => UI.img(k, 20))).join('') + '</div><div class="et">' + state + '</div>';
+};
+
 // goal pointers that live in the DOM: a blinking hotbar slot and/or blinking skill-tree buttons
 UI.setHint = function (slot, tree) {
   const sig = slot + '|' + tree;
   if (cache.hint === sig) return;
   cache.hint = sig;
-  for (const s of $('hotbar').children) s.classList.toggle('hint', s.dataset.id === slot);
+  for (const s of $('hotbar').children) s.classList.toggle('hint', s.dataset.id === (slot && UI.slotOf(slot)));
   $('btnTree').classList.toggle('hint', !!tree); $('btnTreeR').classList.toggle('hint', !!tree);
 };
 
 // ---------- debug overlay (F3 or `): income rates and when the next skill becomes affordable ----------
 UI.debugOn = false;
+UI.debugEvent = function () {
+  const i = WZ.evInfo();
+  if (!i) return '';
+  const when = i.active ? 'RUNNING ' + fmtTime(i.active.t) : i.deferred ? 'deferred ' + fmtTime(i.clear) : 'in ' + fmtTime(Math.max(0, i.left));
+  return '<div>Event: <b>' + WZ.evTitle(i.plan) + '</b> ' + when + '</div><div class="dim">Crafted alive ' + WZ.craftedAlive() + '/' + CFG.crafted.cap + '  Eggs queued ' + G.fac.eggQ.length + '  made ' + (G.stats.crafted || 0) + '  killed ' + (G.stats.craftedKills || 0) + '  events ' + (G.stats.events || 0) + '</div>';
+};
 UI.updateDebug = function (dt) {
   const el = $('debug');
   el.classList.toggle('hidden', !UI.debugOn);
@@ -216,6 +241,7 @@ UI.updateDebug = function (dt) {
     let eta = 0, why = 'XP';
     const need = c.xp - G.xp;
     if (need > 0) eta = xpm > 0 ? need / xpm : Infinity;
+    if ((c.core || 0) > G.stock.core) { eta = Infinity; why = 'Warden Core'; }
     for (const k in c.pay) {
       const s = c.pay[k] - (G.bank[k] || 0);
       if (s <= 0) continue;
@@ -230,42 +256,56 @@ UI.updateDebug = function (dt) {
     '<div>XP/min <b>' + f1(xpm) + '</b></div><div>Packets made/min <b>' + f1(pkm) + '</b></div><div>Banked/min <b>' + f1(bkm) + '</b>' +
     ' <span class="dim">' + ELEMS.map(k => k[0].toUpperCase() + f1(rateOf(k))).join(' ') + '</span></div>' +
     '<div>Spell Portal <b>' + FA.rate('spell') + '/min</b>  Skill Portal <b>' + FA.rate('skill') + '/min</b></div>' +
-    '<div>Next unlock: <b>' + eta + '</b></div>' +
+    '<div>Next unlock: <b>' + eta + '</b></div>' + UI.debugEvent() +
     '<div class="dim">Foes ' + G.w.enemies.length + '  working machines ' + G.fac.working + '  play ' + fmtTime(G.stats.time) + '</div>';
 };
 
-// ---------- hotbar ----------
+// ---------- hotbar: single slots plus families (Harnessers, Crafters, Power, Logistics, Spawners) whose member cycles ----------
 UI.tipT = 0; UI.tipHover = false;
-const KEYLBL = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 'Z', 'C', 'V'];
+const KEYLBL = ['1', '2', '3', '4', '5', '6', '7'];
+UI.isFam = id => !!CFG.families[id];
+UI.slotOf = id => { for (const f in CFG.families) if (CFG.families[f].members.indexOf(id) >= 0) return f; return id; };   // the slot a building lives in
+UI.famMember = function (f) {   // the member the slot currently shows: the last one picked, else the first unlocked
+  G.fam = G.fam || {};
+  const ms = CFG.families[f].members;
+  if (G.fam[f] && ms.indexOf(G.fam[f]) >= 0) return G.fam[f];
+  return ms.find(m => FA.unlocked(m)) || ms[0];
+};
 UI.buildHotbar = function () {
   const box = $('hotbar');
   box.innerHTML = '';
   delete cache.hint;
+  G.fam = G.fam || {};
   CFG.hotbar.forEach((id, i) => {
     const s = document.createElement('div');
     s.className = 'slot'; s.dataset.id = id;
-    const key = id === 'hand' ? 'ic_hand' : id === 'belt' ? 'belt' : 'b:' + id;
-    s.innerHTML = '<kbd>' + KEYLBL[i] + '</kbd>' + UI.img(key, key.startsWith('b:') ? 64 : 42) + '<i class="lock">' + UI.img('ic_lock', 16) + '</i><i class="free">FREE</i>';
+    s.innerHTML = '<kbd>' + KEYLBL[i] + '</kbd><span class="ic"></span><span class="pips"></span><i class="lock">' + UI.img('ic_lock', 16) + '</i><i class="free">FREE</i>';
     s.onclick = () => UI.select(id);
     s.onmouseenter = () => { UI.tipHover = true; UI.showTip(id); };
     s.onmouseleave = () => { UI.tipHover = false; UI.tipT = 0.6; };
+    if (UI.isFam(id)) s.addEventListener('wheel', e => { e.preventDefault(); UI.cycleFam(e.deltaY > 0 ? 1 : -1, id); UI.showTip(id); }, { passive: false });   // the wheel over a family slot cycles its member
     box.appendChild(s);
   });
   UI.updateHotbar(true);
 };
 UI.updateHotbar = function (force) {
-  const sig = G.selected + '|' + JSON.stringify(G.tree) + '|' + JSON.stringify(G.credits) + '|' + G.demolish;
+  const sig = G.selected + '|' + JSON.stringify(G.tree) + '|' + JSON.stringify(G.credits) + '|' + G.demolish + '|' + JSON.stringify(G.fam);
   if (!force && cache.hot === sig) return;
   cache.hot = sig;
   for (const s of $('hotbar').children) {
-    const id = s.dataset.id;
-    s.classList.toggle('sel', id === G.selected && !G.demolish);
-    s.classList.toggle('locked', !FA.unlocked(id));
-    s.classList.toggle('credit', !!G.credits[id]);
+    const id = s.dataset.id, fam = UI.isFam(id), cur = fam ? UI.famMember(id) : id;
+    const key = cur === 'hand' ? 'ic_hand' : cur === 'belt' ? 'belt' : 'b:' + cur;
+    const html = UI.img(key, key.startsWith('b:') ? 64 : 42);
+    if (s.dataset.cur !== cur) { s.dataset.cur = cur; s.querySelector('.ic').innerHTML = html; }
+    s.querySelector('.pips').innerHTML = fam ? CFG.families[id].members.map(m => '<b class="' + (m === cur ? 'on' : '') + (FA.unlocked(m) ? '' : ' off') + '"></b>').join('') : '';
+    s.classList.toggle('sel', (fam ? CFG.families[id].members.indexOf(G.selected) >= 0 : id === G.selected) && !G.demolish);
+    s.classList.toggle('locked', fam ? !CFG.families[id].members.some(m => FA.unlocked(m)) : !FA.unlocked(id));
+    s.classList.toggle('credit', !!G.credits[cur]);
   }
 };
 UI.recipeHtml = r => { const R = CFG.recipes[r]; return '<span class="rec' + (FA.recipeOk(r) ? '' : ' off') + '">' + Object.keys(R.in).map(k => UI.img(k, 16) + (R.in[k] > 1 ? 'x' + R.in[k] : '')).join(' ') + ' > ' + UI.img(R.out, 16) + '</span>'; };
-UI.showTip = function (id) {
+UI.showTip = function (slot) {
+  const fam = UI.isFam(slot), id = fam ? UI.famMember(slot) : slot;
   let h;
   if (id === 'hand') h = '<b>Hand</b><p>Click to walk. Click a machine, pile or item to walk over and use it.</p>';
   else if (id === 'belt') h = '<b>Wooden Belt</b> <span class="cost">' + UI.img('wood', 16) + '1</span><p>Moves items one tile at a time. Click-drag to lay a line; R rotates. Belts can\'t pull from the Stockpile.</p>';
@@ -275,24 +315,42 @@ UI.showTip = function (id) {
     const list = Object.keys(CFG.recipes).filter(r => CFG.recipes[r].machine === id);
     const rec = list.length ? '<div class="recs">' + list.slice(0, 6).map(UI.recipeHtml).join('') + (list.length > 6 ? '<span class="rec">+' + (list.length - 6) + ' more</span>' : '') + '</div>' : '';
     const lockNode = d.unlock && CFG.tree.find(n => n.id === d.unlock);
-    h = '<b>' + d.name + '</b> <span class="cost">' + cost + '</span>' + (FA.unlocked(id) ? '' : ' <span class="lockt">' + UI.img('ic_lock', 12) + lockNode.name + ' in the Skill Tree</span>') + (G.credits[id] ? ' <span class="freet">next one FREE</span>' : '') + '<p>' + d.desc + '</p>' + rec;
+    // a family slot also lists its members (locked ones greyed) and how to cycle them
+    const strip = fam ? '<div class="fam"><span class="fn">' + CFG.families[slot].name + '</span>' + CFG.families[slot].members.map(m => '<span class="fm' + (m === id ? ' cur' : '') + (FA.unlocked(m) ? '' : ' off') + '" title="' + CFG.buildings[m].name + '">' + UI.img('b:' + m, 28) + '</span>').join('') +
+      '<span class="fk"><kbd>Q</kbd>' + (IN.padList.length ? '<kbd>RT</kbd>' : '') + UI.img('ic_swap', 12) + '</span></div>' : '';
+    h = strip + '<b>' + d.name + '</b> <span class="cost">' + cost + '</span>' + (FA.unlocked(id) ? '' : ' <span class="lockt">' + UI.img('ic_lock', 12) + lockNode.name + ' in the Skill Tree</span>') + (G.credits[id] ? ' <span class="freet">next one FREE</span>' : '') + '<p>' + d.desc + '</p>' + rec;
   }
   const el = $('hotTip');
   el.innerHTML = h;
   el.classList.remove('hidden');
-  const idx = CFG.hotbar.indexOf(id);
-  el.style.left = Math.max(10, Math.min(CFG.HALF - 430, 18 + idx * 50 - 170)) + 'px';
+  const idx = CFG.hotbar.indexOf(slot);
+  el.style.left = Math.max(10, Math.min(CFG.HALF - 430, 18 + idx * 62 - 170)) + 'px';
   UI.tipT = 3;
 };
+// pick a slot (a family picks the member it currently shows) or a building (which also becomes its family's current member)
 UI.select = function (id) {
+  const fam = UI.isFam(id) ? id : UI.slotOf(id);
+  if (UI.isFam(fam)) { G.fam = G.fam || {}; G.fam[fam] = UI.isFam(id) ? UI.famMember(id) : id; id = G.fam[fam]; }
   G.selected = id; G.demolish = false;
   UI.updateHotbar(true);
-  UI.showTip(id);
+  UI.showTip(UI.isFam(fam) ? fam : id);
   AU.sfx('blip');
 };
-UI.cycle = function (dir) {
-  const n = CFG.hotbar.length, i = CFG.hotbar.indexOf(G.selected);
+UI.cycle = function (dir) {   // the previous / next slot
+  const n = CFG.hotbar.length, i = CFG.hotbar.indexOf(UI.slotOf(G.selected));
   UI.select(CFG.hotbar[((i + dir) % n + n) % n]);
+};
+// the next / previous unlocked member of a family (the selected building's, or the slot given); locked members are skipped
+UI.cycleFam = function (dir, slot) {
+  const f = slot || UI.slotOf(G.selected);
+  if (!UI.isFam(f)) return;
+  const ms = CFG.families[f].members.filter(m => FA.unlocked(m)), cur = UI.famMember(f);
+  if (!ms.length) { AU.sfx('error'); return; }
+  const i = ms.indexOf(cur), next = ms[(((i < 0 ? 0 : i) + dir) % ms.length + ms.length) % ms.length];
+  G.fam[f] = next;
+  if (!slot || UI.slotOf(G.selected) === f) { G.selected = next; G.demolish = false; }
+  UI.updateHotbar(true);
+  AU.sfx('blip');
 };
 
 // ---------- skill tree ----------
@@ -303,8 +361,9 @@ UI.nodeMax = n => (n.tiers ? n.tiers.length : 1);
 UI.nodeCost = function (n) {
   const L = UI.nodeLevel(n);
   if (L >= UI.nodeMax(n)) return null;
-  if (!n.tiers) return { xp: n.xp, pay: n.pay };
-  const xp = n.tiers[L], kinds = n.kinds[L], pay = {}, per = Math.ceil(xp / kinds.length * (L === 0 ? CFG.firstTierPay : 1));
+  if (!n.tiers) return { xp: n.xp, pay: n.pay, core: n.core || 0 };
+  // packets per tier come from pk (the old XP basis, halved by the rebalance), split across the tier's kinds
+  const xp = n.tiers[L], kinds = n.kinds[L], pay = {}, per = Math.max(1, Math.round((n.pk ? n.pk[L] : xp) / kinds.length * (L === 0 ? CFG.firstTierPay : 1)));
   kinds.forEach(k => { pay[k] = per; });
   Object.assign(pay, (n.combos && n.combos[L]) || {});
   return { xp, pay };
@@ -315,7 +374,7 @@ UI.nodeReqs = function (n) {   // tree ids still needed before this node (or its
   return need.filter(r => !G.tree[r]);
 };
 UI.canAfford = function (c) {
-  if (G.xp < c.xp) return false;
+  if (G.xp < c.xp || (c.core || 0) > G.stock.core) return false;
   for (const k in c.pay) if ((G.bank[k] || 0) < c.pay[k]) return false;
   return true;
 };
@@ -323,6 +382,7 @@ UI.anyAffordable = () => CFG.tree.some(n => { const c = UI.nodeCost(n); return c
 UI.costHtml = function (c) {
   let h = '<span class="c' + (G.xp >= c.xp ? '' : ' short') + '">' + UI.img('ic_xp', 14) + c.xp + '</span>';
   for (const k in c.pay) h += '<span class="c' + ((G.bank[k] || 0) >= c.pay[k] ? '' : ' short') + '">' + UI.img(k, 14) + c.pay[k] + '</span>';
+  if (c.core) h += '<span class="c' + (G.stock.core >= c.core ? '' : ' short') + '">' + UI.img('core', 14) + c.core + '</span>';
   return h;
 };
 UI.treeOpen = { L: false, R: false };
@@ -405,13 +465,19 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
     case 'satchel': return [row('Hand stack', l => '' + (CFG.satchel + up * l))];
     case 'zoomies': return [row('Wizard speed', l => fPct(up * l))];
     case 'hearty': return [row('Wizard max HP', l => '' + (CFG.wizard.hp + up * l))];
-    case 'gems': return [row('XP from kills', l => 'x' + (1 + up * l).toFixed(2))];
+    case 'gems': return [row('Gem drop chance', l => 'x' + Math.pow(1 + up, l).toFixed(2)), row('Cinder Imp gem chance', l => Math.min(95, Math.round(CFG.creatures.cinder.gem[1] * 100 * Math.pow(1 + up, l))) + '%'), row('Wild Slime gem chance', l => Math.min(95, Math.round(CFG.enemies.slime.gem[1] * 100 * Math.pow(1 + up, l))) + '%')];
+    case 'magnet': return [row('Pickup range', l => (CFG.world.vacuum + up * l).toFixed(2) + ' tiles'), row('Shard / Core range', l => ((CFG.world.vacuum + up * l) * 2.5).toFixed(2) + ' tiles')];
     case 'heavy': {
       const life = k => Math.round(CFG.batteryLife * k) + 's';
       return [['Battery at full load lasts', G.tree.heavy ? life(1 + CFG.heavyBattery) : life(1) + ' > ' + life(1 + CFG.heavyBattery)]];
     }
   }
   const rows = [];
+  if (n.id.startsWith('cr_')) {
+    const id = n.id.slice(3), c = CFG.creatures[id];
+    rows.push(['Egg recipe', UI.recipeHtml('egg_' + id)], ['Hatch', c.time + 's, ' + c.power + ' power'], ['Creature', c.hp + ' HP, ' + c.dmg + ' dmg, weak to ' + UI.img(c.weak, 14)], ['Elements', c.order.map(k => UI.img(k, 16)).join('')]);
+    return rows;
+  }
   if (ITEMS[n.id] && ITEMS[n.id].spell) {
     const r = CFG.recipes[n.id];
     rows.push(['Forge recipe', UI.recipeHtml(n.id)], ['Craft', r.time + 's, ' + r.power + ' power'], ['Damage', SPELL_DMG[n.id](CFG.spells[n.id])]);
@@ -469,9 +535,11 @@ UI.buy = function (id) {
     const short = [];
     if (G.xp < c.xp) short.push(Math.ceil(c.xp - G.xp) + ' XP');
     for (const k in c.pay) if ((G.bank[k] || 0) < c.pay[k]) short.push((c.pay[k] - (G.bank[k] || 0)) + ' ' + itemName(k));
+    if ((c.core || 0) > G.stock.core) short.push((c.core - G.stock.core) + ' Warden Core (from a Stronghold)');
     UI.toast('Still need ' + short.join(', '), 'L', 'ic_skill'); AU.sfx('error'); return;
   }
   G.xp -= c.xp;
+  G.stock.core -= c.core || 0;
   for (const k in c.pay) G.bank[k] -= c.pay[k];
   G.tree[id] = n.tiers ? UI.nodeLevel(n) + 1 : true;
   AU.sfx('buy');
@@ -553,6 +621,7 @@ UI.pinHtml = function (side, id) {
   const add = (k, need, rate) => rows.push({ k, need, rate, t: need <= 0 ? 0 : rate > 0 ? need / rate : Infinity });
   add('ic_xp', Math.ceil(c.xp - G.xp), r ? r.xpm : 0);
   for (const k in c.pay) add(k, c.pay[k] - (G.bank[k] || 0), r ? r.rateOf(k) : 0);
+  if (c.core) add('core', c.core - G.stock.core, 0);
   const short = rows.filter(x => x.need > 0), eta = short.reduce((a, x) => Math.max(a, x.t), 0);
   // missing amounts, each with its current income
   h += short.map(x => '<div class="pr">' + UI.img(x.k, 16) + '<b>' + x.need + '</b><i>' + (x.rate > 0 ? '+' + f1(x.rate) + '/m' : '+0') + '</i></div>').join('');
@@ -565,6 +634,7 @@ UI.pinHtml = function (side, id) {
   else {
     const worst = short.reduce((a, x) => (x.t > a.t ? x : a));
     if (worst.k === 'ic_xp') act = [UI.img('ic_hat', 16), UI.img('ic_skull', 16)];   // the Wizard fights for XP
+    else if (worst.k === 'core') act = [UI.img('ic_hat', 16), UI.img('ic_keep', 16)];   // the Wizard claims a Stronghold
     else if (ELEM[worst.k] && !FA.count(worst.k)) act = [UI.img('b:' + worst.k, 16)];   // build that harnesser first
     else if (ITEMS[worst.k].spell && !(G.fac.bld.some(b => b.type === 'forge' && b.recipe === worst.k))) act = [UI.img('b:forge', 16), UI.img('ic_swap', 14), UI.img(worst.k, 16)];   // set a Forge to it
     else act = [UI.img(worst.k, 16), '<em>&gt;</em>', UI.img('ic_skill', 16)];   // send it into the Skill Portal
@@ -609,6 +679,7 @@ UI.statsHtml = function () {
     ['ic_bolt', 'Damage', Math.round(r.dmg)], ['ic_target', 'Weak hits', r.weak],
     ['wood', 'Harvested', r.harvested], ['shard', 'Shards', r.shards],
     ['ic_flag', 'Landmarks', r.marks], ['ic_xp', 'XP earned', Math.floor(r.xp)],
+    ['egg_zephyr', 'Crafted kills', G.stats.craftedKills || 0], ['ic_trophy', 'Events cleared', G.stats.events || 0],
   ];
   // best spell: the most-delivered combo, else the most-delivered basic packet
   const sp = Object.keys(r.spells).filter(k => ITEMS[k].spell || ITEMS[k].elem).sort((a, b) => (ITEMS[b].spell ? 1e6 : 0) + r.spells[b] - (ITEMS[a].spell ? 1e6 : 0) - r.spells[a])[0];
@@ -669,13 +740,14 @@ const HOWTO = {
     ['The loop', 'The Wizard stands near trees, rocks and ore so delivered spells smash them. Drops vacuum into him and land in the factory <b>Stockpile</b>. The Builder carries them to blueprints to grow the factory, which makes stronger spells, potions and armor.'],
     ['Two portals', 'The <b>Spell Portal</b> sends things to the Wizard. The <b>Skill Portal</b> banks element packets and spells as currency for the <b>Skill Tree</b>, together with XP from kills.'],
     ['Follow the goals', 'The goal card at the top always shows a next step, and each one pays XP. A gold arrow points at where to go, and the right hotbar slot or skill-tree button blinks.'],
-    ['Winning', 'Late on, build the <b>Summoning Altar</b>, bind an Elemental Nova and Aether Shards into a <b>Boss Sigil</b> and send it through the Spell Portal. Beat the <b>Primal Chimera</b> to win. You can keep playing afterwards.'],
+    ['Winning', 'Late on, claim a <b>Stronghold</b> for a <b>Warden Core</b> (Summoning costs one), build the <b>Summoning Altar</b>, bind an Elemental Nova and Aether Shards into a <b>Boss Sigil</b> and send it through the Spell Portal. Beat the <b>Primal Chimera</b> to win. You can keep playing afterwards.'],
   ],
   'FACTORY': [
     ['Hands', 'The Builder carries one stack (5 at first). <b>Left-click</b> (pad <b>A</b>) picks up <b>one item at a time</b>: hold it to keep grabbing. <b>Right-click</b> (pad <b>B</b>) throws one item along the dotted lead line: it aims at machines, blueprints, belts, portals or the Stockpile. Throwing is the only way to put things in. Nothing ever vanishes.'],
-    ['Building', 'Pick a building (keys <b>1</b> to <b>-</b> or the wheel), <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
+    ['Building', 'Pick a slot (keys <b>1</b> to <b>7</b> or the wheel). Slots with a pip row are <b>families</b> (Harnessers, Crafters, Power, Logistics, Creature Spawners): <b>Q</b>, the wheel over the slot or <b>RT</b> on a pad cycles the member (locked ones are skipped). <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
     ['Machines', 'Harnessers make element packets by themselves, or stand next to one and press <b>E</b>, then <b>tap E</b> to crank one out by hand (no power needed). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
     ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with a charged Battery in a Battery Station and a Charger beside it: a Battery drains while anything needs power, so carry it to the Charger and throw element packets at it to refill it (hand-gathered packets are free). Craft a Battery at the Forge (2 Iron Ore), charge it at a Charger by feeding it packets (more kinds = faster), then haul it to a Battery Station. A charged Station right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, <b>Heavy Batteries</b> make every Battery last 50% longer in a Station.'],
+    ['Creatures', 'The <b>Creature Spawner</b> turns element packets into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. Tier 2 and 3 Spawners (Skill Tree) hatch two- and three-element creatures; each one is its own node. At most 12 factory creatures live at once: extra Eggs wait in the portal. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
     ['Growing', 'The floor starts small. <b>Factory Expansion</b> in the Skill Tree makes it bigger, pushing the Stockpile further from the portals.'],
     ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> deals items out of its front, right and left in turn. The <b>Sorter</b> sends one item kind out the front (E while holding it) and the rest out the sides. The <b>Storage Crate</b> holds 30 packets or spells and feeds them out of its arrow. E turns any of them (a Sorter with a filter clears it first).'],
     ['Reading the floor', 'Every machine shows its state the moment it changes, with an outline, an icon, how fast it animates and a little chirp: <b>green flowing dashes</b> working (up close), <b>yellow dashes</b> + a ghost of the missing ingredient, <b>grey dots</b> + <b>?</b> starved, <b>orange long dashes</b> + <b>!</b> output jammed, <b>thick red</b> + stacked bars output full (stopped), <b>purple dash-dot</b> + bolt no power. Each portal shows how many items it took in the last minute.'],
@@ -686,6 +758,9 @@ const HOWTO = {
   'RECIPES': null,
   'WILDS': [
     ['Terrain', 'Grass, dirt, sand and paths are normal speed. <b>Bog</b> (dark olive, reeds) slows everyone down. <b>Water</b> can\'t be crossed at all, except by the paths that bridge it. Monsters never spawn in water.'],
+    ['XP gems', 'XP comes only as <b>gems</b>: each kill has a chance to drop one (1 gem = 1 XP; crafted pairs and triples always drop some, elites always drop 3). Gems lying close together merge into one <b>Big Gem</b>. <b>Gem Wisdom</b> raises the drop chances, <b>Loot Magnet</b> widens the pickup range.'],
+    ['Events', 'Every 10 to 15 minutes of play something happens in the wilds: a <b>Migration</b>, a <b>Stampede</b>, an <b>Elite Hunt</b>, a <b>Mutation Bloom</b>, a <b>Portal Storm</b> or the <b>Chimera\'s Brood</b>, then the cycle starts again, harder. The card under the goal shows what and when from five minutes out, with the elements to stock up on; toasts warn at 5 min, 2 min and 30 s. Clearing one showers XP gems (and a Shard from Cycle 2). Nothing starts while the Chimera is out.'],
+    ['Strongholds', 'Four far-off keeps, one per element, marked on the map. Walk near one to <b>scout</b> it: its guards, its <b>Warden</b> and what the Warden is weak to show up. Beat the Warden and the guards to claim it: lots of Aether Shards and a <b>Warden Core</b> (each keep pays its Core once per save). Spawner III and Summoning each cost a Core.'],
     ['Pickups', 'Potions and armor sent through the Spell Portal fall beside the Wizard. Walk over them to use them. They wait if HP or armor is already full.'],
     ['Weaknesses', 'Biome monsters take <b>double damage</b> from one element and half from another: <b>Ember Imps</b> (sand, dirt) hate Water, <b>Bog Lurkers</b> hate Fire, <b>Gale Wisps</b> (far meadows) hate Earth, <b>Stone Golems</b> (far dark woods) hate Air. Combo spells count every element in them. A small diamond over a foe shows its weakness, and yellow numbers with a ! mean a weak hit.'],
     ['Elites', 'Big gold-ringed monsters with a crown. Much tougher, but they drop <b>Aether Shards</b> and lots of XP. Each one is weak to one element.'],
@@ -695,10 +770,10 @@ const HOWTO = {
     ['The Primal Chimera', 'The boss. It only takes real damage from its current weakness (shown on the boss bar and its glowing belly), and the weakness changes every quarter of its health, so the factory has to switch what it sends. Roll or walk out of the pink slam marks and dodge its orbs.'],
   ],
   'CONTROLS': [
-    ['Builder: keyboard & mouse', '<kbd>WASD</kbd> walk, <kbd>left-click</kbd> pick up one (hold to repeat; walks there first), <kbd>right-click</kbd> throw along the lead line (hold = rapid), <kbd>E</kbd> use: gather, crank, rotate, switch recipe, <kbd>1</kbd>-<kbd>=</kbd>, <kbd>Z</kbd> <kbd>C</kbd> <kbd>V</kbd> or wheel: building, <kbd>R</kbd> rotate, click: place (with a building selected), drag belts, <kbd>B</kbd> demolish, <kbd>Enter</kbd> place in front, <kbd>T</kbd> skill tree (in it: right-click a skill to pin it, <kbd>Q</kbd> takes the last deposit back out), <kbd>Tab</kbd> cycle targets, <kbd>Shift</kbd>+<kbd>right-click</kbd> throw the whole stack, <kbd>H</kbd> controls card, <kbd>F3</kbd> or <kbd>`</kbd> debug numbers.'],
+    ['Builder: keyboard & mouse', '<kbd>WASD</kbd> walk, <kbd>left-click</kbd> pick up one (hold to repeat; walks there first), <kbd>right-click</kbd> throw along the lead line (hold = rapid), <kbd>E</kbd> use: gather, crank, rotate, switch recipe, <kbd>1</kbd>-<kbd>7</kbd> or wheel: slot, <kbd>Q</kbd> (or wheel over a family slot): next member of the slot, <kbd>R</kbd> rotate, click: place (with a building selected), drag belts, <kbd>B</kbd> demolish, <kbd>Enter</kbd> place in front, <kbd>T</kbd> skill tree (in it: right-click a skill to pin it, <kbd>Q</kbd> takes the last deposit back out), <kbd>Tab</kbd> cycle targets, <kbd>Shift</kbd>+<kbd>right-click</kbd> throw the whole stack, <kbd>H</kbd> controls card, <kbd>F3</kbd> or <kbd>`</kbd> debug numbers.'],
     ['Wizard: keyboard', '<kbd>Arrows</kbd> walk, <kbd>.</kbd> roll-dodge (invulnerable; standing still at a mound, stick pile or bush it digs instead), <kbd>Y</kbd> skill tree.'],
     ['Swap jobs', 'Hold <kbd>X</kbd> (or Start on a pad) for 1.5s. Then arrows + <kbd>.</kbd> use / <kbd>,</kbd> throw drive the Builder, and WASD + <kbd>Space</kbd> roll + clicking on the right half drive the Wizard.'],
-    ['Gamepads', 'Pad 1 = Builder: stick move, A pick up (hold to sweep; with a building selected: place in front; hold with Belt to lay belts), B throw (LT + B: whole stack), X use, right stick cycle targets, X in the tree: undo the last deposit, LB/RB building, Back demolish, Y tree. Pad 2 = Wizard: stick move, A roll, Y tree. Hold Start to swap.'],
+    ['Gamepads', 'Pad 1 = Builder: stick move, A pick up (hold to sweep; with a building selected: place in front; hold with Belt to lay belts), B throw (LT + B: whole stack), X use, right stick cycle targets, X in the tree: undo the last deposit, LB/RB slot, RT next member of a family slot, Back demolish, Y tree. Pad 2 = Wizard: stick move, A roll, Y tree. Hold Start to swap.'],
   ],
 };
 UI.howPage = function (tab) {
@@ -712,6 +787,7 @@ UI.howPage = function (tab) {
       stone: 'Every building, Armor',
       iron: 'Fire Harnesser, Forge, Anvil, Station, Charger, Sorter, Altar, Batteries, Armor',
       shard: 'Rare: only from landmarks and elites. Sorter, Summoning Altar, Boss Sigil',
+      core: 'Once per Stronghold per save. Costs of Spawner III and Summoning',
       sigil: 'Spell Portal: summons the Primal Chimera beside the Wizard',
       air: 'Spell Portal: Air Gust. Skill Portal: currency. Charger fuel, recipes',
       water: 'Spell Portal: Water Spray. Skill Portal: currency. Charger fuel, recipes',
@@ -727,7 +803,7 @@ UI.howPage = function (tab) {
         return '<span class="rec">' + Object.keys(R.in).map(k => UI.img(k, 24) + (R.in[k] > 1 ? 'x' + R.in[k] : '')).join(' ') + ' > ' + UI.img(R.out, 24) + ' <b>' + recipeName(id) + '</b>' + (R.power ? ' <i>' + R.power + UI.img('ic_bolt', 12) + '</i>' : '') + '</span>';
       }).join('') + '</div>';
     }
-    body += '<p class="dim">Health Potion heals 35, Greater Elixir heals 80, Armor Plate +35 armor, Heavy Plate +70 armor. Each combo spell must be unlocked in the Skill Tree before the Forge can make it.</p>';
+    body += '<p class="dim">Eggs hatch into creatures when sent through the Spell Portal (never the Skill Portal). Health Potion heals 35, Greater Elixir heals 80, Armor Plate +35 armor, Heavy Plate +70 armor. Each combo spell must be unlocked in the Skill Tree before the Forge can make it.</p>';
   }
   $('menuHow').innerHTML = '<h2>HOW TO PLAY</h2><div class="tabs">' + tabs.map(t => '<button class="tab' + (t === tab ? ' on' : '') + '" data-t="' + t + '">' + t + '</button>').join('') + '</div><div class="howBody">' + body + '</div><button class="big ghost back">BACK</button>';
   $('menuHow').querySelectorAll('.tab').forEach(b => { b.onclick = () => { AU.sfx('blip'); UI.howPage(b.dataset.t); }; });

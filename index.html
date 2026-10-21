@@ -23,11 +23,14 @@
       <div class="res" id="tStone"></div>
       <div class="res" id="tIron"></div>
       <div class="res shard" id="tShard"></div>
+      <div class="res core" id="tCore"></div>
       <div class="res xp" id="tXp"></div>
       <div class="res bank" id="tBank"></div>
       <div class="res" id="tBat"></div>
     </div>
     <div id="quest" class="px"><div id="qIcon"></div><div class="qb"><div class="qhead" id="qNum"></div><div id="qText"></div><div id="qBar"><div id="qFill"></div></div></div></div>
+    <!-- the next scheduled event: from five minutes out -->
+    <div id="evCard" class="px hidden"></div>
     <!-- the Chimera's health + current weakness, spanning the split so both players can read it -->
     <div id="bossBar" class="px hidden">
       <div class="bn"><i data-ic="ic_crown" data-s="16"></i>PRIMAL CHIMERA<span id="bossWeak"></span></div>
@@ -80,7 +83,7 @@
         <div><kbd>WASD</kbd> walk &nbsp; <kbd>CLICK</kbd> pick up (hold for more)</div>
         <div><kbd>E</kbd> use / rotate / tap to crank</div>
         <div><kbd>RIGHT-CLICK</kbd> throw (hold = rapid, <kbd>SHIFT</kbd> = whole stack)</div>
-        <div><kbd>1</kbd>-<kbd>=</kbd> <kbd>Z</kbd><kbd>C</kbd><kbd>V</kbd> or wheel: pick a building</div>
+        <div><kbd>1</kbd>-<kbd>7</kbd> or wheel: pick a slot &nbsp; <kbd>Q</kbd> next in a family</div>
         <div><kbd>R</kbd> rotate &nbsp; <kbd>ENTER</kbd> place in front</div>
         <div><kbd>B</kbd> demolish &nbsp; <kbd>TAB</kbd> cycle targets &nbsp; <kbd>ESC</kbd> cancel</div>
       </div>
@@ -92,7 +95,7 @@
         <div>Water blocks you. Bog slows you. The map shows landmarks.</div>
         <div><kbd>Y</kbd> skill tree (pauses the game) &nbsp; hold <kbd>X</kbd> swap</div>
       </div>
-      <div class="hfoot"><i data-ic="ic_pad" data-s="16"></i> Pad 1 = Builder (A pick up / place, B throw, X use, LB/RB pick, Back demolish). Pad 2 = Wizard (A roll). <kbd>H</kbd> hides this.</div>
+      <div class="hfoot"><i data-ic="ic_pad" data-s="16"></i> Pad 1 = Builder (A pick up / place, B throw, X use, LB/RB slot, RT next in a family, Back demolish). Pad 2 = Wizard (A roll). <kbd>H</kbd> hides this.</div>
     </div>
 
     <div id="treeL" class="tree hidden"></div>
@@ -157,6 +160,7 @@
 <script src="js/input.js"></script>
 <script src="js/factory.js"></script>
 <script src="js/wizard.js"></script>
+<script src="js/creatures.js"></script>
 <script src="js/render.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/intro.js"></script>

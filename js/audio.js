@@ -7,7 +7,7 @@ const AU = (() => {
   // audio hierarchy: important cues go to hiG and duck everything on loG (hum, pickups, clicks) and the music;
   // midG is everything else. cur = where tone() / noise() send by default while a sfx is being built
   let hiG = null, midG = null, loG = null, duckG = null, cur = null;
-  const HI = new Set(['deliver', 'portalDrop', 'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'weak', 'warn', 'heart', 'hurt', 'die', 'roar', 'slam', 'volley', 'alert', 'dodge', 'victory']);
+  const HI = new Set(['deliver', 'portalDrop', 'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'weak', 'warn', 'heart', 'hurt', 'die', 'roar', 'slam', 'volley', 'alert', 'dodge', 'victory', 'evwarn']);
   const LO = new Set(['pickup', 'drop', 'blip', 'crank', 'gem', 'place', 'throw', 'thud', 'dig', 'rustle', 'craft', 'bank', 'shard',
     'st_work', 'st_missing', 'st_starve', 'st_jam', 'st_full', 'st_off']);
   const reps = {};   // name -> { t, n }: rapid repeats of a low sound get quieter
@@ -176,7 +176,9 @@ const AU = (() => {
       case 'dig': tone(100 + Math.random() * 50, 0.07, 'square', 0.07, 0.6); noise(0.06, 0.06, 500); break;
       case 'rustle': noise(0.1, 0.07, 3200); tone(900 + Math.random() * 200, 0.04, 'triangle', 0.03); break;
       case 'shrine': [0, 7, 12, 19].forEach((s, i) => tone(N(s + 12), 0.22, 'sine', 0.08, 0, i * 0.06)); break;
-      case 'gem': tone(1000 + Math.random() * 300, 0.07, 'sine', 0.05); break;
+      case 'gem': { const f = 1000 + Math.random() * 300; tone(f, 0.07, 'sine', 0.05); tone(f * 1.5, 0.09, 'triangle', 0.04, 0, 0.05); break; }
+      case 'gemBig': [0, 4, 7, 12].forEach((s, i) => tone(N(s + 24), 0.14, 'triangle', 0.07, 0, i * 0.05)); break;   // a Big Gem: a rising arpeggio
+      case 'evwarn': [12, 7, 12, 7].forEach((s, i) => tone(N(s), 0.2, 'square', 0.09, 0, i * 0.22)); tone(110, 0.8, 'sawtooth', 0.08, 0.5); break;   // 30 seconds to an event
       case 'charge': tone(880, 0.1, 'sine', 0.08); tone(1320, 0.14, 'sine', 0.08, 0, 0.08); break;
       case 'throw': noise(0.12, 0.05, 2500); tone(500, 0.12, 'sine', 0.06, 1.6); break;
       case 'thud': tone(140, 0.1, 'triangle', 0.1, 0.6); break;

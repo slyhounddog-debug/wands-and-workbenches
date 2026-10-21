@@ -41,7 +41,7 @@ const IN = {
   });
   window.addEventListener('wheel', e => {
     pos(e);
-    if (e.target && e.target.closest && e.target.closest('.tree, #pause, #results, .sheet')) return;
+    if (e.target && e.target.closest && e.target.closest('.tree, #pause, #results, .sheet, #hotbar')) return;
     IN.wheel += Math.sign(e.deltaY);
   }, { passive: true });
   window.addEventListener('contextmenu', e => { if (e.target && e.target.id === 'cv') e.preventDefault(); });
@@ -75,7 +75,7 @@ IN.pollPads = function () {
     IN.prevRs[p] = rsDir;
     IN.pad[p] = {
       ix, iy, cyc,
-      a: edge(0), b: edge(1), x: edge(2), y: edge(3), lb: edge(4), rb: edge(5),
+      a: edge(0), b: edge(1), x: edge(2), y: edge(3), lb: edge(4), rb: edge(5), rt: edge(7),
       xHeld: !!b[2], aHeld: !!b[0], bHeld: !!b[1], ltHeld: !!b[6], startHeld: !!b[9], back: edge(8),
       any: b.some(Boolean),
     };

@@ -114,6 +114,18 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 #quest.done { animation: qdone .6s steps(4); }
 @keyframes qdone { 50% { background: var(--gold); } }
 .res.shard b { color: #e0b8ff; }
+.res.core b { color: #ffe08a; }
+
+/* the next scheduled event (under the goal card; the boss bar moves down while it shows) */
+#evCard { position: absolute; top: 166px; left: 50%; transform: translateX(-50%); width: 560px; display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: #2a1c48; z-index: 19; }
+#evCard .eb { flex: 1; min-width: 0; }
+#evCard .eh { font: 8px var(--display); color: var(--muted); margin-bottom: 4px; }
+#evCard .en { font: 12px var(--display); color: var(--gold); }
+#evCard .ef { display: flex; gap: 4px; }
+#evCard .et { font: 14px var(--display); color: var(--cream); min-width: 96px; text-align: right; }
+#evCard.now { background: #5a1a30; }
+#evCard.soon .et { animation: blink 0.8s steps(2) infinite; }
+#evCard:not(.hidden) ~ #bossBar { top: 226px; }
 
 /* boss bar (under the goal card, across the split) */
 #bossBar { position: absolute; top: 166px; left: 50%; transform: translateX(-50%); width: 560px; padding: 8px 12px; background: #3a1030; z-index: 20; }
@@ -139,7 +151,7 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 
 /* hotbar */
 #hotbar { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 4px; padding: 8px; }
-#hotbar .slot { position: relative; width: 46px; height: 70px; background: var(--panel-lo); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+#hotbar .slot { position: relative; width: 64px; height: 70px; background: var(--panel-lo); cursor: pointer; display: flex; align-items: center; justify-content: center; }
 #hotbar .slot:hover { background: var(--panel-hi); }
 #hotbar .slot.hint { animation: hintBlink .5s steps(2) infinite; }
 @keyframes hintBlink { 50% { background: #8a6a10; box-shadow: 0 0 0 4px var(--gold); } }
@@ -147,12 +159,22 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 #hotbar .slot kbd { position: absolute; top: -6px; left: -6px; font-size: 8px; min-width: 14px; padding: 3px 3px 2px; z-index: 2; }
 #hotbar .slot.sel { background: #6a4a20; box-shadow: 0 0 0 4px var(--gold); transform: translateY(-6px); }
 #hotbar .slot i { position: absolute; font-style: normal; display: none; }
-#hotbar .slot.locked img.ico:not(:only-child) { opacity: .35; }
-#hotbar .slot.locked > img { filter: grayscale(1) brightness(.55); }
+#hotbar .slot .ic { display: flex; align-items: center; justify-content: center; pointer-events: none; }
+#hotbar .slot .pips { position: absolute; bottom: 3px; left: 0; right: 0; display: flex; justify-content: center; gap: 3px; pointer-events: none; }
+#hotbar .slot .pips b { width: 6px; height: 6px; background: #4a3a5a; }
+#hotbar .slot .pips b.on { background: var(--gold); }
+#hotbar .slot .pips b.off { opacity: .35; }
+#hotbar .slot.locked .ic img { filter: grayscale(1) brightness(.55); }
 #hotbar .slot.locked .lock { display: block; bottom: 2px; right: 2px; }
 #hotbar .slot.credit .free { display: block; top: -10px; right: -6px; background: var(--sky); color: var(--ink); font: 8px var(--display); padding: 3px 4px; }
 #hotTip { position: absolute; bottom: 112px; width: 420px; padding: 12px 14px; font-size: 18px; z-index: 5; }
 #hotTip b { font: 12px var(--display); color: var(--gold); }
+#hotTip .fam { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+#hotTip .fam .fn { font: 8px var(--display); color: var(--muted); margin-right: 4px; }
+#hotTip .fam .fm { padding: 2px; background: var(--panel-lo); display: inline-flex; }
+#hotTip .fam .fm.cur { box-shadow: 0 0 0 3px var(--gold); }
+#hotTip .fam .fm.off img { filter: grayscale(1) brightness(.5); opacity: .6; }
+#hotTip .fam .fk { margin-left: auto; display: flex; gap: 3px; align-items: center; }
 #hotTip p { margin: 6px 0 0; color: var(--muted); line-height: 1.1; }
 #hotTip .cost { margin-left: 6px; font: 10px var(--display); display: inline-flex; align-items: center; gap: 3px; }
 .lockt { color: #ffb0b0; font: 8px var(--display); display: inline-flex; align-items: center; gap: 4px; }

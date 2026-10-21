@@ -640,7 +640,7 @@ R.drawPortal = function (ctx, v, t, which) {
     }
   }
   dspr(ctx, SP[skill ? 'ic_skill' : 'ic_portal'], base[0], base[1] - 160, 4);
-  const q = f.portalQ.filter(e => e.which === which).length;
+  const q = f.portalQ.filter(e => e.which === which).length + (which === 'spell' ? f.eggQ.length : 0);
   if (q) txt(ctx, q + ' queued', base[0], base[1] - 146, 12, '#ffe36b', 'center', 'd');
   else txt(ctx, FA.rate(which) + '/MIN', base[0], base[1] - 146, 12, FA.rate(which) ? '#bfffbf' : '#a898c8', 'center', 'd');
 };
@@ -896,7 +896,9 @@ R.drawWorld = function (main, dt) {
       const p = R.toScreen(v, o.x, o.y);
       const bob = (Math.sin(o.t * 6) > 0 ? 3 : 0) - (o.t < 0.45 ? Math.sin(o.t / 0.45 * 3.14) * 21 : 0);
       ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(snap(p[0] - 6), Math.round(p[1] / 3) * 3 - 3, 12, 6);
-      dspr(ctx, itemSprite(o.kind), p[0], p[1] - 6 + bob, 3);
+      const gs = o.kind === 'xp' ? 3 + WZ.gemTier(o.val) + (o.pulse > 0 ? 1 : 0) : 3;   // a Big Gem is a chunkier gem
+      if (o.kind === 'xp' && o.val >= CFG.bigGem.tiers[1] && Math.sin(o.t * 8) > 0) { ctx.fillStyle = 'rgba(123,224,255,0.35)'; diamond(ctx, p[0], p[1], 9 * gs, 4.5 * gs); ctx.fill(); }
+      dspr(ctx, itemSprite(o.kind), p[0], p[1] - 6 + bob, gs);
     } else if (it.t === 'pick') R.drawPickup(ctx, v, o, wt);
     else if (it.t === 'forage') R.drawForage(ctx, v, o);
     else if (it.t === 'lm') R.drawMark(ctx, v, o.lm);
@@ -949,9 +951,12 @@ R.drawPickup = function (ctx, v, o, t) {
 };
 R.drawEnemy = function (ctx, v, e) {
   const p = R.toScreen(v, e.x, e.y), S = CFG.WT.S, t = G.w.t;
-  const spr = SP[e.type], fly = e.type === 'sprite' || e.type === 'wisp';
+  const spr = (e.var && SP[e.type + '_' + e.var]) || SP[e.type], fly = e.type === 'sprite' || e.type === 'wisp' || e.fly;
+  const fk = e.fall > 0 ? e.fall / (e.fallT0 || CFG.crafted.fall) : 0, hidden = e.fall > 0 && e.fall > (e.fallT0 || 0) - 0.2;   // dropping out of the Egg's portal
+  if (hidden) return;
   const hop = e.boss ? (Math.sin(t * 3) > 0 ? 3 : 0) : Math.abs(Math.sin(t * 6 + e.bob)) > 0.5 ? (fly ? 9 : 6) : 0;
-  const lift = fly ? 12 : 0, sc = e.elite ? 1.4 : 1;
+  const lift = (fly ? 12 : 0) + fk * 300, sc = (e.elite ? 1.4 : 1) * (e.sz || 1);
+  const k = e.land > 0 ? e.land / 0.22 : 0, qx = sc * (1 + 0.28 * k), qy = sc * (1 - 0.28 * k);   // squashes on landing
   const sw = e.boss ? 66 : 24 * sc;
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(snap(p[0] - sw / 2), Math.round(p[1] / 3) * 3 - 3, Math.round(sw / 3) * 3, e.boss ? 12 : 6);
   const wfl = e.boss && e.weakFlash > 0;
@@ -960,25 +965,33 @@ R.drawEnemy = function (ctx, v, e) {
     ctx.globalAlpha = wfl ? 1 : Math.sin(t * 5) > 0 ? 0.9 : 0.5;
     diamond(ctx, p[0], p[1], 72, 36); ctx.stroke();
     if (wfl) {
-      const k = 1 + Math.ceil((1 - e.weakFlash / CFG.boss.weakFlash) * 5) / 5 * 1.4;
+      const kk = 1 + Math.ceil((1 - e.weakFlash / CFG.boss.weakFlash) * 5) / 5 * 1.4;
       ctx.strokeStyle = ELEM[e.weak].color; ctx.globalAlpha = e.weakFlash / CFG.boss.weakFlash;
-      diamond(ctx, p[0], p[1], 72 * k, 36 * k); ctx.stroke();
+      diamond(ctx, p[0], p[1], 72 * kk, 36 * kk); ctx.stroke();
     }
     ctx.globalAlpha = 1;
-  } else if (e.elite) { ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffd23a' : '#ffa62a'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 27, 13); ctx.stroke(); }
+  } else if (e.elite) { ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffd23a' : '#ffa62a'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 27 * (e.sz || 1), 13 * (e.sz || 1)); ctx.stroke(); }
+  if (e.crafted) { ctx.strokeStyle = '#46e0c8'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 21 * sc, 10 * sc); ctx.stroke(); }   // factory-made: a teal ring
   if (e.slow > 0) { ctx.strokeStyle = '#78c8ff'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 18 * sc, 9 * sc); ctx.stroke(); }
   const y = p[1] - hop - lift;
-  dsprSq(ctx, spr, p[0], y, S, sc, sc, 1, e.face < 0);
-  if (e.flash > 0) dsprSq(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, p[0], y, S, sc, sc, 0.85, e.face < 0);
+  dsprSq(ctx, spr, p[0], y, S, qx, qy, 1, e.face < 0);
+  const wht = { c: spr.white, ax: spr.ax, ay: spr.ay };
+  if (e.flash > 0) dsprSq(ctx, wht, p[0], y, S, qx, qy, 0.85, e.face < 0);
+  if (e.tele && Math.sin(t * 30) > 0) dsprSq(ctx, wht, p[0], y, S, qx, qy, 0.7, e.face < 0);   // winding up an attack
   if (e.boss) {   // its belly glows with the element that hurts it
-    if (wfl && Math.sin(t * 12) > 0) dsprSq(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, p[0], y, S, sc, sc, 0.5, e.face < 0);
+    if (wfl && Math.sin(t * 12) > 0) dsprSq(ctx, wht, p[0], y, S, sc, sc, 0.5, e.face < 0);
     ctx.fillStyle = ELEM[e.weak].color; ctx.fillRect(snap(p[0] - 6), Math.round((y - 24) / 3) * 3, 12, 9);
     if (wfl) R.item(ctx, e.weak, p[0], y - spr.c.height * S - 12 + (Math.sin(t * 8) > 0 ? 0 : 6), 3, t);
     return;
   }
   const top = y - spr.c.height * S * sc;
-  if (e.hp < e.maxHp) R.hpBar(ctx, p[0], top - 9, e.elite ? 42 : 30, e.hp / e.maxHp, e.elite ? '#ffd23a' : '#ff6a6a');
+  if (e.warden) { ctx.fillStyle = e.weakCol; ctx.fillRect(snap(p[0] - 6), Math.round((y - 30 * sc) / 3) * 3, 12, 12); }   // the keep's element in its chest
+  if (e.ai === 'titan' && e.crack) { ctx.fillStyle = '#2a1410'; for (let i = 0; i < e.crack; i++) ctx.fillRect(snap(p[0] - 24 + i * 21), Math.round((y - 60 * sc + i * 9) / 3) * 3, 3, 24); }
+  if (e.dazeT > 0) { ctx.fillStyle = '#ffe36b'; for (let i = 0; i < 3; i++) ctx.fillRect(snap(p[0] + Math.cos(t * 8 + i * 2.1) * 15 - 3), Math.round((top - 6 + Math.sin(t * 8 + i * 2.1) * 4) / 3) * 3, 6, 6); }
+  if (e.tele) dspr(ctx, SP.ic_warn, p[0], top - 22, S);
+  if (e.hp < e.maxHp) R.hpBar(ctx, p[0], top - 9, e.elite ? 42 : 30, e.hp / e.maxHp, e.elite ? '#ffd23a' : e.crafted ? '#46e0c8' : '#ff6a6a');
   if (e.elite) dspr(ctx, SP.ic_crown, p[0], top - 15, S);
+  if (e.mut) dspr(ctx, SP[CFG.mutations[e.mut].ic], p[0] - 27, top - 6, S);   // its mutation
   if (e.weak && (e.elite || CFG.enemies[e.type].weak)) dspr(ctx, SP['wk_' + e.weak], p[0] + (e.elite ? 30 : 21), top + 3, S);
 };
 // the Wizard's dig / search button: pad 2 A, the roll key otherwise
@@ -1051,6 +1064,16 @@ R.drawMark = function (ctx, v, m) {
         ctx.fillRect(snap(x - 3), Math.round((p[1] - 45 - ph * (p[1] - 45 - top)) / 3) * 3, 6, 6);
       }
     }
+  } else if (m.type === 'stronghold') {
+    const col = ELEM[m.el].color, K = CFG.strong;
+    ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.globalAlpha = done ? 0.2 : 0.5; diamond(ctx, p[0], p[1], 3.4 * v.hw, 3.4 * v.hh); ctx.stroke(); ctx.globalAlpha = 1;
+    dspr(ctx, SP.lm_keep, p[0], p[1], S, done ? 0.6 : 1);
+    ctx.fillStyle = col; ctx.fillRect(snap(p[0] + 3), Math.round((p[1] - 99) / 3) * 3, 24, 15);   // the banner flies the element's colour
+    ctx.fillStyle = '#1a0f28'; ctx.fillRect(snap(p[0] + 3), Math.round((p[1] - 84) / 3) * 3, 12, 6);
+    if (done) { if (d < 10) ic = [['ic_check']]; }
+    else if (s.state === 'active') ic = [['ic_skull', w.enemies.filter(e => e.mark === m.id).length], ['wk_' + WZ.WARDEN_WEAK(m.el)]];
+    else if (s.seen && d < K.reveal + 6) { const g = K.guards[m.el]; ic = Object.keys(g).map(k => ['egg_' + k, g[k]]).concat([['ic_crown'], ['wk_' + WZ.WARDEN_WEAK(m.el)]]); }   // scouted: guards, Warden, its weakness
+    else if (d < K.reveal + 6 && Math.sin(t * 3) > 0) ic = [['ic_keep']];
   } else {
     dspr(ctx, SP.lm_crypt, p[0], p[1], S, done ? 0.6 : 1);
     if (s.state === 'idle') {
@@ -1059,7 +1082,7 @@ R.drawMark = function (ctx, v, m) {
     } else if (!done) ic = [['ic_skull']];
   }
   if (done && d < 8 && m.type !== 'shrine') ic = [['ic_check']];
-  if (ic && d < 13) R.defer.push(c => R.iconRow(c, p[0], p[1] - 96, ic));
+  if (ic && d < (m.type === 'stronghold' ? CFG.strong.reveal + 6 : 13)) R.defer.push(c => R.iconRow(c, p[0], p[1] - (m.type === 'stronghold' ? 126 : 96), ic));
 };
 // goal pointer in the wilds: an arrow over the target, or a boxed pointer on the edge with the distance
 R.drawWHint = function (ctx, v, h, t) {
@@ -1096,8 +1119,13 @@ R.drawMinimap = function (c) {
   const dot = (x, y, s, col) => { const q = at(x, y); c.fillStyle = '#1a0f28'; c.fillRect(q[0] - s / 2 - 2, q[1] - s / 2 - 2, s + 4, s + 4); c.fillStyle = col; c.fillRect(q[0] - s / 2, q[1] - s / 2, s, s); };
   for (const m of WZ.marks) {
     const done = w.lm[m.id].state === 'done';
-    dot(m.x, m.y, done ? 4 : 6, done ? '#6a6a7a' : m.type === 'camp' ? '#ff5a4a' : m.type === 'crypt' ? '#b07aff' : ELEM[m.el].color);
+    dot(m.x, m.y, done ? 4 : m.type === 'stronghold' ? 9 : 6, done ? '#6a6a7a' : m.type === 'camp' ? '#ff5a4a' : m.type === 'crypt' ? '#b07aff' : ELEM[m.el].color);
+    if (m.type === 'stronghold' && !done) { const q = at(m.x, m.y); c.fillStyle = '#ffe36b'; c.fillRect(q[0] - 1, q[1] - 11, 2, 5); }   // a flag over the keep
   }
+  // the nearest scouted Stronghold: its guards, a crown for the Warden and what the Warden fears, as icons above the map
+  let kp = null, kd = 1e9;
+  for (const m of WZ.marks) if (m.type === 'stronghold' && w.lm[m.id].seen && w.lm[m.id].state !== 'done') { const dd = Math.hypot(m.x - w.x, m.y - w.y); if (dd < kd) { kd = dd; kp = m; } }
+  if (kp) { const g = CFG.strong.guards[kp.el]; R.iconRow(c, cx, cy - 72, Object.keys(g).map(k => ['egg_' + k, g[k]]).concat([['ic_crown'], ['wk_' + WZ.WARDEN_WEAK(kp.el)]])); }
   if (w.boss && Math.sin(t * 10) > 0) dot(w.boss.x, w.boss.y, 10, '#ff4a8a');
   if (R.whint) dot(R.whint.x, R.whint.y, 6, Math.sin(t * 8) > 0 ? '#ffd23a' : '#ffffff');
   dot(w.x, w.y, 6, Math.sin(t * 6) > -0.5 ? '#ffffff' : '#7be0ff');
@@ -1226,6 +1254,13 @@ R.drawFx = function (ctx, v, f) {
         ctx.fillRect(snap(q[0] + Math.cos(a) * r - 4), Math.round((q[1] - 30 + Math.sin(a) * r * 0.5 - b * 30) / 3) * 3, 9, 9);
       }
       ctx.globalAlpha = 1;
+    }
+  } else if (f.type === 'hatch') {   // a portal tears open above the landing spot and the creature drops out of it
+    const top = s[1] - 300, open = f.t < 0.2 ? f.t / 0.2 : Math.max(0, Math.min(1, (f.dur - f.t) / 0.5)), rw = Math.round(42 * open / 3) * 3;
+    if (rw > 0) {
+      ctx.globalAlpha = 0.22 * open; ctx.fillStyle = f.col; ctx.fillRect(snap(s[0] - 9), top, 18, 300); ctx.globalAlpha = 1;
+      ctx.fillStyle = '#2a1050'; diamond(ctx, s[0], top, rw, rw / 2.5); ctx.fill();
+      ctx.strokeStyle = f.col; ctx.lineWidth = 6; ctx.stroke();
     }
   } else if (f.type === 'icon') {   // a collected resource floating up off the Wizard
     const a = 1 - Math.max(0, fr - 0.5) * 2, y = s[1] - 60 - Math.floor(fr * 6) * 6;

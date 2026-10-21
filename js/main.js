@@ -13,13 +13,13 @@ window.addEventListener('resize', fit);
 
 // ---------- new / load / save ----------
 const SAVE_VERSION = 4;
-const QUEST_VERSION = 3;   // v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1
+const QUEST_VERSION = 4;   // v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1; v4 inserted the first-creature-kill goal at 5 and the two Stronghold goals before Summoning: goals from the old 5 shift by 1, from the old 21 (Summoning) by 3
 function blankState(slot) {
   return {
-    slot, xp: 0, tree: {}, stock: { wood: CFG.start.wood, stone: CFG.start.stone, iron: CFG.start.iron, shard: 0 },
+    slot, xp: 0, tree: {}, stock: { wood: CFG.start.wood, stone: CFG.start.stone, iron: CFG.start.iron, shard: 0, core: 0 }, fam: {},
     bank: {}, bankTotal: 0,
     credits: { station: 0, charger: 0 },
-    stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0 },
+    stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0 },
     flags: {}, quest: 0, bankLog: [], pins: { L: null, R: null }, lock: null,
     hands: null, swapped: false, selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
@@ -28,6 +28,7 @@ function blankState(slot) {
 Main.newGame = function (slot) {
   G = blankState(slot);
   G.w = WZ.fresh();
+  G.ev = WZ.evFresh(0);
   FA.initial();
   Main.enter();
   UI.help(true); G.helpT = 25;
@@ -47,7 +48,8 @@ Main.loadGame = function (slot, useBak) {
 };
 Main.applySave = function (slot, s) {
   G = blankState(slot);
-  G.xp = s.xp || 0; G.tree = s.tree || {}; G.stock = Object.assign(G.stock, s.stock || {});
+  // XP is whole gems now: old fractional saves round down
+  G.xp = Math.floor(s.xp || 0); G.tree = s.tree || {}; G.stock = Object.assign(G.stock, s.stock || {});
   G.bank = s.bank || {}; G.bankTotal = s.bankTotal || 0;
   G.credits = Object.assign(G.credits, s.credits || {}); G.stats = Object.assign(G.stats, s.stats || {});
   G.flags = s.flags || {}; G.quest = s.quest || 0; G.placeDir = s.placeDir || 0;
@@ -55,8 +57,10 @@ Main.applySave = function (slot, s) {
   G.pins = Object.assign({ L: null, R: null }, s.pins || {});
   if ((s.qv || 1) < 2 && G.quest >= 13) G.quest += 2;
   if ((s.qv || 1) < 3 && G.quest >= 6 && G.quest <= 10) G.quest += 1;
+  if ((s.qv || 1) < 4) { if (G.quest >= 20) G.quest += 3; else if (G.quest >= 4) G.quest += 1; }
   G.hands = s.hands && ITEMS[s.hands.kind] ? s.hands : null;
   G.w = WZ.fresh();
+  G.ev = WZ.evFresh(s.ev && s.ev.n || 0);
   FA.fromJSON(s.fac || {});
   G.bd = FA.freshBuilder();
   if (s.bd && FA.inb(Math.floor(s.bd.x), Math.floor(s.bd.y))) { G.bd.x = s.bd.x; G.bd.y = s.bd.y; }
@@ -70,8 +74,9 @@ Main.save = function () {
   try {
     // shards still lying in the wilds count as banked in the save, so quitting mid-run never loses them
     const loose = G.w ? G.w.drops.filter(d => d.kind === 'shard').reduce((a, d) => a + d.val, 0) : 0;
+    const looseCores = G.w ? G.w.drops.filter(d => d.kind === 'core').reduce((a, d) => a + d.val, 0) : 0;
     const data = JSON.stringify({
-      v: SAVE_VERSION, qv: QUEST_VERSION, xp: G.xp, tree: G.tree, stock: Object.assign({}, G.stock, { shard: G.stock.shard + loose }), bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
+      v: SAVE_VERSION, qv: QUEST_VERSION, xp: G.xp, tree: G.tree, stock: Object.assign({}, G.stock, { shard: G.stock.shard + loose, core: G.stock.core + looseCores }), ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
       flags: G.flags, quest: G.quest, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: FA.toJSON(), at: Date.now(),
       bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins,
     });
@@ -188,7 +193,7 @@ function handleMouseWizard() {
 function placeInFront(quiet) {
   const [tx, ty] = frontTile(), sel = G.selected;
   if (G.demolish) { FA.demolish(tx, ty); return true; }
-  if (sel === 'hand') { UI.toast('Pick a building first (1 to 9, 0, - or LB/RB).', 'L', 'ic_hand'); return true; }
+  if (sel === 'hand') { UI.toast('Pick a building first (1 to 7 or LB/RB).', 'L', 'ic_hand'); return true; }
   if (!FA.unlocked(sel) && sel !== 'belt') { FA.place(sel, tx, ty, G.placeDir); return true; }   // says what to unlock
   if (sel === 'belt' ? FA.placeBelt(tx, ty, G.placeDir) : FA.place(sel, tx, ty, G.placeDir)) return true;
   if (!quiet) { FA.ipop(tx + 0.5, ty + 0.5, [['ic_x']]); AU.sfx('error'); }
@@ -234,6 +239,7 @@ Main.controls = function (dt) {
   if (IN.hit('BracketRight') || (p0 && p0.rb)) rot = 1;
   if (IN.wheel && IN.mouse.x < CFG.HALF && !UI.treeOpen.L) rot = IN.wheel > 0 ? 1 : -1;
   if (rot && !(UI.treeOpen.L || UI.treeOpen.R)) UI.cycle(rot);
+  if (!(UI.treeOpen.L || UI.treeOpen.R) && Main.graceT <= 0 && (IN.hit('KeyQ') || (p0 && p0.rt))) UI.cycleFam(IN.shift() ? -1 : 1);   // next member of a family slot
   if (IN.hit('KeyB') || IN.hit('Delete') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt (full refund). Esc cancels.', 'L', 'ic_bomb'); }
   if (IN.hit('KeyR')) { G.placeDir = (G.placeDir + 1) % 4; AU.sfx('blip'); }
 
@@ -417,6 +423,15 @@ Main.questHint = function () {
     if (h.harv) for (const o of WZ.harv) { if (o.broken || o.kind !== 'tree') continue; const d = Math.hypot(o.x - w.x, o.y - w.y); if (d < bd) { bd = d; best = o; } }
     else for (const m of WZ.marks) { if (w.lm[m.id].state === 'done') continue; const d = Math.hypot(m.x - w.x, m.y - w.y); if (d < bd) { bd = d; best = m; } }
     if (best) out.w = { x: best.x, y: best.y, lift: h.mark ? 120 : 90 };
+  } else if (h.crafted) {   // the nearest factory creature, else the Spell Portal the Egg goes through
+    let best = null, bd = 1e9;
+    for (const e of G.w.enemies) { if (!e.crafted || e.dead) continue; const d = Math.hypot(e.x - G.w.x, e.y - G.w.y); if (d < bd) { bd = d; best = e; } }
+    if (best) out.w = { x: best.x, y: best.y, lift: 110 }; else { const p = FA.portal('spell'); out.f = { x: p.x + 0.5, y: p.y + 1, lift: 240 }; }
+  } else if (h.keep) {   // scout: the nearest unscouted Stronghold; claim: the nearest unclaimed one
+    const w = G.w;
+    let best = null, bd = 1e9;
+    for (const m of WZ.marks) { if (m.type !== 'stronghold' || w.lm[m.id].state === 'done' || (h.keep === 'scout' && w.lm[m.id].seen)) continue; const d = Math.hypot(m.x - w.x, m.y - w.y); if (d < bd) { bd = d; best = m; } }
+    if (best) out.w = { x: best.x, y: best.y, lift: 150 };
   } else if (h.boss) {
     if (G.w.boss) out.w = { x: G.w.boss.x, y: G.w.boss.y, lift: 140 };
     else make('altar');
@@ -591,4 +606,7 @@ window.__wands = {
   bank(kind, n) { for (let i = 0; i < (n || 1); i++) FA.bank(kind); },
   step(dt, n) { for (let i = 0; i < (n || 1); i++) if (G && !G.paused) Main.step(dt, { bix: 0, biy: 0, wix: 0, wiy: 0, roll: false }); },
   boss() { return WZ.summonBoss(); },
+  // force event n (1 = the first of the rotation, 7 = Cycle 2's Migration, ...) to start in 5 seconds
+  event(n) { const ev = G.ev; ev.n = Math.max(0, (n || 1) - 1); ev.plan = null; ev.active = null; ev.left = 5; ev.warned = 3; ev.clear = 0; return WZ.evInfo(); },
+  egg(kind) { FA.deliver(kind || 'egg_zephyr'); },
 };

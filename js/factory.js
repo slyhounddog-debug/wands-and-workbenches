@@ -21,7 +21,7 @@ FA.zone = () => ({ x0: 0, y0: G.fac.h - 5, x1: 4, y1: G.fac.h - 1 });
 FA.piles = () => {
   const h = G.fac.h;
   // a 2x2 block on screen: wood | stone over iron | shard (the zone is 5x5 in the south-west corner)
-  return { wood: { x: 1.0, y: h - 2.5 }, stone: { x: 2.5, y: h - 4.0 }, iron: { x: 3.1, y: h - 0.4 }, shard: { x: 4.6, y: h - 1.9 } };
+  return { wood: { x: 1.0, y: h - 2.5 }, stone: { x: 2.5, y: h - 4.0 }, iron: { x: 3.1, y: h - 0.4 }, shard: { x: 4.6, y: h - 1.9 }, core: { x: 4.3, y: h - 3.3 } };
 };
 FA.inb = (x, y) => x >= 0 && y >= 0 && x < G.fac.w && y < G.fac.h;
 FA.cell = (x, y) => (FA.inb(x, y) ? G.fac.grid[y * G.fac.w + x] : undefined);
@@ -33,7 +33,11 @@ FA.cap = () => CFG.satchel + lvl('satchel') * CFG.upgrade.satchel;
 FA.stackMax = k => (ITEMS[k] && ITEMS[k].stack) || FA.cap();
 FA.beltTime = () => CFG.beltTime / (1 + CFG.upgrade.belts * lvl('belts'));
 // the Wizard standing at a shrine speeds up that element's harnessers (G.w.shrine, set by WZ.updMarks)
-FA.shrineBoost = type => (G.w && G.w.shrine && G.w.shrine === CFG.buildings[type].elem ? 1 + CFG.marks.shrineBoost : 1);
+FA.shrineBoost = type => {
+  const el = CFG.buildings[type].elem, w = G.w;
+  if (!w) return 1;
+  return (w.shrine && w.shrine === el ? 1 + CFG.marks.shrineBoost : 1) * (w.surge && w.surge === el ? 1 + CFG.events.storm.boost : 1);   // a claimed shrine, and the Portal Storm's surging element
+};
 FA.cycle = type => CFG.buildings[type].cycle / (1 + CFG.upgrade.swift * lvl('swift')) / FA.shrineBoost(type);
 // a Battery holds batteryLife seconds at stationGen power; Heavy Batteries hold 50% more. pw = the power this one battery carries
 FA.drain = pw => pw * CFG.batteryMax / (CFG.batteryLife * CFG.stationGen) / (G.tree.heavy ? 1 + CFG.heavyBattery : 1);
@@ -51,15 +55,17 @@ FA.unlocked = id => {
   const u = CFG.buildings[id].unlock;
   return !u || !!G.tree[u];
 };
-FA.isDeliverable = k => !!ITEMS[k] && !!(ITEMS[k].elem || ITEMS[k].spell || ITEMS[k].pickup || ITEMS[k].sigil);   // Spell Portal
+FA.isDeliverable = k => !!ITEMS[k] && !!(ITEMS[k].elem || ITEMS[k].spell || ITEMS[k].pickup || ITEMS[k].sigil || ITEMS[k].egg);   // Spell Portal
 FA.isBankable = k => SPELL_KINDS.indexOf(k) >= 0;                                                 // Skill Portal
 // a Sigil only goes through while the Wizard is alive and no Chimera is already out
-FA.portalTakes = (c, k) => (c.which === 'skill' ? FA.isBankable(k) : FA.isDeliverable(k) && (k !== 'sigil' || (!G.w.dead && !G.w.boss)));
+// an Egg is taken while the crafted-creature cap has room, then it waits in the portal queue; a full queue stops the portal taking more
+FA.eggRoom = () => G.fac.eggQ.length < CFG.crafted.queue || (!G.w.dead && WZ.craftedAlive() < CFG.crafted.cap);
+FA.portalTakes = (c, k) => (c.which === 'skill' ? FA.isBankable(k) : FA.isDeliverable(k) && (k !== 'sigil' || (!G.w.dead && !G.w.boss)) && (!ITEMS[k].egg || FA.eggRoom()));
 FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 'sorter' || k === 'crate'; };
 
 FA.fresh = function (w, h) {
   const f = { w, h, grid: new Array(w * h).fill(null), bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
-    portalQ: [], portalT: 0, nextId: 1, gen: 0, demand: 0, lowT: 0, flash: 0, flashCol: '#fff', skillFlash: 0, t: 0,
+    portalQ: [], eggQ: [], portalT: 0, nextId: 1, gen: 0, demand: 0, lowT: 0, flash: 0, flashCol: '#fff', skillFlash: 0, t: 0,
     log: { spell: [], skill: [] }, working: 0, thumps: [], bump: 0, bumpAmp: 0, weakFlash: 0 };
   for (const p of FA.portalCells(w, h)) f.grid[p.y * w + p.x] = { type: 'portal', x: p.x, y: p.y, which: p.which };
   return f;
@@ -72,6 +78,12 @@ FA.initial = function () {
   for (let x = w - 6; x <= w - 2; x++) FA.addBelt(x, sy, 0);
   const st = FA.makeBuilding('station', 8, sy + 2, true, false, 0); st.bat = CFG.batteryMax;   // a full Battery already inside
   FA.makeBuilding('charger', 10, sy + 2, true, false, 0).bat = 0;   // a spare, flat Battery waits in the Charger
+  // the egg line: a second Air Harnesser feeds a Creature Spawner (Zephyr Wisps), which feeds the Spell Portal's lower cell
+  const ey = sy + 1;
+  FA.makeBuilding('air', 6, ey, true, false, 0);
+  for (let x = 7; x <= 9; x++) FA.addBelt(x, ey, 0);
+  FA.makeBuilding('spawner1', 10, ey, true, false, 0);
+  for (let x = 11; x <= w - 2; x++) FA.addBelt(x, ey, 0);
   G.bd = FA.freshBuilder();
 };
 FA.freshBuilder = () => ({ x: 5.5, y: G.fac.h - 6.5, vx: 0, vy: 0, fx: 1, fy: 0, target: null, then: null, stuckT: 0, gather: null,
@@ -259,7 +271,7 @@ FA.demolish = function (x, y) {
 };
 
 // ---------- recipes ----------
-FA.recipeOk = id => { const r = CFG.recipes[id]; return !!G.tree[r.tier] && (!r.req || !!G.tree[r.req]) && (r.out !== 'battery' || !!G.tree.forge); };
+FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (r.out !== 'battery' || !!G.tree.forge); };
 FA.recipesFor = type => Object.keys(CFG.recipes).filter(id => CFG.recipes[id].machine === type && FA.recipeOk(id));
 FA.refreshRecipes = function () {
   for (const b of G.fac.bld) if (b.done && FA.def(b).kind === 'crafter' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
@@ -379,6 +391,7 @@ FA.deliver = function (kind) {
   G.flags['sent_' + kind] = true;
   FA.ipop(p.x + 0.5, p.y + 1, [[kind]]);
   if (kind === 'sigil') WZ.summonBoss();
+  else if (ITEMS[kind].egg) WZ.hatch(kind);
   else if (ITEMS[kind].pickup) {
     WZ.dropPickup(kind);
   } else {
@@ -1056,7 +1069,7 @@ FA.toJSON = function () {
     }),
     belts: f.belts.map(b => ({ x: b.x, y: b.y, dir: b.dir, item: b.item ? b.item.kind : null })),
     floor: f.floor.concat(f.flying.map(o => ({ kind: o.kind, charge: o.charge, x: o.tx, y: o.ty }))).map(o => ({ kind: o.kind, charge: o.charge, x: o.x, y: o.y })),
-    portalQ: f.portalQ,
+    portalQ: f.portalQ, eggQ: f.eggQ,
   };
 };
 FA.fromJSON = function (j) {
@@ -1078,5 +1091,6 @@ FA.fromJSON = function (j) {
   });
   (j.floor || []).forEach(o => { if (ITEMS[o.kind]) G.fac.floor.push({ kind: o.kind, charge: o.charge, x: o.x, y: o.y, z: 0, vz: 0, t: 1 }); });
   G.fac.portalQ = (j.portalQ || []).filter(q => q && ITEMS[q.kind]);
+  G.fac.eggQ = (j.eggQ || []).filter(k => ITEMS[k] && ITEMS[k].egg);
   FA.refreshRecipes();
 };

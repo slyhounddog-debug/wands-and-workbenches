@@ -87,6 +87,19 @@ WZ.generate = function () {
     }
   };
   placeMarks('camp', M.camps, 16); placeMarks('shrine', M.shrines, 22); placeMarks('crypt', M.crypts, 40);
+  const rk = rngMaker(77123), K = CFG.strong;
+  ELEMS.forEach((el, i) => {   // one per quadrant, minDist..minDist+22 tiles from the spawn, never beside water
+    for (let tries = 0; tries < 600; tries++) {
+      const a = (i + 0.5) * Math.PI / 2 + (rk() - 0.5) * 0.9, d = K.minDist + rk() * 22;
+      const x = Math.floor(Math.max(8, Math.min(WW - 8, SPAWN.x + Math.cos(a) * d))) + 0.5, y = Math.floor(Math.max(8, Math.min(WH - 8, SPAWN.y + Math.sin(a) * d))) + 0.5;
+      let dry = true;
+      for (let dy = -3; dy <= 3 && dry; dy++) for (let dx = -3; dx <= 3; dx++) if (tyAt(x + dx, y + dy) === T_POND) { dry = false; break; }
+      if (!dry || WZ.marks.some(m => Math.hypot(m.x - x, m.y - y) < M.spacing)) continue;
+      const m = { id: WZ.marks.length, type: 'stronghold', x, y, el };
+      WZ.marks.push(m); add({ x, y, lm: m });
+      break;
+    }
+  });
   const nearMark = (x, y) => WZ.marks.some(m => Math.abs(m.x - x) < 3 && Math.abs(m.y - y) < 3);
   for (let i = 0; i < 9000; i++) {
     const x = 1 + r() * (WW - 2), y = 1 + r() * (WH - 2), t = tyAt(x, y), roll = r();
@@ -163,7 +176,7 @@ WZ.fresh = function () {
     x: SPAWN.x, y: SPAWN.y, hp: WZ.maxHp(), armor: 0, fx: 1, fy: 1, vx: 0, vy: 0, target: null,
     roll: 0, rollCd: 0, rdx: 0, rdy: 0, hurtT: 0, moving: false, bob: 0, shake: 0, ghosts: [],
     enemies: [], proj: [], eproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
-    time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, boss: null, seen: {},
+    time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
     lm: WZ.marks.map(() => ({ state: 'idle', t: 0, sp: 0, near: false })),
     run: { deliveries: 0, harvested: 0, dmg: 0, weak: 0, elites: 0, shards: 0, marks: 0, xp: 0, spells: {} },
     t: 0,
@@ -173,8 +186,11 @@ WZ.fresh = function () {
 WZ.bankLooseShards = function () {
   const w = G && G.w;
   if (!w) return;
-  for (const dr of w.drops) if (dr.kind === 'shard') { G.stock.shard += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; }
-  w.drops = w.drops.filter(dr => dr.kind !== 'shard');
+  for (const dr of w.drops) {
+    if (dr.kind === 'shard') { G.stock.shard += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; }
+    else if (dr.kind === 'core') G.stock.core += dr.val;
+  }
+  w.drops = w.drops.filter(dr => dr.kind !== 'shard' && dr.kind !== 'core');
 };
 WZ.reenter = function () { WZ.bankLooseShards(); G.w = WZ.fresh(); };
 
@@ -188,10 +204,10 @@ WZ.mult = function (e, el) {
   const weak = e.weak && el.indexOf(e.weak) >= 0;
   if (e.boss) return weak ? CFG.boss.weakMul : CFG.boss.otherMul;
   if (weak) return CFG.weakMul;
-  return e.resist && el.indexOf(e.resist) >= 0 ? CFG.resistMul : 1;
+  return (e.resist && el.indexOf(e.resist) >= 0 ? CFG.resistMul : 1) * (e.dr || 1);   // armored foes only take full damage from their weakness
 };
 WZ.hurtE = function (e, d, kx, ky, quiet) {
-  if (e.dead) return;
+  if (e.dead || e.fall > 0) return;
   const c = WZ.ctx, m = c ? WZ.mult(e, c.el) : 1;
   d *= m;
   G.w.run.dmg += Math.min(d, Math.max(0, e.hp));
@@ -199,7 +215,7 @@ WZ.hurtE = function (e, d, kx, ky, quiet) {
   if (c && e._c !== c) { e._c = c; c.hits++; if (m > 1) { c.weak++; G.w.run.weak++; } }
   if (!quiet) {
     e.flash = 0.12;
-    const kb = e.boss ? 0.08 : e.elite ? 0.4 : 1;
+    const kb = e.kb !== undefined ? e.kb : e.boss ? 0.08 : e.elite ? 0.4 : 1;
     if (kx || ky) { e.kx += kx * kb; e.ky += ky * kb; }
     WZ.num(e.x, e.y, Math.round(d) + (m > 1 ? '!' : ''), m > 1 ? '#ffe36b' : m < 1 ? '#9a94b0' : d >= 40 ? '#ffd23a' : '#ffffff');
   }
@@ -287,24 +303,24 @@ WZ.hurtH = function (h, d) {
     AU.sfx('kill');
   }
 };
-WZ.gems = () => 1 + CFG.upgrade.gems * lvl('gems');
 WZ.kill = function (e) {
-  if (e.dead) return;
+  if (e.dead || WZ.rebirth(e)) return;
   e.dead = true;
   const w = G.w, def = CFG.enemies[e.type];
   G.stats.kills++; w.kills++;
   if (WZ.ctx) WZ.ctx.kills++;
   if (e.boss) { WZ.bossDown(e); return; }
-  WZ.drop('xp', e.x, e.y, e.xp * WZ.gems());
+  WZ.dropGems(e.x, e.y, WZ.killGems(e));
   if (e.elite) {
     // the bonus shard is random, but never dry for more than CFG.elite.pity elites in a row
     const dry = G.stats.eliteDry || 0, bonus = dry >= CFG.elite.pity || Math.random() < CFG.elite.shardBonus;
     G.stats.eliteDry = bonus ? 0 : dry + 1;
-    const n = 1 + (bonus ? 1 : 0);
+    const n = e.crafted && !CFG.crafted.eliteShards ? 0 : 1 + (bonus ? 1 : 0);
     for (let i = 0; i < n; i++) WZ.drop('shard', e.x, e.y, 1);
     G.stats.elites = (G.stats.elites || 0) + 1; w.run.elites++;
     WZ.ring(e.x, e.y, 2.2, '#ffd23a', 0.45);
   }
+  WZ.onDeath(e);
   AU.sfx('kill');
   w.fx_.push({ type: 'boom', x: e.x, y: e.y, r: e.elite ? 1.4 : 0.9, t: 0, dur: 0.3, col: '#ffffff' });
   WZ.puff(e.x, e.y, def.col, e.elite ? 16 : 9);
@@ -512,16 +528,18 @@ WZ.pickType = function (x, y) {
 };
 WZ.makeEnemy = function (type, x, y, elite) {
   const w = G.w, def = CFG.enemies[type];
-  const hp = type === 'boss' ? def.hp : def.hp * (1 + CFG.world.hpPerMin * w.time / 60);
+  const hp = type === 'boss' || def.crafted || type === 'warden' ? def.hp : def.hp * (1 + CFG.world.hpPerMin * w.time / 60);
   const e = { type, x, y, hp, maxHp: hp, kx: 0, ky: 0, slow: 0, slowT: 0, cd: 0, flash: 0, dead: false, face: 1, bob: Math.random() * 6,
-    weak: def.weak || null, resist: def.resist || null, rad: def.rad || 0.35, spd: def.speed, dmg: def.dmg, xp: def.xp };
-  if (elite) {
-    const E = CFG.elite;
-    e.elite = true; e.hp = e.maxHp = hp * E.hp; e.spd *= E.speed; e.dmg *= E.dmg; e.xp *= E.xp; e.rad = 0.5;
-    if (!e.weak) e.weak = ELEMS[Math.floor(Math.random() * 4)];
-  }
+    weak: def.weak || null, resist: def.resist || null, rad: def.rad || 0.35, spd: def.speed, dmg: def.dmg };
+  if (elite) WZ.eliteUp(e);
   w.enemies.push(e);
   return e;
+};
+// bigger, tougher, gold-ringed; hpMul / dmgMul default to the usual elite numbers
+WZ.eliteUp = function (e, hpMul, dmgMul) {
+  const E = CFG.elite;
+  e.elite = true; e.hp = e.maxHp = e.maxHp * (hpMul || E.hp); e.spd *= hpMul ? 1 : E.speed; e.dmg *= dmgMul || E.dmg; e.rad = Math.max(e.rad, 0.5);
+  if (!e.weak) e.weak = ELEMS[Math.floor(Math.random() * 4)];
 };
 WZ.spawn = function () {
   const w = G.w, cfg = CFG.world, E = CFG.elite;
@@ -529,7 +547,8 @@ WZ.spawn = function () {
   if (!spot) return;
   const dist = Math.hypot(w.x - SPAWN.x, w.y - SPAWN.y);
   const pElite = w.time < E.minTime ? 0 : Math.min(E.max, E.base + E.perMin * w.time / 60 + E.perDist * dist / 100);
-  WZ.makeEnemy(WZ.pickType(spot[0], spot[1]), spot[0], spot[1], Math.random() < pElite);
+  const e = WZ.makeEnemy(WZ.pickType(spot[0], spot[1]), spot[0], spot[1], Math.random() < pElite);
+  if (w.bloom && Math.random() < w.bloom) WZ.mutate(e);   // Mutation Bloom: wild spawns mutate a lot
 };
 // first sighting of a biome foe or an elite: tell both players what it's weak to
 WZ.announce = function (e, key) {
@@ -543,12 +562,12 @@ WZ.announce = function (e, key) {
 };
 
 // ---------- landmarks ----------
-WZ.markName = m => (m.type === 'shrine' ? ELEM_WORD[m.el] + ' Shrine' : m.type === 'camp' ? 'Monster Camp' : 'Ancient Crypt');
+WZ.markName = m => (m.type === 'shrine' ? ELEM_WORD[m.el] + ' Shrine' : m.type === 'stronghold' ? ELEM_WORD[m.el] + ' Stronghold' : m.type === 'camp' ? 'Monster Camp' : 'Ancient Crypt');
 WZ.claim = function (m) {
   const w = G.w, M = CFG.marks, n = M[m.type + 'Shards'];
   w.lm[m.id].state = 'done';
   for (let i = 0; i < n; i++) WZ.drop('shard', m.x, m.y, 1);
-  for (let i = 0; i < 3; i++) WZ.drop('xp', m.x, m.y, M.xpBonus / 3 * WZ.gems());
+  WZ.dropGems(m.x, m.y, M.xpBonus);
   G.stats.landmarks = (G.stats.landmarks || 0) + 1; w.run.marks++;
   WZ.ring(m.x, m.y, 4, '#c890ff', 0.6); WZ.puff(m.x, m.y, '#c890ff', 18);
   AU.sfx('chest'); UI.changed();   // the shards themselves fly out and pop up at the factory's shard pile
@@ -611,6 +630,8 @@ WZ.updMarks = function (dt) {
         if (s.sp <= 0) { s.sp = M.cryptMinions; WZ.foesNear(m, 2); }
         if (!w.enemies.some(e => e.guard && e.mark === m.id && !e.dead)) WZ.claim(m);
       }
+    } else if (m.type === 'stronghold') {
+      WZ.updKeep(m, s, d, dt);
     } else {   // shrines: claimed with the ring mini-game, then they boost their element's harnessers while he stands on them
       const near = d < M.shrineR;
       if (s.flash > 0) s.flash -= dt;
@@ -674,7 +695,7 @@ WZ.nextWeak = e => (e && e.order && e.phase < 3 ? e.order[e.phase + 1] : null);
 WZ.bossDown = function (e) {
   const w = G.w, B = CFG.boss;
   w.boss = null;
-  for (let i = 0; i < 20; i++) WZ.drop('xp', e.x, e.y, e.xp / 20 * WZ.gems());
+  WZ.dropGems(e.x, e.y, CFG.enemies.boss.gem[0]);
   for (let i = 0; i < B.shards; i++) WZ.drop('shard', e.x, e.y, 1);
   for (let i = 0; i < 6; i++) WZ.later(i * 0.15, () => { WZ.boom(e.x + rand(-1.5, 1.5), e.y + rand(-1.5, 1.5), 2.5, i % 2 ? '#ffe36b' : '#ff4a8a'); AU.sfx('hit'); });
   WZ.puff(e.x, e.y, '#ff4a8a', 40); w.shake = 1;
@@ -770,7 +791,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     }
   }
   w.fx_ = w.fx_.filter(f => f.t < f.dur);
-  if (w.dead) { w.shrine = null; w.dig = null; return; }
+  if (w.dead) { w.shrine = null; w.dig = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
   w.time += dt;
   if (w.hurtT > 0) w.hurtT -= dt;
   if (w.mashT > 0) w.mashT -= dt;
@@ -810,6 +831,9 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   }
   let sp = WZ.speed();
   if (WZ.tile(w.x, w.y) === T_BOG) sp *= cfg.slowTerrain;
+  // hostile mud / steam slows (the roll ignores them)
+  const slowK = (1 - Math.min(0.8, w.zSlow || 0)) * (w.slowT > 0 ? 1 - w.slowAmt : 1);
+  if (w.slowT > 0) w.slowT -= dt;
   if (w.roll > 0) {
     // the roll ignores acceleration: a committed burst
     w.roll -= dt;
@@ -817,7 +841,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     w.ghostT = (w.ghostT || 0) - dt;
     if (w.ghostT <= 0) { w.ghostT = 0.05; w.ghosts.push({ x: w.x, y: w.y, t: 0 }); }
   } else {
-    const wx = dx * sp, wy = dy * sp, ex = wx - w.vx, ey = wy - w.vy, el = Math.hypot(ex, ey);
+    const wx = dx * sp * slowK, wy = dy * sp * slowK, ex = wx - w.vx, ey = wy - w.vy, el = Math.hypot(ex, ey);
     const rate = (m > 0 ? CFG.wizard.accel : CFG.wizard.friction) * dt;
     if (el <= rate) { w.vx = wx; w.vy = wy; } else { w.vx += ex / el * rate; w.vy += ey / el * rate; }
   }
@@ -843,7 +867,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     const p = w.pickups[i];
     p.t += dt;
     if (p.z > 0) { p.z = Math.max(0, p.z - dt * 14); if (p.z === 0) { WZ.puff(p.x, p.y, ITEMS[p.kind].color, 8); AU.sfx('thud'); } continue; }
-    if (Math.hypot(p.x - w.x, p.y - w.y) > 0.8) continue;
+    if (Math.hypot(p.x - w.x, p.y - w.y) > 0.8 + CFG.upgrade.magnet * lvl('magnet')) continue;   // Loot Magnet reaches these too
     const def = CFG.pickups[p.kind];
     if (def.heal) {
       if (w.hp >= WZ.maxHp()) { p.full = true; continue; }
@@ -875,6 +899,8 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     if (w.enemies.length < cfg.cap) WZ.spawn();
   }
   WZ.updMarks(dt);
+  WZ.eggTick(dt);
+  if (G.ev) WZ.evTick(dt);
 
   // enemies
   const en = w.enemies;
@@ -884,15 +910,20 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     if (e.flash > 0) e.flash -= dt;
     if (e.cd > 0) e.cd -= dt;
     if (e.slowT > 0) { e.slowT -= dt; if (e.slowT <= 0) e.slow = 0; }
+    if (e.regen && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * e.regen * dt);
+    if (e.land > 0) e.land -= dt;
+    if (e.fall > 0) { e.fall -= dt; if (e.fall <= 0) { e.fall = 0; e.land = 0.22; WZ.puff(e.x, e.y, '#d8c8a8', 8); AU.sfx('thud'); } continue; }   // dropping in from the Egg's portal
+    if (e.dazeT > 0) { e.dazeT -= dt; continue; }   // dazed on landing
     const ex = w.x - e.x, ey = w.y - e.y, d = Math.hypot(ex, ey) || 1;
     if (d > 45) { const sp2 = WZ.dryNear(w.x, w.y, 8, [cfg.ringMin, cfg.ringMax]); if (sp2) { e.x = sp2[0]; e.y = sp2[1]; } continue; }
     if (d < 12) { const key = e.elite ? 'elite' : e.boss ? null : (e.weak ? e.type : null); if (key && !w.seen[key]) { w.seen[key] = true; WZ.announce(e, key); } }
     if (e.boss) WZ.bossAI(e, dt, d);
-    const s = e.spd * (1 - e.slow) * (WZ.tile(e.x, e.y) === T_BOG ? cfg.slowTerrain : 1);
+    const s = e.spd * (1 - e.slow) * (!e.fly && WZ.tile(e.x, e.y) === T_BOG ? cfg.slowTerrain : 1);
     let ux = ex / d, uy = ey / d, steered = false;
     if (e.detour > 0) { e.detour -= dt; const px = -uy * e.side, py = ux * e.side; ux = px; uy = py; }   // last-resort sidestep
-    else if (d > 1.5) { const f = WZ.flowDir(e, d); if (f) { ux = f[0]; uy = f[1]; steered = true; } }
+    else if (d > 1.5 && !e.fly) { const f = WZ.flowDir(e, d); if (f) { ux = f[0]; uy = f[1]; steered = true; } }
     let mx = ux * s, my = uy * s;
+    if (e.ai) { const r = WZ.aiTick(e, dt, d, ux, uy, s); if (r) { mx = r[0]; my = r[1]; } }   // a creature's own movement and attacks
     // soft separation: bodies keep (rad + rad + sepPad) apart, so packs stay readable and don't land hits in one clump
     for (let j = i + 1; j < en.length; j++) {
       const o = en[j]; if (o.dead) continue;
@@ -904,7 +935,8 @@ WZ.update = function (dt, ix, iy, rollPressed) {
       if (!e.boss) { mx += ox / od * push; my += oy / od * push; }
       WZ.slide(o, o.x - ox / od * push * dt * wo, o.y - oy / od * push * dt * wo, 0.3);
     }
-    if (WZ.slide(e, e.x + (mx + e.kx) * dt, e.y + (my + e.ky) * dt, 0.3) && !(e.detour > 0) && !steered) {
+    if (e.fly) { e.x = Math.max(0.5, Math.min(CFG.WW - 0.5, e.x + (mx + e.kx) * dt)); e.y = Math.max(0.5, Math.min(CFG.WH - 0.5, e.y + (my + e.ky) * dt)); }   // flyers cross water
+    else if (WZ.slide(e, e.x + (mx + e.kx) * dt, e.y + (my + e.ky) * dt, 0.3) && !(e.detour > 0) && !steered) {
       e.detour = 0.5 + Math.random() * 0.6; e.side = e.side || (Math.random() < 0.5 ? 1 : -1);
       e.kx = 0; e.ky = 0;
     }
@@ -915,7 +947,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     if (d < reach && e.cd <= 0 && w.roll <= 0 && w.hurtT > 0) e.cd = rand(0.15, 0.45);   // queued: strike a little later
     else if (d < reach && e.cd <= 0 && w.roll <= 0 && w.hurtT <= 0) {
       e.cd = cfg.touchCd * rand(0.85, 1.3);
-      WZ.damage(e.dmg);
+      WZ.damage((e.diving && e.diveDmg) || e.dmg);
       if (!e.boss) { e.kx -= ex / d * 6; e.ky -= ey / d * 6; }   // bump the attacker back a little
     } else if (d < reach && e.cd <= 0 && w.roll > 0) { e.cd = 0.3; WZ.dodge(); }
   }
@@ -956,10 +988,19 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   }
 
   // zones
+  let zs = 0;
   for (let i = w.zones.length - 1; i >= 0; i--) {
     const z = w.zones[i];
     z.t -= dt;
     if (z.follow) { z.x = w.x; z.y = w.y; }
+    if (z.hostile) {
+      if (!w.dead && Math.hypot(w.x - z.x, w.y - z.y) < z.r) {
+        if (z.slow) zs = Math.max(zs, z.slow);
+        if (z.dps && w.roll <= 0) { z.tk = (z.tk || 0) + dt; if (z.tk >= 0.5) { z.tk = 0; WZ.damage(z.dps * 0.5); } }
+      }
+      if (z.t <= 0) w.zones.splice(i, 1);
+      continue;
+    }
     WZ.ctx = z.ctx;
     WZ.each(z.x, z.y, z.r, (t, d, isE) => {
       if (z.dps) { if (isE) WZ.hurtE(t, z.dps * dt, 0, 0, true); else { t.hp -= z.dps * dt; t.flash = 0.05; if (t.hp <= 0) { t.hp = 0.0001; WZ.hurtH(t, 1); } } }
@@ -968,8 +1009,11 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     WZ.ctx = null;
     if (z.t <= 0) w.zones.splice(i, 1);
   }
+  w.zSlow = zs;
 
   // drops: fly out, then vacuum into the wizard
+  w.mergeT -= dt;
+  if (w.mergeT <= 0) { w.mergeT = 0.25; WZ.mergeGems(); }
   for (let i = w.drops.length - 1; i >= 0; i--) {
     const dr = w.drops[i];
     dr.t += dt;
@@ -979,17 +1023,22 @@ WZ.update = function (dt, ix, iy, rollPressed) {
       if (!WZ.wet(nx, ny)) { dr.x = nx; dr.y = ny; }
       dr.vx *= 0.93; dr.vy *= 0.93;
     }
-    const vac = dr.kind === 'shard' ? cfg.vacuum * 2.5 : cfg.vacuum;   // shards are precious: they come to you
+    if (dr.pulse > 0) dr.pulse -= dt;
+    const vac = dr.kind === 'shard' || dr.kind === 'core' ? WZ.vacuum() * 2.5 : WZ.vacuum();   // shards and Cores are precious: they come to you
     if (dr.t > 0.3 && d < vac) {
       const sp2 = 7 + (vac - d) * 7;
       dr.x += ex / (d || 1) * sp2 * dt; dr.y += ey / (d || 1) * sp2 * dt;
       dr.mag = true;
     }
     if (d < 0.45 && dr.t > 0.3) {
-      if (dr.kind === 'xp') { G.xp += dr.val; G.stats.xpEarned += dr.val; w.run.xp += dr.val; AU.sfx('gem'); }
+      if (dr.kind === 'xp') { G.xp += dr.val; G.stats.xpEarned += dr.val; w.run.xp += dr.val; AU.sfx(dr.val >= CFG.bigGem.tiers[1] ? 'gemBig' : 'gem'); if (dr.val >= CFG.bigGem.tiers[1]) WZ.num(w.x, w.y, '+' + dr.val, '#7be0ff'); }
+      else if (dr.kind === 'core') { G.stock.core += dr.val; AU.sfx('chest'); WZ.icon(w.x, w.y, 'core'); FA.pileIn('core'); UI.changed(); }
+      else if (ELEM[dr.kind]) {   // a recycled packet rides home and lands beside the Spell Portal
+        const p = FA.portal('spell'); FA.dropAt(dr.kind, p.x - 0.6, p.y + 2.6); FA.ipop(p.x + 0.5, p.y + 1.8, [[dr.kind]]); AU.sfx('el_' + dr.kind); WZ.icon(w.x, w.y, dr.kind);
+      }
       else if (dr.kind === 'shard') { G.stock.shard += dr.val; w.run.shards += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; AU.sfx('shard'); WZ.icon(w.x, w.y, 'shard'); FA.pileIn('shard'); UI.changed(); }
       else { G.stock[dr.kind] += dr.val; w.run.harvested += dr.val; G.stats.harvested += dr.val; AU.sfx('pickup'); WZ.icon(w.x, w.y, dr.kind); FA.pileIn(dr.kind); }
       w.drops.splice(i, 1);
-    } else if (dr.t > 120 && dr.kind !== 'shard') w.drops.splice(i, 1);
+    } else if (dr.t > 120 && dr.kind !== 'shard' && dr.kind !== 'core') w.drops.splice(i, 1);
   }
 };

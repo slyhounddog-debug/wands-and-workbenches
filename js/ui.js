@@ -475,7 +475,7 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
   const rows = [];
   if (n.id.startsWith('cr_')) {
     const id = n.id.slice(3), c = CFG.creatures[id];
-    rows.push(['Egg recipe', UI.recipeHtml('egg_' + id)], ['Hatch', c.time + 's, ' + c.power + ' power'], ['Creature', c.hp + ' HP, ' + c.dmg + ' dmg, weak to ' + UI.img(c.weak, 14)], ['Elements', c.order.map(k => UI.img(k, 16)).join('')]);
+    rows.push(['Egg recipe', UI.recipeHtml('egg_' + id)], ['Hatch', (c.n || 1) + 'x, ' + c.time + 's, ' + c.power + ' power'], ['Creature', c.hp + ' HP, ' + c.dmg + ' dmg, weak to ' + UI.img(c.weak, 14)], ['Elements', c.order.map(k => UI.img(k, 16)).join('')]);
     return rows;
   }
   if (ITEMS[n.id] && ITEMS[n.id].spell) {

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wands &amp; Workbenches Dev Tool</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/app/tool.css">
+</head>
+<body>
+<header class="top">
+  <b class="brand">Wands &amp; Workbenches <span>Dev Tool</span></b>
+  <nav class="tabs">
+    <button data-tab="layout">Layout</button>
+    <button data-tab="vars">Variables</button>
+    <button data-tab="audio">Audio</button>
+  </nav>
+  <span id="status"></span>
+  <a class="gamelink" href="/game/" target="_blank" title="The game as served by this tool (a seeded, muted preview copy)">open preview in a tab</a>
+</header>
+
+<!-- shared by the Layout and Variables tabs: the real game in an iframe -->
+<section id="previewArea">
+  <div class="bar">
+    <label>Screen <select id="preset" title="Which screen of the game to load into the preview"></select></label>
+    <label>Size <select id="size" title="The window size the game thinks it has"></select></label>
+    <span class="seg" id="modeSeg">
+      <button id="modeEdit" title="Clicks select and drag UI elements (the game does not receive them)">Edit</button>
+      <button id="modePlay" title="Clicks and keys go to the game, so you can walk it to any screen">Play</button>
+    </span>
+    <label class="chk" title="Stops the game's clock (G.paused) so the screen holds still. Untick to play in Play mode."><input type="checkbox" id="freeze"> Freeze time</label>
+    <button id="reload" title="Reload the preview and walk back to the selected screen">Reload screen</button>
+    <span id="tabTools"></span>
+  </div>
+  <div class="body">
+    <div class="stage" id="stage">
+      <div class="wrap" id="wrap"><iframe id="frame" title="Game preview"></iframe></div>
+      <div class="note" id="note"></div>
+    </div>
+    <aside class="panel" id="panel-layout"></aside>
+    <aside class="panel" id="panel-vars" hidden></aside>
+  </div>
+</section>
+
+<section id="view-audio" hidden></section>
+
+<!-- the game's own code, pristine (no overrides): default CFG values for the Variables tab, the synth sounds and the
+     clip player (OV.playClip) for the Audio tab, so the editor previews exactly what the game plays -->
+<script src="/game/js/overrides.js"></script>
+<script src="/game/js/config.js"></script>
+<script src="/game/js/audio.js"></script>
+<script src="/app/layout-model.js"></script>
+<script type="module" src="/app/shell.js"></script>
+</body>
+</html>

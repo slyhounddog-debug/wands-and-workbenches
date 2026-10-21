@@ -1,9 +1,39 @@
 'use strict';
-// Fully synthesized audio (Web Audio): SFX blips, the studio jingle and a cozy arpeggio loop.
+// Synthesized audio (Web Audio): SFX blips, the studio jingle and a cozy arpeggio loop. Any sound can be replaced by a
+// clip from the dev tool's Audio tab (overrides/audio.js + overrides/audio/<name>.js); until a clip is decoded, or
+// without one, the synth plays.
 const AU = (() => {
   let ctx = null, sfxG = null, musG = null, musicOn = false, nextT = 0, step = 0, timer = null;
   const settings = { sfx: 0.7, music: 0.5 };
   const lastPlay = {};
+
+  // ----- custom clips (the dev tool's Audio tab) -----
+  const custom = {};   // name -> { p: edit params, buf: decoded AudioBuffer once ready }
+  function loadCustom() {
+    const ov = window.AUDIO_OV || {};
+    for (const name in ov) {
+      if (!/^[\w-]+\.js$/.test(ov[name].file || '')) continue;
+      custom[name] = { p: ov[name], buf: null };
+      const s = document.createElement('script');   // a script tag, not fetch, so it also works from file://
+      s.src = 'overrides/audio/' + ov[name].file;
+      s.onload = decodeCustom;
+      document.head.appendChild(s);
+    }
+  }
+  function decodeCustom() {
+    if (!ctx) return;
+    const data = window.AUDIO_DATA || {};
+    for (const name in custom) {
+      const c = custom[name];
+      if (c.buf || c.busy || !data[name]) continue;
+      c.busy = true;
+      ctx.decodeAudioData(OV.dataToBuffer(data[name])).then(b => {
+        c.buf = b;
+        if (name === 'hum' && hum && !hum.clip) { hum.stop(); hum = null; humLvl = -1; }   // swap the synth drone for the clip
+      }, () => { /* unreadable file: the synth keeps playing */ });
+    }
+  }
+  const clip = name => (custom[name] && custom[name].buf ? custom[name] : null);
 
   try {
     const s = JSON.parse(localStorage.getItem('wands_settings'));
@@ -38,6 +68,7 @@ const AU = (() => {
     sfxG = ctx.createGain(); musG = ctx.createGain();
     sfxG.connect(ctx.destination); musG.connect(ctx.destination);
     applyVol();
+    decodeCustom();
   }
   function tone(f, dur, type, vol, slide, delay, dest) {
     if (!ctx) return;
@@ -68,6 +99,8 @@ const AU = (() => {
     const now = ctx.currentTime;
     if (lastPlay[name] && now - lastPlay[name] < 0.05) return;
     lastPlay[name] = now;
+    const c = clip(name);
+    if (c) { OV.playClip(ctx, c, c.p, sfxG); return; }
     switch (name) {
       case 'blip': tone(660, 0.07, 'square', 0.06); break;
       case 'pickup': tone(520, 0.08, 'triangle', 0.12); tone(780, 0.09, 'triangle', 0.1, 0, 0.06); break;
@@ -115,6 +148,11 @@ const AU = (() => {
     const v = Math.max(0, Math.min(1, level));
     if (Math.abs(v - humLvl) < 0.02) return;
     humLvl = v;
+    if (!hum && clip('hum')) {
+      const g = ctx.createGain(); g.gain.value = 0; g.connect(sfxG);
+      const node = OV.playClip(ctx, clip('hum'), Object.assign({}, clip('hum').p, { loop: true }), g);
+      hum = { g, clip: true, stop() { node.src.stop(); } };
+    }
     if (!hum) {
       const g = ctx.createGain(); g.gain.value = 0;
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240;
@@ -125,10 +163,10 @@ const AU = (() => {
       lfo.connect(lg); lg.connect(lp.frequency);
       o1.connect(lp); o2.connect(o2g); o2g.connect(lp); lp.connect(g); g.connect(sfxG);
       o1.start(); o2.start(); lfo.start();
-      hum = { g, lfo };
+      hum = { g, lfo, stop() { o1.stop(); o2.stop(); lfo.stop(); g.disconnect(); } };
     }
-    hum.g.gain.setTargetAtTime(v * 0.06, ctx.currentTime, 0.5);
-    hum.lfo.frequency.setTargetAtTime(2 + v * 5, ctx.currentTime, 0.5);
+    hum.g.gain.setTargetAtTime(v * (hum.clip ? 1 : 0.06), ctx.currentTime, 0.5);
+    if (hum.lfo) hum.lfo.frequency.setTargetAtTime(2 + v * 5, ctx.currentTime, 0.5);
   }
 
   // ----- reactive mix: factory activity adds percussion, nearby fights add bass, the Chimera swaps the progression -----
@@ -143,9 +181,18 @@ const AU = (() => {
   const CH = [{ r: 0, m: [0, 4, 7] }, { r: -3, m: [0, 3, 7] }, { r: -7, m: [0, 4, 7] }, { r: -5, m: [0, 4, 7] }];
   const CH_BOSS = [{ r: -3, m: [0, 3, 7] }, { r: -7, m: [0, 4, 7] }, { r: -5, m: [0, 4, 7] }, { r: -8, m: [0, 4, 7] }];
   const PAT = [0, 1, 2, 3, 2, 1, 0, 1];
+  // a custom music clip (music_boss during the Chimera) loops instead of the synth
+  let track = null;
+  function setTrack(name) {
+    if ((track && track.name) === name) return;
+    if (track) { try { track.node.src.stop(); } catch (e) { /* already stopped */ } track = null; }
+    if (name) track = { name, node: OV.playClip(ctx, clip(name), Object.assign({}, clip(name).p, { loop: true }), musG) };
+  }
   function schedule() {
     if (!ctx || !musicOn) return;
-    if (held) { nextT = ctx.currentTime + 0.1; return; }
+    const want = bossOn && clip('music_boss') ? 'music_boss' : clip('music') ? 'music' : null;
+    setTrack(want);
+    if (want || held) { nextT = ctx.currentTime + 0.1; return; }
     const STEP = bossOn ? 0.3 : 0.5 - mixC * 0.08;
     while (nextT < ctx.currentTime + 0.5) {
       const chord = (bossOn ? CH_BOSS : CH)[Math.floor(step / 8) % 4], k = step % 8, d = Math.max(0, nextT - ctx.currentTime);
@@ -174,10 +221,14 @@ const AU = (() => {
     musicOn = on;
     if (!ctx) return;
     if (on && !timer) { nextT = ctx.currentTime + 0.1; timer = setInterval(schedule, 120); }
-    if (!on && timer) { clearInterval(timer); timer = null; }
+    if (!on && timer) { clearInterval(timer); timer = null; setTrack(null); }
   }
+  loadCustom();
+  // every sfx() name, read off its switch so the dev tool's list can never miss one
+  const SFX_NAMES = (sfx + '').match(/case '\w+'/g).map(s => s.slice(6, -1));
   return {
     settings, init, sfx, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep,
+    names: { sfx: SFX_NAMES, loops: ['music', 'music_boss', 'hum'] },
     setSfx(v) { settings.sfx = v; applyVol(); saveSettings(); },
     setMusic(v) { settings.music = v; applyVol(); saveSettings(); },
   };

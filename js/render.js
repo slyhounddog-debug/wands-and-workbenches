@@ -9,8 +9,9 @@ const R = {
   hint: null, whint: null, hoverB: null, mapC: null,   // goal pointers (factory / wilds), hovered building, minimap image
   defer: null, px: 1, org: 0, bufs: {},
 };
-const FONT_D = '"Press Start 2P", "Courier New", monospace';   // display: numbers, short labels
-const FONT_B = '"Pixelify Sans", "Press Start 2P", monospace';  // body: prompts, longer labels
+// digits always come from Silkscreen (the 'Digits' faces in style.css): no 5 that reads as 8, no 6 that reads as G
+const FONT_D = '"Digits", "Press Start 2P", "Courier New", monospace';   // display: numbers, short labels
+const FONT_B = '"DigitsB", "Jersey 10", "Press Start 2P", monospace';  // body: prompts, longer labels
 
 function lowBuffer(name, w, h) {
   let b = R.bufs[name];

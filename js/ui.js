@@ -81,7 +81,6 @@ UI.batteryStatus = function () {
 UI.handsHtml = function () {
   const h = G.hands;
   if (!h) return '<span class="dim">empty</span>';
-  // counts use the display font: Pixelify Sans 5s and 6s read like 8s at this size
   const extra = h.kind === 'battery' ? Math.round(h.charge / CFG.batteryMax * 100) + '%' : 'x' + h.n + '<i>/' + FA.stackMax(h.kind) + '</i>';
   return UI.img(h.kind, 24) + '<span>' + itemName(h.kind) + '</span><span class="cnt">' + extra + '</span>';
 };
@@ -348,6 +347,20 @@ UI.renderTree = function (side) {
 // ---------- skill-tree hover card: what a node does + its numbers now and after the next purchase ----------
 const fPct = v => '+' + Math.round(v * 1000) / 10 + '%';
 const fSec = v => v.toFixed(2) + 's';
+// one-line damage summaries for the hover card, built from CFG.spells so they never drift from WZ.cast
+const SPELL_DMG = {
+  flamethrower: s => s.n + ' bolts x ' + s.dmg + ' dmg',
+  tempest: s => s.dmg + ' dmg, chains to ' + s.n,
+  steam: s => s.dmg + ' dmg in a ' + s.r + ' tile ring, slows',
+  sandstorm: s => s.dps + ' dmg/s for ' + s.t + 's, follows',
+  magma: s => s.dmg + ' dmg + ' + s.splash + ' splash',
+  mud: s => s.dps + ' dmg/s for ' + s.t + 's, -' + Math.round(s.slow * 100) + '% speed',
+  meteor: s => s.n + ' meteors x ' + s.dmg + ' dmg',
+  thunder: s => s.dmg + ' dmg, chains to ' + s.n,
+  blizzard: s => s.dps + ' dmg/s for ' + s.t + 's, follows',
+  geyser: s => s.n + ' blasts x ' + s.dmg + ' dmg',
+  nova: s => s.dmg + ' dmg in a ' + s.r + ' tile ring',
+};
 UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a plain fact, null = maxed out
   const L = UI.nodeLevel(n), up = CFG.upgrade[n.id], nx = L < UI.nodeMax(n) ? L + 1 : null;
   const row = (label, f) => [label, f(L), nx === null ? null : f(nx)];
@@ -363,7 +376,7 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
   const rows = [];
   if (ITEMS[n.id] && ITEMS[n.id].spell) {
     const r = CFG.recipes[n.id];
-    rows.push(['Forge recipe', UI.recipeHtml(n.id)], ['Craft', r.time + 's, ' + r.power + ' power'], ['Damage', n.dmg]);
+    rows.push(['Forge recipe', UI.recipeHtml(n.id)], ['Craft', r.time + 's, ' + r.power + ' power'], ['Damage', SPELL_DMG[n.id](CFG.spells[n.id])]);
     rows.push(['Elements', SPELL_EL[n.id].map(k => UI.img(k, 16)).join('')], ['Banked now', '' + (G.bank[n.id] || 0)]);
     return rows;
   }

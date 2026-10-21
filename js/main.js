@@ -449,7 +449,7 @@ window.addEventListener('DOMContentLoaded', () => {
   requestAnimationFrame(frame);
 
   const fonts = document.fonts && document.fonts.load
-    ? Promise.all([document.fonts.load('16px "Press Start 2P"'), document.fonts.load('700 20px "Pixelify Sans"'), StudioIntro.loadFonts()]).catch(() => {})
+    ? Promise.all([document.fonts.load('16px "Press Start 2P"'), document.fonts.load('20px "Jersey 10"'), document.fonts.load('16px Digits', '0123456789'), document.fonts.load('16px DigitsB', '0123456789'), StudioIntro.loadFonts()]).catch(() => {})
     : Promise.resolve();
   SP.build(f => { $('loadFill').style.width = Math.round(f * 90) + '%'; }, () => {
     WZ.generate();

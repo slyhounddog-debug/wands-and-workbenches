@@ -5,6 +5,8 @@
 <title>Wands &amp; Workbenches</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="style.css">
+<!-- the dev tool's Layout tab (tools/devtool): generated, stays last so its overrides win -->
+<link rel="stylesheet" href="overrides/layout.css">
 </head>
 <body>
 <div id="stage">
@@ -137,6 +139,11 @@
   <button id="studio-intro-skip" type="button">skip &gt;&gt;</button>
 </div>
 
+<!-- dev tool overrides (tools/devtool writes overrides/; js/overrides.js applies them) -->
+<script src="overrides/tuning.js"></script>
+<script src="overrides/layout.js"></script>
+<script src="overrides/audio.js"></script>
+<script src="js/overrides.js"></script>
 <script src="js/config.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/sprites.js"></script>

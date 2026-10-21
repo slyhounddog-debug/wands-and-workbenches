@@ -133,18 +133,18 @@ const CFG = {
     { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 68, req: ['earth'], pay: { air: 18, fire: 30, earth: 20 }, desc: 'Unlock the Armor Anvil: armor pickups for the Wizard.' },
     { id: 'logistics', col: 0, icon: 'b:splitter', name: 'Logistics',       xp: 60, req: ['fire'], pay: { air: 20, water: 20, fire: 20 }, desc: 'Unlock the Splitter, the Sorter (needs an Aether Shard) and the Storage Crate.' },
     { id: 'summon',    col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: ['nova'], pay: { air: 40, water: 40, fire: 40, earth: 40 }, desc: 'Unlock the Summoning Altar: craft a Boss Sigil and face the Primal Chimera. Beat it to win.' },
-    // col 1: Spells (each Forge recipe on its own). `dmg` is the hover-card summary: keep it in sync with WZ.cast
-    { id: 'flamethrower', col: 1, icon: 'flamethrower', name: 'Flamethrower',  xp: 45, req: ['forge'], pay: { air: 22, fire: 23 }, dmg: '8 bolts x 11 dmg', desc: 'Air + Fire: 8 fire bolts in a cone.' },
-    { id: 'tempest',      col: 1, icon: 'tempest',      name: 'Tempest Chain', xp: 45, req: ['forge'], pay: { air: 22, water: 23 }, dmg: '20 dmg, chains to 5', desc: 'Air + Water: chain lightning to 5 foes, slows nearby.' },
-    { id: 'steam',        col: 1, icon: 'steam',        name: 'Steam Burst',   xp: 45, req: ['forge'], pay: { fire: 22, water: 23 }, dmg: '25 dmg in a 5.5 tile ring, slows', desc: 'Fire + Water: scalding burst that slows.' },
-    { id: 'sandstorm',    col: 1, icon: 'sandstorm',    name: 'Sandstorm',     xp: 45, req: ['forge', 'earth'], pay: { air: 22, earth: 23 }, dmg: '14 dmg/s for 3s, follows', desc: 'Air + Earth: a grinding storm that follows the Wizard.' },
-    { id: 'magma',        col: 1, icon: 'magma',        name: 'Magma Bomb',    xp: 45, req: ['forge', 'earth'], pay: { fire: 22, earth: 23 }, dmg: '50 dmg + 50 splash', desc: 'Fire + Earth: big blast that leaves burning ground.' },
-    { id: 'mud',          col: 1, icon: 'mud',          name: 'Mud Snare',     xp: 45, req: ['forge', 'earth'], pay: { water: 22, earth: 23 }, dmg: '6 dmg/s for 3s, -80% speed', desc: 'Water + Earth: a sticky zone that nearly stops foes.' },
-    { id: 'meteor',       col: 1, icon: 'meteor',       name: 'Meteor Shower', xp: 90, req: ['flamethrower', 'magma'], pay: { air: 20, fire: 20, earth: 20, flamethrower: 2, magma: 1 }, dmg: '8 meteors x 40 dmg', desc: 'Air + Fire + Earth: 8 meteors on random foes.' },
-    { id: 'thunder',      col: 1, icon: 'thunder',      name: 'Thunderstorm',  xp: 90, req: ['flamethrower', 'tempest'], pay: { air: 20, fire: 20, water: 20, tempest: 2, flamethrower: 1 }, dmg: '30 dmg, chains to 10', desc: 'Air + Fire + Water: chain lightning to 10 foes.' },
-    { id: 'blizzard',     col: 1, icon: 'blizzard',     name: 'Blizzard',      xp: 90, req: ['tempest', 'mud'], pay: { air: 20, water: 20, earth: 20, mud: 2, tempest: 1 }, dmg: '16 dmg/s for 4s, follows', desc: 'Air + Water + Earth: a freezing storm around the Wizard.' },
-    { id: 'geyser',       col: 1, icon: 'geyser',       name: 'Geyser Eruption', xp: 90, req: ['steam', 'magma'], pay: { fire: 20, water: 20, earth: 20, steam: 2, magma: 1 }, dmg: '6 blasts x 45 dmg', desc: 'Fire + Water + Earth: blasts under the 6 nearest foes.' },
-    { id: 'nova',         col: 1, icon: 'nova',         name: 'Elemental Nova', xp: 210, req: ['meteor', 'thunder', 'blizzard', 'geyser'], pay: { air: 50, fire: 50, water: 50, earth: 60, meteor: 1, thunder: 1, blizzard: 1, geyser: 1 }, dmg: '80 dmg in an 8 tile ring', desc: 'All four: a huge radial blast.' },
+    // col 1: Spells (each Forge recipe on its own).
+    { id: 'flamethrower', col: 1, icon: 'flamethrower', name: 'Flamethrower',  xp: 45, req: ['forge'], pay: { air: 22, fire: 23 }, desc: 'Air + Fire: 8 fire bolts in a cone.' },
+    { id: 'tempest',      col: 1, icon: 'tempest',      name: 'Tempest Chain', xp: 45, req: ['forge'], pay: { air: 22, water: 23 }, desc: 'Air + Water: chain lightning to 5 foes, slows nearby.' },
+    { id: 'steam',        col: 1, icon: 'steam',        name: 'Steam Burst',   xp: 45, req: ['forge'], pay: { fire: 22, water: 23 }, desc: 'Fire + Water: scalding burst that slows.' },
+    { id: 'sandstorm',    col: 1, icon: 'sandstorm',    name: 'Sandstorm',     xp: 45, req: ['forge', 'earth'], pay: { air: 22, earth: 23 }, desc: 'Air + Earth: a grinding storm that follows the Wizard.' },
+    { id: 'magma',        col: 1, icon: 'magma',        name: 'Magma Bomb',    xp: 45, req: ['forge', 'earth'], pay: { fire: 22, earth: 23 }, desc: 'Fire + Earth: big blast that leaves burning ground.' },
+    { id: 'mud',          col: 1, icon: 'mud',          name: 'Mud Snare',     xp: 45, req: ['forge', 'earth'], pay: { water: 22, earth: 23 }, desc: 'Water + Earth: a sticky zone that nearly stops foes.' },
+    { id: 'meteor',       col: 1, icon: 'meteor',       name: 'Meteor Shower', xp: 90, req: ['flamethrower', 'magma'], pay: { air: 20, fire: 20, earth: 20, flamethrower: 2, magma: 1 }, desc: 'Air + Fire + Earth: 8 meteors on random foes.' },
+    { id: 'thunder',      col: 1, icon: 'thunder',      name: 'Thunderstorm',  xp: 90, req: ['flamethrower', 'tempest'], pay: { air: 20, fire: 20, water: 20, tempest: 2, flamethrower: 1 }, desc: 'Air + Fire + Water: chain lightning to 10 foes.' },
+    { id: 'blizzard',     col: 1, icon: 'blizzard',     name: 'Blizzard',      xp: 90, req: ['tempest', 'mud'], pay: { air: 20, water: 20, earth: 20, mud: 2, tempest: 1 }, desc: 'Air + Water + Earth: a freezing storm around the Wizard.' },
+    { id: 'geyser',       col: 1, icon: 'geyser',       name: 'Geyser Eruption', xp: 90, req: ['steam', 'magma'], pay: { fire: 20, water: 20, earth: 20, steam: 2, magma: 1 }, desc: 'Fire + Water + Earth: blasts under the 6 nearest foes.' },
+    { id: 'nova',         col: 1, icon: 'nova',         name: 'Elemental Nova', xp: 210, req: ['meteor', 'thunder', 'blizzard', 'geyser'], pay: { air: 50, fire: 50, water: 50, earth: 60, meteor: 1, thunder: 1, blizzard: 1, geyser: 1 }, desc: 'All four: a huge radial blast.' },
     // col 2: Upgrades — many small tiers, cheap first, steep last
     { id: 'expand',  col: 2, icon: 'ic_expand', name: 'Factory Expansion', per: 'Bigger factory floor (stockpile moves back)',
       tiers: [30, 45, 65, 85, 105],
@@ -175,10 +175,32 @@ const CFG = {
       kinds: [['air'], ['air'], ['air', 'water'], ['water', 'fire'], ['fire'], ['fire', 'earth'], ['air', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']],
       combos: { 5: { flamethrower: 1 }, 6: { magma: 2 }, 7: { meteor: 1 } } },
   ],
+  // every number a delivered spell uses (WZ.cast; the skill-tree hover card reads them too).
+  // dmg per hit, r radius (tiles), speed (tiles/s), life (s), splash + sr = splash damage + radius,
+  // n = projectiles / targets / blasts, slow = speed taken away (0..1) for slowT seconds, t = zone time, dps in zones
+  spells: {
+    gust:         { r: 6, dmg: 3.6, push: 12.6 },
+    fireball:     { speed: 16, life: 1.6, dmg: 30, splash: 15, sr: 1.6 },
+    spray:        { n: 5, spread: 0.8, speed: 12, life: 0.9, dmg: 8, slow: 0.4, slowT: 2, heal: 2 },
+    boulder:      { speed: 7, life: 2.5, dmg: 45, splash: 22, sr: 2.1 },
+    flamethrower: { n: 8, spread: 0.9, speed: 14, life: 0.75, dmg: 11 },
+    steam:        { r: 5.5, dmg: 25, slow: 0.5, slowT: 2.5 },
+    sandstorm:    { r: 5, t: 3, dps: 14, slow: 0.3 },
+    magma:        { speed: 10, life: 1.2, dmg: 50, splash: 50, sr: 3 },
+    tempest:      { n: 5, dmg: 20, range: 12, slowR: 4, slow: 0.3, slowT: 2 },
+    mud:          { range: 30, r: 4, t: 3, dps: 6, slow: 0.8 },
+    meteor:       { n: 8, gap: 0.22, range: 16, fall: 0.5, r: 2.2, dmg: 40 },
+    thunder:      { n: 10, dmg: 30, range: 14 },
+    blizzard:     { r: 7, t: 4, dps: 16, slow: 0.6 },
+    geyser:       { n: 6, delay: 0.55, gap: 0.08, r: 1.8, dmg: 45 },
+    nova:         { r: 8, dmg: 80, push: 30, slow: 0.5, slowT: 2 },
+  },
   // what each upgrade tier is worth
   upgrade: { swift: 0.125, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125 },
   firstTierPay: 0.5,          // tier 1 of every upgrade track asks for half the usual spells
 };
+// the dev tool's Variables tab (overrides/tuning.js) lands here, before anything below derives from CFG
+if (window.OV) OV.tune(CFG, window.TUNING);
 
 const ELEM = {
   air:   { name: 'Air Pocket',  color: '#c8efff', dark: '#7ec3e8' },

@@ -331,96 +331,97 @@ WZ.cast = function (spell) {
       f(Math.cos(ang), Math.sin(ang), i);
     }
   };
+  const S = CFG.spells[spell];
   switch (spell) {
     case 'gust':
       AU.sfx('zap_air');
-      WZ.ring(px, py, 6, '#e6f8ff', 0.45);
-      WZ.each(px, py, 6, (t, d, isE) => { const m = d || 1; WZ.hit(t, isE, 3.6, isE ? (t.x - px) / m * 12.6 : 0, isE ? (t.y - py) / m * 12.6 : 0); });
+      WZ.ring(px, py, S.r, '#e6f8ff', 0.45);
+      WZ.each(px, py, S.r, (t, d, isE) => { const m = d || 1; WZ.hit(t, isE, S.dmg, isE ? (t.x - px) / m * S.push : 0, isE ? (t.y - py) / m * S.push : 0); });
       break;
     case 'fireball': {
       AU.sfx('zap_fire');
       const a = WZ.aim();
-      WZ.proj({ vx: a[0] * 16, vy: a[1] * 16, life: 1.6, dmg: 30, splash: 15, sr: 1.6, col: '#ff7a30', kind: 'fire', size: 7 });
+      WZ.proj({ vx: a[0] * S.speed, vy: a[1] * S.speed, life: S.life, dmg: S.dmg, splash: S.splash, sr: S.sr, col: '#ff7a30', kind: 'fire', size: 7 });
       break;
     }
     case 'spray':
       AU.sfx('zap_water');
-      w.hp = Math.min(WZ.maxHp(), w.hp + 2);
-      cone(5, 0.8, (dx, dy) => WZ.proj({ vx: dx * 12, vy: dy * 12, life: 0.9, dmg: 8, slow: 0.4, slowT: 2, col: '#4aa8ff', size: 4, r: 0.55 }));
+      w.hp = Math.min(WZ.maxHp(), w.hp + S.heal);
+      cone(S.n, S.spread, (dx, dy) => WZ.proj({ vx: dx * S.speed, vy: dy * S.speed, life: S.life, dmg: S.dmg, slow: S.slow, slowT: S.slowT, col: '#4aa8ff', size: 4, r: 0.55 }));
       break;
     case 'boulder': {
       AU.sfx('zap_earth');
       const a = WZ.aim();
-      WZ.proj({ vx: a[0] * 7, vy: a[1] * 7, life: 2.5, dmg: 45, splash: 22, sr: 2.1, col: '#8a6a3c', kind: 'rock', size: 9, r: 0.75 });
+      WZ.proj({ vx: a[0] * S.speed, vy: a[1] * S.speed, life: S.life, dmg: S.dmg, splash: S.splash, sr: S.sr, col: '#8a6a3c', kind: 'rock', size: 9, r: 0.75 });
       break;
     }
     case 'flamethrower':
       AU.sfx('zap_fire');
-      cone(8, 0.9, (dx, dy) => WZ.proj({ vx: dx * 14, vy: dy * 14, life: 0.75, dmg: 11, col: '#ff9a2b', size: 6, r: 0.55 }));
+      cone(S.n, S.spread, (dx, dy) => WZ.proj({ vx: dx * S.speed, vy: dy * S.speed, life: S.life, dmg: S.dmg, col: '#ff9a2b', size: 6, r: 0.55 }));
       break;
     case 'steam':
       AU.sfx('zap_combo');
-      WZ.ring(px, py, 5.5, '#f4f4f8', 0.5);
-      WZ.each(px, py, 5.5, (t, d, isE) => { WZ.hit(t, isE, 25); if (isE) WZ.slowE(t, 0.5, 2.5); });
+      WZ.ring(px, py, S.r, '#f4f4f8', 0.5);
+      WZ.each(px, py, S.r, (t, d, isE) => { WZ.hit(t, isE, S.dmg); if (isE) WZ.slowE(t, S.slow, S.slowT); });
       break;
     case 'sandstorm':
       AU.sfx('zap_combo');
-      WZ.zone({ r: 5, t: 3, dps: 14, slow: 0.3, follow: true, col: '#d9b46a' });
+      WZ.zone({ r: S.r, t: S.t, dps: S.dps, slow: S.slow, follow: true, col: '#d9b46a' });
       break;
     case 'magma': {
       AU.sfx('zap_fire');
       const a = WZ.aim();
-      WZ.proj({ vx: a[0] * 10, vy: a[1] * 10, life: 1.2, dmg: 50, splash: 50, sr: 3, col: '#ff4a1a', kind: 'magma', size: 8, r: 0.7 });
+      WZ.proj({ vx: a[0] * S.speed, vy: a[1] * S.speed, life: S.life, dmg: S.dmg, splash: S.splash, sr: S.sr, col: '#ff4a1a', kind: 'magma', size: 8, r: 0.7 });
       break;
     }
     case 'tempest':
       AU.sfx('zap_combo');
-      WZ.chain(5, 20, '#bfe9ff', 12);
-      WZ.each(px, py, 4, (t, d, isE) => { if (isE) WZ.slowE(t, 0.3, 2); });
+      WZ.chain(S.n, S.dmg, '#bfe9ff', S.range);
+      WZ.each(px, py, S.slowR, (t, d, isE) => { if (isE) WZ.slowE(t, S.slow, S.slowT); });
       break;
     case 'mud': {
       AU.sfx('zap_earth');
-      const e = WZ.nearest(px, py, 30);
+      const e = WZ.nearest(px, py, S.range);
       const x = e ? e.x : px + w.fx * 5, y = e ? e.y : py + w.fy * 5;
-      WZ.zone({ x, y, r: 4, t: 3, dps: 6, slow: 0.8, col: '#6e4a2a' });
+      WZ.zone({ x, y, r: S.r, t: S.t, dps: S.dps, slow: S.slow, col: '#6e4a2a' });
       break;
     }
     case 'meteor': {
       AU.sfx('zap_combo');
-      for (let i = 0; i < 8; i++) {
-        WZ.later(i * 0.22, () => {
-          const alive = G.w.enemies.filter(e => !e.dead && Math.hypot(e.x - G.w.x, e.y - G.w.y) < 16);
+      for (let i = 0; i < S.n; i++) {
+        WZ.later(i * S.gap, () => {
+          const alive = G.w.enemies.filter(e => !e.dead && Math.hypot(e.x - G.w.x, e.y - G.w.y) < S.range);
           const e = alive.length ? alive[Math.floor(Math.random() * alive.length)] : null;
           const x = e ? e.x : G.w.x + rand(-7, 7), y = e ? e.y : G.w.y + rand(-7, 7);
-          G.w.fx_.push({ type: 'meteor', x, y, t: 0, dur: 0.5 });
-          WZ.later(0.5, () => { WZ.explode(x, y, 2.2, 40, '#ff7a30'); AU.sfx('hit'); });
+          G.w.fx_.push({ type: 'meteor', x, y, t: 0, dur: S.fall });
+          WZ.later(S.fall, () => { WZ.explode(x, y, S.r, S.dmg, '#ff7a30'); AU.sfx('hit'); });
         });
       }
       break;
     }
     case 'thunder':
       AU.sfx('zap_combo');
-      WZ.chain(10, 30, '#fff27a', 14);
+      WZ.chain(S.n, S.dmg, '#fff27a', S.range);
       break;
     case 'blizzard':
       AU.sfx('zap_combo');
-      WZ.zone({ r: 7, t: 4, dps: 16, slow: 0.6, follow: true, col: '#dff4ff' });
+      WZ.zone({ r: S.r, t: S.t, dps: S.dps, slow: S.slow, follow: true, col: '#dff4ff' });
       break;
     case 'geyser': {
       AU.sfx('zap_water');
-      const list = G.w.enemies.filter(e => !e.dead).sort((a, b) => Math.hypot(a.x - px, a.y - py) - Math.hypot(b.x - px, b.y - py)).slice(0, 6);
+      const list = G.w.enemies.filter(e => !e.dead).sort((a, b) => Math.hypot(a.x - px, a.y - py) - Math.hypot(b.x - px, b.y - py)).slice(0, S.n);
       list.forEach((e, i) => {
         const x = e.x, y = e.y;
-        G.w.fx_.push({ type: 'warn', x, y, r: 1.8, t: 0, dur: 0.55 + i * 0.08, col: '#4aa8ff' });
-        WZ.later(0.55 + i * 0.08, () => { WZ.explode(x, y, 1.8, 45, '#7ad0ff'); });
+        G.w.fx_.push({ type: 'warn', x, y, r: S.r, t: 0, dur: S.delay + i * S.gap, col: '#4aa8ff' });
+        WZ.later(S.delay + i * S.gap, () => { WZ.explode(x, y, S.r, S.dmg, '#7ad0ff'); });
       });
       break;
     }
     case 'nova':
       AU.sfx('zap_combo');
-      WZ.ring(px, py, 8, '#fff6c0', 0.6);
-      WZ.boom(px, py, 8, '#ffe36b');
-      WZ.each(px, py, 8, (t, d, isE) => { const m = d || 1; WZ.hit(t, isE, 80, isE ? (t.x - px) / m * 30 : 0, isE ? (t.y - py) / m * 30 : 0); if (isE) WZ.slowE(t, 0.5, 2); });
+      WZ.ring(px, py, S.r, '#fff6c0', 0.6);
+      WZ.boom(px, py, S.r, '#ffe36b');
+      WZ.each(px, py, S.r, (t, d, isE) => { const m = d || 1; WZ.hit(t, isE, S.dmg, isE ? (t.x - px) / m * S.push : 0, isE ? (t.y - py) / m * S.push : 0); if (isE) WZ.slowE(t, S.slow, S.slowT); });
       break;
   }
   WZ.ctx = null;

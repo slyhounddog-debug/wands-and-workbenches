@@ -1,0 +1,278 @@
+{
+ "v": 4,
+ "qv": 2,
+ "xp": 264,
+ "tree": {
+  "water": true,
+  "alchemy": true,
+  "batteries": true,
+  "fire": true,
+  "earth": true,
+  "forge": true,
+  "logistics": true,
+  "flamethrower": true,
+  "steam": true,
+  "tempest": true,
+  "swift": 2,
+  "hearty": 1,
+  "belts": 1,
+  "zoomies": 1,
+  "expand": 1
+ },
+ "stock": {
+  "wood": 46,
+  "stone": 35,
+  "iron": 12,
+  "shard": 3
+ },
+ "bank": {
+  "air": 38,
+  "water": 26,
+  "fire": 17,
+  "earth": 9,
+  "flamethrower": 2,
+  "steam": 1
+ },
+ "bankTotal": 240,
+ "credits": {
+  "station": 0,
+  "charger": 0
+ },
+ "stats": {
+  "deliveries": 210,
+  "kills": 148,
+  "harvested": 22,
+  "xpEarned": 520,
+  "packets": 640,
+  "banked": {},
+  "time": 2460,
+  "elites": 2,
+  "shards": 5,
+  "landmarks": 1,
+  "wins": 0
+ },
+ "flags": {
+  "tookPile": true,
+  "gathered": true,
+  "portalHand": true,
+  "sent_potion": true,
+  "combo": true
+ },
+ "quest": 13,
+ "hands": {
+  "kind": "fire",
+  "n": 3
+ },
+ "placeDir": 0,
+ "bd": {
+  "x": 7.5,
+  "y": 7.5
+ },
+ "fac": {
+  "w": 22,
+  "h": 15,
+  "bld": [
+   {
+    "type": "air",
+    "x": 15,
+    "y": 5,
+    "dir": 0,
+    "done": true,
+    "free": false,
+    "got": {},
+    "out": [],
+    "timer": 0.4700000000000001
+   },
+   {
+    "type": "air",
+    "x": 7,
+    "y": 4,
+    "dir": 0,
+    "done": true,
+    "free": false,
+    "got": {},
+    "out": [],
+    "timer": 0
+   },
+   {
+    "type": "air",
+    "x": 7,
+    "y": 6,
+    "dir": 0,
+    "done": true,
+    "free": false,
+    "got": {},
+    "out": [],
+    "timer": 0
+   },
+   {
+    "type": "water",
+    "x": 7,
+    "y": 8,
+    "dir": 0,
+    "done": true,
+    "free": false,
+    "got": {},
+    "out": [],
+    "timer": 0
+   },
+   {
+    "type": "fire",
+    "x": 7,
+    "y": 10,
+    "dir": 0,
+    "done": true,
+    "free": false,
+    "got": {},
+    "out": [],
+    "timer": 0
+   },
+   {
+    "type": "earth",
+    "x": 10,
+    "y": 11,
+    "dir": 3,
+    "done": true,
+    "free": false,
+    "got": {},
+    "out": [],
+    "timer": 0
+   },
+   {
+    "type": "forge",
+    "x": 12,
+    "y": 6,
+    "dir": 0,
+    "done": true,
+    "free": false,
+    "got": {},
+    "out": [],
+    "timer": 0,
+    "recipe": "flamethrower",
+    "inv": {},
+    "prog": 0
+   },
+   {
+    "type": "cauldron",
+    "x": 12,
+    "y": 9,
+    "dir": 0,
+    "done": true,
+    "free": false,
+    "got": {},
+    "out": [],
+    "timer": 0,
+    "recipe": "potion",
+    "inv": {},
+    "prog": 0
+   },
+   {
+    "type": "station",
+    "x": 4,
+    "y": 3,
+    "dir": 0,
+    "done": true,
+    "free": false,
+    "got": {},
+    "out": [],
+    "timer": 0,
+    "bat": 70
+   },
+   {
+    "type": "charger",
+    "x": 4,
+    "y": 5,
+    "dir": 0,
+    "done": true,
+    "free": false,
+    "got": {},
+    "out": [],
+    "timer": 0,
+    "bat": null,
+    "fuel": {
+     "air": 0,
+     "water": 0,
+     "fire": 0,
+     "earth": 0
+    },
+    "types": []
+   },
+   {
+    "type": "splitter",
+    "x": 14,
+    "y": 5,
+    "dir": 0,
+    "done": true,
+    "free": false,
+    "got": {},
+    "out": [],
+    "timer": 0
+   }
+  ],
+  "belts": [
+   {
+    "x": 16,
+    "y": 5,
+    "dir": 0,
+    "item": null
+   },
+   {
+    "x": 17,
+    "y": 5,
+    "dir": 0,
+    "item": null
+   },
+   {
+    "x": 18,
+    "y": 5,
+    "dir": 0,
+    "item": null
+   },
+   {
+    "x": 19,
+    "y": 5,
+    "dir": 0,
+    "item": null
+   },
+   {
+    "x": 20,
+    "y": 5,
+    "dir": 0,
+    "item": null
+   },
+   {
+    "x": 8,
+    "y": 6,
+    "dir": 0,
+    "item": null
+   },
+   {
+    "x": 9,
+    "y": 6,
+    "dir": 0,
+    "item": null
+   },
+   {
+    "x": 10,
+    "y": 6,
+    "dir": 0,
+    "item": null
+   },
+   {
+    "x": 11,
+    "y": 6,
+    "dir": 0,
+    "item": null
+   },
+   {
+    "x": 13,
+    "y": 5,
+    "dir": 0,
+    "item": null
+   }
+  ],
+  "floor": [],
+  "portalQ": []
+ },
+ "at": 1792593506975
+}

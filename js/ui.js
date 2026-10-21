@@ -407,8 +407,8 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
     case 'hearty': return [row('Wizard max HP', l => '' + (CFG.wizard.hp + up * l))];
     case 'gems': return [row('XP from kills', l => 'x' + (1 + up * l).toFixed(2))];
     case 'heavy': {
-      const life = k => Math.round(CFG.batteryMax / (CFG.stationDrain / k)) + 's';
-      return [['Battery in a Station lasts', G.tree.heavy ? life(1 + CFG.heavyBattery) : life(1) + ' > ' + life(1 + CFG.heavyBattery)]];
+      const life = k => Math.round(CFG.batteryLife * k) + 's';
+      return [['Battery at full load lasts', G.tree.heavy ? life(1 + CFG.heavyBattery) : life(1) + ' > ' + life(1 + CFG.heavyBattery)]];
     }
   }
   const rows = [];

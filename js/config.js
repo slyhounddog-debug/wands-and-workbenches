@@ -15,7 +15,9 @@ const CFG = {
   gatherExtra: 2.5, crankBoost: 0.4,
   buffer: 3,
   fuelPerPacket: 15, fuelCap: 120,
-  batteryMax: 90, stationGen: 10, stationDrain: 1,
+  batteryMax: 90, stationGen: 10,
+  batteryLife: 60,            // seconds a Battery lasts at a full 10 power of draw; it drains in proportion to the load it carries
+  chargeTipAt: 0.5,           // the first time a Battery falls below this fraction, hint at the Charger
   chargeBase: 60, chargeBoost: 1.33,
   swapHold: 1.5, swapCooldown: 5,
   builder: { speed: 5.5, accel: 42, friction: 34, radius: 0.24 },
@@ -291,7 +293,7 @@ const QUESTS = [
   { icon: 'ic_portal', text: 'Builder: throw (right-click / pad B) a packet into the Spell Portal', xp: 3, done: g => g.flags.portalHand, hint: { portal: 'spell' } },
   { icon: 'ic_skill', text: 'Send Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, done: g => (g.bankTotal || 0) >= 5, prog: g => [g.bankTotal || 0, 5], hint: { portal: 'skill' } },
   { icon: 'b:air', text: 'Build a second Air Harnesser (press 3, click a tile, then throw Wood & Stone at it)', xp: 8, done: g => FA.count('air') >= 2, hint: { build: 'air' } },
-  { icon: 'battery', text: 'Recharge the Battery: carry it from the Station to the Charger, then throw element packets at the Charger', xp: 10, done: g => !!g.flags.recharged, hint: { make: 'charger' } },
+  { icon: 'battery', text: 'Recharge the spare Battery: throw element packets at the Charger', xp: 10, done: g => !!g.flags.recharged, hint: { make: 'charger' } },
   { icon: 'ic_skull', text: 'Defeat 15 monsters', xp: 8, done: g => g.stats.kills >= 15, prog: g => [g.stats.kills, 15] },
   { icon: 'ic_tree', text: 'Unlock the Water Harnesser in the Skill Tree (T or Y). It costs XP + Air Pockets', xp: 5, done: g => !!g.tree.water, hint: { tree: 1 } },
   { icon: 'b:water', text: 'Build a Water Harnesser', xp: 8, done: g => FA.count('water') >= 1, hint: { make: 'water' } },

@@ -280,9 +280,10 @@ R.drawFactory = function (main, dt) {
 
   if (bd.gather) {
     const g = bd.gather, p = R.toScreen(v, g.b.x + 0.5, g.b.y + 0.5), fr = Math.min(1, g.t / g.total);
-    const y = p[1] - 124;
-    pbox(ctx, p[0] - 40, y - 12, 80, 24, '#2b1d48');
-    ctx.fillStyle = ELEM[g.el].color; ctx.fillRect(Math.round((p[0] - 36) / P) * P, y - 8, Math.round(72 * fr / P) * P, 16);
+    const y = p[1] - 60;   // on the machine itself: the prompt bubbles stack above it and would cover anything higher
+    pbox(ctx, p[0] - 56, y - 16, 112, 32, '#2b1d48');
+    ctx.fillStyle = ELEM[g.el].color; ctx.fillRect(Math.round((p[0] - 48) / P) * P, y - 8, Math.round(96 * fr / P) * P, 16);
+    dspr(ctx, itemSprite(g.el), p[0] - 76, y + 12, 4);
   }
   if (R.hint && !UI.treeOpen.L) R.drawHint(ctx, v, R.hint, t);
   if (R.focus && !UI.treeOpen.L) R.drawFocus(ctx, v, R.focus, t);

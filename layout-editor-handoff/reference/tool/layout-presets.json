@@ -1,0 +1,27 @@
+{
+  "_about": "Screens the Layout tab can load. Read on every request (no restart needed). `fixture` is an entry of `fixtures` (a save file seeded into the preview's own storage, never your real saves); `hold` keeps the loading screen up; `steps` run in the preview after it boots: {waitFor: selector, timeout?}, {click: selector}, {key: 'KeyE'} (a game hotkey), {show: selector} / {hide: selector} (remove/add the `hidden` class), {wait: ms}, {include: 'presetId'} (that preset's steps). The order here is the order of the dropdown.",
+  "fixtures": [
+    { "id": "midgame", "label": "Mid-game tank (30 fish, 52 buildings)", "file": "tools/bench/fixtures/stress_raw.json" }
+  ],
+  "presets": [
+    { "id": "loading", "label": "Loading screen", "hold": true, "steps": [ { "waitFor": "#loading-status.ready" } ] },
+    { "id": "title", "label": "Title screen", "fixture": "midgame", "steps": [ { "waitFor": "#start-planks" } ] },
+    { "id": "title-new", "label": "Title screen (no save yet)", "steps": [ { "waitFor": "#start-planks" } ] },
+    { "id": "slots", "label": "Title > Load Game (save slots)", "fixture": "midgame", "steps": [ { "waitFor": "#start-planks" }, { "click": "#start-continue-btn" }, { "waitFor": "#save-slots-modal" } ] },
+    { "id": "new-slots", "label": "Title > New Game (save slots)", "fixture": "midgame", "steps": [ { "waitFor": "#start-planks" }, { "click": "#start-new-game-btn" }, { "waitFor": "#save-slots-modal" } ] },
+    { "id": "new-mode", "label": "Title > New Game > player type", "steps": [ { "waitFor": "#start-planks" }, { "click": "#start-new-game-btn" }, { "waitFor": "#save-slots-modal" }, { "click": "#save-slots-list .slot-card:first-child .slot-main" }, { "waitFor": "#start-mode-modal" } ] },
+    { "id": "world-settings", "label": "Title > New Game > World Settings", "steps": [ { "waitFor": "#start-planks" }, { "click": "#start-new-game-btn" }, { "waitFor": "#save-slots-modal" }, { "click": "#save-slots-list .slot-card:first-child .slot-main" }, { "waitFor": "#start-mode-modal" }, { "click": "#start-world-settings-btn" }, { "waitFor": "#world-settings-modal" } ] },
+    { "id": "title-settings", "label": "Title > Settings", "fixture": "midgame", "steps": [ { "waitFor": "#start-planks" }, { "click": "#start-settings-btn" }, { "wait": 600 } ] },
+    { "id": "title-help", "label": "Title > Help", "fixture": "midgame", "steps": [ { "waitFor": "#start-planks" }, { "click": "#start-help-btn" }, { "wait": 600 } ] },
+    { "id": "title-achievements", "label": "Title > Achievements", "fixture": "midgame", "steps": [ { "waitFor": "#start-planks" }, { "click": "#start-achievements-btn" }, { "wait": 800 } ] },
+
+    { "id": "hud", "label": "In game: HUD + toolbar", "fixture": "midgame", "steps": [ { "waitFor": "#start-planks" }, { "click": "#start-continue-btn" }, { "waitFor": "#save-slots-modal" }, { "click": "#save-slots-list .slot-card:first-child .slot-main" }, { "waitFor": "#hud-money", "timeout": 15000 }, { "wait": 1500 }, { "click": "#time-pause-btn" } ] },
+    { "id": "shop", "label": "In game: Shop (E)", "fixture": "midgame", "steps": [ { "include": "hud" }, { "key": "KeyE" }, { "wait": 900 } ] },
+    { "id": "tank", "label": "In game: Tank panel (T)", "fixture": "midgame", "steps": [ { "include": "hud" }, { "key": "KeyT" }, { "wait": 900 } ] },
+    { "id": "lab", "label": "In game: Science Lab (S)", "fixture": "midgame", "steps": [ { "include": "hud" }, { "key": "KeyS" }, { "wait": 900 } ] },
+    { "id": "stats", "label": "In game: Base Stats (Tab)", "fixture": "midgame", "steps": [ { "include": "hud" }, { "key": "Tab" }, { "wait": 900 } ] },
+    { "id": "pause", "label": "In game: Pause menu (Esc)", "fixture": "midgame", "steps": [ { "include": "hud" }, { "key": "Escape" }, { "waitFor": "#pause-resume-btn" } ] },
+    { "id": "pause-settings", "label": "In game: Pause > Settings", "fixture": "midgame", "steps": [ { "include": "hud" }, { "key": "Escape" }, { "waitFor": "#pause-resume-btn" }, { "click": "#pause-settings-btn" }, { "wait": 600 } ] },
+    { "id": "pause-controls", "label": "In game: Pause > Controls", "fixture": "midgame", "steps": [ { "include": "hud" }, { "key": "Escape" }, { "waitFor": "#pause-resume-btn" }, { "click": "#pause-controls-btn" }, { "wait": 600 } ] }
+  ]
+}

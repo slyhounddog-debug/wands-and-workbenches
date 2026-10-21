@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wands &amp; Workbenches</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv" width="1600" height="900"></canvas>
+
+  <!-- ===== in-game HUD ===== -->
+  <div id="game" class="hidden">
+    <div id="vigL"></div>
+    <div id="splitLine"></div>
+
+    <!-- shared: resources, XP, skill bank, batteries + the current goal (top centre, spanning the split) -->
+    <div id="topbar" class="px">
+      <div class="res" id="tWood"></div>
+      <div class="res" id="tStone"></div>
+      <div class="res" id="tIron"></div>
+      <div class="res shard" id="tShard"></div>
+      <div class="res xp" id="tXp"></div>
+      <div class="res bank" id="tBank"></div>
+      <div class="res" id="tBat"></div>
+    </div>
+    <div id="quest" class="px"><div id="qIcon"></div><div class="qb"><div class="qhead" id="qNum"></div><div id="qText"></div><div id="qBar"><div id="qFill"></div></div></div></div>
+    <!-- the Chimera's health + current weakness, spanning the split so both players can read it -->
+    <div id="bossBar" class="px hidden">
+      <div class="bn"><i data-ic="ic_crown" data-s="16"></i>PRIMAL CHIMERA<span id="bossWeak"></span></div>
+      <div class="bar"><div id="bossFill"></div><span id="bossTxt"></span></div>
+    </div>
+    <div id="wizPause" class="px hidden"><i data-ic="ic_pause" data-s="36"></i><div><b>WIZARD PAUSED</b><span>The Builder is in the Skill Tree. The wilds wait until it closes (T or Esc).</span></div></div>
+    <div id="facNote" class="px hidden"><i data-ic="ic_pause" data-s="24"></i><span><b>WILDS PAUSED</b> while the Wizard shops. The factory keeps running!</span></div>
+    <div id="debug" class="px hidden"></div>
+
+    <!-- builder side -->
+    <div id="hudL" class="hud">
+      <div class="card px" id="powCard">
+        <div class="clabel"><i data-ic="ic_bolt" data-s="16"></i>POWER</div>
+        <div class="bar"><div id="powFill"></div><span id="powTxt"></span></div>
+      </div>
+      <div class="card px" id="handCard">
+        <div class="clabel"><i data-ic="ic_hand" data-s="16"></i>HANDS</div>
+        <div id="handTxt"></div>
+      </div>
+      <div class="iconbtns">
+        <button id="btnTree" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>T</kbd></button>
+        <button id="btnDemo" class="px" title="Demolish mode"><i data-ic="ic_bomb" data-s="28"></i><kbd>B</kbd></button>
+        <button id="btnSwap" class="px" title="Swap roles (hold)"><i data-ic="ic_swap" data-s="28"></i><kbd>X</kbd></button>
+        <button id="btnHelp" class="px" title="Controls"><i data-ic="ic_help" data-s="28"></i><kbd>H</kbd></button>
+      </div>
+    </div>
+    <div id="inspect" class="px hidden"></div>
+    <div id="hotTip" class="px hidden"></div>
+    <div id="hotbar" class="px"></div>
+    <div id="toastL" class="toasts"></div>
+
+    <!-- wizard side -->
+    <div id="hudR" class="hud">
+      <div class="card px" id="wizCard">
+        <div class="clabel"><i data-ic="ic_hat" data-s="16"></i>WIZARD<span class="stat"><i data-ic="ic_skull" data-s="14"></i><span id="runKills"></span></span><span class="stat"><i data-ic="ic_clock" data-s="14"></i><span id="runTime"></span></span></div>
+        <div class="bar hp"><i data-ic="ic_heart" data-s="14"></i><div id="hpFill"></div><span id="hpTxt"></span></div>
+        <div class="bar arm"><i data-ic="ic_shield" data-s="14"></i><div id="armFill"></div><span id="armTxt"></span></div>
+      </div>
+      <div class="iconbtns right"><button id="btnTreeR" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>Y</kbd></button></div>
+    </div>
+    <div id="toastR" class="toasts"></div>
+
+    <div id="help" class="px hidden">
+      <div class="hcol">
+        <h3><i data-ic="ic_wrench" data-s="16"></i>BUILDER</h3>
+        <div><kbd>WASD</kbd> walk &nbsp; <kbd>CLICK</kbd> pick up (hold for more)</div>
+        <div><kbd>E</kbd> use / rotate / tap to crank</div>
+        <div><kbd>RIGHT-CLICK</kbd> throw along the lead line (hold = rapid)</div>
+        <div><kbd>1</kbd>-<kbd>=</kbd> <kbd>Z</kbd><kbd>C</kbd><kbd>V</kbd> or wheel: pick a building</div>
+        <div><kbd>R</kbd> rotate &nbsp; <kbd>ENTER</kbd> place in front</div>
+        <div><kbd>B</kbd> demolish (full refund) &nbsp; <kbd>ESC</kbd> cancel</div>
+      </div>
+      <div class="hcol">
+        <h3><i data-ic="ic_hat" data-s="16"></i>WIZARD</h3>
+        <div><kbd>ARROWS</kbd> walk &nbsp; <kbd>.</kbd> roll (invulnerable)</div>
+        <div>Spells fire by themselves when the factory delivers them.</div>
+        <div>Stand near trees and rocks: spells harvest them too.</div>
+        <div>Water blocks you. Bog slows you. The map shows landmarks.</div>
+        <div><kbd>Y</kbd> skill tree (pauses the wilds) &nbsp; hold <kbd>X</kbd> swap</div>
+      </div>
+      <div class="hfoot"><i data-ic="ic_pad" data-s="16"></i> Pad 1 = Builder (A pick up / place, B throw, X use, LB/RB pick, Back demolish). Pad 2 = Wizard (A roll). <kbd>H</kbd> hides this.</div>
+    </div>
+
+    <div id="treeL" class="tree hidden"></div>
+    <div id="treeR" class="tree right hidden"></div>
+
+    <div id="swapRing" class="px hidden"><div id="swapFill"></div><i data-ic="ic_swap" data-s="36"></i><span>SWAP</span></div>
+
+    <div id="results" class="panel px hidden"></div>
+    <div id="victory" class="overlay hidden"></div>
+    <div id="pause" class="overlay hidden">
+      <div class="panel px">
+        <h2>PAUSED</h2>
+        <button id="pResume" class="big">RESUME</button>
+        <button id="pQuit" class="big ghost">SAVE &amp; TITLE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== front flow ===== -->
+  <div id="loading" class="overlay">
+    <h1 class="title">WANDS <span>&amp;</span><br>WORKBENCHES</h1>
+    <div id="loadBar" class="px"><div id="loadFill"></div></div>
+    <p id="loadMsg">CONJURING SPRITES...</p>
+  </div>
+
+  <div id="menu" class="overlay hidden">
+    <h1 class="title big">WANDS <span>&amp;</span><br>WORKBENCHES</h1>
+    <p class="sub">Build the factory. Arm the wizard. Together.</p>
+    <div id="menuMain" class="menuBox">
+      <button class="big" id="mContinue"><i data-ic="ic_play" data-s="20"></i>CONTINUE</button>
+      <button class="big" id="mNew"><i data-ic="ic_tree" data-s="20"></i>NEW GAME</button>
+      <button class="big ghost" id="mLoad"><i data-ic="ic_folder" data-s="20"></i>LOAD GAME</button>
+      <button class="big ghost" id="mHow"><i data-ic="ic_book" data-s="20"></i>HOW TO PLAY</button>
+      <button class="big ghost" id="mSet"><i data-ic="ic_gear" data-s="20"></i>SETTINGS</button>
+    </div>
+    <div id="menuSlots" class="menuBox sheet px hidden"></div>
+    <div id="menuHow" class="menuBox sheet wide px hidden"></div>
+    <div id="menuSet" class="menuBox sheet px hidden"></div>
+  </div>
+</div>
+
+<!-- "Pardon My Games" studio splash (js/intro.js), full-window above everything -->
+<div id="studio-intro" class="hidden">
+  <canvas id="studio-intro-canvas"></canvas>
+  <button id="studio-intro-skip" type="button">skip &gt;&gt;</button>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/input.js"></script>
+<script src="js/factory.js"></script>
+<script src="js/wizard.js"></script>
+<script src="js/render.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/intro.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

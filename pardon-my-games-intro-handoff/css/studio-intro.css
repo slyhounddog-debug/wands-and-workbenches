@@ -1,0 +1,25 @@
+/* Studio intro splash — per direct request, plays before the start menu (StudioIntro.js draws everything on the
+   canvas; this is just the deep-night backdrop, the fade-out and the corner skip prompt). */
+#studio-intro {
+  position: fixed; inset: 0;
+  z-index: 800; /* above the loading screen (700) and the start overlay (600) */
+  background: radial-gradient(ellipse at 50% 42%, #2b0f66 0%, #150a3a 46%, #07031a 100%);
+  cursor: pointer;
+  transition: opacity 0.42s ease;
+}
+#studio-intro.hidden { display: none; }
+#studio-intro.leaving { opacity: 0; pointer-events: none; }
+#studio-intro-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#studio-intro-skip {
+  position: absolute;
+  right: clamp(22px, 4.4vw, 72px);
+  bottom: clamp(22px, 5vh, 64px);
+  font: 12px/1 'Press Start 2P', 'Courier New', monospace;
+  padding: 12px 18px;
+  color: #2a0e5c;
+  background: linear-gradient(180deg, #ffe45e, #ff6bd6);
+  border: 3px solid #fff;
+  border-radius: 12px;
+  box-shadow: 0 0 0 3px #7b3fc9, 0 5px 0 3px #4a1f8c;
+  cursor: pointer;
+  animation: studio-skip-pulse 1.4s ease-in-out infinite;

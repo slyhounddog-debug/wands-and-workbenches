@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pardon My Games — intro demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Fredoka = the bubble letters, Press Start 2P = "STUDIO PRESENTS..." and the skip button. -->
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/studio-intro.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #fff; font-family: system-ui, sans-serif; }
+  #next-screen { display: none; height: 100%; align-items: center; justify-content: center; flex-direction: column; gap: 16px; }
+  #next-screen.on { display: flex; }
+  button.demo { font: 700 16px system-ui; padding: 12px 22px; border-radius: 10px; border: 0; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<!-- Browsers keep audio locked until a click/key, so the demo starts from a button. In your game, start the intro
+     from whatever "click to begin" gesture you already have. -->
+<div id="start-screen" style="height:100%;display:flex;align-items:center;justify-content:center;">
+  <button id="begin" class="demo">Click to play the intro</button>
+</div>
+
+<!-- THE INTRO MARKUP: an overlay with one canvas and a skip button. Starts hidden. -->
+<div id="studio-intro" class="hidden">
+  <canvas id="studio-intro-canvas"></canvas>
+  <button id="studio-intro-skip" type="button">skip &gt;&gt;</button>
+</div>
+
+<!-- Stand-in for your game's title screen / first scene. -->
+<div id="next-screen">
+  <h1>Your game starts here</h1>
+  <button id="replay" class="demo">Replay intro</button>
+</div>
+
+<script type="module">
+  import { loadStudioIntroFonts, runStudioIntro } from './js/StudioIntro.js';
+
+  function play() {
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('next-screen').classList.remove('on');
+    runStudioIntro(() => {
+      // Fires once, whether the intro ended by itself or was skipped (click / any key / skip button).
+      document.getElementById('next-screen').classList.add('on');
+    });
+  }
+
+  document.getElementById('begin').addEventListener('click', async () => {
+    await loadStudioIntroFonts(); // the letters are baked into sprites once, so the fonts must be ready first
+    play();
+  });
+  document.getElementById('replay').addEventListener('click', play);
+</script>
+</body>
+</html>

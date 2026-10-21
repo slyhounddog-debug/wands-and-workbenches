@@ -1,0 +1,124 @@
+# Wands & Workbenches — notes for future sessions
+
+A **2-player local co-op browser game** on a vertical split screen. Left: a tiny **Builder** runs an isometric elemental factory on shiny reflective grass. Right: a tiny **Wizard** explores a 200×200 isometric wilderness with **no attack of his own** — every spell, potion and armor plate is made in the factory and sent through the **Spell Portal**. A second **Skill Portal** banks element packets and spells as skill-tree currency. **8-bit pixel-art** look throughout. One shared keyboard+mouse or two gamepads. No solo mode, no online.
+
+The original design doc was "Complete Game Spec v5.0" (pasted by the user, not stored in the repo). The game has since been deliberately reworked well beyond it — see **Design direction & deviations** below. When this file and the old spec disagree, **this file wins**.
+
+## Running & testing
+
+- Plain HTML/CSS/JS, **no build step, no npm dependencies**. Open `index.html` directly — it must keep working over `file://` (no ES modules, no `fetch` of local files; fonts and audio are local files under `fonts/` and `audio/`).
+- Debug/test hook: `window.__wands` → `{ G, Main, FA, WZ, UI, R, CFG, start(slot), deliver(kind), bank(kind, n), step(dt, n), boss() }`. `step` runs the simulation with zeroed inputs (skipped while `G.paused`, e.g. on the victory screen). In game, **F3** or **`** toggles the debug overlay (XP/min, packets/min, bank rates, portal rates, ETA to the next affordable skill).
+- Headless playtests: Playwright is **not** installed in the repo. Past sessions installed `playwright-core` into the session scratchpad and launched the system Edge (`chromium.launch({ channel: 'msedge', headless: true })`). Use a recent playwright-core (1.56 worked; 1.47 fails to launch current Edge). The real rAF loop keeps simulating between your `step` calls, and the camera eases, so wait ~1s before screenshots after teleporting the Wizard. Hide the controls card first (`UI.help(false); G.helpT = 0`). Load `file:///C:/Games/Wands&Workbenches/index.html`, wait for `#loadMsg.ready`, click (starts the studio intro), press a key (skips it), click `#mNew` then the first `#menuSlots button.slot`, then drive the game through `window.__wands`. Collect `pageerror` + console errors and take screenshots (1280×720 is fine — the stage scales to fit).
+- `node --check js/*.js` is a quick syntax gate.
+
+## File map
+
+| File | Role |
+|---|---|
+| `index.html` | DOM skeleton: canvas, HUD (top bar, goal card, power/hands cards, wizard card, hotbar, inspector, toasts L/R, controls card), skill-tree panels, results, pause, loading/menu, and the full-window `#studio-intro` overlay |
+| `style.css` | Whole 8-bit UI theme (CSS vars at top; `.px` = the stepped pixel-border panel; `@font-face` for the bundled fonts; studio-intro styles at the bottom) |
+| `fonts/` | `PressStart2P.woff2` (display: numbers, labels, buttons, keys), `PixelifySans.woff2` (body text), `Fredoka-700.woff2` (intro bubble letters only) |
+| `audio/playStudioIntro.wav` | The studio-intro background bed (the only recorded audio) |
+| `js/config.js` | **All tuning numbers** + the skill tree, recipes, factory sizes, enemies/elites/boss/landmark tuning, `ELEM`, `ELEM_WORD`, `RES`, `ITEMS`, `SPELLS`, `SPELL_COL`, `SPELL_KINDS`, `SPELL_EL` (elements per spell), `recipeUse(id)`, `QUESTS` (with `hint` specs). Balance changes go here. |
+| `js/audio.js` | `AU` — synthesized Web Audio SFX (`AU.sfx(name)`), **reactive** music loop (`AU.mix(factory, combat, boss)` adds percussion / bass / a boss progression), the factory hum drone (`AU.hum(level)`), volume settings in `localStorage['wands_settings']` |
+| `js/sprites.js` | `SP` — every sprite drawn procedurally at load: characters, all foes + the Chimera (`boss`), items, buildings, landmarks (`lm_*`), decor, combo-spell stars, weakness pips (`wk_<elem>`), and the **UI icon set `ic_*`** (pixel maps that replace all emoji) |
+| `js/input.js` | `IN` — keyboard/mouse/gamepad state; edge sets cleared by `IN.endFrame()` each frame |
+| `js/factory.js` | `FA` + global `G` + `lvl(id)` — factory grid (dynamic size), portals, buildings, belts, logistics (splitter/sorter/crate), power, batteries, physical items (hands/floor/thrown), Builder movement, the interaction resolver, throughput state (`FA.state`), portal rates (`FA.rate`), spell hit reports (`FA.landed`), Factory Expansion (`FA.resize`), save serialization |
+| `js/wizard.js` | `WZ` — seeded terrain (incl. water + bog) + landmarks + decor + harvestables, enemies (biome foes, elites, the Chimera), weaknesses, all 15 spells, pickups, armor, drops/XP/shards, Wizard movement & roll, water collision (`WZ.slide`), the monster flow field |
+| `js/render.js` | `R` — canvas rendering of both halves through **low-res buffers** + deferred full-res pixel-font text, goal arrows (`R.hint` / `R.whint`), the iso minimap (`R.buildMap` / `R.drawMinimap`) |
+| `js/ui.js` | `UI` — DOM HUD, hotbar, goal tracker + hint blinking (`UI.setHint`), boss bar, "Wizard paused" banners, debug overlay, skill tree (costs, bank, tiers, purchase effects), toasts, menus, How to Play tabs, results + victory screens (`UI.statsHtml`), sprite→`<img>` icons (`UI.img(key, size)`, `UI.decorate()` for `data-ic` placeholders) |
+| `js/intro.js` | **Generated** classic-script build of `pardon-my-games-intro-handoff/` (`StudioIntro.js` + `IntroConfig.js` + a file://-friendly sound section). Exposes `window.StudioIntro = { run, loadFonts, isActive, skipNextLoad }`. Don't hand-edit the animation; tune the `STUDIO_INTRO_*` block or regenerate from the handoff. |
+| `js/main.js` | `Main` — state flow (loading → studio intro → menu → play), input routing, focus/ghost/aim computation, save/load, main loop, test hook |
+| `pardon-my-games-intro-handoff/` | Source handoff for the studio intro (ES modules + README). Reference only — the game loads `js/intro.js`. |
+| `layout-editor-handoff/` | An unrelated handoff the user dropped in; not wired into the game. |
+
+Scripts are plain globals loaded in order (config → audio → sprites → input → factory → wizard → render → ui → intro → main). Keep it that way (no modules/bundler).
+
+## Architecture essentials
+
+- **Stage**: fixed 1600×900 internal resolution, scaled to fit the window (`fit()` in main.js). DOM overlays live inside `#stage` so they scale too (the studio intro is outside it, full-window). Left half (x < 800) = factory, right half = wizard.
+- **8-bit pipeline (render.js)**: each half is drawn into a low-res buffer (`P` screen px per buffer px: factory `P=4`, wizard `P=3`) via `ctx.setTransform(1/P, …)`, so all drawing code still uses full-res stage coordinates, then the buffer is blitted with nearest-neighbour. Sprites are drawn at `S = P` so one sprite pixel = one buffer pixel. The camera and sprite positions snap to the pixel grid (`setView`, `snap`). **Text never goes through the buffer**: `txt()` and `R.prompt()` push closures into `R.defer`, flushed at full res after the blit (`R.flush`). `txt(..., 'd')` = Press Start 2P, otherwise Pixelify Sans. Use 4px-multiple sizes and ≥4px line widths in the factory (≥3 in the wizard world) so shapes stay chunky.
+- **Iso projection**: `sx = (x−y)·TW/2 + ox`, `sy = (x+y)·TH/2 + oy`. Tile (x,y) occupies [x,x+1)×[y,y+1); centres at +0.5. Factory `TW=80,TH=40`; wizard world `TW=60,TH=30`. A circle of radius r tiles ≈ diamond/ellipse with semi-axes `r·hw·√2`, `r·hh·√2`.
+- **Grid directions**: `DIRS[0]=east(+x)`, 1 south(+y), 2 west, 3 north. "East" is down-right on screen. WASD/arrows move in *screen* directions, converted with `dx = ix + iy, dy = iy − ix`.
+- **Factory layout is dynamic** (`G.fac.w/h`, from `CFG.factorySizes[lvl('expand')]`, starting 20×14 and growing to 28×20). Never hard-code coordinates: use `FA.W()/FA.H()`, `FA.portal('spell'|'skill')` (top cell), `FA.portalCells(w,h)`, `FA.zone()` (Stockpile Zone, SW corner) and `FA.piles()`. Both portals sit on the east edge (`spellY = floor(h/2)−2`, Skill Portal 4 rows lower). `FA.resize(w2,h2)` shifts everything so the portals stay on the east edge; things that would land in the new Stockpile Zone are refunded.
+- **Grid cells** `G.fac.grid[y*w+x]`: a building, a belt `{type:'belt',dir,item}`, a portal `{type:'portal', which:'spell'|'skill'}`, or null.
+- **Building kinds** (`CFG.buildings[type].kind`): `harness`, `crafter` (forge / cauldron / anvil / altar), `station`, `charger`, and the logistics kinds `splitter`, `sorter`, `crate` (`FA.isLogi`). Every building has `dir` (output side), `out[]` (max 3 for machines, 2 for splitter/sorter, `CFG.crateCap` for crates; items `{kind, charge?}`) and blueprint state (`done`, `got`). Logistics pieces push with `FA.updLogi` (rate-limited by `b.cd`, round-robin `b.rr`); `FA.pushSide(b, dir)` is the shared "push my first item out of this side" (it never pushes into a belt that points back at the building). Sorter routes `b.filter` out the front, the rest out the sides; crates refuse raw resources and batteries.
+- **Throughput feedback**: each frame `FA.state(b)` gives `'jam'` / `'starve'` / null into `b.st` with a timer `b.stT`; render shows `ic_jam` / `ic_starve` after 1.5s. Portals log entries in `G.fac.log` (last 60s) for the `N/MIN` labels. `G.fac.working` counts running machines (drives the hum and the music).
+- **Items** (`ITEMS`): resources (wood/stone/iron + the rare **shard**), element packets (air/water/fire/earth), combo spells (one per forge recipe), `battery` (stack 1, has `charge`), pickups (potion, elixir, armor, plate), `sigil` (summons the boss). Spell Portal takes `FA.isDeliverable` (elements, spells, pickups, sigil; a sigil only while the Wizard lives and no boss is out). Skill Portal takes `FA.isBankable` (= `SPELL_KINDS`: elements + combo spells). `FA.enterPortal(cell, kind)` routes either.
+- **One insertion path**: `FA.canInsert` / `FA.insert` serve belts, machine outputs, hands and thrown items alike.
+- **Spell context**: `WZ.cast` sets `WZ.ctx = {spell, el, hits, kills, weak}`; projectiles, zones and `WZ.later` timers capture it, so delayed hits still know their elements. `WZ.hurtE` applies `WZ.mult` (weak ×2, resist ×0.5; the boss ×1.6 on its weakness, ×0.4 otherwise) and counts unique hits per cast. 1.1s later `FA.landed(ctx)` pops "HIT n KO n WEAK xn" at the Spell Portal (combos always, basics only on weak hits).
+- **Enemies** are made with `WZ.makeEnemy(type, x, y, elite)` (fields `spd`, `dmg`, `xp`, `rad`, `weak`, `resist`, optional `mark` / `guard` / `boss`). Biome foes (`w: 0` in `CFG.enemies`) are chosen by `WZ.pickType` from the terrain under the spawn point; elites by time + distance (`CFG.elite`). First sighting of each biome type / an elite toasts both halves (`G.w.seen`).
+- **Landmarks** (`WZ.marks`, generated before decor so nothing overlaps them; run state in `G.w.lm[id]`): camps wake within `campWake` and are claimed when their foes (`e.mark`) are dead; shrines claim when a spell containing their element is cast while the Wizard is within `shrineR` (`WZ.shrines`, called from `WZ.cast`); crypts open after standing at the door `cryptHold`s and claim when the `guard` elite dies. `WZ.claim` drops shards + XP and bumps `G.stats.landmarks`.
+- **The Primal Chimera**: `WZ.summonBoss` (from a delivered sigil) → `G.w.boss`. `WZ.bossAI` rotates `e.weak` through a shuffled element order every 25% HP and runs slam (telegraphed `warn` fx), orb volleys (`G.w.eproj`, hostile projectiles) and summons. `WZ.bossDown` sets `G.flags.won`, `G.stats.wins++`, scatters the brood and opens `UI.showVictory` (pauses the game; "Keep playing" resumes).
+- **Monster pathing**: `WZ.buildFlow` runs an 8-way BFS (no corner cutting) over a 97×97 window around the Wizard whenever he changes tile (≥0.2s apart). `WZ.flowDir` steps enemies downhill on it unless a cached line of sight (`WZ.clearLine`, d < 24) lets them walk straight; the old sideways detour is only a fallback.
+- **Goal hints**: each `QUESTS` entry may carry `hint` (`pile`, `portal`, `use`, `build`, `make`, `tree`, `combo`, `harv`, `mark`, `boss`). `Main.questHint()` resolves it every frame into `R.hint` (factory arrow), `R.whint` (wilds arrow / edge pointer with distance, also a minimap dot), a blinking hotbar slot or blinking tree buttons.
+- **Builder controls are split three ways**: **pick** = left-click / pad A (swapped keyboard `.`) takes one item; **throw** = right-click / pad B (swapped `,`); **use** = E / pad X (swapped `/`) gathers, cranks, rotates belts/logistics, switches recipes, sets Sorter filters. Nothing else picks up or puts down — there is no hand-insert, hand-portal-send or put-back; throwing is the only way to put items in. Q no longer does anything. With a building selected, pad A places in front (hold with Belt to lay belts).
+- **Interaction resolver**: `FA.findTarget(mode)` + `FA.actionFor(target, mode)` with `mode` `'pick'` or `'use'` → `{label, fn, rep}` drive the prompts (`R.focus.list`, up to one pick + one use bubble; key names from `R.key('pick'|'use')`), the buttons, click-to-walk-and-pick and **hold-to-repeat** (only `rep: true` pickups). With the mouse, the pick prompt follows the hovered thing (`FA.thingAt`). Add new interactions there, in the right mode.
+- **Throws follow the lead line**: `aimNow()` (main.js) computes the aim for both the drawn line (`R.aim`) and `throwAlongAim()`, which throws at `R.aim`.
+- **Pickups are one item per press** (`FA.takePile`, `FA.pickFloor`, `FA.takeOut`, belt grab).
+- **Power**: global; `FA.power()` grants draw in placement order. 10 power per Station holding a charged Battery.
+- **Wizard world terrain** has three classes: normal speed (grass, dirt, sand, flowers, dark grass, path), **slow** (`T_BOG`, × `CFG.world.slowTerrain`, for the Wizard and monsters) and **impassable** (`T_POND` — nobody can enter; paths over water act as bridges). Bodies move with `WZ.slide` (axis sliding vs water). Monsters detour sideways when blocked. Spawns, pickups and the re-spawn ring use `WZ.dryNear` so nothing appears in water; drops never fly into water.
+- **World/run state** lives in `G.w` and is *not* saved (landmarks and the boss reset each expedition; `G.w.run` holds the per-run stats for the results screen). Saves persist the factory, stockpile (incl. shards), XP, **bank**, tree, goals, flags and stats (`G.stats` also tracks `xpEarned`, `packets`, `banked{}`, `time`, `elites`, `shards`, `landmarks`, `wins` for the debug overlay and the victory screen).
+- **Saves**: `localStorage['wands2_save_slot1..3']`, `v: 4` (`SAVE_VERSION` in main.js). Anything older shows as "older version" and can't be loaded. `qv` (`QUEST_VERSION`, now 2) lets older v4 saves keep their place in the goal chain: goals 14-15 were inserted, so a save without `qv` past goal 13 shifts by 2 on load. Bump `QUEST_VERSION` and add a shift whenever goals are inserted mid-chain. Autosave every 9s and ~1.5s after `UI.changed()`.
+
+## Skill tree & economy (config.js `CFG.tree`)
+
+- **Costs = XP + banked spells.** Spells are banked by sending element packets / combo spells into the **Skill Portal** (`G.bank[kind]`, shown in the top bar and the tree's bank row).
+- Three columns: **Factory unlocks** (Water → Alchemy / Batteries / Fire → Earth / Forge / Logistics → Armory; Summoning needs Nova), **Spells** (every Forge combo is its own node: 6 pairs need the Forge (+Earth for earth pairs); 4 triples need two specific pair spells and cost some pair spells; Nova needs all four triples and costs one of each), **Upgrades** (tiered tracks).
+- Unlock node: `{ xp, pay: {kind:n}, req: [ids] }`. Unlock XP is 1.5× the original spec values; element packets asked ≈ the XP cost (halved for Water, Alchemy, Batteries, Fire, Earth and Forge), using elements available at that point (Water costs Air; Fire costs Air + Water; …), with pair/triple spells for late nodes.
+- Upgrade track: `{ tiers: [xp…], kinds: [[elements per tier]], combos: {tierIndex: {spell:n}}, per }`. 5–8 tiers, each tier worth half of the original single upgrade (`CFG.upgrade`), cheap first (all tier-1 costs are below the original upgrade price) and steep last. Packets per tier = tier XP split across that tier's kinds. A tier implicitly requires the unlocks for the elements/spells it asks for (`UI.nodeReqs`).
+- Tracks: Factory Expansion (5), Swift Harnessing (8, +12.5%), Swift Belts (6, +15%), Bigger Satchel (5, +1), Wizard Zoomies (6, +6%), Hearty Hat (8, +12 HP), Gem Wisdom (8, +12.5% XP).
+- Whole tree ≈ **3,406 XP** (the original 3,196, i.e. 4× the spec's 795, plus Logistics 60 and Summoning 150) and ≈ 3,320 element packets. Monster XP is a third of the original (slime 1, shroom 1.33, sprite 1.67), so maxing the tree takes ~12× as long as the original design.
+- `G.tree[id]` is `true` for unlocks and a tier number for upgrades — read levels with `lvl(id)`. Recipe unlocks: `CFG.recipes[id].tier` (spell recipes use their own spell id).
+- **Opening either skill tree pauses the Wizard's world** (`Main.step` skips `WZ.update`); the factory keeps running.
+
+## Design direction & deviations from spec v5.0 (intentional — keep them)
+
+The user has asked, over several passes, for: a fleshed-out, active, rewarding factory loop; polish, animation and an inviting UI; intuitive mechanics; tight movement; pickup + throwing; nothing ever disappearing from hands; potions and armor crafted in the factory; then an **8-bit pixel-art** look with big retro fonts and no emoji; a much longer, spell-funded progression; terrain with blocking water; a smaller starting factory that grows; and the "Pardon My Games" intro from the handoff. They allow stripping/reworking spec features when there's a better way.
+
+1. **Physical items & throwing.** Items lie on the floor (`G.fac.floor`) and fly (`G.fac.flying`). **Right-click / pad B** throws one item (hold = rapid) exactly along the lead line: at the cursor with the mouse, otherwise auto-aiming (`FA.throwTarget`) at portals, machines, blueprints, the Stockpile Zone or empty belts. Rejected throws bounce back.
+2. **Hands never lose anything** (`FA.dropHands`, `FA.stash`). No code path may delete a held item.
+3. **One-at-a-time pickup** with hold-to-repeat on left-click / pad A (see above).
+4. **Hotbar** (keys `1–9, 0, -, =, Z, C, V` for 15 slots, wheel, `[`/`]`, pad LB/RB) replaces the spec's carousel. Slot 1 "Hand" = click to walk / walk-and-pick-up. New buildings are appended (the goals text refers to the old key numbers).
+5. **Rotatable outputs** (`b.dir`, R rotates placement for belts and buildings).
+6. **Machine output buffers are grabbable**; empty Harnesser → hand-gather with E; tapping E cranks (+0.4s).
+7. **Alchemy Cauldron** (potion: 2 Water + 1 Wood heals 35; elixir: +Earth heals 80) and **Armor Anvil** (Armor Plate +35, Heavy Plate +70). Pickups fall beside the Wizard (on dry land) and are walked over; armor (max 100) soaks damage first.
+8. **Any input from any source** (belt / hand / throw). Belts carry anything except Batteries — battery hauling stays manual.
+9. **Two portals**: Spell Portal (to the Wizard) and Skill Portal (bank for the tree).
+10. **Economy**: belts start at half speed (0.9s/tile); buildings cost 1.5× the spec (belts stay 1 Wood); 50% more trees/rocks/ore in the wilds; factory starts at 60% of the original area (20×14) and Factory Expansion doubles it (28×20), pushing the Stockpile further from the portals.
+11. **Guided goals** (`QUESTS`, 22 steps ending in the boss, XP rewards, on-screen pointers) as tutorial and progression spine; flags in `G.flags`.
+12. **Feel**: acceleration/friction movement, squash & stretch, dust, camera look-ahead, screen shake, damage numbers, kill puffs, roll afterimages (8-frame somersault), spell-arrival sparkles, portal flashes.
+13. **8-bit UI**: Press Start 2P + Pixelify Sans everywhere (bundled), stepped pixel borders (`.px`), no rounded corners or soft gradients, all icons are sprites (`ic_*` in sprites.js; `UI.img`; `data-ic` placeholders in HTML). Do **not** reintroduce emoji or non-pixel styling.
+14. **Studio intro**: the handoff's Finsanity-quality "PARDON MY GAMES / STUDIO PRESENTS..." splash plays after the loading click, then the menu.
+15. **Menu**: Continue (most recent slot), New, Load, How to Play (tabs: The Idea / Factory / Recipes — generated from config / Wilds / Controls), Settings.
+16. **Win condition**: Summoning node (needs Nova) → Summoning Altar (costs shards) → Boss Sigil (Nova + 5 shards) → Spell Portal → the Primal Chimera. Its weakness rotates, so the Builder must re-route which element reaches the Spell Portal mid-fight (that's what Sorters are for). Beating it shows the victory screen; play continues.
+17. **Elements matter**: biome foes (Ember Imp / Bog Lurker / Gale Wisp / Stone Golem) and elites have weaknesses; first sightings toast *both* halves, so the Wizard's situation becomes the Builder's production order.
+18. **Aether Shards** are the rare resource: only landmarks (camps, shrines, crypts) and elites give them; they gate the Sorter and the Altar. Shrines are a deliberate cross-half puzzle (Wizard stands on it, factory sends that element).
+19. **Logistics**: Splitter, Sorter, Storage Crate (unlocked by the Logistics node). Belts already merge, so there is no merger. Crates never take raw resources, so the Stockpile still can't feed belts by proxy.
+20. **Readable factory**: jam/starve icons, portal per-minute rates, faded product ghosts in empty output slots, recipe purpose shown at the crafter you stand at / hover, "STARVED" / "BLOCKED" in the inspector.
+21. **Goal pointers**: gold arrows in both halves, edge pointers with distance in the wilds, blinking hotbar slot / tree buttons.
+22. **Pause clarity**: opening a skill tree shows a big "WIZARD PAUSED" banner on the right (or "WILDS PAUSED, factory running" on the left).
+23. **Spell arrival**: a mini portal opens over the Wizard, the spell drops through, then bursts; combos also show their name under him, and the Builder gets a hit report at the Spell Portal.
+24. **Audio follows play**: factory hum drone and music layers driven by working machines, monsters near the Wizard and the boss.
+25. **Minimap** (bottom-right of the wilds, iso diamond): landmarks by type/state, the Wizard, the boss and the current goal target.
+
+Still true from the original spec: no money (resources + XP + banked spells only); the factory must **never run itself** (no auto-inventory, belts never pull from the Stockpile, battery hauling stays manual); spells auto-cast on delivery while buffs/pickups are physical; death resets only the expedition; Air Harnesser and Chargers use no power, so the factory can always bootstrap from zero.
+
+## Conventions
+
+- Every tuning number goes in `CFG` (config.js). New items → `ITEMS`; recipes → `CFG.recipes` (+ a tree node if gated); buildings → `CFG.buildings` + sprite `b_<type>` + hotbar entry; tree nodes → `CFG.tree`.
+- New sprites: procedural in sprites.js inside `task(() => …)`; anchor bottom-centre unless noted; building sprites 20×34 with the base diamond centred at (10,26). New UI icons: add a pixel map with `icon('name', rows)` → `ic_name`.
+- New interactions belong in `FA.actionFor` / `FA.bldAction` so the prompt bubble stays truthful.
+- Toasts: `UI.toast(text, 'L'|'R', iconKey)` — plain ASCII text, icon as a sprite key.
+- Use `UI.changed()` after state changes that should trigger a prompt autosave.
+- Keep strings ASCII (the pixel fonts lack most symbols/emoji).
+- Match the existing style: compact functions, short comments only where intent isn't obvious, no frameworks.
+
+## Ideas / known gaps
+
+- Boss, elites, biome foes, landmarks, shards and logistics were added in one pass and tested headlessly only; boss HP (4200), elite odds, shard amounts and landmark rewards are first guesses.
+- Balance of the 12× longer progression hasn't been playtested by humans yet (the F3 debug overlay is there to measure it).
+- The goal chain doesn't explain the Sorter's role in the boss fight; a toast when the boss's weakness changes is the only nudge.
+- The flow field covers a 97×97 window; monsters outside it (they teleport closer past 45 tiles anyway) fall back to straight lines.
+- A Wizard request/ping button and accessibility options (remapping, colourblind glyphs, shake toggle) are still open ideas.
+- Real two-player play with two gamepads hasn't been tested in-session; only headless tests and screenshots.

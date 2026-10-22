@@ -15,7 +15,7 @@ const CFG = {
   gatherExtra: 2.5, crankBoost: 0.4,
   buffer: 3,
   fuelPerPacket: 15, fuelCap: 120,
-  starterSplit: 65,           // the starting Splitter: % of the Air packets that go straight to the Spell Portal (the rest feed the Spawner)
+  starterSplit: 70,           // the starting Splitter: % of the Air packets that go straight to the Spell Portal (the rest feed the Spawner)
   chargeBonus: 0.10,          // every packet burns this much longer in a Charger (+10% charge)
   chargeThrowBonus: 0.20,     // ...and a packet thrown in by hand adds this much on top (+20%)
   batteryMax: 90, stationGen: 10,

@@ -1,4 +1,12 @@
 {
   "version": 1,
-  "values": {}
+  "values": {
+    "spells.gust.dmg": 4.6,
+    "spells.gust.push": 12,
+    "world.hpPerMin": 0.03,
+    "resistMul": 0.6,
+    "world.spawnFloor": 3,
+    "world.spawnMul": 0.98,
+    "world.spawnStart": 20
+  }
 }

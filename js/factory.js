@@ -76,15 +76,15 @@ FA.initial = function () {
   const sy = FA.spellY(), w = sz[0];
   const st = FA.makeBuilding('station', 1, sy + 2, true, false, 0); st.bat = CFG.batteryMax;   // a full Battery already inside, out at the far west edge
   FA.makeBuilding('charger', 3, sy + 2, true, false, 0).bat = 0;   // a spare, flat Battery waits in the Charger
-  // one Air Harnesser, one belt, then a free Splitter (turned west: pink side A = north, cyan side B = south) right beside the portals:
-  // A takes 4 belts round to the Spell Portal's top cell, B 2 belts into a Creature Spawner (Zephyr Wisps) that feeds its lower cell
+  // one Air Harnesser, 2 belts, then a free Splitter beside the portals, turned north at 90 degrees: pink side A = east (2 belts straight
+  // into the Spell Portal's top cell), cyan side B = south (a Creature Spawner, Zephyr Wisps, then 2 belts into the lower cell)
   const sx = w - 4;
-  FA.makeBuilding('air', sx - 2, sy, true, false, 0);
-  FA.addBelt(sx - 1, sy, 0);
-  const sp = FA.makeBuilding('splitter', sx, sy, true, true, 2); sp.split = CFG.starterSplit;
-  FA.addBelt(sx, sy - 1, 0); FA.addBelt(sx + 1, sy - 1, 1); FA.addBelt(sx + 1, sy, 0); FA.addBelt(sx + 2, sy, 0);
-  FA.addBelt(sx, sy + 1, 0); FA.addBelt(sx + 1, sy + 1, 0);
-  FA.makeBuilding('spawner1', sx + 2, sy + 1, true, false, 0);
+  FA.makeBuilding('air', sx - 3, sy, true, false, 0);
+  FA.addBelt(sx - 2, sy, 0); FA.addBelt(sx - 1, sy, 0);
+  const sp = FA.makeBuilding('splitter', sx, sy, true, true, 3); sp.split = CFG.starterSplit;
+  FA.addBelt(sx + 1, sy, 0); FA.addBelt(sx + 2, sy, 0);
+  FA.makeBuilding('spawner1', sx, sy + 1, true, false, 0);
+  FA.addBelt(sx + 1, sy + 1, 0); FA.addBelt(sx + 2, sy + 1, 0);
   G.bd = FA.freshBuilder();
 };
 FA.freshBuilder = () => ({ x: 5.5, y: G.fac.h - 6.5, vx: 0, vy: 0, fx: 1, fy: 0, target: null, then: null, stuckT: 0, gather: null,
@@ -132,7 +132,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   if (d.kind === 'charger') { b.bat = null; b.fuel = { air: 0, water: 0, fire: 0, earth: 0 }; b.types = []; }
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
   if (d.kind === 'sorter') b.filter = null;
-  if (d.kind === 'splitter') { b.split = 50; b.acc = 0; b.ang = 180; }
+  if (d.kind === 'splitter') { b.split = 50; b.acc = 0; b.ang = 90; }
   f.bld.push(b);
   FA.setCell(x, y, b);
   if (b.done) FA.onComplete(b, true);

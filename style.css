@@ -261,6 +261,8 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 #nodeTip .ttf .c.short { color: #ff8a8a; }
 #nodeTip .ttf.req { color: #ffb0b0; line-height: 1.5; }
 #nodeTip .ttf.done { color: var(--mint); }
+#nodeTip .spv { display: block; width: 372px; height: 200px; margin: 6px 0 0; image-rendering: pixelated; background: #2e6a3a; }
+#nodeTip .spvc { font: 8px var(--display); color: var(--sky); margin: 6px 0 4px; line-height: 1.5; }
 #nodeTip .ttn { margin-top: 6px; font-size: 15px; color: var(--muted); }
 .hint { color: var(--muted); font-size: 16px; text-align: center; margin: 10px 0 0; }
 

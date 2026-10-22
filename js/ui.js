@@ -510,6 +510,8 @@ UI.nodeTipHtml = function (n) {
   const state = n.tiers ? 'TIER ' + L + '/' + max : G.tree[n.id] ? 'OWNED' : 'LOCKED';
   let h = '<div class="tth">' + UI.img(n.icon, 32) + '<div><b>' + n.name + '</b><small>' + state + '</small></div></div>';
   h += '<p>' + (n.tiers ? 'Each tier: ' + n.per + '.' : n.desc) + '</p>';
+  const sp = SPV.spellFor(n.id);
+  if (sp) h += '<canvas class="spv" width="186" height="100" data-spell="' + sp + '"></canvas><div class="spvc">' + SPV.caption(sp) + '</div>';
   const rows = UI.nodeStats(n);
   if (rows.length) {
     if (n.tiers) h += '<div class="ttr ttc"><span></span><em>NOW</em><em>' + (cost ? 'NEXT' : '') + '</em></div>';
@@ -526,14 +528,16 @@ UI.tipNode = null;
 UI.showNodeTip = function (side, id) {
   const el = $('nodeTip'), nd = id && $(side === 'L' ? 'treeL' : 'treeR').querySelector('.node[data-id="' + id + '"]');
   UI.tipNode = nd ? { side, id } : null;
-  if (!nd) { el.classList.add('hidden'); return; }
+  if (!nd) { el.classList.add('hidden'); SPV.stop(); return; }
   el.innerHTML = UI.nodeTipHtml(CFG.tree.find(t => t.id === id));
+  const cv = el.querySelector('canvas.spv');
+  if (cv) SPV.mount(cv, cv.dataset.spell); else SPV.stop();
   el.classList.remove('hidden');
   // beside the node (in stage px), flipped to its left when it would leave this half of the screen
   const st = $('stage').getBoundingClientRect(), k = st.width / CFG.W, r = nd.getBoundingClientRect();
   const x0 = (r.left - st.left) / k, x1 = (r.right - st.left) / k, y = (r.top - st.top) / k;
   const hi = (side === 'L' ? 0 : CFG.HALF) + CFG.HALF, w = el.offsetWidth, hgt = el.offsetHeight;
-  el.style.left = (x1 + 12 + w <= hi - 8 ? x1 + 12 : x0 - 12 - w) + 'px';
+  el.style.left = Math.max(8, x1 + 12 + w <= hi - 8 ? x1 + 12 : x0 - 12 - w) + 'px';
   el.style.top = Math.max(8, Math.min(CFG.H - hgt - 8, y)) + 'px';
 };
 UI.buy = function (id) {

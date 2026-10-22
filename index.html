@@ -17,7 +17,7 @@
     <div id="vigL"></div>
     <div id="splitLine"></div>
 
-    <!-- shared: resources, XP, skill bank, batteries + the current goal (top centre, spanning the split) -->
+    <!-- shared: resources, XP, skill bank, batteries (top centre, spanning the split); each player has their own goal card under it -->
     <div id="topbar" class="px">
       <div class="res" id="tWood"></div>
       <div class="res" id="tStone"></div>
@@ -28,7 +28,8 @@
       <div class="res bank" id="tBank"></div>
       <div class="res" id="tBat"></div>
     </div>
-    <div id="quest" class="px"><div id="qIcon"></div><div class="qb"><div class="qhead" id="qNum"></div><div id="qText"></div><div id="qBar"><div id="qFill"></div></div></div></div>
+    <div id="questB" class="quest px"><div class="qi" id="qIconB"></div><div class="qb"><div class="qhead" id="qHeadB"></div><div class="qtext" id="qTextB"></div><div class="qbar" id="qBarB"><div id="qFillB"></div></div></div></div>
+    <div id="questW" class="quest px"><div class="qi" id="qIconW"></div><div class="qb"><div class="qhead" id="qHeadW"></div><div class="qtext" id="qTextW"></div><div class="qbar" id="qBarW"><div id="qFillW"></div></div></div></div>
     <!-- the next scheduled event: from five minutes out -->
     <div id="evCard" class="px hidden"></div>
     <!-- the Chimera's health + current weakness, spanning the split so both players can read it -->

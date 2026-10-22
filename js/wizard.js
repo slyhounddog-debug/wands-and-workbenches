@@ -219,7 +219,7 @@ WZ.hurtE = function (e, d, kx, ky, quiet) {
     if (kx || ky) { e.kx += kx * kb; e.ky += ky * kb; }
     WZ.num(e.x, e.y, Math.round(d) + (m > 1 ? '!' : ''), m > 1 ? '#ffe36b' : m < 1 ? '#9a94b0' : d >= 40 ? '#ffd23a' : '#ffffff');
   }
-  if (e.hp <= 0) WZ.kill(e);
+  if (e.hp <= 0) { if (c && m > 1) G.stats.weakKills = (G.stats.weakKills || 0) + 1; WZ.kill(e); }
 };
 WZ.icon = (x, y, k) => G.w.fx_.push({ type: 'icon', x: x + rand(-0.2, 0.2), y, k, t: 0, dur: 0.7 });   // a sprite floating up
 WZ.num = (x, y, text, col) => G.w.fx_.push({ type: 'num', x: x + rand(-0.2, 0.2), y: y + rand(-0.2, 0.2), text: String(text), col, t: 0, dur: 0.7 });
@@ -252,6 +252,7 @@ WZ.dodge = function () {
   const w = G.w;
   if (w.t < (w.dodgeAt || 0)) return;
   w.dodgeAt = w.t + CFG.wizard.dodgeCd;
+  G.stats.dodges = (G.stats.dodges || 0) + 1;
   WZ.ring(w.x, w.y, 1.3, '#ffffff', 0.25); WZ.puff(w.x, w.y, '#bfe9ff', 6);
   AU.sfx('dodge');
 };
@@ -308,7 +309,13 @@ WZ.kill = function (e) {
   e.dead = true;
   const w = G.w, def = CFG.enemies[e.type];
   G.stats.kills++; w.kills++;
-  if (WZ.ctx) WZ.ctx.kills++;
+  if (WZ.ctx) {
+    WZ.ctx.kills++;
+    const n = WZ.ctx.el.length;   // kills by combo spells: two elements and up, three and up, the Nova
+    if (n >= 2) G.stats.k2 = (G.stats.k2 || 0) + 1;
+    if (n >= 3) G.stats.k3 = (G.stats.k3 || 0) + 1;
+    if (n >= 4) G.stats.k4 = (G.stats.k4 || 0) + 1;
+  }
   if (e.boss) { WZ.bossDown(e); return; }
   WZ.dropGems(e.x, e.y, WZ.killGems(e));
   if (e.elite) {
@@ -580,6 +587,7 @@ WZ.claim = function (m) {
   for (let i = 0; i < n; i++) WZ.drop('shard', m.x, m.y, 1);
   WZ.dropGems(m.x, m.y, M.xpBonus);
   G.stats.landmarks = (G.stats.landmarks || 0) + 1; w.run.marks++;
+  if (m.type === 'shrine') G.stats.shrines = (G.stats.shrines || 0) + 1; else G.stats.clears = (G.stats.clears || 0) + 1;
   WZ.ring(m.x, m.y, 4, '#c890ff', 0.6); WZ.puff(m.x, m.y, '#c890ff', 18);
   AU.sfx('chest'); UI.changed();   // the shards themselves fly out and pop up at the factory's shard pile
 };
@@ -889,6 +897,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
       const got = Math.min(def.armor, CFG.wizard.armorMax - w.armor);
       w.armor += got; WZ.num(w.x, w.y, '+' + Math.round(got), '#9fc4ff');
     }
+    G.stats.used = (G.stats.used || 0) + 1;
     WZ.puff(p.x, p.y, ITEMS[p.kind].color, 12);
     AU.sfx('powerup');
     w.pickups.splice(i, 1);
@@ -910,6 +919,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     if (w.enemies.length < cfg.cap) WZ.spawn();
   }
   WZ.updMarks(dt);
+  if (w.shrine) G.stats.shrineT = (G.stats.shrineT || 0) + dt;   // time spent boosting the factory from a claimed shrine
   WZ.eggTick(dt);
   if (G.ev) WZ.evTick(dt);
 

@@ -153,7 +153,7 @@ UI.updateHud = function (dt) {
   const tl = UI.treeOpen.L, tr = UI.treeOpen.R;
   $('wizPause').classList.toggle('hidden', !tl || tr);
   $('facNote').classList.toggle('hidden', !tr || tl);
-  UI.updateQuest();
+  UI.updateQuest(dt);
   UI.updateEvent();
   UI.updateEggQ();
   UI.updatePins(dt);
@@ -169,23 +169,76 @@ UI.setInspect = function (s) {
   setTxt('inspect', s);
 };
 
-// ---------- goals ----------
-UI.updateQuest = function () {
-  const q = QUESTS[G.quest];
-  if (!q) { setHtml('qText', 'All goals complete! Keep the factory humming and see how long the Wizard lasts.'); setHtml('qIcon', UI.img('ic_trophy', 32)); setTxt('qNum', ''); $('qBar').style.display = 'none'; return; }
-  if (q.done(G)) {
-    G.xp += q.xp; G.stats.xpEarned += q.xp; G.quest++;
-    UI.toast('Goal complete! +' + q.xp + ' XP', 'L', 'ic_target'); UI.toast('Goal complete! +' + q.xp + ' XP', 'R', 'ic_target');
-    AU.sfx('buy');
-    const el = $('quest'); el.classList.remove('done'); void el.offsetWidth; el.classList.add('done');
-    UI.changed();
+// ---------- goals: one card per player, the two tracks run at the same time ----------
+// [have, need] for the bar, or null (stat goals count what happened SINCE the goal started: G.qbase)
+UI.questProg = function (side, q) {
+  if (q.stat) return [Math.max(0, Math.min(q.n, q.stat(G) - (G.qbase[side] || 0))), q.n];
+  return q.prog ? q.prog(G) : null;
+};
+// a goal's gift as icon rows: [[icon key, count, sprite key for the pop]]
+UI.giftList = function (gift) {
+  const out = [];
+  if (!gift) return out;
+  for (const k in gift.bank || {}) out.push([k, gift.bank[k], k]);
+  for (const k in gift.stock || {}) out.push([k, gift.stock[k], k]);
+  for (const k in gift.credit || {}) out.push(['b:' + k, gift.credit[k], 'b_' + k]);
+  for (const k of gift.pickup || []) { const e = out.find(o => o[0] === k); if (e) e[1]++; else out.push([k, 1, k]); }
+  return out;
+};
+UI.giftHtml = (gift, size) => UI.giftList(gift).map(e => UI.img(e[0], size) + (e[1] > 1 ? '<b>' + e[1] + '</b>' : '')).join('');
+// hand over a gift: spells to the bank, materials to the Stockpile, a free placement, pickups that drop beside the Wizard
+UI.giveGift = function (gift) {
+  if (!gift) return;
+  const f = G.fac, sp = FA.portal('skill');
+  for (const k in gift.bank || {}) { G.bank[k] = (G.bank[k] || 0) + gift.bank[k]; FA.ipop(sp.x + 0.5, sp.y + 1, [[k, gift.bank[k]]]); f.skillFlash = 0.5; }
+  for (const k in gift.stock || {}) { G.stock[k] += gift.stock[k]; FA.pileIn(k); }
+  for (const k in gift.credit || {}) { G.credits[k] = (G.credits[k] || 0) + gift.credit[k]; FA.ipop(G.bd.x, G.bd.y - 1.2, [['ic_gift']]); }
+  if (gift.pickup) G.pend = (G.pend || []).concat(gift.pickup);
+};
+// finished a goal: XP, the gift, then a fanfare on that player's half (floating icons, ring, sound, the card flashes)
+UI.questDone = function (side, q) {
+  G.xp += q.xp; G.stats.xpEarned += q.xp;
+  G.quest[side]++; G.qbase[side] = null;
+  UI.giveGift(q.gift);
+  const big = q.xp >= 30, gl = UI.giftList(q.gift);
+  UI.toast('Goal complete! +' + q.xp + ' XP' + (q.gift && q.gift.credit ? ' and a FREE ' + Object.keys(q.gift.credit).map(k => CFG.buildings[k].name).join(', ') : ''), side === 'W' ? 'R' : 'L', 'ic_target');
+  if (side === 'B') {
+    FA.ipop(G.bd.x, G.bd.y - 0.6, [['ic_check'], ['ic_xp', q.xp]]);
+    FA.burst(G.bd.x, G.bd.y, '#ffd23a', big ? 28 : 14);
+  } else if (G.w) {
+    const w = G.w;
+    WZ.num(w.x, w.y, '+' + q.xp + ' XP', '#ffe36b'); WZ.icon(w.x, w.y, 'ic_check');
+    WZ.ring(w.x, w.y, big ? 2.4 : 1.6, '#ffd23a', 0.5); WZ.puff(w.x, w.y, '#ffd23a', big ? 20 : 10);
+  }
+  AU.sfx(big ? 'complete' : 'buy');
+  const el = $('quest' + side); el.classList.remove('done'); void el.offsetWidth; el.classList.add('done');
+  UI.changed();
+};
+UI.questSide = function (side) {
+  const list = QUESTS[side], i = G.quest[side], q = list[i], nm = QUEST_NAME[side];
+  if (!q) {
+    setHtml('qIcon' + side, UI.img('ic_trophy', 32));
+    setHtml('qHead' + side, '<span>' + nm + ' GOALS DONE</span><span class="qr">' + list.length + '/' + list.length + '</span>');
+    setTxt('qText' + side, side === 'B' ? 'All Builder goals complete! Keep the factory humming.' : 'All Wizard goals complete! See how long you last.');
+    $('qBar' + side).style.display = 'none';
     return;
   }
-  setTxt('qNum', 'GOAL ' + (G.quest + 1) + '/' + QUESTS.length + '  +' + q.xp + ' XP');
-  setHtml('qIcon', UI.img(q.icon, 32));
-  setTxt('qText', q.text);
-  if (q.prog) { const p = q.prog(G); $('qBar').style.display = ''; $('qFill').style.width = Math.min(100, p[0] / p[1] * 100) + '%'; }
-  else $('qBar').style.display = 'none';
+  if (G.qbase[side] == null) G.qbase[side] = q.stat ? q.stat(G) : 0;
+  const p = UI.questProg(side, q);
+  if (q.stat ? p[0] >= p[1] : q.done(G)) { UI.questDone(side, q); return; }
+  setHtml('qIcon' + side, UI.img(q.icon, 32));
+  setHtml('qHead' + side, '<span>' + nm + ' GOAL ' + (i + 1) + '/' + list.length + '</span><span class="qr">' + (p ? '<em>' + Math.floor(p[0]) + '/' + p[1] + '</em>' : '') + '+' + q.xp + ' XP' + UI.giftHtml(q.gift, 16) + '</span>');
+  setTxt('qText' + side, q.text);
+  $('qBar' + side).style.display = p ? '' : 'none';
+  if (p) $('qFill' + side).style.width = Math.min(100, p[0] / p[1] * 100) + '%';
+};
+UI.updateQuest = function (dt) {
+  for (const side of QUEST_SIDES) UI.questSide(side);
+  // pickups from a gift drop beside the Wizard one at a time, once he is alive and the game is running
+  if (G.pend && G.pend.length && G.w && !G.w.dead && !UI.treeOpen.L && !UI.treeOpen.R) {
+    G.pendT = (G.pendT || 0) - dt;
+    if (G.pendT <= 0) { G.pendT = 0.8; WZ.dropPickup(G.pend.shift()); }
+  }
 };
 
 // the next scheduled event: shows from five minutes out (the toasts at 5 min / 2 min / 30 s are in WZ.evWarn)
@@ -222,12 +275,12 @@ UI.updateEggQ = function () {
 };
 
 // goal pointers that live in the DOM: a blinking hotbar slot and/or blinking skill-tree buttons
-UI.setHint = function (slot, tree) {
-  const sig = slot + '|' + tree;
+UI.setHint = function (slot, treeL, treeR) {
+  const sig = slot + '|' + treeL + '|' + treeR;
   if (cache.hint === sig) return;
   cache.hint = sig;
   for (const s of $('hotbar').children) s.classList.toggle('hint', s.dataset.id === (slot && UI.slotOf(slot)));
-  $('btnTree').classList.toggle('hint', !!tree); $('btnTreeR').classList.toggle('hint', !!tree);
+  $('btnTree').classList.toggle('hint', !!treeL); $('btnTreeR').classList.toggle('hint', !!treeR);
 };
 
 // ---------- debug overlay (F3 or `): income rates and when the next skill becomes affordable ----------
@@ -742,9 +795,9 @@ UI.slotInfo = function (i, useBak) {
 function slotLabel(i, s) {
   if (!s) return '<b>SLOT ' + i + '</b><span>Empty</span>';
   if (s.old) return '<b>SLOT ' + i + '</b><span>Save from an older version</span>';
-  const nb = (s.fac && s.fac.bld ? s.fac.bld.length : 0);
+  const nb = (s.fac && s.fac.bld ? s.fac.bld.length : 0), q = Main.questOf(s);
   const when = s.at ? new Date(s.at).toLocaleString() : '';
-  return '<b>SLOT ' + i + '</b><span>' + Math.floor(s.xp || 0) + ' XP, ' + nb + ' buildings, goal ' + Math.min((s.quest || 0) + 1, QUESTS.length) + '/' + QUESTS.length + '</span><small>' + when + '</small>';
+  return '<b>SLOT ' + i + '</b><span>' + Math.floor(s.xp || 0) + ' XP, ' + nb + ' buildings, goals ' + (q.B + q.W) + '/' + (QUESTS.B.length + QUESTS.W.length) + '</span><small>' + when + '</small>';
 }
 UI.menuPage = function (page) {
   ['menuMain', 'menuSlots', 'menuHow', 'menuSet'].forEach(id => UI.show(id, id === page));
@@ -761,7 +814,7 @@ const HOWTO = {
     ['Two jobs, one team', 'The <b>Builder</b> (left) runs an elemental factory. The <b>Wizard</b> (right) explores the wilds but has <b>no attack of his own</b>: every spell he casts is made in the factory and sent through the <b>Spell Portal</b>.'],
     ['The loop', 'The Wizard stands near trees, rocks and ore so delivered spells smash them. Drops vacuum into him and land in the factory <b>Stockpile</b>. The Builder carries them to blueprints to grow the factory, which makes stronger spells, potions and armor.'],
     ['Two portals', 'The <b>Spell Portal</b> sends things to the Wizard. The <b>Skill Portal</b> banks element packets and spells as currency for the <b>Skill Tree</b>, together with XP from kills.'],
-    ['Follow the goals', 'The goal card at the top always shows a next step, and each one pays XP. A gold arrow points at where to go, and the right hotbar slot or skill-tree button blinks.'],
+    ['Follow the goals', 'Each player has their own goal card (Builder on the left, Wizard on the right) and the two run at the same time. Every goal pays XP, and the bigger ones add a gift: spells for the skill tree, building materials, a free Station, potions and armor. A gold arrow points at where to go, and the right hotbar slot or skill-tree button blinks.'],
     ['Winning', 'Late on, claim a <b>Stronghold</b> for a <b>Warden Core</b> (Summoning costs one), build the <b>Summoning Altar</b>, bind an Elemental Nova and Aether Shards into a <b>Boss Sigil</b> and send it through the Spell Portal. Beat the <b>Primal Chimera</b> to win. You can keep playing afterwards.'],
   ],
   'FACTORY': [

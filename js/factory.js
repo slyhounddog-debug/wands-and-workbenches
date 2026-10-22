@@ -395,6 +395,9 @@ FA.deliver = function (kind) {
   if (ELEM[kind]) FA.eburst(p.x + 0.5, p.y + 1, kind, 8);
   f.log.spell.push(f.t);
   G.flags['sent_' + kind] = true;
+  G.stats.sent[kind] = (G.stats.sent[kind] || 0) + 1;   // for the goals: Potions sent, Eggs hatched, combo spells delivered
+  if (ITEMS[kind].egg) G.stats.eggs = (G.stats.eggs || 0) + 1;
+  else if ((SPELL_EL[kind] || []).length >= 2) G.stats.combos = (G.stats.combos || 0) + 1;
   FA.ipop(p.x + 0.5, p.y + 1, [[kind]]);
   if (kind === 'sigil') WZ.summonBoss();
   else if (ITEMS[kind].egg) WZ.hatch(kind);
@@ -583,6 +586,7 @@ FA.update = function (dt) {
             b.prog = 0;
             for (const k in R.in) b.inv[k] -= R.in[k];
             b.out.push(R.out === 'battery' ? { kind: 'battery', charge: 0 } : { kind: R.out });
+            G.stats.made[R.out] = (G.stats.made[R.out] || 0) + 1;
             b.pop = 0.35;
             FA.burst(b.x + 0.5, b.y + 0.5, ITEMS[R.out].color, 10);
             AU.sfx('craft');
@@ -684,7 +688,7 @@ FA.updCharger = function (c, dt) {
   const dur = CFG.chargeBase / Math.pow(CFG.chargeBoost, nt - 1);
   c.bat = Math.min(CFG.batteryMax, c.bat + CFG.batteryMax / dur * dt);
   for (const k of act) c.fuel[k] = Math.max(0, c.fuel[k] - dt / act.length);
-  if (c.bat >= CFG.batteryMax) { G.flags.recharged = true; FA.ipop(c.x + 0.5, c.y + 0.5, [['battery'], ['ic_check']]); AU.sfx('charge'); c.pop = 0.4; }
+  if (c.bat >= CFG.batteryMax) { G.flags.recharged = true; G.stats.charged = (G.stats.charged || 0) + 1; FA.ipop(c.x + 0.5, c.y + 0.5, [['battery'], ['ic_check']]); AU.sfx('charge'); c.pop = 0.4; }
 };
 
 // ---------- throwing ----------

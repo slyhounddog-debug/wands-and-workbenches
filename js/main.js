@@ -13,14 +13,14 @@ window.addEventListener('resize', fit);
 
 // ---------- new / load / save ----------
 const SAVE_VERSION = 4;
-const QUEST_VERSION = 4;   // v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1; v4 inserted the first-creature-kill goal at 5 and the two Stronghold goals before Summoning: goals from the old 5 shift by 1, from the old 21 (Summoning) by 3
+const QUEST_VERSION = 5;   // v5 split the single goal chain into two tracks, Builder and Wizard (Main.splitQuest); v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1; v4 inserted the first-creature-kill goal at 5 and the two Stronghold goals before Summoning: goals from the old 5 shift by 1, from the old 21 (Summoning) by 3
 function blankState(slot) {
   return {
     slot, xp: 0, tree: {}, stock: { wood: CFG.start.wood, stone: CFG.start.stone, iron: CFG.start.iron, shard: 0, core: 0 }, fam: {},
     bank: {}, bankTotal: 0,
     credits: { station: 0, charger: 0 },
-    stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0 },
-    flags: {}, quest: 0, bankLog: [], pins: { L: null, R: null }, lock: null,
+    stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
+    flags: {}, quest: { B: 0, W: 0 }, qbase: { B: null, W: null }, bankLog: [], pins: { L: null, R: null }, lock: null,
     hands: null, swapped: false, selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
@@ -52,12 +52,10 @@ Main.applySave = function (slot, s) {
   G.xp = Math.floor(s.xp || 0); G.tree = s.tree || {}; G.stock = Object.assign(G.stock, s.stock || {});
   G.bank = s.bank || {}; G.bankTotal = s.bankTotal || 0;
   G.credits = Object.assign(G.credits, s.credits || {}); G.stats = Object.assign(G.stats, s.stats || {});
-  G.flags = s.flags || {}; G.quest = s.quest || 0; G.placeDir = s.placeDir || 0;
+  G.flags = s.flags || {}; G.quest = Main.questOf(s); G.placeDir = s.placeDir || 0;
+  if (s.qbase && typeof s.quest === 'object') G.qbase = Object.assign(G.qbase, s.qbase);   // null = measured from when the goal first shows
   G.bankLog = Array.isArray(s.bankLog) ? s.bankLog.filter(k => ITEMS[k]) : [];
   G.pins = Object.assign({ L: null, R: null }, s.pins || {});
-  if ((s.qv || 1) < 2 && G.quest >= 13) G.quest += 2;
-  if ((s.qv || 1) < 3 && G.quest >= 6 && G.quest <= 10) G.quest += 1;
-  if ((s.qv || 1) < 4) { if (G.quest >= 20) G.quest += 3; else if (G.quest >= 4) G.quest += 1; }
   G.hands = s.hands && ITEMS[s.hands.kind] ? s.hands : null;
   G.w = WZ.fresh();
   G.ev = WZ.evFresh(s.ev && s.ev.n || 0);
@@ -65,6 +63,21 @@ Main.applySave = function (slot, s) {
   G.bd = FA.freshBuilder();
   if (s.bd && FA.inb(Math.floor(s.bd.x), Math.floor(s.bd.y))) { G.bd.x = s.bd.x; G.bd.y = s.bd.y; }
   Main.enter();
+};
+// older saves had ONE goal chain (an index): bring it up to the v4 numbering, then hand each track the first of its goals
+// that continues an old goal that was still open (goals with no `from` are new, so they are skipped rather than redone)
+Main.splitQuest = function (old) {
+  const at = side => { const i = QUESTS[side].findIndex(q => q.from != null && q.from >= old); return i < 0 ? QUESTS[side].length : i; };
+  return { B: at('B'), W: at('W') };
+};
+Main.questOf = function (s) {
+  if (s.quest && typeof s.quest === 'object') return { B: s.quest.B | 0, W: s.quest.W | 0 };
+  let q = s.quest || 0;
+  const v = s.qv || 1;
+  if (v < 2 && q >= 13) q += 2;
+  if (v < 3 && q >= 6 && q <= 10) q += 1;
+  if (v < 4) { if (q >= 20) q += 3; else if (q >= 4) q += 1; }
+  return Main.splitQuest(q);
 };
 // a save that parses and has the essentials (used to decide what's safe to keep as the backup)
 Main.saveOk = s => !!s && s.v >= 4 && !!s.fac && !!s.stock && isFinite(s.xp);
@@ -77,7 +90,7 @@ Main.save = function () {
     const looseCores = G.w ? G.w.drops.filter(d => d.kind === 'core').reduce((a, d) => a + d.val, 0) : 0;
     const data = JSON.stringify({
       v: SAVE_VERSION, qv: QUEST_VERSION, xp: G.xp, tree: G.tree, stock: Object.assign({}, G.stock, { shard: G.stock.shard + loose, core: G.stock.core + looseCores }), ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
-      flags: G.flags, quest: G.quest, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: FA.toJSON(), at: Date.now(),
+      flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: FA.toJSON(), at: Date.now(),
       bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins,
     });
     if (!Main.saveOk(JSON.parse(data))) throw new Error('the new save failed its own check');
@@ -431,9 +444,9 @@ Main.sample = function (dt) {
   m.samples.push({ t: m.t, xp: G.stats.xpEarned, pk: G.stats.packets, bk: G.bankTotal || 0, banked: Object.assign({}, G.stats.banked) });
   while (m.samples.length > 121) m.samples.shift();
 };
-// where the current goal wants you to look: a factory tile (R.hint), a spot in the wilds (R.whint), a hotbar slot or the tree
-Main.questHint = function () {
-  const q = QUESTS[G.quest], h = q && q.hint, out = { f: null, w: null, slot: null, tree: false };
+// where one goal wants you to look: a factory tile (f), a spot in the wilds (w), a hotbar slot or the tree
+Main.hintFor = function (q) {
+  const h = q && q.hint, out = { f: null, w: null, slot: null, tree: false };
   if (!h) return out;
   const at = (b, lift) => ({ x: b.x + 0.5, y: b.y + 0.5, tile: true, lift: lift || 150 });
   const make = type => {
@@ -452,11 +465,17 @@ Main.questHint = function () {
   else if (h.combo) {   // needs a spell with that many elements unlocked, then the Forge
     const ok = FA.recipesFor('forge').some(id => Object.keys(CFG.recipes[id].in).length >= h.combo && id !== 'battery');
     if (!ok) out.tree = true; else make('forge');
-  } else if (h.harv || h.mark) {
+  } else if (h.harv || h.mark || h.forage) {   // mark: 'shrine' / 'camp' (camps + crypts) = the nearest unclaimed one, 'myshrine' = a claimed shrine to stand on
     const w = G.w;
     let best = null, bd = 1e9;
-    if (h.harv) for (const o of WZ.harv) { if (o.broken || o.kind !== 'tree') continue; const d = Math.hypot(o.x - w.x, o.y - w.y); if (d < bd) { bd = d; best = o; } }
-    else for (const m of WZ.marks) { if (w.lm[m.id].state === 'done') continue; const d = Math.hypot(m.x - w.x, m.y - w.y); if (d < bd) { bd = d; best = m; } }
+    const near = o => { const d = Math.hypot(o.x - w.x, o.y - w.y); if (d < bd) { bd = d; best = o; } };
+    if (h.harv) for (const o of WZ.harv) { if (!o.broken && o.kind === 'tree') near(o); }
+    else if (h.forage) for (const o of WZ.forage) { if (!o.broken) near(o); }
+    else for (const m of WZ.marks) {
+      const done = w.lm[m.id].state === 'done';
+      if (h.mark === 'myshrine' ? !(m.type === 'shrine' && done) : done || (h.mark === 'shrine' ? m.type !== 'shrine' : h.mark === 'camp' && m.type !== 'camp' && m.type !== 'crypt')) continue;
+      near(m);
+    }
     if (best) out.w = { x: best.x, y: best.y, lift: h.mark ? 120 : 90 };
   } else if (h.crafted) {   // the nearest factory creature, else the Spell Portal the Egg goes through
     let best = null, bd = 1e9;
@@ -472,6 +491,11 @@ Main.questHint = function () {
     else make('altar');
   }
   return out;
+};
+// both tracks at once: the Builder's goal points at the factory / hotbar / left tree button, the Wizard's at the wilds / right button
+Main.questHint = function () {
+  const b = Main.hintFor(QUESTS.B[G.quest.B]), w = Main.hintFor(QUESTS.W[G.quest.W]);
+  return { f: b.f || w.f, w: w.w || b.w, slot: b.slot || w.slot, treeL: b.tree, treeR: w.tree };
 };
 Main.updateFocus = function () {
   if (G.lock && !(G.lock.thr ? FA.lockValid('throw') : (FA.lockValid('pick') || FA.lockValid('use')))) G.lock = null;
@@ -500,7 +524,7 @@ Main.updateFocus = function () {
   UI.setInspect(b ? FA.status(b) : null);
   const qh = Main.questHint();
   R.hint = qh.f; R.whint = qh.w;
-  UI.setHint(qh.slot && G.selected !== qh.slot ? qh.slot : null, qh.tree);
+  UI.setHint(qh.slot && G.selected !== qh.slot ? qh.slot : null, qh.treeL, qh.treeR);
   R.aim = null;
   const frozen = UI.treeOpen.L || UI.treeOpen.R || Main.graceT > 0;
   if (G.hands && !frozen) R.aim = aimNow();

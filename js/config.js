@@ -416,34 +416,69 @@ const SPELL_KINDS = Object.keys(ITEMS).filter(k => ITEMS[k].elem || ITEMS[k].spe
 const SPELL_EL = { gust: ['air'], fireball: ['fire'], spray: ['water'], boulder: ['earth'] };
 for (const k in CFG.recipes) { const r = CFG.recipes[k]; if (ITEMS[r.out] && ITEMS[r.out].spell) SPELL_EL[r.out] = Object.keys(r.in); }
 
-// Guided goals: shared by both players, each pays XP. `icon` is a sprite key.
-// `hint` tells main.js what to point at: a pile, a portal, a building to use or build (`make`), the skill tree,
-// the nearest tree / landmark in the wilds, or the boss. Saves made before goals 14-15 existed have quest
-// indexes shifted on load (QUEST_VERSION in main.js).
-const QUESTS = [
-  { icon: 'wood',  text: 'Builder: walk to the Stockpile and left-click (pad A) to grab some Wood', xp: 2, done: g => g.flags.tookPile, hint: { pile: 'wood' } },
-  { icon: 'ic_hat', text: 'Wizard: stand right next to a tree. The factory\'s Air Gusts will chop it down', xp: 4, done: g => g.stats.harvested >= 1, hint: { harv: 1 } },
-  { icon: 'air',   text: 'Builder: stand by the Air Harnesser, press E to hand-gather, then tap E to crank it faster', xp: 3, done: g => g.flags.gathered, hint: { use: 'air' } },
-  { icon: 'ic_portal', text: 'Builder: throw (right-click / pad B) a packet into the Spell Portal', xp: 3, done: g => g.flags.portalHand, hint: { portal: 'spell' } },
-  { icon: 'egg_zephyr', text: 'Wizard: defeat a creature the factory made (the Spawner\'s Eggs arrive through the Spell Portal by themselves)', xp: 6, done: g => (g.stats.craftedKills || 0) >= 1, hint: { crafted: 1 } },
-  { icon: 'ic_skill', text: 'Send Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, done: g => (g.bankTotal || 0) >= 5, prog: g => [g.bankTotal || 0, 5], hint: { portal: 'skill' } },
-  { icon: 'b:air', text: 'Build a second Air Harnesser (press 3 for Harnessers, click a tile, then throw Wood & Stone at it)', xp: 8, done: g => FA.count('air') >= 2, hint: { build: 'air' } },
-  { icon: 'battery', text: 'Recharge the spare Battery: throw element packets at the Charger', xp: 10, done: g => !!g.flags.recharged, hint: { make: 'charger' } },
-  { icon: 'ic_skull', text: 'Defeat 15 monsters', xp: 8, done: g => g.stats.kills >= 15, prog: g => [g.stats.kills, 15] },
-  { icon: 'ic_tree', text: 'Unlock the Water Harnesser in the Skill Tree (T or Y). It costs XP + Air Pockets', xp: 5, done: g => !!g.tree.water, hint: { tree: 1 } },
-  { icon: 'b:water', text: 'Build a Water Harnesser', xp: 8, done: g => FA.count('water') >= 1, hint: { make: 'water' } },
-  { icon: 'potion', text: 'Unlock Alchemy, brew a Health Potion and send it through the Spell Portal', xp: 12, done: g => g.flags.sent_potion, hint: { make: 'cauldron' } },
-  { icon: 'b:forge', text: 'Build the Elemental Forge', xp: 12, done: g => FA.count('forge') >= 1, hint: { make: 'forge' } },
-  { icon: 'flamethrower', text: 'Unlock a combo spell and deliver it from the Forge', xp: 15, done: g => g.flags.combo, hint: { combo: 2 } },
-  { icon: 'ic_flag', text: 'Wizard: claim a landmark (camp, shrine or crypt, see the map) for Aether Shards', xp: 15, done: g => (g.stats.landmarks || 0) >= 1, hint: { mark: 1 } },
-  { icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter or Sorter to route packets', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && (b.type === 'splitter' || b.type === 'sorter')), hint: { make: 'splitter' } },
-  { icon: 'armor', text: 'Unlock the Armory and send Armor to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'anvil' } },
-  { icon: 'ic_expand', text: 'Expand the factory floor once', xp: 15, done: g => (g.tree.expand || 0) >= 1, hint: { tree: 1 } },
-  { icon: 'ic_skull', text: 'Defeat 300 monsters', xp: 40, done: g => g.stats.kills >= 300, prog: g => [g.stats.kills, 300] },
-  { icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, done: g => g.flags.triple, hint: { combo: 3 } },
-  { icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, done: g => g.flags.sent_nova, hint: { combo: 4 } },
-  { icon: 'ic_keep', text: 'Wizard: scout a Stronghold, far out in the wilds (see the map): its guards and weakness show up as you near it', xp: 20, done: g => !!g.flags.scouted, hint: { keep: 'scout' } },
-  { icon: 'core', text: 'Wizard: defeat a Stronghold\'s Warden and guards to claim it: Aether Shards and a Warden Core (Summoning needs one)', xp: 40, done: g => (g.stats.keeps || 0) >= 1, hint: { keep: 'claim' } },
-  { icon: 'b:altar', text: 'Unlock Summoning (it costs a Warden Core) and build the Summoning Altar (it needs Aether Shards)', xp: 40, done: g => FA.count('altar') >= 1, hint: { make: 'altar' } },
-  { icon: 'ic_crown', text: 'Craft a Boss Sigil, send it through the Spell Portal and defeat the Primal Chimera!', xp: 150, done: g => g.flags.won, hint: { boss: 1 } },
-];
+// Guided goals: TWO tracks that run at the same time, one for each player (`B` = the Builder, `W` = the Wizard). Each goal
+// pays `xp` and, for the bigger steps, a `gift` ({ bank: {kind: n} spells for the skill tree, stock: {res: n} materials,
+// credit: {building: n} free placements, pickup: [kinds] potions / armor that drop beside the Wizard }). `icon` is a sprite key.
+//  - `done(g)` is a plain check; `prog(g)` -> [have, need] draws the bar.
+//  - `stat(g)` + `n`: a lifetime counter that must grow by n SINCE the goal started (the baseline is stored in G.qbase), so
+//    practice goals ("charge 3 Batteries") really ask for fresh work. The bar is automatic.
+//  - `hint` tells main.js what to point at: a pile, a portal, a building to use or build (`make`), the skill tree, the nearest
+//    tree / landmark / forage spot in the wilds, or the boss.
+//  - `from` = the index of the goal in the old single chain (v4) this one continues, so older saves land in the right place
+//    (Main.splitQuest, QUEST_VERSION in main.js). New goals carry no `from`.
+const QUEST_SIDES = ['B', 'W'];
+const QUEST_NAME = { B: 'BUILDER', W: 'WIZARD' };
+const sentN = (g, ...ks) => ks.reduce((a, k) => a + ((g.stats.sent || {})[k] || 0), 0);
+const QUESTS = {
+  B: [
+    { from: 0,  icon: 'wood',  text: 'Walk to the Stockpile and left-click (pad A) to grab some Wood', xp: 2, done: g => g.flags.tookPile, hint: { pile: 'wood' } },
+    { from: 2,  icon: 'air',   text: 'Stand by the Air Harnesser: press E to hand-gather, then tap E to crank it faster', xp: 3, done: g => g.flags.gathered, hint: { use: 'air' } },
+    { from: 3,  icon: 'ic_portal', text: 'Throw (right-click / pad B) a packet into the Spell Portal', xp: 3, done: g => g.flags.portalHand, hint: { portal: 'spell' } },
+    { from: 5,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, done: g => (g.bankTotal || 0) >= 5, prog: g => [g.bankTotal || 0, 5], hint: { portal: 'skill' } },
+    { from: 6,  icon: 'b:air', text: 'Build a second Air Harnesser: press 3, click a tile, then throw Wood & Stone at it', xp: 8, done: g => FA.count('air') >= 2, hint: { build: 'air' } },
+    { from: 7,  icon: 'battery', text: 'Recharge the spare Battery: throw element packets at the Charger', xp: 10, done: g => !!g.flags.recharged, hint: { make: 'charger' } },
+    { from: 9,  icon: 'ic_tree', text: 'Unlock the Water Harnesser in the Skill Tree (T). It costs XP + Air Pockets', xp: 5, done: g => !!g.tree.water, hint: { tree: 1 } },
+    { from: 10, icon: 'b:water', text: 'Build a Water Harnesser', xp: 8, gift: { bank: { water: 4 } }, done: g => FA.count('water') >= 1, hint: { make: 'water' } },
+    { from: 11, icon: 'potion', text: 'Unlock Alchemy, brew a Health Potion and send it through the Spell Portal', xp: 12, done: g => g.flags.sent_potion, hint: { make: 'cauldron' } },
+    { icon: 'elixir', text: 'Keep the Wizard healthy: send 3 more Potions or Elixirs', xp: 10, gift: { stock: { wood: 12, stone: 9, iron: 6 } }, stat: g => sentN(g, 'potion', 'elixir'), n: 3, hint: { make: 'cauldron' } },
+    { from: 12, icon: 'b:forge', text: 'Build the Elemental Forge', xp: 12, done: g => FA.count('forge') >= 1, hint: { make: 'forge' } },
+    { icon: 'battery', text: 'Craft a Battery at the Forge (press E at it to pick the recipe)', xp: 8, stat: g => (g.stats.made || {}).battery || 0, n: 1, hint: { make: 'forge' } },
+    { icon: 'ic_bolt', text: 'Charge 3 Batteries: swap flat ones into the Charger and feed it packets', xp: 15, gift: { credit: { station: 1 } }, stat: g => g.stats.charged || 0, n: 3, hint: { make: 'charger' } },
+    { from: 13, icon: 'flamethrower', text: 'Unlock a combo spell and deliver it from the Forge', xp: 15, gift: { bank: { air: 3, fire: 3 } }, done: g => g.flags.combo, hint: { combo: 2 } },
+    { icon: 'ic_fast', text: 'Overdrive: put a charged Battery Station right beside a Forge or Cauldron', xp: 12, done: g => G.fac.bld.some(b => b.done && b.od), hint: { make: 'station' } },
+    { icon: 'steam', text: 'Deliver 6 combo spells to the Wizard (two or more elements each)', xp: 15, gift: { stock: { shard: 1 } }, stat: g => g.stats.combos || 0, n: 6, hint: { combo: 2 } },
+    { from: 15, icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter or Sorter to route packets', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && (b.type === 'splitter' || b.type === 'sorter')), hint: { make: 'splitter' } },
+    { from: 16, icon: 'armor', text: 'Unlock the Armory and send Armor to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'anvil' } },
+    { icon: 'plate', text: 'Plate up the Wizard: send 4 more Armor or Heavy Plates', xp: 12, gift: { stock: { iron: 6 } }, stat: g => sentN(g, 'armor', 'plate'), n: 4, hint: { make: 'anvil' } },
+    { from: 17, icon: 'ic_expand', text: 'Expand the factory floor once', xp: 15, done: g => (g.tree.expand || 0) >= 1, hint: { tree: 1 } },
+    { icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner1' } },
+    { from: 19, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, done: g => g.flags.triple, hint: { combo: 3 } },
+    { from: 20, icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, done: g => g.flags.sent_nova, hint: { combo: 4 } },
+    { from: 23, icon: 'b:altar', text: 'Unlock Summoning (it costs a Warden Core) and build the Summoning Altar (it needs Aether Shards)', xp: 40, done: g => FA.count('altar') >= 1, hint: { make: 'altar' } },
+    { from: 24, icon: 'ic_crown', text: 'Craft a Boss Sigil and send it through the Spell Portal. Then keep the right element flowing!', xp: 60, done: g => g.flags.sent_sigil, hint: { make: 'altar' } },
+  ],
+  W: [
+    { from: 1,  icon: 'ic_hat', text: 'Stand right next to a tree. The factory\'s Air Gusts will chop it down', xp: 4, done: g => g.stats.harvested >= 1, hint: { harv: 1 } },
+    { icon: 'stone', text: 'Gather 10 more Wood or Stone: stand by trees and rocks while spells land', xp: 4, stat: g => g.stats.harvested || 0, n: 10, hint: { harv: 1 } },
+    { icon: 'ic_boot', text: 'Forage 3 spots: stand still next to a mound, sticks or bush and mash the roll button', xp: 6, stat: g => g.stats.foraged || 0, n: 3, hint: { forage: 1 } },
+    { from: 4,  icon: 'egg_zephyr', text: 'Defeat a creature the factory made (the Spawner\'s Eggs arrive through the Spell Portal)', xp: 6, done: g => (g.stats.craftedKills || 0) >= 1, hint: { crafted: 1 } },
+    { from: 8,  icon: 'ic_skull', text: 'Defeat 15 monsters', xp: 8, done: g => g.stats.kills >= 15, prog: g => [g.stats.kills, 15] },
+    { icon: 'ic_shield', text: 'Dodge 3 hits: roll into an attack (you can\'t be hurt mid-roll)', xp: 8, stat: g => g.stats.dodges || 0, n: 3 },
+    { icon: 'ic_tree', text: 'Open your Skill Tree (Y) and buy a Wizard upgrade: Hearty Hat or Wizard Zoomies', xp: 8, gift: { bank: { air: 3 } }, done: g => lvl('hearty') >= 1 || lvl('zoomies') >= 1, hint: { tree: 1 } },
+    { icon: 'potion', text: 'Walk over 2 Potions or Armor Plates the Builder sends you', xp: 8, stat: g => g.stats.used || 0, n: 2 },
+    { icon: 'ic_bolt', text: 'Hit weaknesses: finish off 10 monsters with a yellow ! hit (match the element)', xp: 12, gift: { pickup: ['potion'] }, stat: g => g.stats.weakKills || 0, n: 10 },
+    { icon: 'ic_flag', text: 'Claim a Shrine: stand in its ring and press roll when the shrinking ring meets the target', xp: 12, gift: { pickup: ['plate'] }, stat: g => g.stats.shrines || 0, n: 1, hint: { mark: 'shrine' } },
+    { icon: 'ic_fast', text: 'Stand on a claimed Shrine for 20 seconds: that element\'s Harnessers run faster', xp: 10, stat: g => g.stats.shrineT || 0, n: 20, hint: { mark: 'myshrine' } },
+    { from: 14, icon: 'ic_flag', text: 'Clear a Monster Camp or an Ancient Crypt (see the map) for Aether Shards', xp: 15, gift: { pickup: ['potion', 'plate'] }, stat: g => g.stats.clears || 0, n: 1, hint: { mark: 'camp' } },
+    { icon: 'ic_skull', text: 'Defeat 60 monsters', xp: 12, done: g => g.stats.kills >= 60, prog: g => [g.stats.kills, 60] },
+    { icon: 'flamethrower', text: 'Finish off 10 monsters with combo spells (two elements). Ask the Builder!', xp: 20, gift: { pickup: ['elixir'] }, stat: g => g.stats.k2 || 0, n: 10 },
+    { icon: 'ic_crown', text: 'Take down an Elite (the ones with a gold ring). They drop extra Aether Shards', xp: 15, gift: { pickup: ['plate'] }, stat: g => g.stats.elites || 0, n: 1 },
+    { from: 18, icon: 'ic_skull', text: 'Defeat 300 monsters', xp: 40, done: g => g.stats.kills >= 300, prog: g => [g.stats.kills, 300] },
+    { icon: 'ic_trophy', text: 'Survive a Wilds Event: check the card under the goals, then clear it', xp: 30, gift: { stock: { shard: 1 } }, stat: g => g.stats.events || 0, n: 1 },
+    { icon: 'meteor', text: 'Wipe out 15 monsters with Triple spells (three elements)', xp: 30, gift: { pickup: ['elixir', 'plate'] }, stat: g => g.stats.k3 || 0, n: 15 },
+    { from: 21, icon: 'ic_keep', text: 'Scout a Stronghold, far out in the wilds (see the map): get near to reveal its guards', xp: 20, done: g => !!g.flags.scouted, hint: { keep: 'scout' } },
+    { from: 22, icon: 'core', text: 'Defeat a Stronghold\'s Warden and guards to claim it: Aether Shards and a Warden Core', xp: 40, done: g => (g.stats.keeps || 0) >= 1, hint: { keep: 'claim' } },
+    { icon: 'nova', text: 'Blast 10 monsters with the Elemental Nova', xp: 40, gift: { pickup: ['elixir', 'plate'] }, stat: g => g.stats.k4 || 0, n: 10 },
+    { from: 24, icon: 'ic_crown', text: 'Defeat the Primal Chimera! The Builder\'s Boss Sigil calls it out', xp: 150, done: g => g.flags.won, hint: { boss: 1 } },
+  ],
+};

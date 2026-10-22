@@ -299,7 +299,7 @@ UI.updateDebug = function (dt) {
   if (UI.dbgT > 0) return;
   UI.dbgT = 0.25;
   const m = Main.metrics, a = m.samples[0], b = m.samples[m.samples.length - 1];
-  if (!a || b.t - a.t < 2) { el.innerHTML = '<b>DEBUG</b><div>collecting...</div>'; return; }
+  if (!a || b.t - a.t < 2) { el.innerHTML = '<b>DEBUG</b><div>collecting...</div>' + DevBot.html(); return; }
   const min = (b.t - a.t) / 60, xpm = (b.xp - a.xp) / min, pkm = (b.pk - a.pk) / min, bkm = (b.bk - a.bk) / min;
   const rateOf = k => ((b.banked[k] || 0) - (a.banked[k] || 0)) / min;
   // ETA per affordable-by-requirements node = the slowest of its XP and bank shortfalls at current income
@@ -326,7 +326,7 @@ UI.updateDebug = function (dt) {
     ' <span class="dim">' + ELEMS.map(k => k[0].toUpperCase() + f1(rateOf(k))).join(' ') + '</span></div>' +
     '<div>Spell Portal <b>' + FA.rate('spell') + '/min</b>  Skill Portal <b>' + FA.rate('skill') + '/min</b></div>' +
     '<div>Next unlock: <b>' + eta + '</b></div>' + UI.debugEvent() +
-    '<div class="dim">Foes ' + G.w.enemies.length + '  working machines ' + G.fac.working + '  play ' + fmtTime(G.stats.time) + '</div>';
+    '<div class="dim">Foes ' + G.w.enemies.length + '  working machines ' + G.fac.working + '  play ' + fmtTime(G.stats.time) + '</div>' + DevBot.html();
 };
 
 // ---------- hotbar: single slots plus families (Harnessers, Crafters, Power, Logistics, Spawners) whose member cycles ----------
@@ -967,11 +967,13 @@ const CONTROLS = [
   ]],
   ['DEBUG (for now)', [
     [K('F3') + ' &nbsp;or&nbsp; ' + K('`'), 'Toggle the debug overlay: XP and packets per minute, bank and portal rates, time to the next affordable skill, the next event, creature counts'],
+    [K('F4') + ' &nbsp;with the overlay open', 'Dev bot: plays the Wizard (pad 2) so one person can test the factory solo. Press again to turn it off'],
     [K('F12') + ' &nbsp;console', 'In the browser console, <code>__wands</code> is the test hook:'],
     ['<code>__wands.start(slot)</code>', 'Start a new game in slot 1-3'],
     ['<code>__wands.deliver(kind)</code>', 'Send an item through the Spell Portal, e.g. <code>"fire"</code>'],
     ['<code>__wands.bank(kind, n)</code>', 'Bank n of an item in the Skill Portal'],
     ['<code>__wands.egg(kind)</code>', 'Deliver an Egg, e.g. <code>"egg_zephyr"</code>'],
+    ['<code>__wands.bot("wizard")</code>', 'Dev bot on (<code>null</code> = off); <code>__wands.step</code> then plays the Wizard too'],
     ['<code>__wands.boss()</code>', 'Summon the Primal Chimera now'],
     ['<code>__wands.event(n)</code>', 'Make event n start in 5 seconds (1-6 first cycle, 7 = Cycle 2 Migration...)'],
     ['<code>__wands.step(dt, n)</code>', 'Run n simulation steps of dt seconds'],

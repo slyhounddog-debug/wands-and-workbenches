@@ -88,7 +88,26 @@ const CFG = {
     bush:   { count: 26, taps: 4,  potion: 0.6 },   // otherwise Armor Plate
     reach: 1.15, decay: 2.5, respawn: 150, bushRespawn: 240,
   },
-  overdrive: 0.15,            // a charged Battery Station right beside a Forge or Cauldron: +15% crafting speed
+  // DEV ONLY: the solo-testing Wizard bot (js/devbot.js, toggled with F4 on the F3 overlay or __wands.bot('wizard')). Distances are tiles.
+  devBot: {
+    tick: 0.15,                // it decides this often and holds its last input in between
+    retreatHp: 0.35,           // below this share of max HP it runs from foes and heads for potions / armor
+    bandMin: 4, bandMax: 6,    // the distance it tries to keep from the nearest foe
+    engageR: 12,               // foes farther than this are ignored (it forages instead)
+    collectEnemyR: 2.5,        // it won't walk toward loot while a foe is this close (unless the loot is nearer)
+    rollR: 1.5, rollChance: 0.85,   // a foe this close makes it roll (when the real cooldown allows), most of the time
+    seekR: 8,                  // loot (gems, drops, pickups) farther than this is left alone
+    forageR: 30, harvestR: 20, // how far it walks to a forage spot / resource node
+    harvestDwell: 3,           // seconds it stands by a resource node before moving on
+    mashGap: 0.16,             // seconds between roll-button presses while digging a forage spot
+    strafeMin: 2, strafeMax: 4, strafeOn: 3, strafeOff: 2,   // strafe direction flips every strafeMin..Max s; moves strafeOn ticks, rests strafeOff
+    wanderStep: 14, wanderLeash: 50, wanderCell: 8, wanderOn: 4, wanderOff: 1,   // wander hop length, max distance from spawn, memory cell size, move / rest ticks
+    idleMax: 3,                // seconds it may stand still (outside digging) before forcing a wander
+    stuckT: 1, stuckMove: 0.35, stuckBack: 1,   // moved less than stuckMove tiles in stuckT s while pushing: sidestep for stuckBack s
+    skipT: 60,                 // how long a spot it gave up on is ignored
+    steerProbe: 1.6,           // look-ahead for water when steering
+  },
+  overdrive: 0.15,           // a charged Battery Station right beside a Forge or Cauldron: +15% crafting speed
   heavyBattery: 0.5,          // Heavy Batteries node: a Station's Battery lasts 50% longer
   crateCap: 30,
   pickups: {
@@ -482,3 +501,4 @@ const QUESTS = {
     { from: 24, icon: 'ic_crown', text: 'Defeat the Primal Chimera! The Builder\'s Boss Sigil calls it out', xp: 150, done: g => g.flags.won, hint: { boss: 1 } },
   ],
 };
+

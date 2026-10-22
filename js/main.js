@@ -116,6 +116,7 @@ Main.enter = function () {
   AU.music(true); AU.hold(false);
 };
 Main.toTitle = function (noSave) {
+  DevBot.set(null);
   if (!noSave && G) { WZ.bankLooseShards(); Main.save(); }
   STATE = 'menu';
   UI.splitB = null; UI.show('splitModal', false); UI.askB = null; UI.show('askModal', false);
@@ -250,6 +251,7 @@ Main.controls = function (dt) {
   if (IN.hit('KeyY') || (p1 && p1.y)) UI.openTree('R');
   if (IN.hit('KeyH')) { UI.help(); G.helpT = 0; }
   if (IN.hit('F3') || IN.hit('Backquote')) { UI.debugOn = !UI.debugOn; AU.sfx('blip'); }
+  if (IN.hit('F4') && UI.debugOn) DevBot.toggle();   // dev-only: only while the F3 overlay is open
   if (G.helpT > 0) { G.helpT -= dt; if (G.helpT <= 0) UI.help(false); }
   CFG.hotkeys.forEach((k, i) => { if (IN.hit(k)) UI.select(CFG.hotbar[i]); });
   let rot = 0;
@@ -586,6 +588,7 @@ function frame(ts) {
   const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0.016);
   lastTs = ts;
   IN.pollPads();
+  if (DevBot.on) DevBot.drive(dt);   // dev-only Wizard bot: writes the Wizard's pad state, nothing else
   if (STATE === 'play' && G) {
     try {
       if (!G.paused) Main.step(dt);
@@ -674,11 +677,13 @@ window.addEventListener('DOMContentLoaded', () => {
 // ---------- test hook ----------
 window.__wands = {
   get G() { return G; },
-  Main, FA, WZ, UI, R, CFG,
+  Main, FA, WZ, UI, R, CFG, DevBot,
   start(slot) { Main.newGame(slot || 1); },
   deliver(kind) { FA.deliver(kind); },
   bank(kind, n) { for (let i = 0; i < (n || 1); i++) FA.bank(kind); },
-  step(dt, n) { for (let i = 0; i < (n || 1); i++) if (G && !G.paused) Main.step(dt, { bix: 0, biy: 0, wix: 0, wiy: 0, roll: false }); },
+  // runs the simulation with zeroed inputs; with the dev bot on, it plays the Wizard through the real pad path (Main.controls)
+  step(dt, n) { for (let i = 0; i < (n || 1); i++) if (G && !G.paused) { if (DevBot.on) { DevBot.drive(dt); Main.step(dt); } else Main.step(dt, { bix: 0, biy: 0, wix: 0, wiy: 0, roll: false }); } },
+  bot(who) { return DevBot.set(who); },
   boss() { return WZ.summonBoss(); },
   // force event n (1 = the first of the rotation, 7 = Cycle 2's Migration, ...) to start in 5 seconds
   event(n) { const ev = G.ev; ev.n = Math.max(0, (n || 1) - 1); ev.plan = null; ev.active = null; ev.left = 5; ev.warned = 3; ev.clear = 0; return WZ.evInfo(); },

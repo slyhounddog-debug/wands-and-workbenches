@@ -132,7 +132,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   if (d.kind === 'charger') { b.bat = null; b.fuel = { air: 0, water: 0, fire: 0, earth: 0 }; b.types = []; }
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
   if (d.kind === 'sorter') b.filter = null;
-  if (d.kind === 'splitter') { b.split = 50; b.acc = 0; }
+  if (d.kind === 'splitter') { b.split = 50; b.acc = 0; b.ang = 180; }
   f.bld.push(b);
   FA.setCell(x, y, b);
   if (b.done) FA.onComplete(b, true);
@@ -449,7 +449,8 @@ FA.pushSide = function (b, di) {
 FA.tryOut = b => FA.pushSide(b, b.dir);
 // Splitter: two sides, A (right of its arrow) and B (left), sharing the belt by b.split (% to A). Sorter: filter matches out the
 // front, the rest out the sides. Crate: front.
-FA.splitSides = b => [(b.dir + 1) % 4, (b.dir + 3) % 4];
+// b.ang 180: the two sides are opposite each other (2 axes); 90: they are at a right angle (4 corners)
+FA.splitSides = b => [(b.dir + 1) % 4, (b.dir + (b.ang === 90 ? 2 : 3)) % 4];
 FA.splitCol = ['#ff5fc8', '#43e0ff'];   // side A / side B, in the slider, the modal diagram and the arrows on the tile
 // sides in the order to try them: the one the running share says is due next, then the other (unless it gets 0%)
 FA.logiSides = function (b) {
@@ -1055,7 +1056,7 @@ FA.status = function (b) {
     if (b.od) s += '. OVERDRIVE +' + Math.round(CFG.overdrive * 100) + '% (Battery Station beside it)';
     return s;
   }
-  if (d.kind === 'splitter') return n + ': ' + (b.out.length >= 2 ? 'BLOCKED: no free side to push into' : 'splits ' + b.split + '% / ' + (100 - b.split) + '% out of its two sides (click to set)');
+  if (d.kind === 'splitter') return n + ': ' + (b.out.length >= 2 ? 'BLOCKED: no free side to push into' : 'splits ' + b.split + '% / ' + (100 - b.split) + '% out of its two sides, ' + b.ang + ' degrees apart (click to set)');
   if (d.kind === 'sorter') return n + ': ' + (b.filter ? itemName(b.filter) + ' out the front, everything else out the sides' : 'no filter (E with an item in hand sets it)') + (b.out.length >= 2 ? '. BLOCKED' : '');
   if (d.kind === 'crate') return n + ': ' + b.out.length + '/' + CFG.crateCap + (b.out.length ? ', next out: ' + itemName(b.out[0].kind) : ', empty') + '. Feeds its arrow side; point it at nothing to just store';
   if (d.kind === 'station') return n + ': ' + (b.bat == null ? 'empty, insert a charged Battery' : 'Battery ' + Math.round(b.bat) + '/' + CFG.batteryMax + (b.bat > 0 ? ', +10 power, ' + Math.ceil(FA.life(b)) + 's left at this load' : ' (flat)'));
@@ -1084,7 +1085,7 @@ FA.toJSON = function () {
       if (b.bat !== undefined) o.bat = b.bat;
       if (b.fuel) { o.fuel = b.fuel; o.types = b.types; }
       if (b.filter) o.filter = b.filter;
-      if (b.split !== undefined) o.split = b.split;
+      if (b.split !== undefined) { o.split = b.split; o.ang = b.ang; }
       return o;
     }),
     belts: f.belts.map(b => ({ x: b.x, y: b.y, dir: b.dir, item: b.item ? b.item.kind : null })),
@@ -1104,6 +1105,7 @@ FA.fromJSON = function (j) {
     if (b.fuel) { b.fuel = Object.assign(b.fuel, o.fuel || {}); b.types = o.types || []; }
     if (b.filter !== undefined) b.filter = o.filter && ITEMS[o.filter] ? o.filter : null;
     if (b.split !== undefined) b.split = typeof o.split === 'number' ? Math.max(0, Math.min(100, Math.round(o.split))) : 50;
+    if (b.split !== undefined) b.ang = o.ang === 90 ? 90 : 180;
   });
   (j.belts || []).forEach(o => {
     if (!FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;

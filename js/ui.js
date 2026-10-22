@@ -771,7 +771,7 @@ const HOWTO = {
     ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with a charged Battery in a Battery Station and a Charger beside it: a Battery drains while anything needs power, so carry it to the Charger and throw element packets at it to refill it (hand-gathered packets are free). Every packet charges 10% more than its base, and a packet you throw in by hand adds another 20%. Craft a Battery at the Forge (2 Iron Ore), charge it at a Charger by feeding it packets (more kinds = faster), then haul it to a Battery Station. A charged Station right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, <b>Heavy Batteries</b> make every Battery last 50% longer in a Station.'],
     ['Creatures', 'The <b>Creature Spawner</b> turns element packets into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. Tier 2 and 3 Spawners (Skill Tree) hatch two- and three-element creatures; each one is its own node. At most 12 factory creatures live at once: extra Eggs wait in the portal. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
     ['Growing', 'The floor starts small. <b>Factory Expansion</b> in the Skill Tree makes it bigger, pushing the Stockpile further from the portals.'],
-    ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> shares items between its two sides (right and left of its arrow) by the percentages you choose: click it (<b>A</b> on a pad) for a slider, 50 / 50 to start. Each end of the slider has the colour of one arrow on the tile (pink or cyan), and the arrows pulse to show where items go. The <b>Sorter</b> sends one item kind out the front (E while holding it) and the rest out the sides. The <b>Storage Crate</b> holds 30 packets or spells and feeds them out of its arrow. E turns any of them (a Sorter with a filter clears it first).'],
+    ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> shares items between its two sides (right and left of its arrow) by the percentages you choose: click it (<b>A</b> on a pad) for a slider, 50 / 50 to start. The <b>180 / 90</b> toggle sets whether its two sides are opposite each other or at a right angle; <b>Turn</b> steps through every orientation. Each end of the slider has the colour of one arrow on the tile (pink or cyan), and the arrows pulse to show where items go. The <b>Sorter</b> sends one item kind out the front (E while holding it) and the rest out the sides. The <b>Storage Crate</b> holds 30 packets or spells and feeds them out of its arrow. E turns any of them (a Sorter with a filter clears it first).'],
     ['Reading the floor', 'Every machine shows its state the moment it changes, with an outline, an icon, how fast it animates and a little chirp: <b>green flowing dashes</b> working (up close), <b>yellow dashes</b> + a ghost of the missing ingredient, <b>grey dots</b> + <b>?</b> starved, <b>orange long dashes</b> + <b>!</b> output jammed, <b>thick red</b> + stacked bars output full (stopped), <b>purple dash-dot</b> + bolt no power. Each portal shows how many items it took in the last minute.'],
     ['Elements', 'Each element has its own shape everywhere: <b>Air</b> is a ring, <b>Water</b> a drop, <b>Fire</b> a flame, <b>Earth</b> a block. Their particles move differently too (swirling rings, falling drops, rising sparks, tumbling chunks) and each has its own little sound.'],
     ['Handling lots of items', 'Hold pick to sweep up every matching item nearby until your hands are full. <b>Shift + right-click</b> (pad <b>LT + B</b>) throws your whole stack. Items left on the floor slide together into piles. The throw line shows a ghost where the item will land and outlines what will catch it (green) or bounce it (red).'],
@@ -892,7 +892,8 @@ const CONTROLS = [
   ['SPLITTER SETTINGS', [
     [K('DRAG'), 'Slide the bar: the left number is the share for the pink side, the right number the cyan side'],
     [K('A') + ' ' + K('D') + ' &nbsp;or stick / d-pad', 'Nudge the split by 5'],
-    [K('R') + ' &nbsp;/&nbsp; ' + K('E') + ' ' + K('ESC'), 'Turn the Splitter / close (pad X turns, A or B closes)'],
+    [K('R') + ' &nbsp;/&nbsp; ' + K('E') + ' ' + K('ESC'), 'Turn the Splitter / close (pad X turns, Y flips 180 / 90, A or B closes)'],
+    [K('180') + ' ' + K('90'), 'Whether the two sides are opposite (2 axes) or at a right angle (4 corners); TURN steps through every orientation'],
   ]],
   ['GAMEPAD 1: BUILDER', [
     [K('STICK') + ' ' + K('D-PAD'), 'Walk'],
@@ -990,6 +991,11 @@ UI.splitSet = function (v) {
   if (v !== b.split) { b.split = v; b.pop = 0.15; UI.changed(); }
   UI.splitSync();
 };
+UI.splitAng = function (a) {
+  const b = UI.splitB;
+  if (!b || b.ang === a) return;
+  b.ang = a; b.pop = 0.2; AU.sfx('blip'); UI.changed(); UI.splitSync();
+};
 UI.splitTurn = function () {
   const b = UI.splitB;
   if (!b) return;
@@ -1001,6 +1007,7 @@ UI.splitSync = function () {
   const [ca, cb] = FA.splitCol, r = $('splitRange');
   if (+r.value !== b.split) r.value = b.split;
   r.style.background = 'linear-gradient(90deg,' + ca + ' ' + b.split + '%,' + cb + ' ' + b.split + '%)';
+  $('splitM180').classList.toggle('on', b.ang !== 90); $('splitM90').classList.toggle('on', b.ang === 90);
   $('splitA').textContent = b.split; $('splitBv').textContent = 100 - b.split;
 };
 // the little iso diagram: the tile with an arrow on each output side in that side's colour (turns with the Splitter)

@@ -233,7 +233,7 @@ Main.controls = function (dt) {
     else if (G.selected !== 'hand') UI.select('hand');
     else Main.pause(true);
   }
-  if (IN.hit('KeyT') || (p0 && p0.y)) UI.openTree('L');
+  if (IN.hit('KeyT') || (p0 && p0.y && !UI.splitB)) UI.openTree('L');
   if (IN.hit('KeyY') || (p1 && p1.y)) UI.openTree('R');
   if (IN.hit('KeyH')) { UI.help(); G.helpT = 0; }
   if (IN.hit('F3') || IN.hit('Backquote')) { UI.debugOn = !UI.debugOn; AU.sfx('blip'); }
@@ -281,6 +281,7 @@ Main.controls = function (dt) {
   if (UI.splitB && !frozen) {
     if (use || IN.hit('Enter') || (p0 && (p0.a || p0.b))) { UI.closeSplit(); G.noThrow = true; }
     else if (p0 && p0.x) UI.splitTurn();
+    else if (p0 && p0.y) UI.splitAng(UI.splitB.ang === 90 ? 180 : 90);
     const n = Main.splitNav, dx = Math.abs(bix) > 0.5 ? Math.sign(bix) : 0;
     if (!dx) { n.dx = 0; n.t = 0; }
     else if (dx !== n.dx) { n.dx = dx; n.t = 0.35; UI.splitSet(UI.splitB.split + dx * 5); }
@@ -594,6 +595,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const sr = $('splitRange');
   sr.oninput = () => UI.splitSet(+sr.value);
   sr.onchange = () => sr.blur();   // keep the arrow keys for walking
+  $('splitM180').onclick = () => UI.splitAng(180);
+  $('splitM90').onclick = () => UI.splitAng(90);
   $('splitRot').onclick = () => UI.splitTurn();
   $('splitReset').onclick = () => { UI.splitSet(50); AU.sfx('blip'); };
   $('splitDone').onclick = () => UI.closeSplit();

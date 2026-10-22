@@ -15,6 +15,7 @@ const CFG = {
   gatherExtra: 2.5, crankBoost: 0.4,
   buffer: 3,
   fuelPerPacket: 15, fuelCap: 120,
+  starterSplit: 65,           // the starting Splitter: % of the Air packets that go straight to the Spell Portal (the rest feed the Spawner)
   chargeBonus: 0.10,          // every packet burns this much longer in a Charger (+10% charge)
   chargeThrowBonus: 0.20,     // ...and a packet thrown in by hand adds this much on top (+20%)
   batteryMax: 90, stationGen: 10,
@@ -434,7 +435,7 @@ const QUESTS = [
   { icon: 'b:forge', text: 'Build the Elemental Forge', xp: 12, done: g => FA.count('forge') >= 1, hint: { make: 'forge' } },
   { icon: 'flamethrower', text: 'Unlock a combo spell and deliver it from the Forge', xp: 15, done: g => g.flags.combo, hint: { combo: 2 } },
   { icon: 'ic_flag', text: 'Wizard: claim a landmark (camp, shrine or crypt, see the map) for Aether Shards', xp: 15, done: g => (g.stats.landmarks || 0) >= 1, hint: { mark: 1 } },
-  { icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter or Sorter to route packets', xp: 15, done: g => FA.count('splitter') + FA.count('sorter') >= 1, hint: { make: 'splitter' } },
+  { icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter or Sorter to route packets', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && (b.type === 'splitter' || b.type === 'sorter')), hint: { make: 'splitter' } },
   { icon: 'armor', text: 'Unlock the Armory and send Armor to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'anvil' } },
   { icon: 'ic_expand', text: 'Expand the factory floor once', xp: 15, done: g => (g.tree.expand || 0) >= 1, hint: { tree: 1 } },
   { icon: 'ic_skull', text: 'Defeat 300 monsters', xp: 40, done: g => g.stats.kills >= 300, prog: g => [g.stats.kills, 300] },

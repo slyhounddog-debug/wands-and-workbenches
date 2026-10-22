@@ -74,16 +74,19 @@ FA.initial = function () {
   const sz = CFG.factorySizes[0];
   G.fac = FA.fresh(sz[0], sz[1]);
   const sy = FA.spellY(), w = sz[0];
-  FA.makeBuilding('air', w - 7, sy, true, false, 0);
-  for (let x = w - 6; x <= w - 2; x++) FA.addBelt(x, sy, 0);
+  // one Air Harnesser feeds a free Splitter (turned west: pink side A = north, cyan side B = south): 65% straight to the Spell Portal's
+  // top cell, 35% through a Creature Spawner (Zephyr Wisps) to its lower cell
+  FA.makeBuilding('air', 4, sy, true, false, 0);
+  for (let x = 5; x <= 7; x++) FA.addBelt(x, sy, 0);
+  const sp = FA.makeBuilding('splitter', 8, sy, true, true, 2); sp.split = CFG.starterSplit;
+  FA.addBelt(8, sy - 1, 0); FA.addBelt(9, sy - 1, 1);
+  for (let x = 9; x <= w - 2; x++) FA.addBelt(x, sy, 0);
   const st = FA.makeBuilding('station', 1, sy + 2, true, false, 0); st.bat = CFG.batteryMax;   // a full Battery already inside, out at the far west edge
   FA.makeBuilding('charger', 3, sy + 2, true, false, 0).bat = 0;   // a spare, flat Battery waits in the Charger
-  // the egg line: a second Air Harnesser feeds a Creature Spawner (Zephyr Wisps), which feeds the Spell Portal's lower cell
   const ey = sy + 1;
-  FA.makeBuilding('air', 6, ey, true, false, 0);
-  for (let x = 7; x <= 9; x++) FA.addBelt(x, ey, 0);
-  FA.makeBuilding('spawner1', 10, ey, true, false, 0);
-  for (let x = 11; x <= w - 2; x++) FA.addBelt(x, ey, 0);
+  FA.addBelt(8, ey, 0);
+  FA.makeBuilding('spawner1', 9, ey, true, false, 0);
+  for (let x = 10; x <= w - 2; x++) FA.addBelt(x, ey, 0);
   G.bd = FA.freshBuilder();
 };
 FA.freshBuilder = () => ({ x: 5.5, y: G.fac.h - 6.5, vx: 0, vy: 0, fx: 1, fy: 0, target: null, then: null, stuckT: 0, gather: null,
@@ -245,9 +248,11 @@ FA.placeBelt = function (x, y, dir) {
   AU.sfx('place');
   return true;
 };
-FA.demolish = function (x, y) {
+// force: skip the "you can't place this again yet" question (the confirmation modal calls it back with true)
+FA.demolish = function (x, y, force) {
   const c = FA.cell(x, y);
   if (!c || c.type === 'portal') return false;
+  if (!force && c.type !== 'belt' && !FA.unlocked(c.type)) { UI.askDemolish(x, y, FA.def(c).name); return false; }
   const f = G.fac, cx = x + 0.5, cy = y + 0.5;
   if (c.type === 'belt') {
     G.stock.wood += 1;

@@ -91,7 +91,7 @@ Main.save = function () {
 };
 Main.enter = function () {
   STATE = 'play';
-  UI.splitB = null; UI.show('splitModal', false);
+  UI.splitB = null; UI.show('splitModal', false); UI.askB = null; UI.show('askModal', false);
   UI.resetCache();
   UI.show('menu', false); UI.show('game', true);
   UI.show('pause', false); UI.show('results', false); UI.help(false);
@@ -105,7 +105,7 @@ Main.enter = function () {
 Main.toTitle = function (noSave) {
   if (!noSave && G) { WZ.bankLooseShards(); Main.save(); }
   STATE = 'menu';
-  UI.splitB = null; UI.show('splitModal', false);
+  UI.splitB = null; UI.show('splitModal', false); UI.askB = null; UI.show('askModal', false);
   UI.show('game', false); UI.show('menu', true);
   UI.menuPage('menuMain');
   G = null;
@@ -226,7 +226,8 @@ Main.controls = function (dt) {
   const cyc = (p0 && p0.cyc) || (IN.hit('Tab') ? (IN.shift() ? -1 : 1) : 0);
 
   if (IN.hit('Escape')) {
-    if (UI.splitB) UI.closeSplit();
+    if (UI.askB) UI.askClose(false);
+    else if (UI.splitB) UI.closeSplit();
     else if (UI.treeOpen.L || UI.treeOpen.R) { UI.openTree('L', false); UI.openTree('R', false); }
     else if (G.demolish) G.demolish = false;
     else if (G.selected !== 'hand') UI.select('hand');
@@ -270,6 +271,12 @@ Main.controls = function (dt) {
   if (inTree && (IN.hit('KeyQ') || (p0 && p0.x) || (p1 && p1.x))) UI.undoBank();   // Q / pad X: take the last deposit back out
   if (inTree) Main.treePads(dt, p0, p1);
   if (frozen) { bix = 0; biy = 0; use = false; pick = false; wix = 0; wiy = 0; roll = false; }
+  // a demolish question is open: E / Enter / A confirms, Esc / B backs out
+  if (UI.askB && !frozen) {
+    if (use || IN.hit('Enter') || (p0 && p0.a)) UI.askClose(true);
+    else if (p0 && p0.b) UI.askClose(false);
+    bix = 0; biy = 0; use = false; pick = false; G.noThrow = true;
+  }
   // the Splitter's settings are open: the Builder's inputs belong to them (the Wizard plays on)
   if (UI.splitB && !frozen) {
     if (use || IN.hit('Enter') || (p0 && (p0.a || p0.b))) { UI.closeSplit(); G.noThrow = true; }
@@ -515,7 +522,7 @@ Main.updateFocus = function () {
 
 Main.pause = function (on) {
   if (!G) return;
-  if (on) UI.closeSplit();
+  if (on) { UI.closeSplit(); UI.askClose(false); }
   if (G.paused !== on) AU.sfx(on ? 'menu_open' : 'menu_close');
   G.paused = on;
   UI.show('pause', on);
@@ -592,6 +599,9 @@ window.addEventListener('DOMContentLoaded', () => {
   $('splitDone').onclick = () => UI.closeSplit();
   $('splitModal').onmousedown = e => { if (e.target.id === 'splitModal') UI.closeSplit(); };
   $('splitModal').oncontextmenu = e => { e.preventDefault(); UI.closeSplit(); };
+  $('askYes').onclick = () => UI.askClose(true);
+  $('askNo').onclick = () => UI.askClose(false);
+  $('askModal').onmousedown = e => { if (e.target.id === 'askModal') UI.askClose(false); };
   $('pResume').onclick = () => Main.pause(false);
   $('pSet').onclick = () => {
     UI.settingsPage($('pauseSet'), () => { UI.show('pauseSet', false); UI.show('pauseMain', true); });

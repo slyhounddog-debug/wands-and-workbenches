@@ -956,6 +956,20 @@ UI.slotPage = function (mode) {
 };
 
 // ---------- Splitter settings: one slider, the pink side on its left and the cyan side on its right ----------
+UI.askB = null;
+UI.askDemolish = function (x, y, name) {
+  UI.askB = { x, y };
+  $('askName').textContent = name.toUpperCase();
+  $('askModal').classList.remove('hidden');
+  AU.sfx('error');
+};
+UI.askClose = function (yes) {
+  const a = UI.askB;
+  if (!a) return;
+  UI.askB = null;
+  $('askModal').classList.add('hidden');
+  if (yes) FA.demolish(a.x, a.y, true); else AU.sfx('blip');
+};
 UI.splitB = null;
 UI.openSplit = function (b) {
   UI.splitB = b;

@@ -121,6 +121,18 @@
       </div>
     </div>
 
+    <!-- "are you sure": demolishing something that can't be placed again yet -->
+    <div id="askModal" class="hidden">
+      <div class="panel px">
+        <h2>DEMOLISH <span id="askName"></span>?</h2>
+        <p>You won't be able to place it again until it is unlocked in the Skill Tree.</p>
+        <div class="splitBtns">
+          <button class="big ghost" id="askNo">KEEP IT <kbd>ESC</kbd></button>
+          <button class="big warn" id="askYes">DEMOLISH <kbd>E</kbd></button>
+        </div>
+      </div>
+    </div>
+
     <div id="swapRing" class="px hidden"><div id="swapFill"></div><i data-ic="ic_swap" data-s="36"></i><span>SWAP</span></div>
 
     <div id="results" class="panel px hidden"></div>

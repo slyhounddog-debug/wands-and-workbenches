@@ -335,11 +335,12 @@ Main.step = function (dt, ctl) {
   const inTree = UI.treeOpen.L || UI.treeOpen.R;
   if (!inTree && Main.graceT > 0) { Main.graceT -= dt; if (Main.graceT <= 0) UI.and(false); }
   const frozen = inTree || Main.graceT > 0;
-  if (!frozen) {
+  const facHalt = frozen || G.w.dead;   // the factory waits while the Wizard is down (the wilds keep running for the death effects)
+  if (!facHalt) {
     FA.moveBuilder(dt, ctl.bix, ctl.biy);
     FA.update(dt);
-    WZ.update(dt, ctl.wix, ctl.wiy, ctl.roll);
   }
+  if (!frozen) WZ.update(dt, ctl.wix, ctl.wiy, ctl.roll);
   if (!G) return;   // a victory screen button may have gone to the title mid-step
   if (G.w.dead && !G.w.deadHandled) { G.w.deadHandled = true; setTimeout(() => { if (G && G.w.dead) UI.showResults(); }, 900); }
   if (!frozen) { G.stats.time += dt; Main.sample(dt); }
@@ -348,7 +349,7 @@ Main.step = function (dt, ctl) {
   let near = 0;
   if (!w.dead) for (const e of w.enemies) if (Math.abs(e.x - w.x) < 10 && Math.abs(e.y - w.y) < 10) near++;
   AU.mix(Math.min(1, G.fac.working / 8), Math.min(1, near / 8), !!w.boss);
-  AU.hum(frozen ? 0 : Math.min(1, G.fac.working / 10));
+  AU.hum(facHalt ? 0 : Math.min(1, G.fac.working / 10));
   UI.updateHud(dt);
   Main.updateFocus();
   G.saveT += dt;

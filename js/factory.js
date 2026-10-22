@@ -76,8 +76,8 @@ FA.initial = function () {
   const sy = FA.spellY(), w = sz[0];
   FA.makeBuilding('air', w - 7, sy, true, false, 0);
   for (let x = w - 6; x <= w - 2; x++) FA.addBelt(x, sy, 0);
-  const st = FA.makeBuilding('station', 8, sy + 2, true, false, 0); st.bat = CFG.batteryMax;   // a full Battery already inside
-  FA.makeBuilding('charger', 10, sy + 2, true, false, 0).bat = 0;   // a spare, flat Battery waits in the Charger
+  const st = FA.makeBuilding('station', 1, sy + 2, true, false, 0); st.bat = CFG.batteryMax;   // a full Battery already inside, out at the far west edge
+  FA.makeBuilding('charger', 3, sy + 2, true, false, 0).bat = 0;   // a spare, flat Battery waits in the Charger
   // the egg line: a second Air Harnesser feeds a Creature Spawner (Zephyr Wisps), which feeds the Spell Portal's lower cell
   const ey = sy + 1;
   FA.makeBuilding('air', 6, ey, true, false, 0);
@@ -372,8 +372,10 @@ FA.unbank = function () {
     if (!(G.bank[k] > 0)) continue;   // already spent on a skill
     G.bank[k]--; G.bankTotal = Math.max(0, (G.bankTotal || 0) - 1);
     if (G.stats.banked[k]) G.stats.banked[k]--;
-    const p = FA.portal('skill');
-    FA.dropAt(k, p.x - 0.4, p.y + 1);
+    const z = FA.zone();   // the refunded spell lands in the Stockpile Zone, in the middle of the floor space between the resource piles
+    const zx = (z.x0 + z.x1 + 1) / 2 + (Math.random() - 0.5) * 1.6, zy = (z.y0 + z.y1 + 1) / 2 + (Math.random() - 0.5) * 1.6;
+    FA.dropAt(k, zx, zy);
+    FA.ipop(zx, zy, [[k]]);
     G.fac.skillFlash = 0.4;
     UI.changed();
     return k;

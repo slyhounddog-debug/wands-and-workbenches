@@ -160,7 +160,7 @@ R.drawFactory = function (main, dt) {
   ctx.setTransform(1 / P, 0, 0, 1 / P, 0, 0);
   R.px = P; R.org = 0; R.defer = [];
   const cam = R.fcam;
-  const k = Math.min(1, dt * 7);
+  const k = 1 - Math.exp(-dt * 7);   // frame-rate independent, so the follow lag stays constant while he walks
   cam.x += (bd.x + bd.vx * 0.18 - cam.x) * k; cam.y += (bd.y + bd.vy * 0.18 - cam.y) * k;
   // a spell landing in the wilds bumps the factory view (sideways shake too for triples and the Nova)
   const bmp = f.bumpAmp > 0 ? f.bumpAmp * Math.cos(f.bump * 40) * (1 - f.bump / 0.4) : 0;
@@ -707,18 +707,17 @@ R.drawBuilder = function (ctx, v, bd, t) {
   const hop = Math.round((bd.gather ? Math.abs(Math.sin(bd.bob)) * 12 : (bd.moving ? Math.abs(step) * 5 : 0)) / 4) * 4;
   const spr = carrying ? (bd.moving && step > 0 ? SP.builderC2 : SP.builderC) : (bd.moving && step > 0 ? SP.builder2 : SP.builder);
   const sq = bd.squash > 0 ? Math.sin(bd.squash * 25) * 0.12 : 0;
-  const flip = (bd.fx - bd.fy) < -0.1;
-  // playful walk: the body pivots at the hips and leans back and forth with each step, stretching taller on the
-  // push-off and skewing off-axis, so it reads as if his legs were swinging
-  const ph = bd.bob, w = bd.moving ? 1 : 0, g = bd.gather ? 1 : 0;
-  const lean = (w * Math.sin(ph) * 0.16 + g * Math.sin(ph * 1.5) * 0.06) * (flip ? -1 : 1);
-  const stretch = w * Math.abs(Math.sin(ph)) * 0.14, skew = w * Math.sin(ph + 1.2) * 0.14 * (flip ? -1 : 1);
+  // facing flips with hysteresis: moving straight up or down the screen sits right on the threshold and used to flicker
+  const fd = bd.fx - bd.fy;
+  if (fd < -0.3) bd.flipS = true; else if (fd > 0.3) bd.flipS = false;
+  const flip = !!bd.flipS;
+  // the walk is a hop plus the leg swap; rotating or skewing a 12px sprite with nearest-neighbour sampling made the
+  // eyes (and every other pixel) shimmer, so the head stays put and only a gentle, quantized stretch remains
   const pv = spr.ay * S * 0.35;   // pivot height above the feet
+  const stretch = bd.moving ? Math.round(Math.abs(Math.sin(bd.bob)) * 2) * 0.03 : 0;
   ctx.save();
   ctx.translate(snap(p[0]), Math.round((p[1] - hop - pv) / R.px) * R.px);
-  ctx.rotate(lean);
-  ctx.transform(1, 0, skew, 1, 0, 0);
-  ctx.scale((1 + sq) * (1 - stretch * 0.45) * (flip ? -1 : 1), (1 - sq) * (1 + stretch));
+  ctx.scale((1 + sq) * (flip ? -1 : 1), (1 - sq) * (1 + stretch));
   ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S + pv, spr.c.width * S, spr.c.height * S);
   ctx.restore();
   const h = G.hands;

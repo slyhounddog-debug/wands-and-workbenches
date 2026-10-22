@@ -37,7 +37,8 @@ const CFG = {
   },
   world: {
     respawn: 120, vacuum: 2, minSpawnDist: 8,
-    spawnStart: 2.1, spawnMul: 0.96, spawnFloor: 0.55, cap: 160,
+    spawnStart: 21, spawnMul: 0.96, spawnFloor: 5.5, cap: 160,   // wild spawns are a trickle: the factory's creatures are the real fight
+    wildHp: 0.6, wildDmg: 0.6, wildGem: 0.35, wildElite: 0.2,    // wild foes are weaker, pay less XP and rarely come as elites
     ringMin: 19, ringMax: 26, hpPerMin: 0.12, touchCd: 0.9,
     sepPad: 0.12, sepForce: 4,  // monsters keep (rad + rad + sepPad) apart so packs stay readable
     slowTerrain: 0.55,        // speed multiplier on bog tiles (wizard + monsters); water can't be entered at all
@@ -338,13 +339,13 @@ const WEAK_TO = { fire: 'water', water: 'earth', earth: 'air', air: 'fire' };
   // new tree nodes: the Spawner tiers (Tier 3 costs a Warden Core), one node per pair / triple creature, and the Loot Magnet track
   const at = CFG.tree.findIndex(n => n.id === 'heavy');
   CFG.tree.splice(at, 0,
-    { id: 'spawn2', col: 0, icon: 'b:spawner2', name: 'Spawner II', xp: 50, req: ['forge'], pay: { air: 8, water: 8, fire: 8 }, desc: 'Unlock the Tier 2 Creature Spawner: two-element creatures (each its own spell-style node).' },
-    { id: 'spawn3', col: 0, icon: 'b:spawner3', name: 'Spawner III', xp: 105, req: ['spawn2'], pay: { air: 10, water: 10, fire: 10, earth: 10 }, core: 1, desc: 'Unlock the Tier 3 Creature Spawner: three-element creatures. Needs a Warden Core from a Stronghold.' });
+    { id: 'spawn2', col: 3, icon: 'b:spawner2', name: 'Spawner II', xp: 50, req: ['forge'], pay: { air: 8, water: 8, fire: 8 }, desc: 'Unlock the Tier 2 Creature Spawner: two-element creatures (each its own spell-style node).' },
+    { id: 'spawn3', col: 3, icon: 'b:spawner3', name: 'Spawner III', xp: 105, req: ['spawn2'], pay: { air: 10, water: 10, fire: 10, earth: 10 }, core: 1, desc: 'Unlock the Tier 3 Creature Spawner: three-element creatures. Needs a Warden Core from a Stronghold.' });
   const spellOf = { phoenix: 'flamethrower', thunderhead: 'tempest', lavagolem: 'magma', shambler: 'mud', dragon: 'meteor', leviathan: 'thunder', titan: 'geyser' };
   for (const id in spellOf) {
     const c = CFG.creatures[id], pay = {};
     for (const k in c.cost) pay[k] = c.tier === 2 ? 6 : 8;
-    CFG.tree.push({ id: 'cr_' + id, col: 1, icon: 'egg_' + id, name: c.name, xp: c.tier === 2 ? 30 : 60, req: [spellOf[id], 'spawn' + c.tier], pay,
+    CFG.tree.push({ id: 'cr_' + id, col: 3, icon: 'egg_' + id, name: c.name, xp: c.tier === 2 ? 30 : 60, req: [spellOf[id], 'spawn' + c.tier], pay,
       desc: 'Hatch the ' + c.name + ' (' + c.order.map(k => k[0].toUpperCase() + k.slice(1)).join(' + ') + '): needs its spell and Spawner tier.' });
   }
   CFG.tree.push({ id: 'magnet', col: 2, icon: 'ic_magnet', name: 'Loot Magnet', per: '+0.35 tiles of pickup range',

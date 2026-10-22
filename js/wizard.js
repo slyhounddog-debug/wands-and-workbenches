@@ -547,7 +547,8 @@ WZ.spawn = function () {
   if (!spot) return;
   const dist = Math.hypot(w.x - SPAWN.x, w.y - SPAWN.y);
   const pElite = w.time < E.minTime ? 0 : Math.min(E.max, E.base + E.perMin * w.time / 60 + E.perDist * dist / 100);
-  const e = WZ.makeEnemy(WZ.pickType(spot[0], spot[1]), spot[0], spot[1], Math.random() < pElite);
+  const e = WZ.makeEnemy(WZ.pickType(spot[0], spot[1]), spot[0], spot[1], Math.random() < pElite * cfg.wildElite);
+  e.wild = true; e.hp = e.maxHp = e.maxHp * cfg.wildHp; e.dmg *= cfg.wildDmg;
   if (w.bloom && Math.random() < w.bloom) WZ.mutate(e);   // Mutation Bloom: wild spawns mutate a lot
 };
 // first sighting of a biome foe or an elite: tell both players what it's weak to

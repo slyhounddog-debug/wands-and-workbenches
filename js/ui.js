@@ -155,6 +155,7 @@ UI.updateHud = function (dt) {
   $('facNote').classList.toggle('hidden', !tr || tl);
   UI.updateQuest();
   UI.updateEvent();
+  UI.updateEggQ();
   UI.updatePins(dt);
   UI.updateHotbar();
   UI.updateDebug(dt);
@@ -203,6 +204,17 @@ UI.updateEvent = function () {
   el.classList.toggle('soon', !info.active && info.left <= CFG.events.warn[2]);
   el.innerHTML = UI.img(icon, 24) + '<div class="eb"><div class="eh">CYCLE ' + p.cycle + (info.active ? ' EVENT' : ' NEXT EVENT') + '</div><div class="en">' + WZ.evName(p) + '</div></div>' +
     '<div class="ef">' + (p.id === 'bloom' ? Object.keys(CFG.mutations).map(k => UI.img(CFG.mutations[k].ic, 20)) : p.el.map(k => UI.img(k, 20))).join('') + '</div><div class="et">' + state + '</div>';
+};
+
+// creatures waiting for room at the Spell Portal (the crafted-creature cap is full): next to drop first, up to 12 icons then a count
+UI.updateEggQ = function () {
+  const el = $('eggQ'), q = G.fac.eggQ, sig = q.join(',');
+  el.classList.toggle('hidden', !q.length);
+  if (cache.eq === sig) return;
+  cache.eq = sig;
+  if (!q.length) return;
+  const show = q.slice(0, 12).map(k => UI.img(k, 24)).join('');
+  el.innerHTML = UI.img('ic_portal', 20) + show + (q.length > 12 ? '<span class="qn">+' + (q.length - 12) + '</span>' : '') ;
 };
 
 // goal pointers that live in the DOM: a blinking hotbar slot and/or blinking skill-tree buttons
@@ -397,7 +409,7 @@ UI.openTree = function (side, open) {
 };
 UI.renderTree = function (side) {
   const el = $(side === 'L' ? 'treeL' : 'treeR');
-  const cols = [['ic_factory', 'FACTORY'], ['ic_new', 'SPELLS'], ['ic_up', 'UPGRADES']];
+  const cols = [['ic_factory', 'FACTORY'], ['ic_new', 'SPELLS'], ['ic_up', 'UPGRADES'], ['egg_zephyr', 'CREATURES']];
   const bank = SPELL_KINDS.filter(k => G.bank[k] > 0).map(k => '<span class="bk">' + UI.img(k, 16) + G.bank[k] + '</span>').join('') || '<span class="dim">empty: send spells into the Skill Portal</span>';
   let h = '<div class="treeHead"><h2>' + UI.img(side === 'L' ? 'ic_wrench' : 'ic_hat', 32) + 'SKILL TREE</h2><div class="xpbig">' + UI.img('ic_xp', 24) + Math.floor(G.xp) + '</div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>';
   const un = UI.undoKind();

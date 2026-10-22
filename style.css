@@ -190,6 +190,9 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 
 /* toasts */
 .toasts { position: absolute; top: 160px; width: 520px; display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: none; z-index: 40; }
+#eggQ { position: absolute; left: 816px; bottom: 16px; max-width: 360px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 8px 10px; background: #2a1c48; z-index: 19; }
+#eggQ .qn { font: 10px var(--display); color: var(--gold); margin-left: 4px; }
+#eggQ .ico:first-child { filter: drop-shadow(0 0 3px #7fffe0); }
 #toastL { left: 140px; }
 #toastR { left: 940px; }
 .toast { display: flex; align-items: center; gap: 10px; padding: 8px 14px; font-size: 19px; font-weight: 700; animation: tin .3s steps(3); max-width: 520px; }
@@ -214,7 +217,7 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 .bankRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 12px; padding: 8px 10px; background: var(--panel-lo); font: 10px var(--display); }
 .bankRow .lbl { color: var(--gold); margin-right: 4px; }
 .bankRow .bk { display: inline-flex; align-items: center; gap: 4px; }
-.cols { display: grid; grid-template-columns: 1fr 1.05fr 1.15fr; gap: 12px; margin-top: 14px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr 1.1fr 1fr; gap: 8px; margin-top: 14px; }
 .col h4 { margin: 0 0 10px; font: 10px var(--display); color: var(--gold); display: flex; gap: 6px; align-items: center; }
 .node { display: flex; gap: 8px; align-items: flex-start; background: var(--panel); padding: 7px 8px; margin-bottom: 10px; cursor: pointer;
   box-shadow: 0 -2px 0 0 var(--ink), 0 2px 0 0 var(--ink), -2px 0 0 0 var(--ink), 2px 0 0 0 var(--ink), inset 0 -3px 0 0 var(--panel-lo); }

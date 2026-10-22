@@ -35,7 +35,7 @@ WZ.killGems = function (e) {
   if (e.mini) return 0;
   if (e.elite) return CFG.elite.gems;
   const g = (CFG.enemies[e.type] || {}).gem || [0, 0];
-  return WZ.gemCount(g[0], g[1]);
+  return WZ.gemCount(g[0], g[1] * (e.wild ? CFG.world.wildGem : 1));
 };
 
 // ---------- hostile effects shared by the creatures ----------

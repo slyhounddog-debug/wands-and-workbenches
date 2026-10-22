@@ -7,7 +7,7 @@ const AU = (() => {
   // audio hierarchy: important cues go to hiG and duck everything on loG (hum, pickups, clicks) and the music;
   // midG is everything else. cur = where tone() / noise() send by default while a sfx is being built
   let hiG = null, midG = null, loG = null, duckG = null, cur = null;
-  const HI = new Set(['deliver', 'portalDrop', 'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'weak', 'warn', 'heart', 'hurt', 'die', 'roar', 'slam', 'volley', 'alert', 'dodge', 'victory', 'evwarn']);
+  const HI = new Set(['deliver', 'portalDrop', 'incoming', 'incoming_big', 'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'weak', 'warn', 'heart', 'hurt', 'die', 'roar', 'slam', 'volley', 'alert', 'dodge', 'victory', 'evwarn']);
   const LO = new Set(['pickup', 'drop', 'blip', 'crank', 'gem', 'place', 'throw', 'thud', 'dig', 'rustle', 'step_b', 'step_w', 'menu_open', 'menu_close', 'tab', 'craft', 'bank', 'shard',
     'st_work', 'st_missing', 'st_starve', 'st_jam', 'st_full', 'st_off']);
   const reps = {};   // name -> { t, n }: rapid repeats of a low sound get quieter
@@ -194,6 +194,8 @@ const AU = (() => {
       case 'powerup': [0, 4, 7, 12, 16].forEach((s, i) => tone(N(s + 12), 0.12, 'sine', 0.1, 0, i * 0.04)); break;
       case 'bank': tone(990, 0.06, 'square', 0.05); tone(1320, 0.1, 'square', 0.05, 0, 0.05); break;
       case 'portalDrop': tone(1400, 0.4, 'sine', 0.07, 0.4); break;
+      case 'incoming': tone(N(12), 0.32, 'triangle', 0.07, 2); tone(N(19), 0.2, 'sine', 0.05, 1.5, 0.08); break;   // a spell's drop-in starts over the Wizard
+      case 'incoming_big': tone(N(0), 0.5, 'sawtooth', 0.05, 2.5); tone(N(12), 0.4, 'triangle', 0.07, 2, 0.1); noise(0.3, 0.04, 2000, 0.05); break;
       case 'die': [7, 3, 0, -5].forEach((s, i) => tone(N(s), 0.3, 'triangle', 0.14, 0, i * 0.16)); break;
       case 'alert': tone(880, 0.08, 'square', 0.06); tone(660, 0.12, 'square', 0.06, 0, 0.1); break;
       case 'chest': [0, 4, 7, 11, 14].forEach((s, i) => tone(N(s + 12), 0.16, 'square', 0.06, 0, i * 0.05)); break;

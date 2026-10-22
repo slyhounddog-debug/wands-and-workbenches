@@ -406,7 +406,7 @@ FA.deliver = function (kind) {
       G.flags.combo = true;
       if (CFG.recipes[kind] && Object.keys(CFG.recipes[kind].in).length === 3) G.flags.triple = true;
     }
-    WZ.cast(spell);
+    WZ.incoming(spell);
   }
   AU.sfx('deliver');
 };

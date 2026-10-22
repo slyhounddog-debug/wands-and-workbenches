@@ -396,19 +396,29 @@ WZ.chain = function (n, dmg, col, range) {
 };
 
 // ---------- spells ----------
+// a delivered spell first plays its own drop-in over the Wizard (CFG.spells[s].drop seconds, drawn by R.drawDrop),
+// so whoever plays him sees and hears it coming even without watching the Spell Portal; then it casts
+WZ.incoming = function (spell) {
+  const w = G.w;
+  if (!w || w.dead) return;
+  const combo = BASICS.indexOf(spell) < 0, dur = CFG.spells[spell].drop || 0.5;
+  w.fx_.push({ type: 'drop', spell, x: w.x, y: w.y, col: SPELL_COL[spell] || '#fff', t: 0, dur, big: combo, seed: Math.random() * 6 });
+  AU.sfx(combo ? 'incoming_big' : 'incoming');
+  WZ.later(dur, () => WZ.cast(spell));
+};
 WZ.cast = function (spell) {
   const w = G.w;
   if (!w || w.dead) return;
   const px = w.x, py = w.y, combo = BASICS.indexOf(spell) < 0;
   const ctx = { spell, el: SPELL_EL[spell] || [], hits: 0, kills: 0, weak: 0 };
-  // a little portal opens over the Wizard's head and the spell drops in
-  w.fx_.push({ type: 'arrive', x: px, y: py, col: SPELL_COL[spell] || '#fff', t: 0, dur: combo ? 0.8 : 0.55, big: combo });
+  // it bursts at his feet, and the Spell Portal back in the factory feels it (harder for higher tiers)
+  w.fx_.push({ type: 'arrive', x: px, y: py, col: SPELL_COL[spell] || '#fff', t: 0, dur: combo ? 0.4 : 0.3, big: combo });
   if (combo) {
     w.shake = Math.max(w.shake, 0.25);
     w.fx_.push({ type: 'title', x: px, y: py, text: SPELLS[spell].toUpperCase() + '!', col: SPELL_COL[spell], t: 0, dur: 1.2 });
   }
-  // when it bursts at his feet, the Spell Portal back in the factory feels it (harder for higher tiers)
-  WZ.later((combo ? 0.8 : 0.55) * 0.6, () => { FA.thump(Math.max(1, ctx.el.length), SPELL_COL[spell] || '#ffffff'); ctx.el.forEach(el => WZ.epuff(G.w.x, G.w.y, el, combo ? 6 : 8)); });
+  FA.thump(Math.max(1, ctx.el.length), SPELL_COL[spell] || '#ffffff');
+  ctx.el.forEach(el => WZ.epuff(px, py, el, combo ? 6 : 8));
   WZ.ctx = ctx;
   const cone = (n, spread, f) => {
     const a = WZ.aim(), base = Math.atan2(a[1], a[0]);

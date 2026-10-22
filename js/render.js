@@ -901,7 +901,7 @@ R.drawWorld = function (main, dt) {
     }
   }
   for (const z of w.zones) R.drawZone(ctx, v, z);
-  for (const f of w.fx_) if (f.type === 'ring' || f.type === 'warn') R.drawFx(ctx, v, f);
+  for (const f of w.fx_) if (f.type === 'ring' || f.type === 'warn') R.drawFx(ctx, v, f); else if (f.type === 'drop') R.drawDrop(ctx, v, f, true);
 
   for (const dr of w.drops) objs.push({ d: dr.x + dr.y, t: 'drop', o: dr });
   for (const pk of w.pickups) objs.push({ d: pk.x + pk.y, t: 'pick', o: pk });
@@ -1258,32 +1258,17 @@ R.drawFx = function (ctx, v, f) {
     ctx.fillRect(snap(s[0] - wdt / 2), s[1] - 500, wdt, 500);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(s[0] - 3), s[1] - 500, 6, 500);
     ctx.globalAlpha = 1;
-  } else if (f.type === 'arrive') {
-    // a mini portal tears open over the Wizard's head, the spell drops through it, then bursts at his feet
-    const w = G.w, q = R.toScreen(v, w.x, w.y), top = q[1] - (f.big ? 126 : 105), k = Math.min(1, fr / 0.45);
-    if (fr < 0.6) {
-      const rw = Math.round((f.big ? 42 : 30) * Math.min(1, k * 2.5) * (fr > 0.45 ? (0.6 - fr) / 0.15 : 1) / 3) * 3;
-      if (rw > 0) {
-        ctx.fillStyle = '#2a1050'; diamond(ctx, q[0], top, rw, rw / 2.5); ctx.fill();
-        ctx.strokeStyle = f.col; ctx.lineWidth = 6; ctx.stroke();
-      }
-      if (k > 0.35) {
-        const by = top + (q[1] - 40 - top) * Math.min(1, (k - 0.35) / 0.5);
-        ctx.fillStyle = f.col; ctx.fillRect(snap(q[0] - 6), Math.round(top / 3) * 3, 12, Math.round((by - top) / 3) * 3);
-        ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(q[0] - 3), Math.round(top / 3) * 3, 6, Math.round((by - top) / 3) * 3);
-        ctx.fillStyle = f.col; ctx.fillRect(snap(q[0] - 12), Math.round((by - 12) / 3) * 3, 24, 24);
-      }
-    } else {
-      const b = (fr - 0.6) / 0.4;
-      ctx.globalAlpha = 1 - b; ctx.strokeStyle = f.col; ctx.lineWidth = 9;
-      diamond(ctx, q[0], q[1], (1 + b * (f.big ? 3 : 2)) * v.hw, (1 + b * (f.big ? 3 : 2)) * v.hh); ctx.stroke();
-      ctx.fillStyle = f.col;
-      for (let i = 0; i < 6; i++) {
-        const a = i * 1.047 + b * 4, r = 12 + b * 40;
-        ctx.fillRect(snap(q[0] + Math.cos(a) * r - 4), Math.round((q[1] - 30 + Math.sin(a) * r * 0.5 - b * 30) / 3) * 3, 9, 9);
-      }
-      ctx.globalAlpha = 1;
+  } else if (f.type === 'drop') R.drawDrop(ctx, v, f, false);
+  else if (f.type === 'arrive') {   // the spell's drop-in landed: it bursts at the Wizard's feet
+    const w = G.w, q = R.toScreenLocked(v, w.x, w.y);
+    ctx.globalAlpha = 1 - fr; ctx.strokeStyle = f.col; ctx.lineWidth = 9;
+    diamond(ctx, q[0], q[1], (1 + fr * (f.big ? 3 : 2)) * v.hw, (1 + fr * (f.big ? 3 : 2)) * v.hh); ctx.stroke();
+    ctx.fillStyle = f.col;
+    for (let i = 0; i < 6; i++) {
+      const a = i * 1.047 + fr * 4, r = 12 + fr * 40;
+      ctx.fillRect(snap(q[0] + Math.cos(a) * r - 4), Math.round((q[1] - 30 + Math.sin(a) * r * 0.5 - fr * 30) / 3) * 3, 9, 9);
     }
+    ctx.globalAlpha = 1;
   } else if (f.type === 'hatch') {   // a portal tears open above the landing spot and the creature drops out of it
     const top = s[1] - 300, open = f.t < 0.2 ? f.t / 0.2 : Math.max(0, Math.min(1, (f.dur - f.t) / 0.5)), rw = Math.round(42 * open / 3) * 3;
     if (rw > 0) {
@@ -1299,5 +1284,254 @@ R.drawFx = function (ctx, v, f) {
     ctx.globalAlpha = 1 - Math.max(0, fr - 0.6) / 0.4;
     txt(ctx, f.text, q[0], q[1] + 66 - Math.floor(fr * 6) * 3, 20, f.col, 'center', 'd');   // under his feet, clear of the toasts
     ctx.globalAlpha = 1;
+  }
+};
+// a delivered spell on its way in (WZ.incoming): every spell has its own themed drop-in out of a little portal over
+// the Wizard, plus a ring closing in on his feet that blinks just before it casts, so he can read the timing.
+// Drawn twice: ground = true under the bodies (rings, shadows, puddles), then the falling part over them.
+R.drawDrop = function (ctx, v, f, ground) {
+  const w = G.w;
+  if (w.dead) return;
+  const q = R.toScreenLocked(v, w.x, w.y), cx = q[0], fr = Math.min(1, f.t / f.dur), t = f.t, sd = f.seed || 0;
+  const Y = y => Math.round(y / 3) * 3, c01 = x => Math.max(0, Math.min(1, x)), ease = p => p * p;
+  const blk = (x, y, sz, col) => { sz = Math.round(sz / 3) * 3; if (sz <= 0) return; ctx.fillStyle = col; ctx.fillRect(snap(x - sz / 2), Y(y - sz / 2), sz, sz); };
+  const top = q[1] - (f.big ? 126 : 105), land = q[1] - 33, R0 = f.big ? 42 : 30;
+  const open = Math.min(1, fr / 0.18) * (fr > 0.85 ? (1 - fr) / 0.15 : 1);
+  const portal = (y, rw, rim, core) => {
+    rw = Math.round(rw * open / 3) * 3;
+    if (rw <= 0) return;
+    ctx.fillStyle = core || '#2a1050'; diamond(ctx, cx, y, rw, rw / 2.5); ctx.fill();
+    ctx.strokeStyle = rim || f.col; ctx.lineWidth = 6; ctx.stroke();
+  };
+  const flat = (r, col, a) => { ctx.globalAlpha = a; ctx.fillStyle = col; diamond(ctx, cx, q[1], r * v.hw * 1.414, r * v.hh * 1.414); ctx.fill(); ctx.globalAlpha = 1; };
+  if (ground) {
+    // the shared telegraph: a dashed ring closing in on his feet, blinking fast at the end
+    const rr = 0.6 + (1 - fr) * 1.4;
+    if (fr < 0.7 || Math.floor(t * 20) % 2) {
+      ctx.globalAlpha = 0.5 + fr * 0.5; ctx.strokeStyle = f.col; ctx.lineWidth = 6; ctx.setLineDash([12, 9]); ctx.lineDashOffset = -Math.floor(t * 12) * 3;
+      diamond(ctx, cx, q[1], rr * v.hw * 1.414, rr * v.hh * 1.414); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    // aimed spells: chevrons light up along the way they'll fly
+    if (['fireball', 'boulder', 'magma', 'spray', 'flamethrower'].indexOf(f.spell) >= 0) {
+      const a = WZ.aim(), dx = (a[0] - a[1]) * v.hw, dy = (a[0] + a[1]) * v.hh;
+      for (let i = 1; i <= 3; i++) {
+        ctx.globalAlpha = Math.floor(t * 10) % 3 === i - 1 ? 1 : 0.4;
+        const x = cx + dx * (0.9 + i * 0.6), y = q[1] + dy * (0.9 + i * 0.6);
+        blk(x, y, 9, f.col); blk(x + dx * 0.25, y + dy * 0.25, 6, f.col);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+  switch (f.spell) {
+    case 'gust':   // wind streaks spiral down out of the portal and wrap round him
+      if (ground) break;
+      portal(top, R0);
+      for (let i = 0; i < 10; i++) {
+        const p = c01((fr - 0.12 - i * 0.045) / 0.45);
+        if (p <= 0 || p >= 1) continue;
+        const a = i * 2.4 + p * 9 + sd, r = 33 * (1 - p * 0.3), x = cx + Math.cos(a) * r, y = top + (land - top) * p + Math.sin(a) * r * 0.3;
+        ctx.globalAlpha = 1 - p * 0.5; ctx.fillStyle = i % 2 ? '#ffffff' : f.col;
+        ctx.fillRect(snap(x - 9), Y(y), 18, 3); ctx.fillRect(snap(x + (Math.sin(a) > 0 ? 6 : -12)), Y(y - 3), 6, 3);
+      }
+      ctx.globalAlpha = 1;
+      break;
+    case 'fireball': {   // a ball of fire drops through, trailing flame
+      if (ground) { flat(0.5 + fr * 0.4, '#ff7a30', fr * 0.3); break; }
+      portal(top, R0);
+      if (fr < 0.2) break;
+      const p = ease(c01((fr - 0.2) / 0.8)), y = top + (land - top) * p, FL = ['#fff3a0', '#ffc850', '#ff7a30', '#c83a10'];
+      for (let i = 4; i >= 1; i--) blk(cx + (Math.floor(t * 30 + i) % 2 ? 3 : -3), y - i * 12 * (0.4 + p), 18 - i * 3, FL[i - 1]);
+      blk(cx, y, 24, '#ff7a30'); blk(cx, y + 3, 12, '#fff3a0');
+      break;
+    }
+    case 'spray':   // droplets rain down in columns and pool at his feet
+      if (ground) { flat(0.3 + fr * 0.6, f.col, 0.35); break; }
+      portal(top, R0);
+      for (let i = 0; i < 10; i++) {
+        const p = ease(c01((fr - 0.15 - (i % 5) * 0.06 - (i > 4 ? 0.25 : 0)) / 0.35));
+        if (p <= 0 || p >= 1) continue;
+        const x = cx + ((i * 3) % 5 - 2) * 12, y = top + (q[1] - 9 - top) * p;
+        ctx.fillStyle = f.col; ctx.fillRect(snap(x - 3), Y(y - 6), 6, 3); ctx.fillRect(snap(x - 6), Y(y - 3), 12, 9);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(x - 3), Y(y), 3, 3);
+      }
+      break;
+    case 'boulder': {   // a rock tumbles out, its shadow growing under him
+      const p = ease(c01((fr - 0.25) / 0.75));
+      if (ground) { flat(0.3 + p * 0.6, '#000000', 0.15 + p * 0.25); break; }
+      portal(top, R0 + 6);
+      if (fr < 0.25) break;
+      const y = top + (land - top) * p, fz = Math.floor(t * 14) % 2;
+      ctx.fillStyle = '#5a4026'; ctx.fillRect(snap(cx - 15), Y(y - 12), 30, 24); ctx.fillRect(snap(cx - 12), Y(y - 15), 24, 30);
+      ctx.fillStyle = '#b58a4c'; ctx.fillRect(snap(cx - 12), Y(y - 9), 24, 18); ctx.fillRect(snap(cx - 9), Y(y - 12), 18, 24);
+      ctx.fillStyle = '#8a6a3c'; ctx.fillRect(snap(cx + (fz ? 0 : -9)), Y(y + (fz ? 0 : -6)), 9, 6);   // tumbling: the facets flip
+      ctx.fillStyle = '#e0c088'; ctx.fillRect(snap(cx + (fz ? -9 : 3)), Y(y + (fz ? -9 : 3)), 6, 3);
+      for (let i = 0; i < 3; i++) blk(cx + (i - 1) * 12 + (fz ? 3 : -3), y - 24 - i * 9 - p * 12, 6, '#8a6a3c');   // grit shaken loose
+      break;
+    }
+    case 'flamethrower': {   // the portal pours a widening, flickering column of flame
+      if (ground) { if (fr > 0.5) flat(0.7, '#ff9a2b', 0.2 + (Math.floor(t * 20) % 2) * 0.1); break; }
+      portal(top, R0);
+      const bot = top + (q[1] - 12 - top) * c01((fr - 0.15) / 0.45), FL = ['#fff3a0', '#ffc850', '#ff9a2b', '#e0481a'];
+      for (let y = top + 6, j = 0; y < bot; y += 9, j++) {
+        const wd = 6 + (y - top) * 0.25, jit = Math.sin(t * 40 + j * 1.7 + sd) * 6;
+        ctx.fillStyle = FL[(j + Math.floor(t * 20)) % 4]; ctx.fillRect(snap(cx - wd / 2 + jit), Y(y), Math.round(wd / 3) * 3, 9);
+      }
+      break;
+    }
+    case 'steam':   // puffs billow down and gather into a cloud round him
+      if (ground) break;
+      portal(top, R0, '#c8ccd8');
+      for (let i = 0; i < 8; i++) {
+        const p = c01((fr - 0.12 - i * 0.05) / 0.5);
+        if (p <= 0) continue;
+        const a = i * 2.3 + sd, x = cx + Math.cos(a) * p * 36, y = top + (q[1] - 24 - top) * Math.sqrt(p) + Math.sin(a) * p * 9, sz = 12 + p * 15;
+        ctx.globalAlpha = 0.85 - p * 0.35;
+        blk(x, y, sz, i % 3 ? '#f4f4f8' : '#c8ccd8'); blk(x + sz * 0.4, y - sz * 0.3, sz * 0.66, '#ffffff');
+      }
+      ctx.globalAlpha = 1;
+      break;
+    case 'sandstorm': {   // a sand funnel twists down from the portal, wide at the top, narrow at his feet
+      if (ground) { flat(0.4 + fr * 0.5, f.col, 0.25); break; }
+      portal(top, R0, '#b08a40');
+      const bot = top + (q[1] - 6 - top) * c01((fr - 0.1) / 0.6);
+      for (let L = 0; L < 9; L++) {
+        const y = top + 9 + L * 11, r = 36 - L * 3.5;
+        if (y > bot) break;
+        for (let g = 0; g < 3; g++) {
+          const a = t * 14 + L * 0.9 + g * 2.09 + sd;
+          ctx.globalAlpha = Math.sin(a) > 0 ? 1 : 0.5;   // the back of the funnel is fainter
+          blk(cx + Math.cos(a) * r, y + Math.sin(a) * r * 0.25, 6, g ? '#d9b46a' : '#8a6a3c');
+        }
+      }
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case 'magma': {   // a glob of molten rock oozes out on a stretching neck, drips run ahead, then it drops
+      if (ground) { flat(0.4 + fr * 0.5, '#ff4a1a', 0.15 + fr * 0.2 + (Math.floor(t * 12) % 2) * 0.08); break; }
+      portal(top, R0, '#ff4a1a', '#3a0a08');
+      if (fr < 0.15) break;
+      const ooze = c01((fr - 0.15) / 0.35), p = ease(c01((fr - 0.5) / 0.5));
+      const y = fr < 0.5 ? top + 6 + ooze * 15 : top + 21 + (land - top - 21) * p, sz = fr < 0.5 ? 9 + Math.round(ooze * 4) * 3 : 21;
+      if (fr < 0.5) { ctx.fillStyle = '#c83a10'; ctx.fillRect(snap(cx - 6), Y(top), 12, Y(y - top)); }
+      for (let i = 0; i < 3; i++) { const d = c01(fr * 2.2 - 0.6 - i * 0.3); if (d > 0 && d < 1) blk(cx + (i - 1) * 9, top + 9 + (land - top) * ease(d), 6, i % 2 ? '#ffc850' : '#ff4a1a'); }
+      blk(cx, y, sz + 6, '#3a0a08'); blk(cx, y, sz, '#ff4a1a'); blk(cx - 3, y - 3, Math.max(3, sz - 12), '#ffc850');
+      break;
+    }
+    case 'tempest': {   // a storm cloud gathers over the portal, slanting rain, lightning flickering inside
+      if (ground) break;
+      portal(top, R0, '#9aa8d8');
+      const grow = c01(fr / 0.3);
+      if (fr > 0.15) for (let i = 0; i < 12; i++) {
+        const p = (t * 2.6 + i * 0.37 + sd) % 1, x = cx + ((i * 7) % 11 - 5) * 7 - p * 15, y = top + 6 + (q[1] - 12 - top) * p;
+        ctx.fillStyle = '#bfe9ff'; ctx.fillRect(snap(x), Y(y), 3, 9);
+      }
+      for (let i = 0; i < 5; i++) blk(cx + (i - 2) * 15 * grow, top - 6 + Math.sin(i * 1.3 + sd + t * 3) * 3 - (i % 2) * 9, (15 + (i % 2) * 6) * grow, i % 2 ? '#7a84a8' : '#5a6488');
+      if (fr > 0.55 && Math.floor(t * 25) % 3 === 0) {
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.beginPath();
+        ctx.moveTo(cx - 9, top - 6); ctx.lineTo(cx + 3, top + 9); ctx.lineTo(cx - 6, top + 18); ctx.lineTo(cx + 6, top + 33); ctx.stroke();
+      }
+      break;
+    }
+    case 'mud': {   // gloopy blobs arc out and splat round his feet; the target gets marked
+      const spots = [];
+      for (let i = 0; i < 4; i++) {
+        const p = c01((fr - 0.15 - i * 0.12) / 0.45), a = i * 1.571 + sd + 0.8, ex = Math.cos(a) * 1.1, ey = Math.sin(a) * 1.1;
+        spots.push([p, cx + (ex - ey) * v.hw * p, q[1] + (ex + ey) * v.hh * p]);
+      }
+      if (ground) {
+        ctx.fillStyle = '#6e4a2a';
+        for (const s of spots) if (s[0] >= 1) { diamond(ctx, s[1], s[2], 18, 9); ctx.fill(); }
+        const e = WZ.nearest(w.x, w.y, CFG.spells.mud.range);
+        if (e && Math.floor(t * 12) % 2) {
+          const p = R.toScreen(v, e.x, e.y);
+          ctx.strokeStyle = f.col; ctx.lineWidth = 6; ctx.setLineDash([9, 6]); diamond(ctx, p[0], p[1], 1.2 * v.hw, 1.2 * v.hh); ctx.stroke(); ctx.setLineDash([]);
+        }
+        break;
+      }
+      portal(top, R0, '#8a5a2a');
+      for (const s of spots) if (s[0] > 0 && s[0] < 1) {
+        const y = top + (s[2] - top) * s[0] - Math.sin(s[0] * Math.PI) * 30;
+        blk(s[1], y, 12, '#6e4a2a'); blk(s[1] - 3, y - 3, 6, '#a07a4a');
+      }
+      break;
+    }
+    case 'meteor': {   // a bigger portal glows white-hot, then a burning rock punches through at a slant
+      if (ground) { flat(0.5 + c01((fr - 0.4) / 0.6) * 1.2, '#ff5028', 0.25); break; }
+      const pt = top - 15, heat = c01(fr / 0.4);
+      portal(pt, R0 + 12, '#ff4a1a', '#3a0a08');
+      if (fr < 0.45) { ctx.globalAlpha = heat * 0.6; ctx.fillStyle = '#ffc850'; diamond(ctx, cx, pt, R0 * heat, R0 * heat / 2.5); ctx.fill(); ctx.globalAlpha = 1; }
+      for (let i = 0; i < 4; i++) blk(cx + Math.sin(i * 2.1 + sd) * R0, pt + ((t * 3 + i * 0.25) % 1) * 36, 3, '#ffc850');   // embers off the rim
+      if (fr < 0.4) break;
+      const p = ease(c01((fr - 0.4) / 0.6)), x = cx + (1 - p) * 30, y = pt + (land - pt) * p;
+      for (let i = 1; i < 6; i++) blk(x + i * 9, y - i * 15, 18 - i * 3, i < 3 ? '#ffc850' : '#ff7a30');
+      blk(x, y, 27, '#5a2a14'); blk(x - 3, y - 3, 15, '#ff7a30'); blk(x - 3, y - 6, 6, '#fff3a0');
+      break;
+    }
+    case 'thunder': {   // the portal crackles with sparks, then a jagged bolt cracks down onto him
+      if (ground) { if (fr > 0.7 && Math.floor(t * 30) % 2) flat(0.8, '#fff27a', 0.35); break; }
+      portal(top, R0, '#fff27a', '#2a2050');
+      if (Math.floor(t * 30) % 2) for (let i = 0; i < 3; i++) {
+        const a = sd + i * 2.1 + Math.floor(t * 15), x0 = cx + Math.cos(a) * R0, y0 = top + Math.sin(a) * R0 * 0.4;
+        ctx.strokeStyle = '#fff27a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0, y0);
+        ctx.lineTo(x0 + Math.cos(a) * 9 + 6, y0 + 6); ctx.lineTo(x0 + Math.cos(a) * 18, y0 + 3); ctx.stroke();
+      }
+      for (let i = 0; i < 5; i++) blk(cx + Math.sin(t * 17 + i * 2.7) * (R0 + 9), top + Math.cos(t * 13 + i) * 15, 3, '#ffffff');
+      if (fr > 0.7 && Math.floor(t * 30) % 2) {
+        ctx.beginPath(); ctx.moveTo(cx, top);
+        for (let j = 1; j <= 5; j++) ctx.lineTo(cx + (j < 5 ? (Math.random() - 0.5) * 30 : 0), top + (q[1] - 9 - top) * j / 5);
+        ctx.strokeStyle = '#fff27a'; ctx.lineWidth = 9; ctx.stroke(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke();
+      }
+      break;
+    }
+    case 'blizzard':   // snowflakes swirl down, spreading out, as frost creeps over the ground
+      if (ground) {
+        flat(0.4 + fr * 0.9, '#dff4ff', 0.3);
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < 6; i++) { const a = i * 1.047 + sd; if (fr > 0.2 + i * 0.1) ctx.fillRect(snap(cx + Math.cos(a) * fr * 42), Y(q[1] + Math.sin(a) * fr * 21), 6, 3); }
+        break;
+      }
+      portal(top, R0, '#dff4ff');
+      for (let i = 0; i < 12; i++) {
+        const p = c01((fr - 0.1 - i * 0.04) / 0.45);
+        if (p <= 0 || p >= 1) continue;
+        const a = i * 2.4 + sd + p * 5, r = 9 + p * 45 * ((i % 3) / 3 + 0.4), x = snap(cx + Math.cos(a) * r), y = Y(top + (q[1] - 6 - top) * p + Math.sin(a) * r * 0.3);
+        ctx.fillStyle = i % 2 ? '#ffffff' : '#bfe9ff'; ctx.fillRect(x - 3, y, 9, 3); ctx.fillRect(x, y - 3, 3, 9);
+      }
+      break;
+    case 'geyser': {   // this one opens UNDER him: bubbles rise out of a ground portal, then the water starts to spout
+      if (ground) {
+        const rw = Math.round((R0 + 9) * open / 3) * 3;
+        if (rw > 0) {
+          ctx.fillStyle = '#10204a'; diamond(ctx, cx, q[1], rw, rw / 2); ctx.fill(); ctx.strokeStyle = f.col; ctx.lineWidth = 6; ctx.stroke();
+          ctx.fillStyle = '#7ad0ff'; diamond(ctx, cx, q[1], rw * fr * 0.8, rw * fr * 0.4); ctx.fill();
+        }
+        break;
+      }
+      for (let i = 0; i < 8; i++) {
+        const p = (t * 1.8 + i * 0.13 + sd) % 1, x = cx + Math.sin(i * 2.7 + sd) * 18 * open, y = q[1] - p * 45;
+        if (fr < 0.1) break;
+        ctx.globalAlpha = 1 - p; blk(x, y, 6, f.col); blk(x - 1, y - 1, 3, '#ffffff');
+      }
+      ctx.globalAlpha = 1;
+      if (fr > 0.75) {
+        const h = Math.round((fr - 0.75) / 0.25 * 30 / 3) * 3 + (Math.floor(t * 20) % 2) * 3;
+        ctx.fillStyle = f.col; ctx.fillRect(snap(cx - 9), Y(q[1] - 3 - h), 18, h);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(cx - 3), Y(q[1] - 3 - h), 6, 6);
+      }
+      break;
+    }
+    case 'nova': {   // a big golden portal with turning rays; all four elements spiral in and meet on him
+      if (ground) { flat(0.6 + fr * 1.4, '#ffe36b', 0.12 + fr * 0.15); break; }
+      portal(top, R0 + 6, '#ffe36b', '#3a2a10');
+      for (let i = 0; i < 8; i++) { const a = i * 0.785 + t * 3, r = (R0 + 12 + (i % 2) * 9) * open; blk(cx + Math.cos(a) * r, top + Math.sin(a) * r * 0.4, 6, '#fff6c0'); }
+      const p = c01((fr - 0.1) / 0.8);
+      ELEMS.forEach((el, i) => {
+        const a = i * 1.571 + p * 7 + sd, r = (1 - p) * 60 + 6, x = cx + Math.cos(a) * r, y = top + (land - top) * ease(p) + Math.sin(a) * r * 0.35;
+        ctx.fillStyle = ELEM[el].color; R.elPix(ctx, el, snap(x), Y(y), 6);
+        ctx.globalAlpha = 0.4; R.elPix(ctx, el, snap(cx + Math.cos(a - 0.5) * (r + 9)), Y(y - 12), 3); ctx.globalAlpha = 1;
+      });
+      if (fr > 0.85) { const s = Math.round((fr - 0.85) / 0.15 * 30 / 3) * 3 + 6; ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(cx - s), Y(land - 3), s * 2, 6); ctx.fillRect(snap(cx - 3), Y(land - s), 6, s * 2); }
+      break;
+    }
   }
 };

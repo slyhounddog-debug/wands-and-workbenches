@@ -220,22 +220,23 @@ const CFG = {
   // every number a delivered spell uses (WZ.cast; the skill-tree hover card reads them too).
   // dmg per hit, r radius (tiles), speed (tiles/s), life (s), splash + sr = splash damage + radius,
   // n = projectiles / targets / blasts, slow = speed taken away (0..1) for slowT seconds, t = zone time, dps in zones
+  // drop = seconds of the spell's own drop-in over the Wizard before it casts (the telegraph: he sees it coming)
   spells: {
-    gust:         { r: 6, dmg: 3.6, push: 12.6 },
-    fireball:     { speed: 16, life: 1.6, dmg: 30, splash: 15, sr: 1.6 },
-    spray:        { n: 5, spread: 0.8, speed: 12, life: 0.9, dmg: 8, slow: 0.4, slowT: 2, heal: 2 },
-    boulder:      { speed: 7, life: 2.5, dmg: 45, splash: 22, sr: 2.1 },
-    flamethrower: { n: 8, spread: 0.9, speed: 14, life: 0.75, dmg: 11 },
-    steam:        { r: 5.5, dmg: 25, slow: 0.5, slowT: 2.5 },
-    sandstorm:    { r: 5, t: 3, dps: 14, slow: 0.3 },
-    magma:        { speed: 10, life: 1.2, dmg: 50, splash: 50, sr: 3 },
-    tempest:      { n: 5, dmg: 20, range: 12, slowR: 4, slow: 0.3, slowT: 2 },
-    mud:          { range: 30, r: 4, t: 3, dps: 6, slow: 0.8 },
-    meteor:       { n: 8, gap: 0.22, range: 16, fall: 0.5, r: 2.2, dmg: 40 },
-    thunder:      { n: 10, dmg: 30, range: 14 },
-    blizzard:     { r: 7, t: 4, dps: 16, slow: 0.6 },
-    geyser:       { n: 6, delay: 0.55, gap: 0.08, r: 1.8, dmg: 45 },
-    nova:         { r: 8, dmg: 80, push: 30, slow: 0.5, slowT: 2 },
+    gust:         { drop: 0.45, r: 6, dmg: 3.6, push: 12.6 },
+    fireball:     { drop: 0.55, speed: 16, life: 1.6, dmg: 30, splash: 15, sr: 1.6 },
+    spray:        { drop: 0.5, n: 5, spread: 0.8, speed: 12, life: 0.9, dmg: 8, slow: 0.4, slowT: 2, heal: 2 },
+    boulder:      { drop: 0.6, speed: 7, life: 2.5, dmg: 45, splash: 22, sr: 2.1 },
+    flamethrower: { drop: 0.5, n: 8, spread: 0.9, speed: 14, life: 0.75, dmg: 11 },
+    steam:        { drop: 0.6, r: 5.5, dmg: 25, slow: 0.5, slowT: 2.5 },
+    sandstorm:    { drop: 0.65, r: 5, t: 3, dps: 14, slow: 0.3 },
+    magma:        { drop: 0.7, speed: 10, life: 1.2, dmg: 50, splash: 50, sr: 3 },
+    tempest:      { drop: 0.65, n: 5, dmg: 20, range: 12, slowR: 4, slow: 0.3, slowT: 2 },
+    mud:          { drop: 0.55, range: 30, r: 4, t: 3, dps: 6, slow: 0.8 },
+    meteor:       { drop: 0.8, n: 8, gap: 0.22, range: 16, fall: 0.5, r: 2.2, dmg: 40 },
+    thunder:      { drop: 0.6, n: 10, dmg: 30, range: 14 },
+    blizzard:     { drop: 0.7, r: 7, t: 4, dps: 16, slow: 0.6 },
+    geyser:       { drop: 0.55, n: 6, delay: 0.55, gap: 0.08, r: 1.8, dmg: 45 },
+    nova:         { drop: 0.9, r: 8, dmg: 80, push: 30, slow: 0.5, slowT: 2 },
   },
   // what each upgrade tier is worth
   upgrade: { swift: 0.125, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125, magnet: 0.35 },   // gems: x(1+0.125) per tier on every gem drop chance (cap gemCap); magnet: tiles of extra pickup radius per tier

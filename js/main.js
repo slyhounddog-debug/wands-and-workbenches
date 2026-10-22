@@ -361,6 +361,12 @@ Main.step = function (dt, ctl) {
   }
   if (!frozen) WZ.update(dt, ctl.wix, ctl.wiy, ctl.roll);
   if (!G) return;   // a victory screen button may have gone to the title mid-step
+  // soft footsteps, one stride timer each
+  if (!frozen) {
+    const bd = G.bd, wz = G.w, st = Main.stride || (Main.stride = { b: 0, w: 0 });
+    if (!facHalt && bd.moving) { st.b -= dt; if (st.b <= 0) { st.b = 0.3; AU.sfx('step_b'); } } else st.b = 0.08;
+    if (wz.moving && !wz.dead && !(wz.roll > 0)) { st.w -= dt; if (st.w <= 0) { st.w = 0.27; AU.sfx('step_w'); } } else st.w = 0.08;
+  }
   if (G.w.dead && !G.w.deadHandled) { G.w.deadHandled = true; setTimeout(() => { if (G && G.w.dead) UI.showResults(); }, 900); }
   if (!frozen) { G.stats.time += dt; Main.sample(dt); }
   // the soundtrack follows the game: factory activity, monsters crowding the Wizard, the Chimera
@@ -510,6 +516,7 @@ Main.updateFocus = function () {
 Main.pause = function (on) {
   if (!G) return;
   if (on) UI.closeSplit();
+  if (G.paused !== on) AU.sfx(on ? 'menu_open' : 'menu_close');
   G.paused = on;
   UI.show('pause', on);
   UI.show('pauseMain', true); UI.show('pauseSet', false);

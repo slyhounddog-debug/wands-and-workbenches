@@ -8,7 +8,7 @@ const AU = (() => {
   // midG is everything else. cur = where tone() / noise() send by default while a sfx is being built
   let hiG = null, midG = null, loG = null, duckG = null, cur = null;
   const HI = new Set(['deliver', 'portalDrop', 'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'weak', 'warn', 'heart', 'hurt', 'die', 'roar', 'slam', 'volley', 'alert', 'dodge', 'victory', 'evwarn']);
-  const LO = new Set(['pickup', 'drop', 'blip', 'crank', 'gem', 'place', 'throw', 'thud', 'dig', 'rustle', 'craft', 'bank', 'shard',
+  const LO = new Set(['pickup', 'drop', 'blip', 'crank', 'gem', 'place', 'throw', 'thud', 'dig', 'rustle', 'step_b', 'step_w', 'menu_open', 'menu_close', 'tab', 'craft', 'bank', 'shard',
     'st_work', 'st_missing', 'st_starve', 'st_jam', 'st_full', 'st_off']);
   const reps = {};   // name -> { t, n }: rapid repeats of a low sound get quieter
   function duck(depth) {
@@ -173,6 +173,12 @@ const AU = (() => {
       case 'warn': tone(N(24), 0.07, 'square', 0.06); tone(N(24), 0.07, 'square', 0.06, 0, 0.12); tone(N(24), 0.07, 'square', 0.06, 0, 0.24); break;
       case 'weak': tone(110, 0.5, 'sawtooth', 0.1, 0.6); [0, 7, 12].forEach((s2, i) => tone(N(s2 + 12), 0.2, 'square', 0.06, 0, 0.12 + i * 0.07)); break;
       case 'dodge': tone(1500, 0.07, 'square', 0.04, 1.5); tone(2250, 0.1, 'sine', 0.05, 1.3, 0.05); break;
+      // footsteps (quiet, alternating pitch) and menu sounds
+      case 'step_b': tone(150 + Math.random() * 40, 0.05, 'triangle', 0.05, 0.7); noise(0.04, 0.012, 1800); break;
+      case 'step_w': tone(260 + Math.random() * 60, 0.05, 'sine', 0.035, 0.8); noise(0.05, 0.01, 3000); break;
+      case 'menu_open': tone(N(12), 0.06, 'triangle', 0.05); tone(N(19), 0.08, 'triangle', 0.045, 0, 0.05); break;
+      case 'menu_close': tone(N(19), 0.06, 'triangle', 0.045); tone(N(12), 0.08, 'triangle', 0.04, 0, 0.05); break;
+      case 'tab': tone(N(16), 0.04, 'sine', 0.04); break;
       case 'dig': tone(100 + Math.random() * 50, 0.07, 'square', 0.07, 0.6); noise(0.06, 0.06, 500); break;
       case 'rustle': noise(0.1, 0.07, 3200); tone(900 + Math.random() * 200, 0.04, 'triangle', 0.03); break;
       case 'shrine': [0, 7, 12, 19].forEach((s, i) => tone(N(s + 12), 0.22, 'sine', 0.08, 0, i * 0.06)); break;

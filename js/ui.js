@@ -408,7 +408,8 @@ UI.openTree = function (side, open) {
   UI.treeOpen[side] = open;
   if (was && !open && !UI.treeOpen.L && !UI.treeOpen.R && typeof Main !== 'undefined') Main.treeClosed();
   $(side === 'L' ? 'treeL' : 'treeR').classList.toggle('hidden', !open);
-  if (open) { UI.renderTree(side); UI.help(false); AU.sfx('blip'); }
+  if (was !== open) AU.sfx(open ? 'menu_open' : 'menu_close');
+  if (open) { UI.renderTree(side); UI.help(false); }
   else if (UI.tipNode && UI.tipNode.side === side) UI.showNodeTip(side, null);
 };
 UI.renderTree = function (side) {
@@ -686,6 +687,7 @@ UI.swapRing = function (fr) {
 };
 UI.help = function (on) {
   if (on === undefined) on = $('help').classList.contains('hidden');
+  if (on !== !$('help').classList.contains('hidden')) AU.sfx(on ? 'menu_open' : 'menu_close');
   $('help').classList.toggle('hidden', !on);
 };
 
@@ -826,7 +828,7 @@ UI.howPage = function (tab) {
     body += '<p class="dim">Eggs hatch into creatures when sent through the Spell Portal (never the Skill Portal). Health Potion heals 35, Greater Elixir heals 80, Armor Plate +35 armor, Heavy Plate +70 armor. Each combo spell must be unlocked in the Skill Tree before the Forge can make it.</p>';
   }
   $('menuHow').innerHTML = '<h2>HOW TO PLAY</h2><div class="tabs">' + tabs.map(t => '<button class="tab' + (t === tab ? ' on' : '') + '" data-t="' + t + '">' + t + '</button>').join('') + '</div><div class="howBody">' + body + '</div><button class="big ghost back">BACK</button>';
-  $('menuHow').querySelectorAll('.tab').forEach(b => { b.onclick = () => { AU.sfx('blip'); UI.howPage(b.dataset.t); }; });
+  $('menuHow').querySelectorAll('.tab').forEach(b => { b.onclick = () => { AU.sfx('tab'); UI.howPage(b.dataset.t); }; });
   $('menuHow').querySelector('.back').onclick = () => UI.menuPage('menuMain');
   UI.menuPage('menuHow');
 };
@@ -959,13 +961,13 @@ UI.openSplit = function (b) {
   UI.splitB = b;
   $('splitModal').classList.remove('hidden');
   UI.splitSync();
-  AU.sfx('blip');
+  AU.sfx('menu_open');
 };
 UI.closeSplit = function () {
   if (!UI.splitB) return;
   UI.splitB = null;
   $('splitModal').classList.add('hidden');
-  AU.sfx('blip'); UI.changed();
+  AU.sfx('menu_close'); UI.changed();
 };
 UI.splitSet = function (v) {
   const b = UI.splitB;

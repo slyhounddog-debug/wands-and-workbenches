@@ -848,7 +848,7 @@ const HOWTO = {
     ['Builder: keyboard & mouse', '<kbd>WASD</kbd> walk, <kbd>left-click</kbd> pick up one (hold to repeat; walks there first), <kbd>right-click</kbd> throw along the lead line (hold = rapid), <kbd>E</kbd> use: gather, crank, rotate, switch recipe, <kbd>1</kbd>-<kbd>7</kbd> or wheel: slot, <kbd>Q</kbd> (or wheel over a family slot): next member of the slot, <kbd>R</kbd> rotate, click: place (with a building selected), drag belts, <kbd>B</kbd> demolish, <kbd>Enter</kbd> place in front, <kbd>T</kbd> skill tree (in it: right-click a skill to pin it, <kbd>Q</kbd> takes the last deposit back out), <kbd>Tab</kbd> cycle targets, <kbd>Shift</kbd>+<kbd>right-click</kbd> throw the whole stack, <kbd>H</kbd> controls card, <kbd>F3</kbd> or <kbd>`</kbd> debug numbers.'],
     ['Wizard: keyboard', '<kbd>Arrows</kbd> walk, <kbd>.</kbd> roll-dodge (invulnerable; standing still at a mound, stick pile or bush it digs instead), <kbd>Y</kbd> skill tree.'],
     ['Swap jobs', 'Hold <kbd>X</kbd> (or Start on a pad) for 1.5s. Then arrows + <kbd>.</kbd> use / <kbd>,</kbd> throw drive the Builder, and WASD + <kbd>Space</kbd> roll + clicking on the right half drive the Wizard.'],
-    ['Gamepads', 'Pad 1 = Builder: stick move, A pick up (hold to sweep; with a building selected: place in front; hold with Belt to lay belts), B throw (LT + B: whole stack), X use, right stick cycle targets, X in the tree: undo the last deposit, LB/RB slot, RT next member of a family slot, Back demolish, Y tree. Pad 2 = Wizard: stick move, A roll, Y tree. Hold Start to swap.'],
+    ['Gamepads', 'The Builder pad: stick move, A pick up (hold to sweep; with a building selected: place in front; hold with Belt to lay belts), B throw (LT + B: whole stack), X use, right stick cycle targets, X in the tree: undo the last deposit, LB/RB slot, RT next member of a family slot, Back demolish, Y tree. The Wizard pad: stick move, A roll, Y tree. Hold Start to swap. (Which controller plays which job is chosen on the player screen before each game.)'],
   ],
 };
 UI.howPage = function (tab) {
@@ -886,7 +886,7 @@ UI.howPage = function (tab) {
   UI.menuPage('menuHow');
 };
 UI.buildMenu = function () {
-  $('mContinue').onclick = () => { const s = UI.lastSlot(); if (s) Main.loadGame(s); };
+  $('mContinue').onclick = () => { const s = UI.lastSlot(); if (s) Players.open(() => Main.loadGame(s)); };
   $('mNew').onclick = () => UI.slotPage('new');
   $('mLoad').onclick = () => UI.slotPage('load');
   $('mHow').onclick = () => UI.howPage();
@@ -919,7 +919,7 @@ const CONTROLS = [
     [K('1') + ' - ' + K('7') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, then the building families)'],
     [K('[') + ' ' + K(']'), 'Previous / next hotbar slot'],
     [K('Q') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot)'],
-    [K('R'), 'Rotate what you are about to place (turns the Splitter while its settings are open)'],
+    [K('R'), 'Turn the belt or building under the cursor (in front of you on a pad: X), or the one you are about to place. Turns the Splitter while its settings are open'],
     [K('CLICK') + ' &nbsp;/&nbsp; ' + K('ENTER'), 'Place the selected building / belt (Enter: on the tile in front). Drag to lay belts'],
     [K('B') + ' &nbsp;/&nbsp; ' + K('DELETE'), 'Demolish mode (full refund)'],
     [K('TAB') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Cycle through nearby targets'],
@@ -929,6 +929,12 @@ const CONTROLS = [
     [K('ARROWS'), 'Walk'],
     [K('.'), 'Roll (invulnerable). Standing still at a mound, stick pile or bush: dig. At a shrine: tap on the ring'],
     [K('Y'), 'Wizard Skill Tree'],
+  ]],
+  ['PLAYER SELECT (before each game)', [
+    [K('LEFT') + ' ' + K('RIGHT') + ' &nbsp;or stick', 'Move your controller to the Builder side, the middle (the keyboard then plays any job nobody else has) or the Wizard side'],
+    [K('ENTER') + ' &nbsp;/&nbsp; ' + K('A'), 'Next step; then up / down picks a row and left / right tries a cosmetic on. Enter / A again = ready'],
+    [K('ESC') + ' &nbsp;/&nbsp; ' + K('B'), 'Back'],
+    ['Cosmetics', 'Unlocked by achievements (see the ACHIEVEMENTS button). They never change how the game plays'],
   ]],
   ['BOTH PLAYERS', [
     [K('T') + ' &nbsp;/&nbsp; ' + K('Y'), 'Builder / Wizard Skill Tree (the whole game pauses while one is open)'],
@@ -948,7 +954,7 @@ const CONTROLS = [
     [K('R') + ' &nbsp;/&nbsp; ' + K('E') + ' ' + K('ESC'), 'Turn the Splitter / close (pad X turns, Y flips 180 / 90, A or B closes)'],
     [K('180') + ' ' + K('90'), 'Whether the two sides are opposite (2 axes) or at a right angle (4 corners); TURN steps through every orientation'],
   ]],
-  ['GAMEPAD 1: BUILDER', [
+  ['GAMEPAD: BUILDER', [
     [K('STICK') + ' ' + K('D-PAD'), 'Walk'],
     [K('A'), 'Pick up (hold to sweep). With a building selected: place in front (hold with Belt to lay belts)'],
     [K('B') + ' &nbsp;/&nbsp; ' + K('LT') + ' + ' + K('B'), 'Throw (hold = rapid) / throw the whole stack. Cancels hand-gathering'],
@@ -959,7 +965,7 @@ const CONTROLS = [
     [K('BACK'), 'Demolish mode'],
     [K('Y'), 'Builder Skill Tree (stick / d-pad moves the focus, A buys, RB pins, X undoes, B closes)'],
   ]],
-  ['GAMEPAD 2: WIZARD', [
+  ['GAMEPAD: WIZARD', [
     [K('STICK') + ' ' + K('D-PAD'), 'Walk'],
     [K('A'), 'Roll / dig / shrine tap'],
     [K('Y'), 'Wizard Skill Tree'],
@@ -998,10 +1004,10 @@ UI.slotPage = function (mode) {
     if (mode === 'new') {
       b.innerHTML = slotLabel(i, s) + (s ? '<em>' + UI.img('ic_warn', 16) + 'OVERWRITE</em>' : '<em>START</em>');
       if (s) b.classList.add('warn');
-      b.onclick = () => Main.newGame(i);
+      b.onclick = () => Players.open(() => Main.newGame(i));   // who is playing + their looks first
     } else {
       b.innerHTML = slotLabel(i, s);
-      if (!s || s.old) b.disabled = true; else b.onclick = () => Main.loadGame(i);
+      if (!s || s.old) b.disabled = true; else b.onclick = () => Players.open(() => Main.loadGame(i));
     }
     box.appendChild(b);
   }

@@ -26,7 +26,8 @@ const CFG = {
   builder: { speed: 5.5, accel: 42, friction: 34, radius: 0.24 },
   reach: 1.75, pickRepeat: 0.2,
   tipRadius: 3.5,            // building info panels only show within this many tiles of the Builder (or when hovered)
-  inputBuffer: 0.1,          // pick / use / place / roll presses that can't happen yet keep trying this long
+  portalAlpha: 0.5,          // how solid the Spell / Skill Portals are drawn (they are see-through)
+  inputBuffer: 0.1,         // pick / use / place / roll presses that can't happen yet keep trying this long
   sweepRepeat: 0.07,         // holding pick sweeps up identical nearby items this fast
   throwStackGap: 0.05,       // seconds between items when throwing a whole stack (Shift + right-click / LT + B)
   graceTime: 1,              // after the skill tree closes, the game waits this long ("And...") before resuming

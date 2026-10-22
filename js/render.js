@@ -611,10 +611,12 @@ R.drawPortal = function (ctx, v, t, which) {
   const f = G.fac, p0 = FA.portal(which), skill = which === 'skill';
   const base = R.toScreen(v, p0.x + 0.5, p0.y + 1);
   const a = R.toScreen(v, p0.x, p0.y), b = R.toScreen(v, p0.x + 1, p0.y), c = R.toScreen(v, p0.x + 1, p0.y + 2), d = R.toScreen(v, p0.x, p0.y + 2);
+  ctx.globalAlpha = CFG.portalAlpha;   // the portals are see-through, so the Builder and belts show behind them
   ctx.fillStyle = skill ? '#b0a070' : '#8a8fb0';
   ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.closePath(); ctx.fill();
   ctx.fillStyle = skill ? '#7a6a40' : '#5e6280';
   ctx.beginPath(); ctx.moveTo(d[0], d[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(c[0], c[1] + 16); ctx.lineTo(d[0], d[1] + 16); ctx.fill();
+  ctx.globalAlpha = 1;
   const flash = Math.max(0, skill ? f.skillFlash : f.flash) * 2;
   const cols = skill ? ['#2a6a3a', '#5ad06a', '#c8ffb0', '#ffffff'] : ['#4a2890', '#8a4ad0', '#c890ff', '#ffffff'];
   // while the Chimera is out, the Spell Portal wears its current weakness: a rim in that colour, flashing after a change
@@ -647,10 +649,12 @@ R.drawPortal = function (ctx, v, t, which) {
   if (boss) { ctx.fillStyle = wfl && Math.sin(t * 12) > 0 ? '#ffffff' : weakCol; ctx.beginPath(); ctx.ellipse(0, 0, 1.14, 1.18, 0, 0, 6.283); ctx.fill(); }
   // concentric flat rings (no gradients: chunky 8-bit bands)
   const rs = [1, 0.75, 0.5, 0.25];
+  ctx.globalAlpha = CFG.portalAlpha;
   for (let i = 0; i < 4; i++) {
     ctx.fillStyle = flash > 0 && i === 1 ? f.flashCol : cols[i];
     ctx.beginPath(); ctx.ellipse(0, 0, rs[i] * 0.95, rs[i] * (1 - 0.06 * Math.sin(t * 3 + i)), 0, 0, 6.283); ctx.fill();
   }
+  ctx.globalAlpha = 1;
   ctx.fillStyle = skill ? '#ffd23a' : '#ffffff';
   for (let i = 0; i < 4; i++) { const an = t * 1.5 + i * 1.57; ctx.fillRect(Math.cos(an) * 0.6 - 0.06, Math.sin(an) * 0.6 - 0.06, 0.12, 0.12); }
   ctx.restore();
@@ -668,7 +672,6 @@ R.drawPortal = function (ctx, v, t, which) {
   dspr(ctx, SP[skill ? 'ic_skill' : 'ic_portal'], base[0], base[1] - 160, 4);
   const q = f.portalQ.filter(e => e.which === which).length + (which === 'spell' ? f.eggQ.length : 0);
   if (q) txt(ctx, q + ' queued', base[0], base[1] - 146, 12, '#ffe36b', 'center', 'd');
-  else txt(ctx, FA.rate(which) + '/MIN', base[0], base[1] - 146, 12, FA.rate(which) ? '#bfffbf' : '#a898c8', 'center', 'd');
 };
 
 R.drawPile = function (ctx, v, k, pos) {
@@ -815,7 +818,7 @@ R.drawLock = function (ctx, v, t) {
   if (l.n > 1) { const p = R.toScreen(v, l.thr ? l.x : l.c.x, l.thr ? l.y : l.c.y); R.iprompt(ctx, p[0], p[1] + 44, R.padMode ? 'RS' : 'TAB', ['ic_swap']); }
 };
 // the button label for the Builder's pick (take one item) and use (crank / rotate / switch) actions
-R.key = which => which === 'pick' ? (R.padMode ? 'A' : G.swapped ? '.' : 'LMB') : (R.padMode ? 'X' : G.swapped ? '/' : 'E');
+R.key = which => { const alt = Main.kbShared() && G.swapped; return which === 'pick' ? (R.padMode ? 'A' : alt ? '.' : 'LMB') : (R.padMode ? 'X' : alt ? '/' : 'E'); };
 // f.list: up to two prompts ({t, a, key}); a second prompt over the same target stacks above the first
 R.drawFocus = function (ctx, v, f, t) {
   f.list.forEach((e, i) => {
@@ -1024,7 +1027,7 @@ R.drawEnemy = function (ctx, v, e) {
   if (e.weak && (e.elite || CFG.enemies[e.type].weak)) dspr(ctx, SP['wk_' + e.weak], p[0] + (e.elite ? 30 : 21), top + 3, S);
 };
 // the Wizard's dig / search button: pad 2 A, the roll key otherwise
-R.wkey = () => (IN.pad[1] ? 'A' : G.swapped ? 'SPACE' : '.');
+R.wkey = () => (Main.padW() ? 'A' : !Main.kbShared() || G.swapped ? 'SPACE' : '.');
 // forage spots: a glint says "search me", a bar fills while he mashes, a searched bush stands bare until it regrows
 R.drawForage = function (ctx, v, o) {
   const w = G.w, p = R.toScreen(v, o.x, o.y), S = CFG.WT.S, t = w.t;

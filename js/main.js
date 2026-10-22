@@ -21,7 +21,7 @@ function blankState(slot) {
     credits: { station: 0, charger: 0 },
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
     flags: {}, quest: { B: 0, W: 0 }, qbase: { B: null, W: null }, bankLog: [], pins: { L: null, R: null }, lock: null,
-    hands: null, swapped: false, selected: 'hand', demolish: false, placeDir: 0, paused: false,
+    hands: null, swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
 }
@@ -113,7 +113,16 @@ Main.enter = function () {
   UI.show('victory', false);
   R.fcam.x = G.bd.x; R.fcam.y = G.bd.y; R.wcam.x = G.w.x; R.wcam.y = G.w.y;
   Main.metrics = { t: 0, next: 0, samples: [] };
+  Main.helpFoot();
   AU.music(true); AU.hold(false);
+};
+// the controls card's footer: which controller plays which job
+Main.helpFoot = function () {
+  const c = G.ctl, el = document.querySelector('#help .hfoot');
+  if (!el) return;
+  const pb = c.pb >= 0 ? 'Pad ' + (c.pb + 1) : '', pw = c.pw >= 0 ? 'Pad ' + (c.pw + 1) : '';
+  el.innerHTML = UI.img('ic_pad', 16) + ' ' + (pb ? pb + ' = Builder (A pick up / place, B throw, X use, LB/RB slot, RT next in a family, Back demolish). ' : '') +
+    (pw ? pw + ' = Wizard (A roll). ' : '') + '<kbd>H</kbd> hides this.';
 };
 Main.toTitle = function (noSave) {
   DevBot.set(null);
@@ -138,7 +147,15 @@ function frontTile() {
   const dx = ax ? Math.sign(bd.fx) : 0, dy = ax ? 0 : Math.sign(bd.fy);
   return [Math.floor(bd.x) + dx, Math.floor(bd.y) + dy];
 }
-const useMouseAim = () => G.lastInput === 'mouse' && mouseInFactory() && !G.swapped;
+// who plays what on the keyboard (G.ctl, picked on the player screen): a keyboard that has BOTH jobs is split WASD+mouse / arrows (G.swapped
+// flips them); one that has a single job takes either layout. The mouse belongs to the Builder, or to a Wizard who has the keyboard alone.
+Main.kbShared = () => G.ctl.kbB && G.ctl.kbW;
+Main.mouseB = () => G.ctl.kbB && !(Main.kbShared() && G.swapped);
+Main.mouseW = () => G.ctl.kbW && (!G.ctl.kbB || G.swapped);
+Main.altB = () => G.ctl.kbB && (!G.ctl.kbW || G.swapped);   // the Builder may use the . , / keys
+Main.padB = () => (G.ctl.pb >= 0 ? IN.pad[G.ctl.pb] : null);
+Main.padW = () => (G.ctl.pw >= 0 ? IN.pad[G.ctl.pw] : null);
+const useMouseAim = () => G.lastInput === 'mouse' && mouseInFactory() && Main.mouseB();
 // where a throw would land right now: the cursor with the mouse, otherwise auto-aim along the Builder's facing
 function aimNow() {
   if (useMouseAim()) { const [px, py] = hoverPoint(R.fv); return FA.throwTarget(px, py); }
@@ -153,7 +170,7 @@ function throwAlongAim() {
 
 function handleMouseFactory(dt) {
   const m = IN.mouse;
-  if (!mouseInFactory() || UI.treeOpen.L || UI.treeOpen.R) { if (!m.l) G.drag = null; return; }
+  if (!Main.mouseB() || !mouseInFactory() || UI.treeOpen.L || UI.treeOpen.R) { if (!m.l) G.drag = null; return; }
   const [tx, ty] = hoverTile(R.fv), [px, py] = hoverPoint(R.fv);
   const sel = G.selected, bd = G.bd;
   // right mouse: throw along the lead line (hold = rapid), or cancel the current tool
@@ -200,7 +217,7 @@ function handleMouseFactory(dt) {
 
 function handleMouseWizard() {
   const m = IN.mouse;
-  if (!G.swapped || !m.moved || m.x < CFG.HALF || !m.l || UI.treeOpen.L || UI.treeOpen.R) return;
+  if (!Main.mouseW() || !m.moved || m.x < CFG.HALF || !m.l || UI.treeOpen.L || UI.treeOpen.R) return;
   const [px, py] = hoverPoint(R.wv);
   G.w.target = { x: Math.max(0.5, Math.min(CFG.WW - 0.5, px)), y: Math.max(0.5, Math.min(CFG.WH - 0.5, py)) };
 }
@@ -216,11 +233,22 @@ function placeInFront(quiet) {
   return false;
 }
 
+// the tile R would turn: under the mouse, else in front of the Builder, else the belt / machine the use button is aimed at
+const frozenNow = () => !!(UI.treeOpen.L || UI.treeOpen.R || Main.graceT > 0);
+function rotateTile() {
+  if (G.lastInput === 'mouse' && mouseInFactory()) return hoverTile(R.fv);
+  const f = frontTile(), c = FA.cell(f[0], f[1]);
+  if (c && c.type !== 'portal') return f;
+  const u = G.selected === 'hand' && FA.findTarget('use');
+  return u && (u.kind === 'belt' || u.kind === 'bld') ? [Math.floor(u.x), Math.floor(u.y)] : null;
+}
+
 Main.splitNav = { dx: 0, t: 0 };
 Main.controls = function (dt) {
-  const p0 = IN.pad[0], p1 = IN.pad[1];
+  const p0 = Main.padB(), p1 = Main.padW(), c = G.ctl, sh = Main.kbShared(), altB = Main.altB();
   const wasd = KV('KeyA', 'KeyD', 'KeyW', 'KeyS'), arrows = KV('ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown');
-  const bk = G.swapped ? arrows : wasd, wk = G.swapped ? wasd : arrows;
+  const either = [clampv(wasd[0] + arrows[0]), clampv(wasd[1] + arrows[1])], none = [0, 0];
+  const bk = !c.kbB ? none : sh ? (G.swapped ? arrows : wasd) : either, wk = !c.kbW ? none : sh ? (G.swapped ? wasd : arrows) : either;
   let bix = clampv(bk[0] + (p0 ? p0.ix : 0)), biy = clampv(bk[1] + (p0 ? p0.iy : 0));
   let wix = clampv(wk[0] + (p1 ? p1.ix : 0)), wiy = clampv(wk[1] + (p1 ? p1.iy : 0));
   if (bk[0] || bk[1]) G.lastInput = 'kb';
@@ -229,13 +257,14 @@ Main.controls = function (dt) {
   R.padMode = G.lastInput === 'pad';
 
   // Builder: left-click / A picks up, right-click / B throws, E / X uses (swapped keyboard: . pick, , throw, / use)
-  let use = IN.hit(G.swapped ? 'Slash' : 'KeyE') || (p0 && p0.x);
-  let pick = (G.swapped && IN.hit('Period')) || (p0 && p0.a);
-  const pickHeld = (G.swapped && IN.down('Period')) || (p0 && p0.aHeld);
-  const throwHeld = (G.swapped && IN.down('Comma')) || (p0 && p0.bHeld);
-  let roll = IN.hit(G.swapped ? 'Space' : 'Period') || (G.swapped && IN.hit('KeyE')) || (p1 && p1.a);
+  let use = (c.kbB && !(sh && G.swapped) && IN.hit('KeyE')) || (altB && IN.hit('Slash')) || (p0 && p0.x);
+  let pick = (altB && IN.hit('Period')) || (p0 && p0.a);
+  const pickHeld = (altB && IN.down('Period')) || (p0 && p0.aHeld);
+  const throwHeld = (altB && IN.down('Comma')) || (p0 && p0.bHeld);
+  // a Wizard keyboard: arrows + . when it is shared and not swapped, WASD + Space when swapped; alone on the keyboard it takes both
+  let roll = (c.kbW && !(sh && G.swapped) && IN.hit('Period')) || (c.kbW && (!sh || G.swapped) && IN.hit('Space')) || (c.kbW && sh && G.swapped && IN.hit('KeyE')) || (p1 && p1.a);
   // throw the whole stack: Shift + right-click (Shift + , when swapped), or LT + B on a pad
-  const stackThrow = (IN.shift() && ((IN.mouse.rp && mouseInFactory() && !G.swapped) || (G.swapped && IN.hit('Comma')))) || (p0 && p0.b && p0.ltHeld);
+  const stackThrow = (IN.shift() && ((IN.mouse.rp && mouseInFactory() && Main.mouseB()) || (altB && IN.hit('Comma')))) || (p0 && p0.b && p0.ltHeld);
   // pick a target on purpose: right stick / R3 on a pad, Tab / Shift+Tab on the keyboard
   const cyc = (p0 && p0.cyc) || (IN.hit('Tab') ? (IN.shift() ? -1 : 1) : 0);
 
@@ -261,19 +290,28 @@ Main.controls = function (dt) {
   if (rot && !(UI.treeOpen.L || UI.treeOpen.R)) UI.cycle(rot);
   if (!(UI.treeOpen.L || UI.treeOpen.R) && Main.graceT <= 0 && (IN.hit('KeyQ') || (p0 && p0.rt))) UI.cycleFam(IN.shift() ? -1 : 1);   // next member of a family slot
   if (IN.hit('KeyB') || IN.hit('Delete') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt (full refund). Esc cancels.', 'L', 'ic_bomb'); }
-  if (IN.hit('KeyR')) { if (UI.splitB) UI.splitTurn(); else { G.placeDir = (G.placeDir + 1) % 4; AU.sfx('blip'); } }
+  if (IN.hit('KeyR') && !frozenNow()) {
+    // R turns whatever is already placed under the cursor (or in front / in reach); only with nothing there does it turn the next placement
+    const at = rotateTile();
+    if (UI.splitB) UI.splitTurn();
+    else if (!(at && FA.rotateAt(at[0], at[1]))) { G.placeDir = (G.placeDir + 1) % 4; AU.sfx('blip'); }
+  }
 
   // swap roles: hold X (keyboard) or Start (either pad)
-  const holding = IN.down('KeyX') || (p0 && p0.startHeld) || (p1 && p1.startHeld);
+  const holding = IN.down('KeyX') || (p0 && p0.startHeld) || (p1 && p1.startHeld);   // either pad, or X on the keyboard
   if (G.swapCd > 0) G.swapCd -= dt;
   if (holding && G.swapCd <= 0) {
     G.swapHold += dt;
     UI.swapRing(G.swapHold / CFG.swapHold);
     if (G.swapHold >= CFG.swapHold) {
-      G.swapped = !G.swapped; G.swapHold = 0; G.swapCd = CFG.swapCooldown;
+      // swap the jobs: pads trade places; a keyboard with both jobs flips its layout, one with a single job gives it to the other
+      const k = G.ctl;
+      if (sh) G.swapped = !G.swapped; else { const t = k.kbB; k.kbB = k.kbW; k.kbW = t; }
+      const t = k.pb; k.pb = k.pw; k.pw = t;
+      G.swapHold = 0; G.swapCd = CFG.swapCooldown;
       UI.swapRing(null); AU.sfx('swap');
       G.bd.target = null; G.w.target = null;
-      const msg = G.swapped ? 'Swapped! Builder: arrows, . pick up, , throw, / use. Wizard: WASD, Space roll, click right side.' : 'Swapped back!';
+      const msg = sh ? (G.swapped ? 'Swapped! Builder: arrows, . pick up, , throw, / use. Wizard: WASD, Space roll, click right side.' : 'Swapped back!') : 'Swapped jobs!';
       UI.toast(msg, 'L', 'ic_swap'); UI.toast(msg, 'R', 'ic_swap');
     }
   } else {
@@ -305,7 +343,7 @@ Main.controls = function (dt) {
   }
   // right-click / B / swapped , cancels hand-gathering (and that press doesn't throw)
   if (!IN.mouse.r && !throwHeld) G.noThrow = false;
-  if (G.bd.gather && !frozen && ((IN.mouse.rp && mouseInFactory() && !G.swapped) || (G.swapped && IN.hit('Comma')) || (p0 && p0.b))) {
+  if (G.bd.gather && !frozen && ((IN.mouse.rp && mouseInFactory() && Main.mouseB()) || (altB && IN.hit('Comma')) || (p0 && p0.b))) {
     G.bd.gather = null; G.noThrow = true; IN.mouse.rp = false; AU.sfx('blip');
   }
 
@@ -399,6 +437,7 @@ Main.step = function (dt, ctl) {
   AU.mix(Math.min(1, G.fac.working / 8), Math.min(1, near / 8), !!w.boss);
   AU.hum(facHalt ? 0 : Math.min(1, G.fac.working / 10));
   UI.updateHud(dt);
+  if ((Players.checkT -= dt) <= 0) { Players.checkT = 1; Players.check(); }   // achievements (they unlock cosmetics)
   UI.splitTick(dt);
   Main.updateFocus();
   G.saveT += dt;
@@ -601,6 +640,7 @@ function frame(ts) {
     } catch (e) { R.defer = null; UI.err(e); }
   } else {
     AU.hum(0); AU.mix(0, 0, false);
+    if (STATE === 'select') Players.tick(dt);
     if (STATE !== 'intro') drawBackdrop(ts);
   }
   IN.endFrame();
@@ -653,6 +693,7 @@ window.addEventListener('DOMContentLoaded', () => {
     ? Promise.all([document.fonts.load('16px "Press Start 2P"'), document.fonts.load('20px "Jersey 10"'), document.fonts.load('16px Digits', '0123456789'), document.fonts.load('16px DigitsB', '0123456789'), StudioIntro.loadFonts()]).catch(() => {})
     : Promise.resolve();
   SP.build(f => { $('loadFill').style.width = Math.round(f * 90) + '%'; }, () => {
+    Players.init();   // the saved looks replace the default Builder / Wizard sprites
     WZ.generate();
     R.buildMap();
     UI.decorate();

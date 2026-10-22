@@ -869,6 +869,11 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   if (w.shake > 0) w.shake = Math.max(0, w.shake - dt);
   const spd = Math.hypot(w.vx, w.vy);
   w.moving = spd > 0.3;
+  // the chosen footstep trail (a cosmetic from the player screen)
+  if (w.moving && !w.dead) {
+    w.trailT = (w.trailT || 0) - dt;
+    if (w.trailT <= 0) { w.trailT = 0.07; const tc = Players.trailCol('wizard'); if (tc) G.w.fx_.push({ type: 'spark', x: w.x, y: w.y, vx: rand(-0.8, 0.8), vy: rand(-0.8, 0.8), z: 0.15, vz: rand(1.2, 2.6), g: 4, col: tc, t: 0, dur: 0.6 }); }
+  }
   if (spd > 0.01) {
     w.bob += dt * 11 * Math.min(1, spd / sp);
     const nx = Math.max(0.5, Math.min(CFG.WW - 0.5, w.x + w.vx * dt)), ny = Math.max(0.5, Math.min(CFG.WH - 0.5, w.y + w.vy * dt));

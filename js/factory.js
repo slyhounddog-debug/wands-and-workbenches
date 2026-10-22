@@ -848,6 +848,9 @@ FA.moveBuilder = function (dt, ix, iy) {
     bd.bob += dt * 13;
     bd.dustT -= dt;
     if (bd.dustT <= 0) { bd.dustT = 0.16; G.fac.parts.push({ x: bd.x - bd.vx * 0.04, y: bd.y - bd.vy * 0.04, z: 0.05, vx: -bd.vx * 0.1, vy: -bd.vy * 0.1, vz: 0.6, t: 0.4, col: '#ffffff', dust: true }); }
+    // the chosen footstep trail (a cosmetic from the player screen)
+    bd.trailT = (bd.trailT || 0) - dt;
+    if (bd.trailT <= 0) { bd.trailT = 0.07; const tc = Players.trailCol('builder'); if (tc) G.fac.parts.push({ x: bd.x, y: bd.y, z: 0.15, vx: (Math.random() - 0.5) * 0.8, vy: (Math.random() - 0.5) * 0.8, vz: 1.2 + Math.random() * 1.4, g: 3, t: 0.7, col: tc }); }
   }
   if (wasMoving !== bd.moving) bd.squash = 0.12;
   if (bd.target) {
@@ -1006,6 +1009,15 @@ FA.bldAction = function (b, pick) {
   }
   if (FA.isLogi(b)) return turn;
   return NONE;
+};
+// R on something already placed: turn the belt / building on this tile a quarter turn. Stations and Chargers have no output side.
+FA.rotateAt = function (tx, ty) {
+  const c = FA.cell(tx, ty);
+  if (!c || c.type === 'portal') return false;
+  if (c.type !== 'belt') { const k = FA.def(c).kind; if (k === 'station' || k === 'charger') return false; c.pop = 0.2; }
+  c.dir = (c.dir + 1) % 4;
+  AU.sfx('blip'); FA.ipop(tx + 0.5, ty + 0.5, [['ic_rotate']]); UI.changed();
+  return true;
 };
 FA.takePile = function (r) {   // one item per press (hold to keep grabbing)
   if (G.stock[r] <= 0 || !FA.canHold(r)) return;

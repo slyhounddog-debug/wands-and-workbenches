@@ -46,7 +46,7 @@ const IN = {
   }, { passive: true });
   window.addEventListener('contextmenu', e => { if (e.target && e.target.id === 'cv') e.preventDefault(); });
   window.addEventListener('gamepadconnected', e => {
-    if (window.UI) UI.toast('Controller ' + (e.gamepad.index + 1) + ' connected: ' + (IN.padList.length <= 1 ? 'Builder' : 'Wizard') + ' side', 'L', 'ic_pad');
+    if (window.UI) UI.toast('Controller ' + (e.gamepad.index + 1) + ' connected' + (typeof G !== 'undefined' && G && G.ctl ? (G.ctl.pb === e.gamepad.index ? ': Builder' : G.ctl.pw === e.gamepad.index ? ': Wizard' : '') : ''), 'L', 'ic_pad');
   });
 })();
 

@@ -24,12 +24,19 @@ function lowBuffer(name, w, h) {
 }
 function setView(v, cam, sx, sy) {
   const hw = v.T.TW / 2, hh = v.T.TH / 2, P = v.T.P;
-  v.hw = hw; v.hh = hh;
+  v.hw = hw; v.hh = hh; v.cam = cam; v.sx = sx || 0; v.sy = sy || 0;
   // snap the camera to whole buffer pixels so sprites never shimmer
   v.ox = v.org + Math.round((v.cx - (cam.x - cam.y) * hw + (sx || 0) - v.org) / P) * P;
   v.oy = Math.round((v.cy - (cam.x + cam.y) * hh + (sy || 0)) / P) * P;
 }
 R.toScreen = (v, x, y) => [(x - y) * v.hw + v.ox, (x + y) * v.hh + v.oy];
+// the followed character: snapped to the pixel grid relative to the (smoothed) camera instead of to the world. Snapping him
+// and the camera separately made him hop back and forth by a pixel whenever the two rounded on different frames (worst on
+// diagonals, where x and y round independently); this way he holds still on screen while the ground scrolls past
+R.toScreenLocked = (v, x, y) => {
+  const c = v.cam, P = v.T.P, ex = v.cx + v.sx + (x - y - (c.x - c.y)) * v.hw, ey = v.cy + v.sy + (x + y - (c.x + c.y)) * v.hh;
+  return [v.org + Math.round((ex - v.org) / P) * P, Math.round(ey / P) * P];
+};
 R.toTile = (v, sx, sy) => {
   const u = (sx - v.ox) / v.hw, w = (sy - v.oy) / v.hh;
   return [(u + w) / 2, (w - u) / 2];
@@ -700,7 +707,7 @@ R.drawFly = function (ctx, v, o, t) {
 };
 
 R.drawBuilder = function (ctx, v, bd, t) {
-  const p = R.toScreen(v, bd.x, bd.y), S = 4;
+  const p = R.toScreenLocked(v, bd.x, bd.y), S = 4;
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(Math.round((p[0] - 20) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 40, 12);
   const carrying = !!G.hands;
   const step = Math.sin(bd.bob);
@@ -711,13 +718,17 @@ R.drawBuilder = function (ctx, v, bd, t) {
   const fd = bd.fx - bd.fy;
   if (fd < -0.3) bd.flipS = true; else if (fd > 0.3) bd.flipS = false;
   const flip = !!bd.flipS;
-  // the walk is a hop plus the leg swap; rotating or skewing a 12px sprite with nearest-neighbour sampling made the
-  // eyes (and every other pixel) shimmer, so the head stays put and only a gentle, quantized stretch remains
+  // playful walk: the body pivots at the hips and leans back and forth with each step, stretching taller on the
+  // push-off and skewing off-axis, so it reads as if his legs were swinging
+  const ph = bd.bob, wk = bd.moving ? 1 : 0, g = bd.gather ? 1 : 0;
+  const lean = (wk * Math.sin(ph) * 0.16 + g * Math.sin(ph * 1.5) * 0.06) * (flip ? -1 : 1);
+  const stretch = wk * Math.abs(Math.sin(ph)) * 0.14, skew = wk * Math.sin(ph + 1.2) * 0.14 * (flip ? -1 : 1);
   const pv = spr.ay * S * 0.35;   // pivot height above the feet
-  const stretch = bd.moving ? Math.round(Math.abs(Math.sin(bd.bob)) * 2) * 0.03 : 0;
   ctx.save();
   ctx.translate(snap(p[0]), Math.round((p[1] - hop - pv) / R.px) * R.px);
-  ctx.scale((1 + sq) * (flip ? -1 : 1), (1 - sq) * (1 + stretch));
+  ctx.rotate(lean);
+  ctx.transform(1, 0, skew, 1, 0, 0);
+  ctx.scale((1 + sq) * (1 - stretch * 0.45) * (flip ? -1 : 1), (1 - sq) * (1 + stretch));
   ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S + pv, spr.c.width * S, spr.c.height * S);
   ctx.restore();
   const h = G.hands;
@@ -1132,7 +1143,7 @@ R.drawMinimap = function (c) {
   c.restore();
 };
 R.drawWizard = function (ctx, v, w) {
-  const p = R.toScreen(v, w.x, w.y), S = CFG.WT.S, spr = SP.wizard;
+  const p = R.toScreenLocked(v, w.x, w.y), S = CFG.WT.S, spr = SP.wizard;
   for (const gh of w.ghosts) {
     const q = R.toScreen(v, gh.x, gh.y);
     dspr(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, q[0], q[1], S, 0.35 * (1 - gh.t / 0.25));

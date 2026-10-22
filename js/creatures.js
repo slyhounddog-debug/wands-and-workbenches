@@ -148,16 +148,13 @@ WZ.spawnCreature = function (id, spot) {
 };
 // an Egg reached the Spell Portal: hatch it now, or hold it until the crafted-creature cap has room
 WZ.hatch = function (kind) {
-  const w = G.w, id = ITEMS[kind].creature;
-  for (let i = 0; i < (CFG.creatures[id].n || 1); i++) {   // one packet's worth: n creatures; any that don't fit wait in the queue
-    if (!w.dead && WZ.craftedAlive() < CFG.crafted.cap && WZ.spawnCreature(id)) continue;
-    G.fac.eggQ.push(kind);
-  }
+  const n = CFG.creatures[ITEMS[kind].creature].n || 1;   // all n creatures wait their turn: eggTick drops them CFG.crafted.dropGap apart
+  for (let i = 0; i < n; i++) G.fac.eggQ.push(kind);
 };
 WZ.eggTick = function (dt) {
   const w = G.w, q = G.fac.eggQ;
   if (!q.length || w.dead || w.t < (w.eggT || 0) || WZ.craftedAlive() >= CFG.crafted.cap) return;
-  if (WZ.spawnCreature(ITEMS[q[0]].creature)) { q.shift(); w.eggT = w.t + 0.4; }
+  if (WZ.spawnCreature(ITEMS[q[0]].creature)) { q.shift(); w.eggT = w.t + CFG.crafted.dropGap; }
 };
 
 // ---------- creature behaviour ----------

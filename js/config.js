@@ -258,7 +258,8 @@ const CFG = {
   },
   crafted: {
     cap: 25,                  // crafted creatures alive at once (inside world.cap); extra Eggs wait in the portal queue
-    queue: 6,                 // Eggs the Spell Portal holds back while the cap is full (more than that and it stops taking Eggs)
+    queue: 12,                // Eggs the Spell Portal holds back while the cap is full (more than that and it stops taking Eggs)
+    dropGap: 0.7,             // seconds between any two creatures dropping in (even from the same Egg)
     daze: 0.6, fall: 0.55,    // seconds dazed after landing / seconds of the drop-in
     spawnMin: 6, spawnMax: 11,   // tiles from the Wizard, always inside the camera
     jitter: 0.15,             // hp / speed / damage each rolled within +-15%

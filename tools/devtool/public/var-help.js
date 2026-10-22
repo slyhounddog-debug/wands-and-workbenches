@@ -14,6 +14,8 @@ const RULES = [
   [/^crankBoost$/, 'Seconds of progress each tap of E adds when cranking a Harnesser by hand.'],
   [/^buffer$/, 'How many finished items a machine holds in its output slots before it jams.'],
   [/^fuelPerPacket$/, 'Seconds of charging one element packet gives a Battery Charger.'],
+  [/^chargeBonus$/, 'Extra charge every element packet gives a Charger, as a fraction (0.10 = +10%).'],
+  [/^chargeThrowBonus$/, 'Further bonus (fraction, added to chargeBonus) when the packet was thrown into the Charger by hand.'],
   [/^fuelCap$/, 'Most seconds of fuel a Charger can store at once (stops it swallowing unlimited packets).'],
   [/^batteryMax$/, 'A Battery\'s full charge in internal units; with batteryLife and stationGen it sets how fast one drains.'],
   [/^stationGen$/, 'Power a Battery Station with a charged Battery adds to the whole factory.'],

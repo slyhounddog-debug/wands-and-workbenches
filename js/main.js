@@ -91,6 +91,7 @@ Main.save = function () {
 };
 Main.enter = function () {
   STATE = 'play';
+  UI.splitB = null; UI.show('splitModal', false);
   UI.resetCache();
   UI.show('menu', false); UI.show('game', true);
   UI.show('pause', false); UI.show('results', false); UI.help(false);
@@ -104,6 +105,7 @@ Main.enter = function () {
 Main.toTitle = function (noSave) {
   if (!noSave && G) { WZ.bankLooseShards(); Main.save(); }
   STATE = 'menu';
+  UI.splitB = null; UI.show('splitModal', false);
   UI.show('game', false); UI.show('menu', true);
   UI.menuPage('menuMain');
   G = null;
@@ -130,7 +132,7 @@ function aimNow() {
 }
 // every throw lands exactly where the lead line on screen points (R.aim, refreshed each frame)
 function throwAlongAim() {
-  if (!G.hands || G.bd.gather) return;
+  if (!G.hands || G.bd.gather || G.noThrow) return;
   const a = R.aim || aimNow();
   if (a) FA.throwOne(a.x, a.y);
 }
@@ -200,6 +202,7 @@ function placeInFront(quiet) {
   return false;
 }
 
+Main.splitNav = { dx: 0, t: 0 };
 Main.controls = function (dt) {
   const p0 = IN.pad[0], p1 = IN.pad[1];
   const wasd = KV('KeyA', 'KeyD', 'KeyW', 'KeyS'), arrows = KV('ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown');
@@ -223,7 +226,8 @@ Main.controls = function (dt) {
   const cyc = (p0 && p0.cyc) || (IN.hit('Tab') ? (IN.shift() ? -1 : 1) : 0);
 
   if (IN.hit('Escape')) {
-    if (UI.treeOpen.L || UI.treeOpen.R) { UI.openTree('L', false); UI.openTree('R', false); }
+    if (UI.splitB) UI.closeSplit();
+    else if (UI.treeOpen.L || UI.treeOpen.R) { UI.openTree('L', false); UI.openTree('R', false); }
     else if (G.demolish) G.demolish = false;
     else if (G.selected !== 'hand') UI.select('hand');
     else Main.pause(true);
@@ -241,7 +245,7 @@ Main.controls = function (dt) {
   if (rot && !(UI.treeOpen.L || UI.treeOpen.R)) UI.cycle(rot);
   if (!(UI.treeOpen.L || UI.treeOpen.R) && Main.graceT <= 0 && (IN.hit('KeyQ') || (p0 && p0.rt))) UI.cycleFam(IN.shift() ? -1 : 1);   // next member of a family slot
   if (IN.hit('KeyB') || IN.hit('Delete') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt (full refund). Esc cancels.', 'L', 'ic_bomb'); }
-  if (IN.hit('KeyR')) { G.placeDir = (G.placeDir + 1) % 4; AU.sfx('blip'); }
+  if (IN.hit('KeyR')) { if (UI.splitB) UI.splitTurn(); else { G.placeDir = (G.placeDir + 1) % 4; AU.sfx('blip'); } }
 
   // swap roles: hold X (keyboard) or Start (either pad)
   const holding = IN.down('KeyX') || (p0 && p0.startHeld) || (p1 && p1.startHeld);
@@ -266,11 +270,26 @@ Main.controls = function (dt) {
   if (inTree && (IN.hit('KeyQ') || (p0 && p0.x) || (p1 && p1.x))) UI.undoBank();   // Q / pad X: take the last deposit back out
   if (inTree) Main.treePads(dt, p0, p1);
   if (frozen) { bix = 0; biy = 0; use = false; pick = false; wix = 0; wiy = 0; roll = false; }
+  // the Splitter's settings are open: the Builder's inputs belong to them (the Wizard plays on)
+  if (UI.splitB && !frozen) {
+    if (use || IN.hit('Enter') || (p0 && (p0.a || p0.b))) { UI.closeSplit(); G.noThrow = true; }
+    else if (p0 && p0.x) UI.splitTurn();
+    const n = Main.splitNav, dx = Math.abs(bix) > 0.5 ? Math.sign(bix) : 0;
+    if (!dx) { n.dx = 0; n.t = 0; }
+    else if (dx !== n.dx) { n.dx = dx; n.t = 0.35; UI.splitSet(UI.splitB.split + dx * 5); }
+    else if ((n.t -= dt) <= 0) { n.t = 0.1; UI.splitSet(UI.splitB.split + dx * 5); }
+    bix = 0; biy = 0; use = false; pick = false;
+  }
+  // right-click / B / swapped , cancels hand-gathering (and that press doesn't throw)
+  if (!IN.mouse.r && !throwHeld) G.noThrow = false;
+  if (G.bd.gather && !frozen && ((IN.mouse.rp && mouseInFactory() && !G.swapped) || (G.swapped && IN.hit('Comma')) || (p0 && p0.b))) {
+    G.bd.gather = null; G.noThrow = true; IN.mouse.rp = false; AU.sfx('blip');
+  }
 
   if (!frozen) { handleMouseFactory(dt); handleMouseWizard(); }
   if (!frozen) {
     if (cyc) FA.cycleLock(cyc);
-    if (stackThrow && G.hands && !G.bd.gather) {   // a burst at one aim point, one item every throwStackGap
+    if (stackThrow && G.hands && !G.bd.gather && !G.noThrow) {   // a burst at one aim point, one item every throwStackGap
       const a = R.aim || aimNow();
       if (a) { G.bd.burst = G.hands.n; G.bd.burstAim = { x: a.x, y: a.y }; }
     }
@@ -351,6 +370,7 @@ Main.step = function (dt, ctl) {
   AU.mix(Math.min(1, G.fac.working / 8), Math.min(1, near / 8), !!w.boss);
   AU.hum(facHalt ? 0 : Math.min(1, G.fac.working / 10));
   UI.updateHud(dt);
+  UI.splitTick(dt);
   Main.updateFocus();
   G.saveT += dt;
   if (G.saveT > CFG.autosave || (UI.dirty && G.saveT > 1.5)) { G.saveT = 0; UI.dirty = false; Main.save(); }
@@ -489,6 +509,7 @@ Main.updateFocus = function () {
 
 Main.pause = function (on) {
   if (!G) return;
+  if (on) UI.closeSplit();
   G.paused = on;
   UI.show('pause', on);
   UI.show('pauseMain', true); UI.show('pauseSet', false);
@@ -556,6 +577,14 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btnDemo').onclick = () => { G.demolish = !G.demolish; AU.sfx('blip'); };
   $('btnSwap').onclick = () => UI.toast('Hold X (or Start on a pad) for 1.5 seconds to swap jobs.', 'L', 'ic_swap');
   $('btnHelp').onclick = () => UI.help();
+  const sr = $('splitRange');
+  sr.oninput = () => UI.splitSet(+sr.value);
+  sr.onchange = () => sr.blur();   // keep the arrow keys for walking
+  $('splitRot').onclick = () => UI.splitTurn();
+  $('splitReset').onclick = () => { UI.splitSet(50); AU.sfx('blip'); };
+  $('splitDone').onclick = () => UI.closeSplit();
+  $('splitModal').onmousedown = e => { if (e.target.id === 'splitModal') UI.closeSplit(); };
+  $('splitModal').oncontextmenu = e => { e.preventDefault(); UI.closeSplit(); };
   $('pResume').onclick = () => Main.pause(false);
   $('pSet').onclick = () => {
     UI.settingsPage($('pauseSet'), () => { UI.show('pauseSet', false); UI.show('pauseMain', true); });

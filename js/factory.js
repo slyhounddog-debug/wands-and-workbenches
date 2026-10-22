@@ -131,6 +131,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   if (d.kind === 'charger') { b.bat = null; b.fuel = { air: 0, water: 0, fire: 0, earth: 0 }; b.types = []; }
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
   if (d.kind === 'sorter') b.filter = null;
+  if (d.kind === 'splitter') { b.split = 50; b.acc = 0; }
   f.bld.push(b);
   FA.setCell(x, y, b);
   if (b.done) FA.onComplete(b, true);
@@ -313,7 +314,7 @@ FA.canInsert = function (b, kind) {
   if (d.kind === 'crate') return !RES[kind] && kind !== 'battery' && b.out.length < CFG.crateCap;
   return false;
 };
-FA.insert = function (b, kind, charge) {
+FA.insert = function (b, kind, charge, thrown) {
   b.pop = 0.22;
   if (!b.done) {
     b.got[kind] = (b.got[kind] || 0) + 1;
@@ -328,7 +329,7 @@ FA.insert = function (b, kind, charge) {
     if (b.bat <= 0) FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_x']]);
   } else if (d.kind === 'charger') {
     if (kind === 'battery') { b.bat = charge || 0; b.types = Object.keys(b.fuel).filter(k => b.fuel[k] > 0); }
-    else { b.fuel[kind] += CFG.fuelPerPacket; if (b.bat != null && b.types.indexOf(kind) < 0) b.types.push(kind); }
+    else { b.fuel[kind] += CFG.fuelPerPacket * (1 + CFG.chargeBonus + (thrown ? CFG.chargeThrowBonus : 0)); if (b.bat != null && b.types.indexOf(kind) < 0) b.types.push(kind); }
   }
 };
 // a Battery in hand and one in a Station / Charger trade places (nothing ever has to hit the floor)
@@ -443,19 +444,31 @@ FA.pushSide = function (b, di) {
   return true;
 };
 FA.tryOut = b => FA.pushSide(b, b.dir);
-// Splitter: front / right / left in turn. Sorter: filter matches out the front, the rest out the sides. Crate: front.
+// Splitter: two sides, A (right of its arrow) and B (left), sharing the belt by b.split (% to A). Sorter: filter matches out the
+// front, the rest out the sides. Crate: front.
+FA.splitSides = b => [(b.dir + 1) % 4, (b.dir + 3) % 4];
+FA.splitCol = ['#ff5fc8', '#43e0ff'];   // side A / side B, in the slider, the modal diagram and the arrows on the tile
+// sides in the order to try them: the one the running share says is due next, then the other (unless it gets 0%)
 FA.logiSides = function (b) {
   const k = FA.def(b).kind, o = b.out[0];
   if (k === 'crate') return [b.dir];
-  if (k === 'splitter') return [b.dir, (b.dir + 1) % 4, (b.dir + 3) % 4];
+  if (k === 'splitter') {
+    const pa = (b.split === undefined ? 50 : b.split) / 100, [A, B] = FA.splitSides(b), a = (b.acc || 0) + pa;
+    b.accNext = a >= 1 - 1e-9 ? a - 1 : a;
+    return pa <= 0 ? [B] : pa >= 1 ? [A] : a >= 1 - 1e-9 ? [A, B] : [B, A];
+  }
   return !b.filter || (o && o.kind === b.filter) ? [b.dir] : [(b.dir + 1) % 4, (b.dir + 3) % 4];
 };
 FA.updLogi = function (b, dt) {
   if (b.cd > 0) { b.cd -= dt; return; }
   if (!b.out.length) { b.blocked = false; return; }
-  const sides = FA.logiSides(b), n = sides.length, r0 = (b.rr || 0) % n;
+  const split = FA.def(b).kind === 'splitter', sides = FA.logiSides(b), n = sides.length, r0 = split ? 0 : (b.rr || 0) % n;
   for (let i = 0; i < n; i++) {
-    if (FA.pushSide(b, sides[(r0 + i) % n])) { b.rr = (r0 + i + 1) % n; b.cd = FA.beltTime() * 0.4; b.blocked = false; return; }
+    if (FA.pushSide(b, sides[(r0 + i) % n])) {
+      if (split) { if (i === 0) b.acc = b.accNext; }   // only the side that was due moves the running share on
+      else b.rr = (r0 + i + 1) % n;
+      b.cd = FA.beltTime() * 0.4; b.blocked = false; return;
+    }
   }
   // a crate pointing at nothing is just storing, not blocked
   const fd = DIRS[b.dir];
@@ -776,7 +789,7 @@ FA.land = function (o) {
     return fell();
   }
   if (c) {
-    if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind, o.charge); AU.sfx('drop'); FA.ipop(o.x, o.y, [[o.kind]]); return; }
+    if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind, o.charge, true); AU.sfx('drop'); FA.ipop(o.x, o.y, [[o.kind]]); return; }
     return bounce();
   }
   if (FA.reserved(tx, ty) && RES[o.kind]) { G.stock[o.kind]++; FA.ipop(o.x, o.y, [[o.kind]]); AU.sfx('drop'); return; }
@@ -955,6 +968,7 @@ FA.bldAction = function (b, pick) {
     return A(h && need[k] ? 'Throw ' + itemName(k) + ' in to build' : 'Needs ' + FA.needText(need), null, false, Object.keys(need));
   }
   if (pick) {
+    if (d.kind === 'splitter') return h ? NONE : A('Set the split', () => UI.openSplit(b), false, ['ic_gear']);
     if (b.out.length) return FA.canHold(b.out[0].kind) ? A('Take ' + itemName(b.out[0].kind), () => FA.takeOut(b), true, [b.out[0].kind]) : FULL;
     if ((d.kind === 'station' || d.kind === 'charger') && b.bat != null) {
       if (h && k === 'battery') return A('Swap Battery (' + Math.round(b.bat / CFG.batteryMax * 100) + '%)', () => {
@@ -1038,7 +1052,7 @@ FA.status = function (b) {
     if (b.od) s += '. OVERDRIVE +' + Math.round(CFG.overdrive * 100) + '% (Battery Station beside it)';
     return s;
   }
-  if (d.kind === 'splitter') return n + ': ' + (b.out.length >= 2 ? 'BLOCKED: no free side to push into' : 'deals items out of its front, right and left');
+  if (d.kind === 'splitter') return n + ': ' + (b.out.length >= 2 ? 'BLOCKED: no free side to push into' : 'splits ' + b.split + '% / ' + (100 - b.split) + '% out of its two sides (click to set)');
   if (d.kind === 'sorter') return n + ': ' + (b.filter ? itemName(b.filter) + ' out the front, everything else out the sides' : 'no filter (E with an item in hand sets it)') + (b.out.length >= 2 ? '. BLOCKED' : '');
   if (d.kind === 'crate') return n + ': ' + b.out.length + '/' + CFG.crateCap + (b.out.length ? ', next out: ' + itemName(b.out[0].kind) : ', empty') + '. Feeds its arrow side; point it at nothing to just store';
   if (d.kind === 'station') return n + ': ' + (b.bat == null ? 'empty, insert a charged Battery' : 'Battery ' + Math.round(b.bat) + '/' + CFG.batteryMax + (b.bat > 0 ? ', +10 power, ' + Math.ceil(FA.life(b)) + 's left at this load' : ' (flat)'));
@@ -1067,6 +1081,7 @@ FA.toJSON = function () {
       if (b.bat !== undefined) o.bat = b.bat;
       if (b.fuel) { o.fuel = b.fuel; o.types = b.types; }
       if (b.filter) o.filter = b.filter;
+      if (b.split !== undefined) o.split = b.split;
       return o;
     }),
     belts: f.belts.map(b => ({ x: b.x, y: b.y, dir: b.dir, item: b.item ? b.item.kind : null })),
@@ -1085,6 +1100,7 @@ FA.fromJSON = function (j) {
     if (b.bat !== undefined) b.bat = o.bat == null ? null : o.bat;
     if (b.fuel) { b.fuel = Object.assign(b.fuel, o.fuel || {}); b.types = o.types || []; }
     if (b.filter !== undefined) b.filter = o.filter && ITEMS[o.filter] ? o.filter : null;
+    if (b.split !== undefined) b.split = typeof o.split === 'number' ? Math.max(0, Math.min(100, Math.round(o.split))) : 50;
   });
   (j.belts || []).forEach(o => {
     if (!FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;

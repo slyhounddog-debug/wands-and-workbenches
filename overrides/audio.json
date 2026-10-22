@@ -1,4 +1,18 @@
 {
   "version": 1,
-  "clips": {}
+  "clips": {
+    "music": {
+      "file": "music.js",
+      "mime": "audio/mpeg",
+      "label": "whimsical journey.mp3",
+      "start": 0,
+      "end": 141.2012579644728,
+      "gain": 0.63,
+      "fadeIn": 0,
+      "fadeOut": 0.97,
+      "rate": 1.05,
+      "reverse": false,
+      "loop": true
+    }
+  }
 }

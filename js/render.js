@@ -253,7 +253,7 @@ R.drawFactory = function (main, dt) {
   for (const b of f.bld) {
     const k = b.done && FA.def(b).kind;
     if (!k || k === 'station' || k === 'charger') continue;
-    if (k === 'splitter') [b.dir, (b.dir + 1) % 4, (b.dir + 3) % 4].forEach(d => R.outArrow(ctx, v, b, t, d));
+    if (k === 'splitter') FA.splitSides(b).forEach((d, i) => R.splitArrow(ctx, v, b, t, d, FA.splitCol[i], i ? 100 - b.split : b.split));
     else if (k === 'sorter') { R.outArrow(ctx, v, b, t, b.dir, '#9dff9d'); if (b.filter) { R.outArrow(ctx, v, b, t, (b.dir + 1) % 4); R.outArrow(ctx, v, b, t, (b.dir + 3) % 4); } }
     else R.outArrow(ctx, v, b, t);
   }
@@ -352,6 +352,25 @@ R.outArrow = function (ctx, v, b, t, dir, col) {
   ctx.lineTo(p[0] - ny * 7 - nx * 3, p[1] + nx * 3 - ny * 3);
   ctx.lineTo(p[0] + ny * 7 - nx * 3, p[1] - nx * 3 - ny * 3);
   ctx.closePath(); ctx.fill();
+};
+
+// a Splitter's output arrow: pulses in its side's colour (the same colour as that end of the slider), bigger for a bigger share;
+// a side with 0% is a small dim arrow that doesn't pulse
+R.splitArrow = function (ctx, v, b, t, dir, col, pct) {
+  const dd = DIRS[dir], p = R.toScreen(v, b.x + 0.5 + dd[0] * 0.68, b.y + 0.5 + dd[1] * 0.68);
+  const sdx = (dd[0] - dd[1]) * v.hw, sdy = (dd[0] + dd[1]) * v.hh, m = Math.hypot(sdx, sdy), nx = sdx / m, ny = sdy / m;
+  const on = pct > 0, k = on ? (0.8 + pct / 500) * (1 + 0.22 * (Math.sin(t * 5 + dir) * 0.5 + 0.5)) : 0.6;
+  ctx.globalAlpha = on ? 1 : 0.4;
+  for (const [g, c] of [[1.3, '#1a0f28'], [1, col]]) {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(p[0] + nx * 17 * g * k, p[1] + ny * 17 * g * k);
+    ctx.lineTo(p[0] - ny * 13 * g * k - nx * 7 * g, p[1] + nx * 13 * g * k - ny * 7 * g);
+    ctx.lineTo(p[0] + ny * 13 * g * k - nx * 7 * g, p[1] - nx * 13 * g * k - ny * 7 * g);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  if (R.inTip(b)) txt(ctx, pct + '%', p[0] - nx * 4, p[1] + (ny > 0 ? 36 : -30), 12, col, 'center', 'd');
 };
 
 R.drawBelt = function (ctx, v, b, t) {

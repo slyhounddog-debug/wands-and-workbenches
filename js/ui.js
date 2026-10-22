@@ -206,15 +206,19 @@ UI.updateEvent = function () {
     '<div class="ef">' + (p.id === 'bloom' ? Object.keys(CFG.mutations).map(k => UI.img(CFG.mutations[k].ic, 20)) : p.el.map(k => UI.img(k, 20))).join('') + '</div><div class="et">' + state + '</div>';
 };
 
-// creatures waiting for room at the Spell Portal (the crafted-creature cap is full): next to drop first, up to 12 icons then a count
+// the drop queue (bottom left of the wilds): creatures waiting for the Spell Portal to open for them, next to drop first
+// (up to 12 icons, then a count), with how many factory creatures are out there against the cap. Shows from the first Egg on.
 UI.updateEggQ = function () {
-  const el = $('eggQ'), q = G.fac.eggQ, sig = q.join(',');
-  el.classList.toggle('hidden', !q.length);
+  const el = $('eggQ'), q = G.fac.eggQ, alive = WZ.craftedAlive(), cap = CFG.crafted.cap, on = q.length > 0 || alive > 0 || (G.stats.crafted || 0) > 0;
+  el.classList.toggle('hidden', !on);
+  const sig = on ? q.join(',') + '|' + alive : '';
   if (cache.eq === sig) return;
   cache.eq = sig;
-  if (!q.length) return;
-  const show = q.slice(0, 12).map(k => UI.img(k, 24)).join('');
-  el.innerHTML = UI.img('ic_portal', 20) + show + (q.length > 12 ? '<span class="qn">+' + (q.length - 12) + '</span>' : '') ;
+  if (!on) return;
+  const show = q.length ? q.slice(0, 12).map((k, i) => UI.img(SP[ITEMS[k].creature] ? ITEMS[k].creature : k, 28, i ? '' : 'next')).join('') : '<span class="qe">' + UI.img('ic_check', 16) + '</span>';
+  el.classList.toggle('full', alive >= cap);
+  el.innerHTML = '<span class="qa">' + UI.img('ic_portal', 20) + '<b>' + alive + '/' + cap + '</b></span><span class="qs">' + show + '</span>' +
+    (q.length > 12 ? '<span class="qn">+' + (q.length - 12) + '</span>' : '');
 };
 
 // goal pointers that live in the DOM: a blinking hotbar slot and/or blinking skill-tree buttons
@@ -761,11 +765,11 @@ const HOWTO = {
   'FACTORY': [
     ['Hands', 'The Builder carries one stack (5 at first). <b>Left-click</b> (pad <b>A</b>) picks up <b>one item at a time</b>: hold it to keep grabbing. <b>Right-click</b> (pad <b>B</b>) throws one item along the dotted lead line: it aims at machines, blueprints, belts, portals or the Stockpile. Throwing is the only way to put things in. Nothing ever vanishes.'],
     ['Building', 'Pick a slot (keys <b>1</b> to <b>7</b> or the wheel). Slots with a pip row are <b>families</b> (Harnessers, Crafters, Power, Logistics, Creature Spawners): <b>Q</b>, the wheel over the slot or <b>RT</b> on a pad cycles the member (locked ones are skipped). <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
-    ['Machines', 'Harnessers make element packets by themselves, or stand next to one and press <b>E</b>, then <b>tap E</b> to crank one out by hand (no power needed). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
-    ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with a charged Battery in a Battery Station and a Charger beside it: a Battery drains while anything needs power, so carry it to the Charger and throw element packets at it to refill it (hand-gathered packets are free). Craft a Battery at the Forge (2 Iron Ore), charge it at a Charger by feeding it packets (more kinds = faster), then haul it to a Battery Station. A charged Station right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, <b>Heavy Batteries</b> make every Battery last 50% longer in a Station.'],
+    ['Machines', 'Harnessers make element packets by themselves, or stand next to one and press <b>E</b>, then <b>tap E</b> to crank one out by hand (no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
+    ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with a charged Battery in a Battery Station and a Charger beside it: a Battery drains while anything needs power, so carry it to the Charger and throw element packets at it to refill it (hand-gathered packets are free). Every packet charges 10% more than its base, and a packet you throw in by hand adds another 20%. Craft a Battery at the Forge (2 Iron Ore), charge it at a Charger by feeding it packets (more kinds = faster), then haul it to a Battery Station. A charged Station right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, <b>Heavy Batteries</b> make every Battery last 50% longer in a Station.'],
     ['Creatures', 'The <b>Creature Spawner</b> turns element packets into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. Tier 2 and 3 Spawners (Skill Tree) hatch two- and three-element creatures; each one is its own node. At most 12 factory creatures live at once: extra Eggs wait in the portal. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
     ['Growing', 'The floor starts small. <b>Factory Expansion</b> in the Skill Tree makes it bigger, pushing the Stockpile further from the portals.'],
-    ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> deals items out of its front, right and left in turn. The <b>Sorter</b> sends one item kind out the front (E while holding it) and the rest out the sides. The <b>Storage Crate</b> holds 30 packets or spells and feeds them out of its arrow. E turns any of them (a Sorter with a filter clears it first).'],
+    ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> shares items between its two sides (right and left of its arrow) by the percentages you choose: click it (<b>A</b> on a pad) for a slider, 50 / 50 to start. Each end of the slider has the colour of one arrow on the tile (pink or cyan), and the arrows pulse to show where items go. The <b>Sorter</b> sends one item kind out the front (E while holding it) and the rest out the sides. The <b>Storage Crate</b> holds 30 packets or spells and feeds them out of its arrow. E turns any of them (a Sorter with a filter clears it first).'],
     ['Reading the floor', 'Every machine shows its state the moment it changes, with an outline, an icon, how fast it animates and a little chirp: <b>green flowing dashes</b> working (up close), <b>yellow dashes</b> + a ghost of the missing ingredient, <b>grey dots</b> + <b>?</b> starved, <b>orange long dashes</b> + <b>!</b> output jammed, <b>thick red</b> + stacked bars output full (stopped), <b>purple dash-dot</b> + bolt no power. Each portal shows how many items it took in the last minute.'],
     ['Elements', 'Each element has its own shape everywhere: <b>Air</b> is a ring, <b>Water</b> a drop, <b>Fire</b> a flame, <b>Earth</b> a block. Their particles move differently too (swirling rings, falling drops, rising sparks, tumbling chunks) and each has its own little sound.'],
     ['Handling lots of items', 'Hold pick to sweep up every matching item nearby until your hands are full. <b>Shift + right-click</b> (pad <b>LT + B</b>) throws your whole stack. Items left on the floor slide together into piles. The throw line shows a ghost where the item will land and outlines what will catch it (green) or bounce it (red).'],
@@ -837,11 +841,93 @@ UI.buildMenu = function () {
 // volume sliders, shared by the title menu and the pause menu
 UI.settingsPage = function (box, back) {
   const s = AU.settings, row = (k, icon, label) => '<label>' + UI.img(icon, 24) + label + ' <b>' + Math.round(s[k] * 100) + '%</b><input data-k="' + k + '" type="range" min="0" max="100" value="' + Math.round(s[k] * 100) + '"></label>';
-  box.innerHTML = '<h2>SETTINGS</h2>' + row('sfx', 'ic_sound', 'SOUND') + row('music', 'ic_music', 'MUSIC') + '<button class="big ghost back">BACK</button>';
+  box.classList.remove('wideCtl');
+  box.innerHTML = '<h2>SETTINGS</h2>' + row('sfx', 'ic_sound', 'SOUND') + row('music', 'ic_music', 'MUSIC') +
+    '<button class="big ghost ctl">' + UI.img('ic_pad', 20) + 'CONTROLS</button><button class="big ghost back">BACK</button>';
   box.querySelectorAll('input').forEach(inp => {
     inp.oninput = () => { (inp.dataset.k === 'sfx' ? AU.setSfx : AU.setMusic)(inp.value / 100); inp.previousElementSibling.textContent = inp.value + '%'; };
   });
   box.querySelector('[data-k="sfx"]').onchange = () => AU.sfx('pickup');
+  box.querySelector('.ctl').onclick = () => { AU.sfx('blip'); UI.controlsPage(box, () => UI.settingsPage(box, back)); };
+  box.querySelector('.back').onclick = back;
+};
+
+// Settings > Controls: every binding in the game (kept next to Main.controls / IN.pollPads: change one, change the other)
+const K = (...a) => a.map(x => '<kbd>' + x + '</kbd>').join(' ');
+const CONTROLS = [
+  ['BUILDER: KEYBOARD & MOUSE', [
+    [K('W', 'A', 'S', 'D'), 'Walk'],
+    [K('LEFT-CLICK'), 'Pick up one item (hold to keep taking, it walks there first). On a Splitter: open its settings'],
+    [K('RIGHT-CLICK'), 'Throw one item along the dotted line (hold = rapid). While hand-gathering: cancel the gather'],
+    [K('SHIFT') + ' + ' + K('RIGHT-CLICK'), 'Throw the whole stack'],
+    [K('E'), 'Use: hand-gather a Harnesser, tap to crank, turn a belt or machine, switch recipe, set a Sorter filter'],
+    [K('1') + ' - ' + K('7') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, then the building families)'],
+    [K('[') + ' ' + K(']'), 'Previous / next hotbar slot'],
+    [K('Q') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot)'],
+    [K('R'), 'Rotate what you are about to place (turns the Splitter while its settings are open)'],
+    [K('CLICK') + ' &nbsp;/&nbsp; ' + K('ENTER'), 'Place the selected building / belt (Enter: on the tile in front). Drag to lay belts'],
+    [K('B') + ' &nbsp;/&nbsp; ' + K('DELETE'), 'Demolish mode (full refund)'],
+    [K('TAB') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Cycle through nearby targets'],
+    [K('ESC'), 'Close / cancel the tool, then pause'],
+  ]],
+  ['WIZARD: KEYBOARD', [
+    [K('ARROWS'), 'Walk'],
+    [K('.'), 'Roll (invulnerable). Standing still at a mound, stick pile or bush: dig. At a shrine: tap on the ring'],
+    [K('Y'), 'Wizard Skill Tree'],
+  ]],
+  ['BOTH PLAYERS', [
+    [K('T') + ' &nbsp;/&nbsp; ' + K('Y'), 'Builder / Wizard Skill Tree (the whole game pauses while one is open)'],
+    [K('H'), 'Show or hide the controls card'],
+    [K('X') + ' &nbsp;hold 1.5s', 'Swap jobs. Then: Builder arrows, ' + K('.') + ' pick up, ' + K(',') + ' throw, ' + K('/') + ' use. Wizard WASD, ' + K('SPACE') + ' roll, click the right half to walk'],
+    [K('ESC'), 'Pause menu (Resume, Settings, Save &amp; Title). Losing window focus pauses too'],
+  ]],
+  ['SKILL TREE', [
+    [K('CLICK'), 'Buy a skill (or A on a pad)'],
+    [K('RIGHT-CLICK'), 'Pin a skill to that side (RB on a pad)'],
+    [K('Q'), 'Take the last Skill Portal deposit back out (pad X)'],
+    [K('ESC') + ' ' + K('T') + ' ' + K('Y'), 'Close (pad B / Y)'],
+  ]],
+  ['SPLITTER SETTINGS', [
+    [K('DRAG'), 'Slide the bar: the left number is the share for the pink side, the right number the cyan side'],
+    [K('A') + ' ' + K('D') + ' &nbsp;or stick / d-pad', 'Nudge the split by 5'],
+    [K('R') + ' &nbsp;/&nbsp; ' + K('E') + ' ' + K('ESC'), 'Turn the Splitter / close (pad X turns, A or B closes)'],
+  ]],
+  ['GAMEPAD 1: BUILDER', [
+    [K('STICK') + ' ' + K('D-PAD'), 'Walk'],
+    [K('A'), 'Pick up (hold to sweep). With a building selected: place in front (hold with Belt to lay belts)'],
+    [K('B') + ' &nbsp;/&nbsp; ' + K('LT') + ' + ' + K('B'), 'Throw (hold = rapid) / throw the whole stack. Cancels hand-gathering'],
+    [K('X'), 'Use'],
+    [K('RIGHT STICK') + ' &nbsp;or ' + K('R3'), 'Flick to cycle targets'],
+    [K('LB') + ' ' + K('RB'), 'Previous / next hotbar slot'],
+    [K('RT'), 'Next member of a family slot'],
+    [K('BACK'), 'Demolish mode'],
+    [K('Y'), 'Builder Skill Tree (stick / d-pad moves the focus, A buys, RB pins, X undoes, B closes)'],
+  ]],
+  ['GAMEPAD 2: WIZARD', [
+    [K('STICK') + ' ' + K('D-PAD'), 'Walk'],
+    [K('A'), 'Roll / dig / shrine tap'],
+    [K('Y'), 'Wizard Skill Tree'],
+    [K('START') + ' &nbsp;hold', 'Swap jobs (either pad)'],
+  ]],
+  ['DEBUG (for now)', [
+    [K('F3') + ' &nbsp;or&nbsp; ' + K('`'), 'Toggle the debug overlay: XP and packets per minute, bank and portal rates, time to the next affordable skill, the next event, creature counts'],
+    [K('F12') + ' &nbsp;console', 'In the browser console, <code>__wands</code> is the test hook:'],
+    ['<code>__wands.start(slot)</code>', 'Start a new game in slot 1-3'],
+    ['<code>__wands.deliver(kind)</code>', 'Send an item through the Spell Portal, e.g. <code>"fire"</code>'],
+    ['<code>__wands.bank(kind, n)</code>', 'Bank n of an item in the Skill Portal'],
+    ['<code>__wands.egg(kind)</code>', 'Deliver an Egg, e.g. <code>"egg_zephyr"</code>'],
+    ['<code>__wands.boss()</code>', 'Summon the Primal Chimera now'],
+    ['<code>__wands.event(n)</code>', 'Make event n start in 5 seconds (1-6 first cycle, 7 = Cycle 2 Migration...)'],
+    ['<code>__wands.step(dt, n)</code>', 'Run n simulation steps of dt seconds'],
+    ['<code>__wands.G / FA / WZ / UI / R / CFG</code>', 'The live game state and modules, for poking at numbers'],
+    ['<code>node tools/devtool/server.mjs</code>', 'The dev tool (port 8090): layout, variables, formulas and audio tabs over a live preview'],
+  ]],
+];
+UI.controlsPage = function (box, back) {
+  box.classList.add('wideCtl');
+  const sec = ([title, rows]) => '<div class="ctlSec' + (title.startsWith('DEBUG') ? ' dbg wide' : '') + '"><h3>' + title + '</h3>' +
+    rows.map(r => '<div class="ctlRow"><div class="k">' + r[0] + '</div><div>' + r[1] + '</div></div>').join('') + '</div>';
+  box.innerHTML = '<h2>CONTROLS</h2><div class="ctlBody">' + CONTROLS.map(sec).join('') + '</div><button class="big ghost back">BACK</button>';
   box.querySelector('.back').onclick = back;
 };
 UI.slotPage = function (mode) {
@@ -865,4 +951,68 @@ UI.slotPage = function (mode) {
   back.onclick = () => UI.menuPage('menuMain');
   box.appendChild(back);
   UI.menuPage('menuSlots');
+};
+
+// ---------- Splitter settings: one slider, the pink side on its left and the cyan side on its right ----------
+UI.splitB = null;
+UI.openSplit = function (b) {
+  UI.splitB = b;
+  $('splitModal').classList.remove('hidden');
+  UI.splitSync();
+  AU.sfx('blip');
+};
+UI.closeSplit = function () {
+  if (!UI.splitB) return;
+  UI.splitB = null;
+  $('splitModal').classList.add('hidden');
+  AU.sfx('blip'); UI.changed();
+};
+UI.splitSet = function (v) {
+  const b = UI.splitB;
+  if (!b) return;
+  v = Math.max(0, Math.min(100, Math.round(v)));
+  if (v !== b.split) { b.split = v; b.pop = 0.15; UI.changed(); }
+  UI.splitSync();
+};
+UI.splitTurn = function () {
+  const b = UI.splitB;
+  if (!b) return;
+  b.dir = (b.dir + 1) % 4; b.pop = 0.2; AU.sfx('blip'); UI.changed();
+};
+UI.splitSync = function () {
+  const b = UI.splitB;
+  if (!b) return;
+  const [ca, cb] = FA.splitCol, r = $('splitRange');
+  if (+r.value !== b.split) r.value = b.split;
+  r.style.background = 'linear-gradient(90deg,' + ca + ' ' + b.split + '%,' + cb + ' ' + b.split + '%)';
+  $('splitA').textContent = b.split; $('splitBv').textContent = 100 - b.split;
+};
+// the little iso diagram: the tile with an arrow on each output side in that side's colour (turns with the Splitter)
+UI.splitTick = function (dt) {
+  const b = UI.splitB;
+  if (!b) return;
+  if (G.fac.bld.indexOf(b) < 0) { UI.closeSplit(); return; }
+  if (+$('splitRange').value !== b.split) UI.splitSync();
+  const c = $('splitDia'), x = c.getContext('2d'), t = performance.now() / 1000, cx = 160, cy = 78, hw = 54, hh = 27;
+  x.clearRect(0, 0, c.width, c.height);
+  x.fillStyle = '#4f7a3c';
+  x.beginPath(); x.moveTo(cx, cy - hh); x.lineTo(cx + hw, cy); x.lineTo(cx, cy + hh); x.lineTo(cx - hw, cy); x.closePath(); x.fill();
+  x.strokeStyle = '#1a0f28'; x.lineWidth = 4; x.stroke();
+  x.imageSmoothingEnabled = false;
+  const spr = SP.b_splitter;
+  if (spr) x.drawImage(spr.c, cx - 30, cy - 78, 60, 102);   // the sprite's base diamond sits at (10, 26)
+  const sides = FA.splitSides(b), pct = [b.split, 100 - b.split];
+  sides.forEach((d, i) => {
+    const dd = DIRS[d], sx = (dd[0] - dd[1]), sy = (dd[0] + dd[1]), m = Math.hypot(sx * hw, sy * hh), nx = sx * hw / m, ny = sy * hh / m;
+    const px = cx + sx * hw * 1.45, py = cy + sy * hh * 1.45, k = pct[i] > 0 ? 1 + 0.18 * (Math.sin(t * 5) * 0.5 + 0.5) : 0.7;
+    x.globalAlpha = pct[i] > 0 ? 1 : 0.35;
+    for (const [s, col] of [[1.35, '#1a0f28'], [1, FA.splitCol[i]]]) {
+      x.fillStyle = col; x.beginPath();
+      x.moveTo(px + nx * 22 * s * k, py + ny * 22 * s * k);
+      x.lineTo(px - ny * 18 * s * k - nx * 10 * s, py + nx * 18 * s * k - ny * 10 * s);
+      x.lineTo(px + ny * 18 * s * k - nx * 10 * s, py - nx * 18 * s * k - ny * 10 * s);
+      x.closePath(); x.fill();
+    }
+    x.globalAlpha = 1;
+  });
 };

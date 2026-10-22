@@ -15,6 +15,8 @@ const CFG = {
   gatherExtra: 2.5, crankBoost: 0.4,
   buffer: 3,
   fuelPerPacket: 15, fuelCap: 120,
+  chargeBonus: 0.10,          // every packet burns this much longer in a Charger (+10% charge)
+  chargeThrowBonus: 0.20,     // ...and a packet thrown in by hand adds this much on top (+20%)
   batteryMax: 90, stationGen: 10,
   batteryLife: 60,            // seconds a Battery lasts at a full 10 power of draw; it drains in proportion to the load it carries
   chargeTipAt: 0.5,           // the first time a Battery falls below this fraction, hint at the Charger
@@ -111,7 +113,7 @@ const CFG = {
     station:  { name: 'Battery Station', kind: 'station', cost: { wood: 12, stone: 9, iron: 5 }, unlock: null,
                 desc: 'A charged Battery here generates +10 power for the whole factory. Drains while anything needs power. Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed.' },
     charger:  { name: 'Battery Charger', kind: 'charger', cost: { wood: 12, stone: 6, iron: 5 }, unlock: null,
-                desc: 'Recharges a Battery by burning element packets as fuel (15s each). More element types = faster. Uses no electricity.' },
+                desc: 'Recharges a Battery by burning element packets as fuel (16.5s each, 19.5s when thrown in by hand). More element types = faster. Uses no electricity.' },
     splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 6, stone: 3 }, unlock: 'logistics',
                 desc: 'Takes items from behind and deals them out of its front, left and right sides in turn. Blocked sides are skipped. Press E at it to turn it.' },
     sorter:   { name: 'Sorter', kind: 'sorter', cost: { wood: 6, stone: 4, iron: 2, shard: 1 }, unlock: 'logistics',

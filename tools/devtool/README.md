@@ -36,6 +36,7 @@ The preview is not for playing seriously: it is muted, starts from a fixture, an
 | `public/index.html`, `tool.css`, `shell.js`, `common.js`, `preview.js` | The page, tabs, helpers and the shared preview (screen, size, Edit/Play, Freeze, Reload). |
 | `public/layout.js`, `layout-host.js`, `layout-model.js` | Layout tab: side panel / undo / autosave, the in-preview picker + overlay + steps, and the shared model, sanitiser and CSS generator. |
 | `public/variables.js` | Variables tab. |
+| `public/var-help.js` | Plain-language explanation shown under every Variables row (regex rules over the CFG path). Add a rule when you add a CFG number. |
 | `public/formulas.js`, `fcharts.js` | Formulas tab (nine sections) and its canvas chart / table helpers. |
 | `public/audiotab.js` | Audio tab. |
 

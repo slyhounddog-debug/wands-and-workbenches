@@ -6,6 +6,7 @@
 // edits survive reordering the tree).
 import { $, h, say, autosaver } from './common.js';
 import { preview } from './preview.js';
+import { explain } from './var-help.js';
 
 const panel = $('#panel-vars');
 const savedEl = h('span', { class: 'saved' });
@@ -105,7 +106,8 @@ function build() {
       const num = h('input', { type: 'number', step: rg.step });
       const el = h('div', { class: 'vrow', 'data-path': e.path },
         h('span', { class: 'k', title: e.path + '   (default ' + fmt(e.value) + ')' }, e.label || e.path, ON_RELOAD.test(e.path) ? h('em', {}, 'reload') : null),
-        range, num, h('button', { class: 'x', title: 'Back to the default (' + fmt(e.value) + ')', onclick: () => setValue(e.path, DEF[e.path]) }, 'x'));
+        range, num, h('button', { class: 'x', title: 'Back to the default (' + fmt(e.value) + ')', onclick: () => setValue(e.path, DEF[e.path]) }, 'x'),
+        explain(e.path) ? h('div', { class: 'd' }, explain(e.path)) : null);
       range.addEventListener('input', () => setValue(e.path, +range.value));
       num.addEventListener('change', () => setValue(e.path, +num.value));
       rows.set(e.path, { el, range, num, det });
@@ -121,7 +123,7 @@ function filter() {
   const q = search.value.trim().toLowerCase();
   const dets = new Map();
   for (const [p, r] of rows) {
-    const show = (!q || p.toLowerCase().includes(q) || r.el.querySelector('.k').textContent.toLowerCase().includes(q)) && (!onlySet.checked || p in values);
+    const show = (!q || p.toLowerCase().includes(q) || r.el.textContent.toLowerCase().includes(q)) && (!onlySet.checked || p in values);
     r.el.hidden = !show;
     if (show) dets.set(r.det, true);
   }

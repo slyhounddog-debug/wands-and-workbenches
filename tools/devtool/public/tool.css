@@ -75,6 +75,7 @@ ul.help { padding-left: 18px; color: var(--mute); line-height: 1.5; } ul.help b 
 .vrow { display: grid; grid-template-columns: minmax(0, 1fr) 96px 70px 18px; gap: 6px; align-items: center; padding: 2px 0 2px 6px; border-left: 2px solid transparent; }
 .vrow.set { border-left-color: var(--acc); background: #221e14; }
 .vrow .k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11.5px ui-monospace, Consolas, monospace; color: #c9d6e4; }
+.vrow .d { grid-column: 1 / -1; font-size: 11px; line-height: 1.3; color: var(--mute); padding: 0 0 3px; }
 .vrow .k em { font-style: normal; color: #7aa6d8; font-size: 10.5px; margin-left: 4px; }
 .vrow input[type=range] { width: 96px; }
 .vrow input[type=number] { width: 70px; padding: 2px 4px; }

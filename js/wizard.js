@@ -1058,12 +1058,12 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     }
     if (d < 0.45 && dr.t > 0.3) {
       if (dr.kind === 'xp') { G.xp += dr.val; G.stats.xpEarned += dr.val; w.run.xp += dr.val; AU.sfx(dr.val >= CFG.bigGem.tiers[1] ? 'gemBig' : 'gem'); if (dr.val >= CFG.bigGem.tiers[1]) WZ.num(w.x, w.y, '+' + dr.val, '#7be0ff'); }
-      else if (dr.kind === 'core') { G.stock.core += dr.val; AU.sfx('chest'); WZ.icon(w.x, w.y, 'core'); FA.pileIn('core'); UI.changed(); }
-      else if (ELEM[dr.kind]) {   // a recycled packet rides home and lands beside the Spell Portal
-        const p = FA.portal('spell'); FA.dropAt(dr.kind, p.x - 0.6, p.y + 2.6); FA.ipop(p.x + 0.5, p.y + 1.8, [[dr.kind]]); AU.sfx('el_' + dr.kind); WZ.icon(w.x, w.y, dr.kind);
+      else if (dr.kind === 'core') { FA.toStock('core', dr.val); AU.sfx('chest'); WZ.icon(w.x, w.y, 'core'); }
+      else if (ELEM[dr.kind]) {   // a recycled packet flies out of the Spell Portal into its spell spot in the Stockpile
+        FA.toStock(dr.kind, dr.val); AU.sfx('el_' + dr.kind); WZ.icon(w.x, w.y, dr.kind);
       }
-      else if (dr.kind === 'shard') { G.stock.shard += dr.val; w.run.shards += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; AU.sfx('shard'); WZ.icon(w.x, w.y, 'shard'); FA.pileIn('shard'); UI.changed(); }
-      else { G.stock[dr.kind] += dr.val; w.run.harvested += dr.val; G.stats.harvested += dr.val; AU.sfx('pickup'); WZ.icon(w.x, w.y, dr.kind); FA.pileIn(dr.kind); }
+      else if (dr.kind === 'shard') { FA.toStock('shard', dr.val); w.run.shards += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; AU.sfx('shard'); WZ.icon(w.x, w.y, 'shard'); }
+      else { FA.toStock(dr.kind, dr.val); w.run.harvested += dr.val; G.stats.harvested += dr.val; AU.sfx('pickup'); WZ.icon(w.x, w.y, dr.kind); }
       w.drops.splice(i, 1);
     } else if (dr.t > 120 && dr.kind !== 'shard' && dr.kind !== 'core') w.drops.splice(i, 1);
   }

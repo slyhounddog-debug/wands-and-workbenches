@@ -723,6 +723,7 @@ R.drawFloorPile = function (ctx, v, g, t) {
   txt(ctx, '' + n, p[0] + 24, p[1] - 10, 12, '#ffffff', 'center', 'd');
 };
 R.drawFly = function (ctx, v, o, t) {
+  if (o.t < 0) return;   // still waiting its turn to leave the portal
   const p = R.toScreen(v, o.x, o.y);
   ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(Math.round((p[0] - 10) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 20, 8);
   R.item(ctx, o.kind, p[0], p[1] - o.z * 44 + 6, 4, t);

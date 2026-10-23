@@ -191,7 +191,7 @@ UI.giveGift = function (gift) {
   if (!gift) return;
   const f = G.fac, sp = FA.portal('skill');
   for (const k in gift.bank || {}) { G.bank[k] = (G.bank[k] || 0) + gift.bank[k]; FA.ipop(sp.x + 0.5, sp.y + 1, [[k, gift.bank[k]]]); f.skillFlash = 0.5; }
-  for (const k in gift.stock || {}) { G.stock[k] += gift.stock[k]; FA.pileIn(k); }
+  for (const k in gift.stock || {}) FA.toStock(k, gift.stock[k]);
   for (const k in gift.credit || {}) { G.credits[k] = (G.credits[k] || 0) + gift.credit[k]; FA.ipop(G.bd.x, G.bd.y - 1.2, [['ic_gift']]); }
   if (gift.pickup) G.pend = (G.pend || []).concat(gift.pickup);
 };
@@ -715,11 +715,32 @@ UI.pinHtml = function (side, id) {
   }
   return h + '<div class="pa">' + act.join('') + '</div>';
 };
+// pinned blueprints (P / L3): every unfinished building with what it still needs, then the sum against the Stockpile
+UI.bpHtml = function () {
+  const bps = G.fac.bld.filter(b => !b.done);
+  let h = '<div class="clabel">' + UI.img('ic_pin', 16) + UI.img('ic_wrench', 16) + '<span class="stat">' + bps.length + '</span></div>';
+  if (!bps.length) return h + '<div class="pa">' + UI.img('ic_check', 20) + '</div>';
+  const tot = {};
+  for (const b of bps) {
+    const need = FA.needOf(b);
+    for (const k in need) tot[k] = (tot[k] || 0) + need[k];
+  }
+  bps.slice(0, 6).forEach(b => {
+    const need = FA.needOf(b);
+    h += '<div class="br">' + UI.img('b:' + b.type, 24) + Object.keys(need).map(k => '<span class="need">' + UI.img(k, 16) + '<b' + (G.stock[k] >= need[k] ? '' : ' class="short"') + '>' + need[k] + '</b></span>').join('') + '</div>';
+  });
+  if (bps.length > 6) h += '<div class="more">+' + (bps.length - 6) + '</div>';
+  h += '<div class="tot">' + Object.keys(tot).map(k => '<span class="need">' + UI.img(k, 16) + '<b' + (G.stock[k] >= tot[k] ? '' : ' class="short"') + '>' + tot[k] + '</b></span>').join('') + '</div>';
+  return h;
+};
 UI.pinT = 0;
 UI.updatePins = function (dt) {
   UI.pinT -= dt;
   if (UI.pinT > 0) return;
   UI.pinT = 0.5;
+  const bp = $('bpCard');
+  bp.classList.toggle('hidden', !G.pinBp);
+  if (G.pinBp) setHtml('bpCard', UI.bpHtml());
   for (const sd of ['L', 'R']) {
     const id = G.pins && G.pins[sd], el = $('pin' + sd);
     el.classList.toggle('hidden', !id);
@@ -848,7 +869,7 @@ const HOWTO = {
     ['Builder: keyboard & mouse', '<kbd>WASD</kbd> walk, <kbd>left-click</kbd> pick up one (hold to repeat; walks there first), <kbd>right-click</kbd> throw along the lead line (hold = rapid), <kbd>E</kbd> use: gather, crank, rotate, switch recipe, <kbd>1</kbd>-<kbd>7</kbd> or wheel: slot, <kbd>Q</kbd> (or wheel over a family slot): next member of the slot, <kbd>R</kbd> rotate, click: place (with a building selected), drag belts, <kbd>B</kbd> demolish, <kbd>Enter</kbd> place in front, <kbd>T</kbd> skill tree (in it: right-click a skill to pin it, <kbd>Q</kbd> takes the last deposit back out), <kbd>Tab</kbd> cycle targets, <kbd>Shift</kbd>+<kbd>right-click</kbd> throw the whole stack, <kbd>H</kbd> controls card, <kbd>F3</kbd> or <kbd>`</kbd> debug numbers.'],
     ['Wizard: keyboard', '<kbd>Arrows</kbd> walk, <kbd>.</kbd> roll-dodge (invulnerable; standing still at a mound, stick pile or bush it digs instead), <kbd>Y</kbd> skill tree.'],
     ['Swap jobs', 'Hold <kbd>X</kbd> (or Start on a pad) for 1.5s. Then arrows + <kbd>.</kbd> use / <kbd>,</kbd> throw drive the Builder, and WASD + <kbd>Space</kbd> roll + clicking on the right half drive the Wizard.'],
-    ['Gamepads', 'The Builder pad: stick move, A pick up (hold to sweep; with a building selected: place in front; hold with Belt to lay belts), B throw (LT + B: whole stack), X use, right stick cycle targets, X in the tree: undo the last deposit, LB/RB slot, RT next member of a family slot, Back demolish, Y tree. The Wizard pad: stick move, A roll, Y tree. Hold Start to swap. (Which controller plays which job is chosen on the player screen before each game.)'],
+    ['Gamepads', 'The Builder pad: stick move, A pick up (hold to sweep; with a building selected: place in front; hold with Belt to lay belts), B throw (LT + B: whole stack), X use, right stick cycle targets, X in the tree: undo the last deposit, LB/RB slot, RT next member of a family slot, Back demolish, L3 pin blueprints, Y tree. The Wizard pad: stick move, A roll, Y tree. Hold Start to swap. (Which controller plays which job is chosen on the player screen before each game.)'],
   ],
 };
 UI.howPage = function (tab) {
@@ -922,6 +943,7 @@ const CONTROLS = [
     [K('R'), 'Turn the belt or building under the cursor (in front of you on a pad: X), or the one you are about to place. Turns the Splitter while its settings are open'],
     [K('CLICK') + ' &nbsp;/&nbsp; ' + K('ENTER'), 'Place the selected building / belt (Enter: on the tile in front). Drag to lay belts'],
     [K('B') + ' &nbsp;/&nbsp; ' + K('DELETE'), 'Demolish mode (full refund)'],
+    [K('P') + ' &nbsp;/&nbsp; pad L3 (left stick click)', 'Pin blueprints: a card on the Builder side lists what every unfinished building still needs (red = the Stockpile is short)'],
     [K('TAB') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Cycle through nearby targets'],
     [K('ESC'), 'Close / cancel the tool, then pause'],
   ]],
@@ -974,12 +996,14 @@ const CONTROLS = [
   ['DEBUG (for now)', [
     [K('F3') + ' &nbsp;or&nbsp; ' + K('`'), 'Toggle the debug overlay: XP and packets per minute, bank and portal rates, time to the next affordable skill, the next event, creature counts'],
     [K('F4') + ' &nbsp;with the overlay open', 'Dev bot: plays the Wizard (a virtual controller) so one person can test the factory solo. Press again to turn it off'],
+    [K('F2') + ' &nbsp;with the overlay open', 'Snapshot photo test (dev-only): captures the game state as plain JSON, redraws a frame from that copy alone and reports every leak. Press again to cycle LIVE / SNAPSHOT / BLINK / DIFF (the game is frozen while a view is up), Esc leaves. The SNAPSHOT bar under the overlay also has SAVE (downloads the JSON)'],
     [K('F12') + ' &nbsp;console', 'In the browser console, <code>__wands</code> is the test hook:'],
     ['<code>__wands.start(slot)</code>', 'Start a new game in slot 1-3'],
     ['<code>__wands.deliver(kind)</code>', 'Send an item through the Spell Portal, e.g. <code>"fire"</code>'],
     ['<code>__wands.bank(kind, n)</code>', 'Bank n of an item in the Skill Portal'],
     ['<code>__wands.egg(kind)</code>', 'Deliver an Egg, e.g. <code>"egg_zephyr"</code>'],
     ['<code>__wands.bot("wizard")</code>', 'Dev bot on (<code>null</code> = off); <code>__wands.step</code> then plays the Wizard too'],
+    ['<code>__wands.snapshot()</code>', 'Photo test: returns the snapshot object (<code>.G</code> = the state, <code>.issues</code> = what cannot survive JSON, <code>.leaks</code> = what the renderers reached for); <code>__wands.Snap.report</code> has the verdict and pixel diff; <code>__wands.snapView("blink")</code> shows the frames (<code>"off"</code> resumes)'],
     ['<code>__wands.boss()</code>', 'Summon the Primal Chimera now'],
     ['<code>__wands.event(n)</code>', 'Make event n start in 5 seconds (1-6 first cycle, 7 = Cycle 2 Migration...)'],
     ['<code>__wands.step(dt, n)</code>', 'Run n simulation steps of dt seconds'],

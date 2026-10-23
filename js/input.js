@@ -75,7 +75,7 @@ IN.pollPads = function () {
     IN.prevRs[p] = rsDir;
     IN.pad[p] = {
       ix, iy, cyc,
-      a: edge(0), b: edge(1), x: edge(2), y: edge(3), lb: edge(4), rb: edge(5), rt: edge(7),
+      a: edge(0), b: edge(1), x: edge(2), y: edge(3), lb: edge(4), rb: edge(5), rt: edge(7), l3: edge(10),
       xHeld: !!b[2], aHeld: !!b[0], bHeld: !!b[1], ltHeld: !!b[6], startHeld: !!b[9], back: edge(8),
       any: b.some(Boolean),
     };

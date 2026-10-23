@@ -21,7 +21,9 @@ FA.zone = () => ({ x0: 0, y0: G.fac.h - 5, x1: 4, y1: G.fac.h - 1 });
 FA.piles = () => {
   const h = G.fac.h;
   // a 2x2 block on screen: wood | stone over iron | shard (the zone is 5x5 in the south-west corner)
-  return { wood: { x: 1.0, y: h - 2.5 }, stone: { x: 2.5, y: h - 4.0 }, iron: { x: 3.1, y: h - 0.4 }, shard: { x: 4.6, y: h - 1.9 }, core: { x: 4.3, y: h - 3.3 } };
+  // the four spell spots (element packets the Wizard picked up) sit at the corners of the zone around them
+  return { wood: { x: 1.0, y: h - 2.5 }, stone: { x: 2.5, y: h - 4.0 }, iron: { x: 3.1, y: h - 0.4 }, shard: { x: 4.6, y: h - 1.9 }, core: { x: 4.3, y: h - 3.3 },
+    air: { x: 0.8, y: h - 4.3 }, water: { x: 0.7, y: h - 0.7 }, fire: { x: 4.6, y: h - 4.6 }, earth: { x: 4.5, y: h - 0.3 } };
 };
 FA.inb = (x, y) => x >= 0 && y >= 0 && x < G.fac.w && y < G.fac.h;
 FA.cell = (x, y) => (FA.inb(x, y) ? G.fac.grid[y * G.fac.w + x] : undefined);
@@ -66,7 +68,7 @@ FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 's
 FA.fresh = function (w, h) {
   const f = { w, h, grid: new Array(w * h).fill(null), bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
     portalQ: [], eggQ: [], portalT: 0, nextId: 1, gen: 0, demand: 0, lowT: 0, flash: 0, flashCol: '#fff', skillFlash: 0, t: 0,
-    log: { spell: [], skill: [] }, working: 0, thumps: [], bump: 0, bumpAmp: 0, weakFlash: 0 };
+    log: { spell: [], skill: [] }, working: 0, thumps: [], bump: 0, bumpAmp: 0, weakFlash: 0, stockNext: 0 };
   for (const p of FA.portalCells(w, h)) f.grid[p.y * w + p.x] = { type: 'portal', x: p.x, y: p.y, which: p.which };
   return f;
 };
@@ -178,6 +180,25 @@ FA.pop = function (x, y, text, col) { G.fac.pops.push({ x, y, text, col: col || 
 // an icon pop instead of words: a row of [spriteKey, number?] floating up
 FA.ipop = function (x, y, ic) { G.fac.pops.push({ x, y, ic, t: 0 }); };
 FA.pileIn = k => { const p = FA.piles()[k]; if (p) FA.ipop(p.x, p.y - 0.4, [[k]]); };   // a harvest reached the Stockpile
+// something for the Stockpile (from the wilds: harvests, shards, Cores, spells, gifts) comes out of the Spell Portal and flies to its pile;
+// the count goes up when it lands. Up to 6 flights share n, a beat apart. The save counts anything still in the air as already there.
+FA.toStock = function (kind, n) {
+  n = n || 1;
+  const f = G.fac, p = FA.piles()[kind], port = FA.portal('spell');
+  if (!p) { G.stock[kind] = (G.stock[kind] || 0) + n; return; }
+  const px = port.x + 0.5, py = port.y + 1, d = Math.hypot(p.x - px, p.y - py), fl = Math.min(n, 6);
+  for (let i = 0; i < fl; i++) {
+    const delay = Math.max(0, f.stockNext - f.t);
+    f.stockNext = f.t + delay + CFG.stockFlight.gap;
+    f.flying.push({ kind, n: Math.floor(n / fl) + (i < n % fl ? 1 : 0), stock: true, sx: px, sy: py, x: px, y: py, z: 0.8, tx: p.x, ty: p.y, t: -delay,
+      T: Math.min(CFG.stockFlight.maxT, CFG.stockFlight.baseT + d * CFG.stockFlight.perTile), h: 1.5 + d * 0.15 });
+  }
+};
+FA.inFlight = function () {   // what the saved stock must add: stock-bound items still in the air
+  const out = {};
+  for (const o of G.fac.flying) if (o.stock) out[o.kind] = (out[o.kind] || 0) + (o.n || 1);
+  return out;
+};
 FA.say = a => { if (a.ic) FA.ipop(G.bd.x, G.bd.y - 0.3, a.ic.map(k => [k])); else if (a.label) FA.pop(G.bd.x, G.bd.y - 0.3, a.label, '#ffd0a0'); };   // why an action can't happen
 
 // ---------- hands & floor items ----------
@@ -645,7 +666,8 @@ FA.update = function (dt) {
   for (let i = f.flying.length - 1; i >= 0; i--) {
     const o = f.flying[i];
     o.t += dt;
-    const k = Math.min(1, o.t / o.T);
+    const k = Math.min(1, Math.max(0, o.t / o.T));
+    if (o.stock && o.t - dt < 0 && o.t >= 0) { FA.burst(o.sx, o.sy, ITEMS[o.kind].color, 5); f.flash = Math.max(f.flash, 0.12); f.flashCol = '#ffffff'; }   // it leaves the Spell Portal
     o.x = o.sx + (o.tx - o.sx) * k; o.y = o.sy + (o.ty - o.sy) * k; o.z = Math.sin(k * Math.PI) * o.h + (1 - k) * 0.8;
     if (k >= 1) { f.flying.splice(i, 1); FA.land(o); }
   }
@@ -693,14 +715,14 @@ FA.updCharger = function (c, dt) {
 
 // ---------- throwing ----------
 // will this receiver take a thrown item of kind k? (portal / belt / building / blueprint / the Stockpile Zone)
-FA.accepts = (o, k) => (o === 'zone' ? !!RES[k] : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item && k !== 'battery' : FA.canInsert(o, k) || FA.canSwap(o, k));
+FA.accepts = (o, k) => (o === 'zone' ? !!(RES[k] || ELEM[k]) : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item && k !== 'battery' : FA.canInsert(o, k) || FA.canSwap(o, k));
 // every receiver in throwing range that would take kind k, with a priority (lower = preferred)
 FA.throwList = function (k) {
   const bd = G.bd, out = [];
   const add = (x, y, obj, prio) => { const d = Math.hypot(x - bd.x, y - bd.y); if (d >= 0.4 && d <= CFG.throwRange) out.push({ x, y, obj, prio, d }); };
   for (const p of FA.portalCells(G.fac.w, G.fac.h)) { const c = FA.cell(p.x, p.y); if (FA.portalTakes(c, k)) add(p.x + 0.5, p.y + 0.5, c, 0.8); }
   for (const b of G.fac.bld) if (FA.canInsert(b, k) || FA.canSwap(b, k)) add(b.x + 0.5, b.y + 0.5, b, b.done && FA.isLogi(b) ? 1.4 : 1);
-  if (RES[k]) { const z = FA.zone(); add((z.x0 + z.x1 + 1) / 2, (z.y0 + z.y1 + 1) / 2, 'zone', 1.1); }
+  if (RES[k] || ELEM[k]) { const z = FA.zone(); add((z.x0 + z.x1 + 1) / 2, (z.y0 + z.y1 + 1) / 2, 'zone', 1.1); }
   if (k !== 'battery') for (const bl of G.fac.belts) if (!bl.item) add(bl.x + 0.5, bl.y + 0.5, bl, 2.2);
   return out;
 };
@@ -780,6 +802,7 @@ FA.throwOne = function (aimX, aimY, cd) {
   return true;
 };
 FA.land = function (o) {
+  if (o.stock) { G.stock[o.kind] = (G.stock[o.kind] || 0) + (o.n || 1); FA.pileIn(o.kind); AU.sfx('drop'); UI.changed(); return; }
   const tx = Math.floor(o.x), ty = Math.floor(o.y), c = FA.cell(tx, ty);
   const fell = () => FA.dropAt(o.kind, o.x, o.y, o.charge);
   const bounce = () => {   // couldn't go in: hop back toward where it came from
@@ -800,7 +823,7 @@ FA.land = function (o) {
     if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind, o.charge, true); AU.sfx('drop'); FA.ipop(o.x, o.y, [[o.kind]]); return; }
     return bounce();
   }
-  if (FA.reserved(tx, ty) && RES[o.kind]) { G.stock[o.kind]++; FA.ipop(o.x, o.y, [[o.kind]]); AU.sfx('drop'); return; }
+  if (FA.reserved(tx, ty) && (RES[o.kind] || ELEM[o.kind])) { G.stock[o.kind] = (G.stock[o.kind] || 0) + 1; FA.ipop(o.x, o.y, [[o.kind]]); AU.sfx('drop'); return; }
   fell();
   AU.sfx('thud');
 };
@@ -954,8 +977,8 @@ FA.actionFor = function (t, mode) {
       if (!pick) return NONE;
       const r = t.o;
       if (h && (k !== r || h.n >= FA.cap())) return FULL;
-      if (G.stock[r] <= 0) return A('No ' + RES[r].name + ': the Wizard must harvest more', null, false, [r, 'ic_x']);
-      return A('Take ' + RES[r].name, () => FA.takePile(r), true, [r]);
+      if (G.stock[r] <= 0) return A('No ' + itemName(r) + ': the Wizard must bring more', null, false, [r, 'ic_x']);
+      return A('Take ' + itemName(r), () => FA.takePile(r), true, [r]);
     }
     case 'belt': {
       const b = t.o;
@@ -1105,7 +1128,7 @@ FA.toJSON = function () {
       return o;
     }),
     belts: f.belts.map(b => ({ x: b.x, y: b.y, dir: b.dir, item: b.item ? b.item.kind : null })),
-    floor: f.floor.concat(f.flying.map(o => ({ kind: o.kind, charge: o.charge, x: o.tx, y: o.ty }))).map(o => ({ kind: o.kind, charge: o.charge, x: o.x, y: o.y })),
+    floor: f.floor.concat(f.flying.filter(o => !o.stock).map(o => ({ kind: o.kind, charge: o.charge, x: o.tx, y: o.ty }))).map(o => ({ kind: o.kind, charge: o.charge, x: o.x, y: o.y })),
     portalQ: f.portalQ, eggQ: f.eggQ,
   };
 };

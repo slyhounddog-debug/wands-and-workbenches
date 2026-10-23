@@ -16,7 +16,7 @@ const SAVE_VERSION = 4;
 const QUEST_VERSION = 5;   // v5 split the single goal chain into two tracks, Builder and Wizard (Main.splitQuest); v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1; v4 inserted the first-creature-kill goal at 5 and the two Stronghold goals before Summoning: goals from the old 5 shift by 1, from the old 21 (Summoning) by 3
 function blankState(slot) {
   return {
-    slot, xp: 0, tree: {}, stock: { wood: CFG.start.wood, stone: CFG.start.stone, iron: CFG.start.iron, shard: 0, core: 0 }, fam: {},
+    slot, xp: 0, tree: {}, stock: { wood: CFG.start.wood, stone: CFG.start.stone, iron: CFG.start.iron, shard: 0, core: 0, air: 0, water: 0, fire: 0, earth: 0 }, fam: {}, pinBp: false,
     bank: {}, bankTotal: 0,
     credits: { station: 0, charger: 0 },
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
@@ -55,7 +55,7 @@ Main.applySave = function (slot, s) {
   G.flags = s.flags || {}; G.quest = Main.questOf(s); G.placeDir = s.placeDir || 0;
   if (s.qbase && typeof s.quest === 'object') G.qbase = Object.assign(G.qbase, s.qbase);   // null = measured from when the goal first shows
   G.bankLog = Array.isArray(s.bankLog) ? s.bankLog.filter(k => ITEMS[k]) : [];
-  G.pins = Object.assign({ L: null, R: null }, s.pins || {});
+  G.pins = Object.assign({ L: null, R: null }, s.pins || {}); G.pinBp = !!s.pinBp;
   G.hands = s.hands && ITEMS[s.hands.kind] ? s.hands : null;
   G.w = WZ.fresh();
   G.ev = WZ.evFresh(s.ev && s.ev.n || 0);
@@ -89,9 +89,9 @@ Main.save = function () {
     const loose = G.w ? G.w.drops.filter(d => d.kind === 'shard').reduce((a, d) => a + d.val, 0) : 0;
     const looseCores = G.w ? G.w.drops.filter(d => d.kind === 'core').reduce((a, d) => a + d.val, 0) : 0;
     const data = JSON.stringify({
-      v: SAVE_VERSION, qv: QUEST_VERSION, xp: G.xp, tree: G.tree, stock: Object.assign({}, G.stock, { shard: G.stock.shard + loose, core: G.stock.core + looseCores }), ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
+      v: SAVE_VERSION, qv: QUEST_VERSION, xp: G.xp, tree: G.tree, stock: Object.assign({}, G.stock, { shard: G.stock.shard + loose, core: G.stock.core + looseCores }, ...Object.entries(FA.inFlight()).map(([k, n]) => ({ [k]: G.stock[k] + n + (k === 'shard' ? loose : k === 'core' ? looseCores : 0) }))), ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
       flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: FA.toJSON(), at: Date.now(),
-      bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins,
+      bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp,
     });
     if (!Main.saveOk(JSON.parse(data))) throw new Error('the new save failed its own check');
     // rolling backup: the save we're about to replace becomes the backup, if it was good
@@ -279,6 +279,7 @@ Main.controls = function (dt) {
   if (IN.hit('KeyT') || (p0 && p0.y && !UI.splitB)) UI.openTree('L');
   if (IN.hit('KeyY') || (p1 && p1.y)) UI.openTree('R');
   if (IN.hit('KeyH')) { UI.help(); G.helpT = 0; }
+  if ((IN.hit('KeyP') || (p0 && p0.l3)) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
   if (IN.hit('F3') || IN.hit('Backquote')) { UI.debugOn = !UI.debugOn; AU.sfx('blip'); }
   if (IN.hit('F4') && UI.debugOn) DevBot.toggle();   // dev-only: only while the F3 overlay is open
   if (G.helpT > 0) { G.helpT -= dt; if (G.helpT <= 0) UI.help(false); }
@@ -630,12 +631,16 @@ function frame(ts) {
   if (DevBot.on) DevBot.drive(dt);   // dev-only Wizard bot: writes the Wizard's pad state, nothing else
   if (STATE === 'play' && G) {
     try {
+      Snap.tick();   // dev-only: the snapshot bar and its keys (inert unless the F3 overlay is open)
+      if (Snap.mode !== 'off') { AU.hum(0); Snap.draw(ctx, ts); }   // a snapshot view is up: the simulation is frozen and the cached frame shows
+      else {
       if (!G.paused) Main.step(dt);
       else AU.hum(0);
       if (G) {
         ctx.clearRect(0, 0, CFG.W, CFG.H);
         R.drawFactory(ctx, G.paused ? 0 : dt);
         R.drawWorld(ctx, G.paused ? 0 : dt);
+      }
       }
     } catch (e) { R.defer = null; UI.err(e); }
   } else {
@@ -718,7 +723,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // ---------- test hook ----------
 window.__wands = {
   get G() { return G; },
-  Main, FA, WZ, UI, R, CFG, DevBot,
+  Main, FA, WZ, UI, R, CFG, DevBot, Snap,
   start(slot) { Main.newGame(slot || 1); },
   deliver(kind) { FA.deliver(kind); },
   bank(kind, n) { for (let i = 0; i < (n || 1); i++) FA.bank(kind); },
@@ -729,4 +734,7 @@ window.__wands = {
   // force event n (1 = the first of the rotation, 7 = Cycle 2's Migration, ...) to start in 5 seconds
   event(n) { const ev = G.ev; ev.n = Math.max(0, (n || 1) - 1); ev.plan = null; ev.active = null; ev.left = 5; ev.warned = 3; ev.clear = 0; return WZ.evInfo(); },
   egg(kind) { FA.deliver(kind || 'egg_zephyr'); },
+  // dev-only photo test: capture G as plain JSON, redraw one frame from that copy alone, report every leak (see js/snapshot.js)
+  snapshot() { return Snap.run(); },
+  snapView(mode) { Snap.show(mode); },
 };

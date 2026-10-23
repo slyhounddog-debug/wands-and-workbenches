@@ -283,7 +283,7 @@ Main.controls = function (dt) {
   if (IN.hit('F3') || IN.hit('Backquote')) { UI.debugOn = !UI.debugOn; AU.sfx('blip'); }
   if (IN.hit('F4') && UI.debugOn) DevBot.toggle();   // dev-only: only while the F3 overlay is open
   if (G.helpT > 0) { G.helpT -= dt; if (G.helpT <= 0) UI.help(false); }
-  CFG.hotkeys.forEach((k, i) => { if (IN.hit(k)) UI.select(CFG.hotbar[i]); });
+  if (!UI.splitB) CFG.hotkeys.forEach((k, i) => { if (IN.hit(k)) UI.select(CFG.hotbar[i]); });   // 1-4 toggle a Splitter output's filters while its settings are open
   let rot = 0;
   if (IN.hit('BracketLeft') || (p0 && p0.lb)) rot = -1;
   if (IN.hit('BracketRight') || (p0 && p0.rb)) rot = 1;
@@ -294,7 +294,7 @@ Main.controls = function (dt) {
   if (IN.hit('KeyR') && !frozenNow()) {
     // R turns whatever is already placed under the cursor (or in front / in reach); only with nothing there does it turn the next placement
     const at = rotateTile();
-    if (UI.splitB) UI.splitTurn();
+    if (UI.splitB) { /* a Splitter has no front to turn */ }
     else if (!(at && FA.rotateAt(at[0], at[1]))) { G.placeDir = (G.placeDir + 1) % 4; AU.sfx('blip'); }
   }
 
@@ -332,14 +332,21 @@ Main.controls = function (dt) {
     bix = 0; biy = 0; use = false; pick = false; G.noThrow = true;
   }
   // the Splitter's settings are open: the Builder's inputs belong to them (the Wizard plays on)
+  // up / down picks an output, left / right nudges its share by 5 (with key repeat), 1-4 toggle its element filters (pad: X moves the
+  // element cursor, Y flips it), E / Enter / A / B close
   if (UI.splitB && !frozen) {
+    const F = UI.splitFoc, b = UI.splitB;
     if (use || IN.hit('Enter') || (p0 && (p0.a || p0.b))) { UI.closeSplit(); G.noThrow = true; }
-    else if (p0 && p0.x) UI.splitTurn();
-    else if (p0 && p0.y) UI.splitAng(UI.splitB.ang === 90 ? 180 : 90);
-    const n = Main.splitNav, dx = Math.abs(bix) > 0.5 ? Math.sign(bix) : 0;
-    if (!dx) { n.dx = 0; n.t = 0; }
-    else if (dx !== n.dx) { n.dx = dx; n.t = 0.35; UI.splitSet(UI.splitB.split + dx * 5); }
-    else if ((n.t -= dt) <= 0) { n.t = 0.1; UI.splitSet(UI.splitB.split + dx * 5); }
+    else {
+      if (p0 && p0.x) { UI.splitPad = true; F.col = (F.col + 1) % 4; UI.splitSync(); AU.sfx('tab'); }
+      if (p0 && p0.y) { UI.splitPad = true; UI.splitToggle(F.row, ELEMS[F.col]); }
+      for (let i = 0; i < 4; i++) if (IN.hit('Digit' + (i + 1))) UI.splitToggle(F.row, ELEMS[i]);
+      const n = Main.splitNav, dx = Math.abs(bix) > 0.5 ? Math.sign(bix) : 0, dy = !dx && Math.abs(biy) > 0.5 ? Math.sign(biy) : 0, k = dx ? 'x' + dx : dy ? 'y' + dy : '';
+      const go = () => { if (dx) UI.splitNudge(b.outs.length === 2 ? 0 : F.row, dx * 5); else if (dy) { F.row = Math.max(0, Math.min(b.outs.length - 1, F.row + dy)); UI.splitSync(); AU.sfx('tab'); } };
+      if (!k) { n.dx = ''; n.t = 0; }
+      else if (k !== n.dx) { n.dx = k; n.t = 0.35; go(); }
+      else if ((n.t -= dt) <= 0) { n.t = dy ? 0.25 : 0.1; go(); }
+    }
     bix = 0; biy = 0; use = false; pick = false;
   }
   // right-click / B / swapped , cancels hand-gathering (and that press doesn't throw)
@@ -664,13 +671,11 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btnDemo').onclick = () => { G.demolish = !G.demolish; AU.sfx('blip'); };
   $('btnSwap').onclick = () => UI.toast('Hold X (or Start on a pad) for 1.5 seconds to swap jobs.', 'L', 'ic_swap');
   $('btnHelp').onclick = () => UI.help();
-  const sr = $('splitRange');
-  sr.oninput = () => UI.splitSet(+sr.value);
-  sr.onchange = () => sr.blur();   // keep the arrow keys for walking
-  $('splitM180').onclick = () => UI.splitAng(180);
-  $('splitM90').onclick = () => UI.splitAng(90);
-  $('splitRot').onclick = () => UI.splitTurn();
-  $('splitReset').onclick = () => { UI.splitSet(50); AU.sfx('blip'); };
+  const sb = $('splitBody');   // the rows are rebuilt whenever the outputs change, so their events are caught here
+  sb.oninput = e => { const r = e.target; if (r.classList.contains('splitR')) { UI.splitPad = false; UI.splitFoc.row = +r.dataset.i; UI.splitSet(+r.dataset.i, +r.value); } };
+  sb.onchange = e => { if (e.target.blur) e.target.blur(); };   // keep the arrow keys for walking
+  sb.onclick = e => { const bt = e.target.closest && e.target.closest('button.el'); if (bt) { UI.splitPad = false; UI.splitFoc.row = +bt.dataset.i; UI.splitToggle(+bt.dataset.i, bt.dataset.el); bt.blur(); } };
+  $('splitReset').onclick = () => UI.splitReset();
   $('splitDone').onclick = () => UI.closeSplit();
   $('splitModal').onmousedown = e => { if (e.target.id === 'splitModal') UI.closeSplit(); };
   $('splitModal').oncontextmenu = e => { e.preventDefault(); UI.closeSplit(); };

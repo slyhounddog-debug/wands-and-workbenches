@@ -68,7 +68,9 @@ FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 's
 FA.fresh = function (w, h) {
   const f = { w, h, grid: new Array(w * h).fill(null), bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
     portalQ: [], eggQ: [], portalT: 0, nextId: 1, gen: 0, demand: 0, lowT: 0, flash: 0, flashCol: '#fff', skillFlash: 0, t: 0,
-    log: { spell: [], skill: [] }, working: 0, thumps: [], sucks: [], bump: 0, bumpAmp: 0, weakFlash: 0, stockNext: 0 };
+    log: { spell: [], skill: [] }, working: 0, thumps: [], sucks: [], bump: 0, bumpAmp: 0, weakFlash: 0, stockNext: 0,
+    rings: [], waves: [],   // throw impact rings, Spell Portal shockwaves
+    elAct: { air: 0, water: 0, fire: 0, earth: 0 }, weather: { air: 0, water: 0, fire: 0, earth: 0 } };   // element packets handled lately -> the wilds' weather (0..1 each)
   for (const p of FA.portalCells(w, h)) f.grid[p.y * w + p.x] = { type: 'portal', x: p.x, y: p.y, which: p.which };
   return f;
 };
@@ -83,10 +85,11 @@ FA.initial = function () {
   const sx = w - 4;
   FA.makeBuilding('air', sx - 3, sy, true, false, 0);
   FA.addBelt(sx - 2, sy, 0); FA.addBelt(sx - 1, sy, 0);
-  const sp = FA.makeBuilding('splitter', sx, sy, true, true, 3); sp.split = CFG.starterSplit;
+  const sp = FA.makeBuilding('splitter', sx, sy, true, true, 3);
   FA.addBelt(sx + 1, sy, 0); FA.addBelt(sx + 2, sy, 0);
   FA.makeBuilding('spawner1', sx, sy + 1, true, false, 0);
   FA.addBelt(sx + 1, sy + 1, 0); FA.addBelt(sx + 2, sy + 1, 0);
+  FA.splitConn(sp); sp.pct = { 0: CFG.starterSplit, 1: 100 - CFG.starterSplit };   // its outputs are east (the portal belts) and south (the Spawner)
   G.bd = FA.freshBuilder();
 };
 FA.freshBuilder = () => ({ x: 5.5, y: G.fac.h - 6.5, vx: 0, vy: 0, fx: 1, fy: 0, target: null, then: null, stuckT: 0, gather: null,
@@ -134,7 +137,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   if (d.kind === 'charger') { b.bat = null; b.fuel = { air: 0, water: 0, fire: 0, earth: 0 }; b.types = []; }
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
   if (d.kind === 'sorter') b.filter = null;
-  if (d.kind === 'splitter') { b.split = 50; b.acc = 0; b.ang = 90; }
+  if (d.kind === 'splitter') { b.pct = {}; b.filt = {}; b.outs = []; b.ins = []; b.sig = null; b.acc = {}; b.src = {}; }
   f.bld.push(b);
   FA.setCell(x, y, b);
   if (b.done) FA.onComplete(b, true);
@@ -348,6 +351,7 @@ FA.insert = function (b, kind, charge, thrown) {
   const d = FA.def(b);
   if (d.kind === 'crafter') b.inv[kind] = (b.inv[kind] || 0) + 1;
   else if (FA.isLogi(b)) b.out.push({ kind });
+  if (d.kind === 'charger' && ELEM[kind]) FA.elTick(kind);
   else if (d.kind === 'station') {
     b.bat = charge || 0;
     if (b.bat <= 0) FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_x']]);
@@ -360,8 +364,23 @@ FA.insert = function (b, kind, charge, thrown) {
 FA.canSwap = (b, k) => k === 'battery' && !!b && typeof b === 'object' && !!b.done && (b.type === 'station' || b.type === 'charger') && b.bat != null;
 FA.takeBat = function (b) {
   const old = b.bat;
-  b.bat = null; if (b.types) b.types = [];
+  b.bat = null; b.over = 0; if (b.types) b.types = [];
   return old;
+};
+// Overclocking: a combo spell (tier = its element count) or an Elixir thrown into a Station that holds a Battery overcharges it:
+// extra charge past full (up to overcharge.max) and +power for a while (b.over seconds)
+FA.overTier = k => (k === 'elixir' ? 1 : ITEMS[k] && ITEMS[k].spell && (SPELL_EL[k] || []).length >= 2 ? SPELL_EL[k].length : 0);
+FA.canOver = (b, k) => !!b && typeof b === 'object' && b.type === 'station' && !!b.done && b.bat != null && FA.overTier(k) > 0 && b.bat < CFG.batteryMax * CFG.overcharge.max;
+FA.overcharge = function (b, k) {
+  const O = CFG.overcharge, n = FA.overTier(k), elx = k === 'elixir';
+  b.bat = Math.min(CFG.batteryMax * O.max, b.bat + CFG.batteryMax * (elx ? O.elixir : O.fill[n]));
+  b.over = Math.max(b.over || 0, elx ? O.elixirT : O.time[n]);
+  b.pop = 0.45;
+  G.stats.overcharged = (G.stats.overcharged || 0) + 1;
+  (SPELL_EL[k] || []).forEach(el => FA.eburst(b.x + 0.5, b.y + 0.5, el, 6));
+  FA.burst(b.x + 0.5, b.y + 0.5, '#fff07a', 14);
+  FA.ipop(b.x + 0.5, b.y + 0.5, [[k], ['ic_bolt', '+' + Math.round(b.over)]]);
+  AU.sfx('overcharge'); UI.changed();
 };
 FA.takeOut = function (b) {   // one item per press
   if (!b.out.length || !FA.canHold(b.out[0].kind)) return;
@@ -422,23 +441,69 @@ FA.deliver = function (kind, x, y) {
   FA.suck(kind, x === undefined ? p.x + 0.5 : x, y === undefined ? p.y + 1 : y);
   if (kind === 'sigil') WZ.summonBoss();
   else if (ITEMS[kind].egg) WZ.hatch(kind);
-  else if (ITEMS[kind].pickup) {
-    WZ.dropPickup(kind);
-  } else {
+  else if (ITEMS[kind].pickup) WZ.send(kind, 'pickup');   // it arcs out of the factory and sails into the wilds, then lands beside him
+  else {
     const spell = BASIC_SPELL[kind] || kind;
     if (!BASIC_SPELL[kind]) {
       G.flags.combo = true;
       if (CFG.recipes[kind] && Object.keys(CFG.recipes[kind].in).length === 3) G.flags.triple = true;
     }
-    WZ.incoming(spell);
+    WZ.send(kind, 'spell', spell);
   }
   AU.sfx('deliver');
 };
-// the Spell Portal's intake show: the item is slurped into the ring, then a column of light shoots up out of the factory, lasting as long as
-// the spell's own drop-in over the Wizard (drawn by R.drawSuck from G.fac.sucks)
+// the Spell Portal's intake show: the item is slurped into the ring, then it shoots up and out of the factory's top-right corner
+// (CFG.arc.outT) to come sailing into the wilds from their top-left (G.w.arcs, WZ.send). Drawn by R.drawSuck from G.fac.sucks
 FA.suck = function (kind, x, y) {
-  const f = G.fac, sp = ELEM[kind] ? BASIC_SPELL[kind] : kind, drop = (CFG.spells[sp] && CFG.spells[sp].drop) || 0;
-  f.sucks.push({ kind, x, y, t: 0, dur: Math.max(CFG.suck.minT, drop), col: ITEMS[kind].color || '#ffffff', seed: Math.random() * 6.283 });
+  G.fac.sucks.push({ kind, x, y, t: 0, dur: CFG.suck.baseT + CFG.arc.outT, col: ITEMS[kind].color || '#ffffff', seed: Math.random() * 6.283 });
+};
+// a shockwave out of the Spell Portal when something big happens in the wilds (a heavy hit on the Wizard, an event, a Warden waking, the
+// Chimera): rings across the floor, and belts / machines jitter as the front passes them (FA.quake)
+FA.pressure = function (amp, col) {
+  const f = G.fac;
+  if (!f) return;
+  f.waves.push({ t: 0, amp: Math.min(1.5, amp), col: col || '#ffffff' });
+  if (f.waves.length > 4) f.waves.shift();
+  f.bump = 0; f.bumpAmp = Math.max(f.bumpAmp, 10 * Math.min(1.5, amp));
+  f.flash = Math.max(f.flash, 0.4); f.flashCol = col || '#ffffff';
+  AU.sfx('pressure');
+};
+FA.quake = function (x, y) {   // px of jitter a passing shockwave front gives the tile (x, y) right now (0 when none)
+  const f = G.fac, P = CFG.pressure;
+  if (!f.waves.length) return 0;
+  const p = FA.portal('spell'), d = Math.hypot(x + 0.5 - p.x - 0.5, y + 0.5 - p.y - 1);
+  if (d > P.range) return 0;
+  let off = 0;
+  for (const wv of f.waves) {
+    const g = Math.abs(d - wv.t * P.speed);
+    if (g < 1.2) off += P.amp * wv.amp * (1 - g / 1.2) * (1 - wv.t / P.life) * (1 - d / P.range) * Math.sin(wv.t * 70 + d * 3);
+  }
+  return off;
+};
+// element packets the factory handles (harnessed, gathered, burnt, crafted with) feed the wilds' weather
+FA.elTick = (el, n) => { const a = G.fac.elAct; if (a[el] !== undefined) a[el] += n || 1; };
+FA.updWeather = function (dt) {
+  const f = G.fac, C = CFG.weather, dec = Math.exp(-dt / C.tau), w = G.w;
+  for (const el in f.elAct) {
+    f.elAct[el] *= dec;
+    const rate = f.elAct[el] * 60 / C.tau;   // packets a minute (an exponential window of tau seconds)
+    let goal = Math.max(0, Math.min(1, (rate - C.min) / (C.full - C.min)));
+    if (w && (w.shrine === el || w.surge === el)) goal = Math.min(1, goal + C.shrine);
+    f.weather[el] += Math.max(-C.ease * dt, Math.min(C.ease * dt, goal - f.weather[el]));
+  }
+};
+// a finished craft puffs out of the machine's top: steam for Water, sparks for Fire, wisps for Air, grit for Earth, smoke for no element
+const EXH = { water: ['#9ad8ff', '#e8f6ff', 8, -2.5], fire: ['#ff9a3a', '#ffe36b', 4, -4], air: ['#e6f8ff', '#ffffff', 4, -1.5], earth: ['#b58a4c', '#8a6a3c', 4, 1], smoke: ['#9a94a8', '#d8d0e0', 8, -2] };
+FA.exhaust = function (b, ins) {
+  const els = ins.filter(k => ELEM[k]);
+  for (const el of els.length ? els : ['smoke']) {
+    const e = EXH[el];
+    for (let i = 0; i < 7; i++) {
+      const a = Math.random() * 6.283, s = 0.3 + Math.random() * 0.6;
+      G.fac.parts.push({ x: b.x + 0.5 + Math.cos(a) * 0.15, y: b.y + 0.5 + Math.sin(a) * 0.15, z: 3.2, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        vz: 1.2 + Math.random() * 1.6, g: e[3], t: 0.9 + Math.random() * 0.5, col: i % 3 ? e[0] : e[1], sz: e[2] + (Math.random() < 0.3 ? 4 : 0) });
+    }
+  }
 };
 // a second after a spell resolves in the wilds, tell the Builder how it went (combos always, basics only on weak hits)
 FA.landed = function (c) {
@@ -471,36 +536,71 @@ FA.pushSide = function (b, di) {
   if (!c) return false;
   if (c.type === 'portal') { if (!FA.enterPortal(c, o.kind, b.x + 0.5, b.y + 0.5)) return false; }
   else if (c.type === 'belt') { if (c.item || o.kind === 'battery' || (c.dir + 2) % 4 === di) return false; c.item = { kind: o.kind, prog: 0, moved: true }; }
-  else if (FA.canInsert(c, o.kind)) FA.insert(c, o.kind, o.charge);
+  else if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind, o.charge); if (c.src) c.src[(di + 2) % 4] = b.id; }   // a Splitter remembers who feeds it
   else return false;
   b.out.shift();
   return true;
 };
 FA.tryOut = b => FA.pushSide(b, b.dir);
-// Splitter: two sides, A (right of its arrow) and B (left), sharing the belt by b.split (% to A). Sorter: filter matches out the
-// front, the rest out the sides. Crate: front.
-// b.ang 180: the two sides are opposite each other (2 axes); 90: they are at a right angle (4 corners)
-FA.splitSides = b => [(b.dir + 1) % 4, (b.dir + (b.ang === 90 ? 2 : 3)) % 4];
-FA.splitCol = ['#ff5fc8', '#43e0ff'];   // side A / side B, in the slider, the modal diagram and the arrows on the tile
-// sides in the order to try them: the one the running share says is due next, then the other (unless it gets 0%)
+// ---------- the Splitter: a router with no front, so it never needs turning. The side items arrive from is its input; every other side with
+// something that can take items is an output (up to 3, found every frame: FA.splitConn). Outputs share by b.pct[dir] (always 100 in all; a new
+// set of outputs resets them to 50 / 50 or 34 / 33 / 33). An output with filters (b.filt[dir] = item kinds) takes only those kinds, and
+// whatever no filter claims is shared by the outputs without filters (Fire + Earth left, Water + Air right). ----------
+FA.splitCol = ['#ff5fc8', '#43e0ff', '#ffd23a'];   // outputs 1 / 2 / 3 in side order: the modal, its diagram and the arrows on the tile
+FA.splitConn = function (b) {
+  const ins = [], outs = [];
+  for (let di = 0; di < 4; di++) {
+    const dd = DIRS[di], c = FA.cell(b.x + dd[0], b.y + dd[1]), back = (di + 2) % 4;
+    if (!c) continue;
+    if (c.type === 'portal') { outs.push(di); continue; }
+    if (c.type === 'belt') { (c.dir === back ? ins : outs).push(di); continue; }
+    const k = FA.def(c).kind;
+    if (k === 'splitter') (b.src[di] === c.id ? ins : outs).push(di);          // whichever splitter pushed first is upstream
+    else if (c.done && c.dir === back && k !== 'station' && k !== 'charger') ins.push(di);   // it points its output at us
+    else if (k !== 'station') outs.push(di);                                   // a Station takes nothing a Splitter carries
+  }
+  b.ins = ins; b.outs = outs.slice(0, 3);
+  const sig = b.outs.join(',');
+  if (sig !== b.sig) { b.sig = sig; FA.splitReset(b); }
+};
+FA.splitReset = function (b) {   // 1 output: 100, 2: 50 / 50, 3: 34 / 33 / 33. Filters stay on outputs that are still there
+  const n = b.outs.length, pct = {}, filt = {};
+  b.outs.forEach((d, i) => { pct[d] = n === 3 ? (i ? 33 : 34) : Math.round(100 / n); if (b.filt[d] && b.filt[d].length) filt[d] = b.filt[d]; });
+  b.pct = pct; b.filt = filt; b.acc = {};
+};
+FA.splitHas = (b, d) => !!(b.filt[d] && b.filt[d].length);
+// the outputs that may take an item of this kind with their weights, the one that is due first (smooth weighted round robin on b.acc)
+FA.splitWays = function (b, kind) {
+  let c = b.outs.filter(d => FA.splitHas(b, d) && b.filt[d].indexOf(kind) >= 0);
+  if (!c.length) c = b.outs.filter(d => !FA.splitHas(b, d));
+  let ways = c.map(d => ({ d, w: b.pct[d] || 0 })).filter(o => o.w > 0);
+  if (!ways.length) ways = c.map(d => ({ d, w: 1 }));
+  return ways.sort((p, q) => ((b.acc[q.d] || 0) + q.w) - ((b.acc[p.d] || 0) + p.w) || p.d - q.d);
+};
+FA.splitTook = function (b, ways, d) {   // every way earns its weight, the one that took the item pays the total (so shares come out exact)
+  const tot = ways.reduce((a, o) => a + o.w, 0);
+  for (const o of ways) b.acc[o.d] = Math.max(-2 * tot, Math.min(2 * tot, (b.acc[o.d] || 0) + o.w - (o.d === d ? tot : 0)));
+};
+// Sorter: filter matches out the front, the rest out the sides. Crate: front.
 FA.logiSides = function (b) {
   const k = FA.def(b).kind, o = b.out[0];
   if (k === 'crate') return [b.dir];
-  if (k === 'splitter') {
-    const pa = (b.split === undefined ? 50 : b.split) / 100, [A, B] = FA.splitSides(b), a = (b.acc || 0) + pa;
-    b.accNext = a >= 1 - 1e-9 ? a - 1 : a;
-    return pa <= 0 ? [B] : pa >= 1 ? [A] : a >= 1 - 1e-9 ? [A, B] : [B, A];
-  }
   return !b.filter || (o && o.kind === b.filter) ? [b.dir] : [(b.dir + 1) % 4, (b.dir + 3) % 4];
 };
 FA.updLogi = function (b, dt) {
+  const split = FA.def(b).kind === 'splitter';
+  if (split) FA.splitConn(b);
   if (b.cd > 0) { b.cd -= dt; return; }
   if (!b.out.length) { b.blocked = false; return; }
-  const split = FA.def(b).kind === 'splitter', sides = FA.logiSides(b), n = sides.length, r0 = split ? 0 : (b.rr || 0) % n;
+  if (split) {
+    const ways = FA.splitWays(b, b.out[0].kind);
+    for (const o of ways) if (FA.pushSide(b, o.d)) { FA.splitTook(b, ways, o.d); b.cd = FA.beltTime() * 0.4; b.blocked = false; return; }
+    b.blocked = true; return;
+  }
+  const sides = FA.logiSides(b), n = sides.length, r0 = (b.rr || 0) % n;
   for (let i = 0; i < n; i++) {
     if (FA.pushSide(b, sides[(r0 + i) % n])) {
-      if (split) { if (i === 0) b.acc = b.accNext; }   // only the side that was due moves the running share on
-      else b.rr = (r0 + i + 1) % n;
+      b.rr = (r0 + i + 1) % n;
       b.cd = FA.beltTime() * 0.4; b.blocked = false; return;
     }
   }
@@ -559,7 +659,7 @@ FA.wants = function (b) {
 FA.power = function () {
   const f = G.fac;
   let gen = 0;
-  for (const b of f.bld) if (b.done && b.type === 'station' && b.bat != null && b.bat > 0) gen += CFG.stationGen;
+  for (const b of f.bld) if (b.done && b.type === 'station' && b.bat != null && b.bat > 0) gen += CFG.stationGen + (b.over > 0 ? CFG.overcharge.power : 0);
   let budget = gen, demand = 0;
   for (const b of f.bld) {   // placement order decides who stalls first
     const w = FA.wants(b);
@@ -583,6 +683,9 @@ FA.update = function (dt) {
   if (f.bumpAmp > 0) { f.bump += dt; if (f.bump > 0.4) f.bumpAmp = 0; }
   for (let i = f.sucks.length - 1; i >= 0; i--) { f.sucks[i].t += dt; if (f.sucks[i].t > f.sucks[i].dur) f.sucks.splice(i, 1); }
   for (let i = f.thumps.length - 1; i >= 0; i--) { f.thumps[i].t += dt; if (f.thumps[i].t > 0.5 + f.thumps[i].tier * 0.12) f.thumps.splice(i, 1); }
+  for (let i = f.rings.length - 1; i >= 0; i--) { f.rings[i].t += dt; if (f.rings[i].t > 0.3) f.rings.splice(i, 1); }
+  for (let i = f.waves.length - 1; i >= 0; i--) { f.waves[i].t += dt; if (f.waves[i].t > CFG.pressure.life) f.waves.splice(i, 1); }
+  FA.updWeather(dt);
   FA.power();
   if (f.demand > f.gen) {
     f.lowT -= dt;
@@ -593,13 +696,14 @@ FA.update = function (dt) {
   f.working = 0;
   for (const b of f.bld) {
     if (b.pop > 0) b.pop -= dt;
+    if (b.thump > 0) b.thump -= dt;
     if (!b.done) continue;
     const d = FA.def(b);
     b.anim += dt * (b.st === undefined || b.st === null ? 1 : FA.stateSpeed[b.st]);
     if (d.kind === 'harness') {
       if (b.out.length < CFG.buffer && b.powered) {
         b.timer += dt; f.working++;
-        if (b.timer >= FA.cycle(b.type)) { b.timer = 0; b.out.push({ kind: d.elem }); b.pop = 0.25; G.stats.packets++; FA.eburst(b.x + 0.5, b.y + 0.5, d.elem, 4); }
+        if (b.timer >= FA.cycle(b.type)) { b.timer = 0; b.out.push({ kind: d.elem }); b.pop = 0.25; G.stats.packets++; FA.eburst(b.x + 0.5, b.y + 0.5, d.elem, 4); FA.elTick(d.elem); }
       }
       b.blocked = b.out.length > 0 && !FA.tryOut(b);
     } else if (d.kind === 'crafter') {
@@ -617,11 +721,14 @@ FA.update = function (dt) {
             G.stats.made[R.out] = (G.stats.made[R.out] || 0) + 1;
             b.pop = 0.35;
             FA.burst(b.x + 0.5, b.y + 0.5, ITEMS[R.out].color, 10);
+            for (const k in R.in) if (ELEM[k]) FA.elTick(k, R.in[k]);
+            if (b.type === 'forge' || b.type === 'cauldron') { b.thump = CFG.thump; FA.exhaust(b, Object.keys(R.in)); }   // recoil + exhaust
             AU.sfx('craft');
           }
         }
       } else b.prog = 0;
     } else if (d.kind === 'station') {
+      if (b.over > 0) b.over = b.bat == null ? 0 : Math.max(0, b.over - dt);
       if (b.bat != null && f.perBat > 0 && b.bat > 0) {
         b.bat = Math.max(0, b.bat - FA.drain(f.perBat) * dt);
         if (b.bat === 0) FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_x']]);
@@ -686,6 +793,7 @@ FA.update = function (dt) {
   for (let i = f.parts.length - 1; i >= 0; i--) {
     const p = f.parts[i];
     p.t -= dt; p.x += p.vx * dt * 0.5; p.y += p.vy * dt * 0.5; p.z += p.vz * dt; p.vz -= (p.g === undefined ? 9 : p.g) * dt;
+    if (p.g < 0 && p.sz) p.vz = Math.min(p.vz, 2.5);   // exhaust drifts up instead of rocketing
     if (p.spin) { const a = dt * 6, vx = p.vx; p.vx = vx * Math.cos(a) - p.vy * Math.sin(a); p.vy = vx * Math.sin(a) + p.vy * Math.cos(a); }
     if (p.bounce && p.z < 0) { p.z = 0; p.vz = Math.abs(p.vz) * 0.4; p.bounce = 0; }
     if (p.t <= 0) f.parts.splice(i, 1);
@@ -722,13 +830,16 @@ FA.updCharger = function (c, dt) {
 
 // ---------- throwing ----------
 // will this receiver take a thrown item of kind k? (portal / belt / building / blueprint / the Stockpile Zone)
-FA.accepts = (o, k) => (o === 'zone' ? !!(RES[k] || ELEM[k]) : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item && k !== 'battery' : FA.canInsert(o, k) || FA.canSwap(o, k));
+FA.accepts = (o, k) => (o === 'zone' ? !!(RES[k] || ELEM[k]) : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item && k !== 'battery' : FA.canInsert(o, k) || FA.canSwap(o, k) || FA.canOver(o, k));
 // every receiver in throwing range that would take kind k, with a priority (lower = preferred)
 FA.throwList = function (k) {
   const bd = G.bd, out = [];
   const add = (x, y, obj, prio) => { const d = Math.hypot(x - bd.x, y - bd.y); if (d >= 0.4 && d <= CFG.throwRange) out.push({ x, y, obj, prio, d }); };
   for (const p of FA.portalCells(G.fac.w, G.fac.h)) { const c = FA.cell(p.x, p.y); if (FA.portalTakes(c, k)) add(p.x + 0.5, p.y + 0.5, c, 0.8); }
-  for (const b of G.fac.bld) if (FA.canInsert(b, k) || FA.canSwap(b, k)) add(b.x + 0.5, b.y + 0.5, b, b.done && FA.isLogi(b) ? 1.4 : 1);
+  for (const b of G.fac.bld) {
+    if (FA.canInsert(b, k) || FA.canSwap(b, k)) add(b.x + 0.5, b.y + 0.5, b, b.done && FA.isLogi(b) ? 1.4 : 1);
+    else if (FA.canOver(b, k)) add(b.x + 0.5, b.y + 0.5, b, 2.6);   // overcharging is on purpose: the portal stays the first choice for spells
+  }
   if (RES[k] || ELEM[k]) { const z = FA.zone(); add((z.x0 + z.x1 + 1) / 2, (z.y0 + z.y1 + 1) / 2, 'zone', 1.1); }
   if (k !== 'battery') for (const bl of G.fac.belts) if (!bl.item) add(bl.x + 0.5, bl.y + 0.5, bl, 2.2);
   return out;
@@ -819,31 +930,42 @@ FA.portalNear = function (x, y, kind) {
   }
   return best;
 };
+// a tiny ring where a throw hits, leaning the way it was flying
+FA.impact = (o, bad) => G.fac.rings.push({ x: o.x, y: o.y, dx: o.x - o.sx, dy: o.y - o.sy, t: 0, col: bad ? '#ff6a6a' : ITEMS[o.kind].color || '#ffffff' });
 FA.land = function (o) {
   if (o.stock) { G.stock[o.kind] = (G.stock[o.kind] || 0) + (o.n || 1); FA.pileIn(o.kind); AU.sfx('drop'); UI.changed(); return; }
+  if (o.boing) { FA.dropAt(o.kind, o.x, o.y, o.charge); AU.sfx('thud'); return; }   // the end of a bounce-back: it just lands
   const tx = Math.floor(o.x), ty = Math.floor(o.y), c = FA.cell(tx, ty);
   const toPortal = c => {
     if (!FA.enterPortal(c, o.kind, o.x, o.y)) return false;
     if (o.fromBuilder && c.which === 'spell') G.flags.portalHand = true;
+    FA.impact(o);
     return true;
   };
   // a throw that comes down close to a portal that takes it is pulled in, so it never lies beside the portal looking blocked
   const fell = () => { const pc = FA.portalNear(o.x, o.y, o.kind); if (pc && toPortal(pc)) return true; FA.dropAt(o.kind, o.x, o.y, o.charge); return false; };
-  const bounce = () => {   // couldn't go in: hop back toward where it came from
-    const dx = o.sx - o.x, dy = o.sy - o.y, d = Math.hypot(dx, dy) || 1;
-    FA.dropAt(o.kind, o.x + dx / d * 0.85, o.y + dy / d * 0.85, o.charge);
-    AU.sfx('error');
+  const bounce = () => {   // couldn't go in: a cartoon boing back up and over toward the Builder (never into a building)
+    const B = CFG.boing, bd = G.bd, dx = bd.x - o.x, dy = bd.y - o.y, d = Math.hypot(dx, dy) || 1;
+    let k = Math.max(B.min, Math.min(B.max, d * B.back)), x = o.x + dx / d * k, y = o.y + dy / d * k;
+    while (k > 0.4 && FA.solid(Math.floor(x), Math.floor(y))) { k -= 0.3; x = o.x + dx / d * k; y = o.y + dy / d * k; }
+    if (FA.solid(Math.floor(x), Math.floor(y))) { x = bd.x; y = bd.y; }
+    G.fac.flying.push({ kind: o.kind, charge: o.charge, sx: o.x, sy: o.y, x: o.x, y: o.y, z: 0.8, tx: x, ty: y, t: 0, T: B.T, h: B.h, boing: true });
+    FA.impact(o, true);
+    AU.sfx('boing');
   };
   if (c && c.type === 'portal') {
     if (!toPortal(c)) { bounce(); FA.ipop(o.x, o.y, [[o.kind], ['ic_x']]); }
     return;
   }
   if (c && c.type === 'belt') {
-    if (!c.item && o.kind !== 'battery') { c.item = { kind: o.kind, prog: 0.5, moved: true }; AU.sfx('drop'); return; }
-    return fell();
+    if (!c.item && o.kind !== 'battery') { c.item = { kind: o.kind, prog: 0.5, moved: true }; FA.impact(o); AU.sfx('drop'); return; }
+    const pc = FA.portalNear(o.x, o.y, o.kind);
+    if (pc && toPortal(pc)) return;
+    return bounce();   // the belt is full (or it's a Battery, which belts never carry)
   }
   if (c) {
-    if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind, o.charge, true); AU.sfx('drop'); FA.ipop(o.x, o.y, [[o.kind]]); return; }
+    if (FA.canOver(c, o.kind)) { FA.overcharge(c, o.kind); FA.impact(o); return; }
+    if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind, o.charge, true); FA.impact(o); AU.sfx('drop'); FA.ipop(o.x, o.y, [[o.kind]]); return; }
     return bounce();
   }
   if (FA.reserved(tx, ty) && (RES[o.kind] || ELEM[o.kind])) { G.stock[o.kind] = (G.stock[o.kind] || 0) + 1; FA.ipop(o.x, o.y, [[o.kind]]); AU.sfx('drop'); return; }
@@ -932,7 +1054,7 @@ FA.updGather = function (dt) {
   if (g.t >= g.total) {
     bd.gather = null;
     if (FA.canHold(g.el)) FA.addHands(g.el, 1); else FA.dropAt(g.el, bd.x, bd.y);
-    G.flags.gathered = true; G.stats.packets++;
+    G.flags.gathered = true; G.stats.packets++; FA.elTick(g.el);
     AU.sfx('el_' + g.el);
     FA.eburst(g.b.x + 0.5, g.b.y + 0.5, g.el, 12);
     FA.ipop(g.b.x + 0.5, g.b.y + 0.5, [[g.el]]);
@@ -1033,11 +1155,12 @@ FA.bldAction = function (b, pick) {
         AU.sfx('pickup'); G.bd.squash = 0.2; UI.changed();
       }, false, ['battery', 'ic_swap']);
       if (h) return FULL;
-      return A('Take Battery (' + Math.round(b.bat / CFG.batteryMax * 100) + '%)', () => { FA.addHands('battery', 1, b.bat); b.bat = null; if (b.types) b.types = []; AU.sfx('pickup'); }, false, ['battery']);
+      return A('Take Battery (' + Math.round(b.bat / CFG.batteryMax * 100) + '%)', () => { FA.addHands('battery', 1, FA.takeBat(b)); AU.sfx('pickup'); }, false, ['battery']);
     }
     return NONE;
   }
   if (G.bd.gather && G.bd.gather.b === b) return A('Crank!', () => FA.crank(), false, [G.bd.gather.el]);
+  if (d.kind === 'splitter') return A('Set up the routes', () => UI.openSplit(b), false, ['ic_gear']);   // it has no front to turn
   const turn = A('Turn output', () => { b.dir = (b.dir + 1) % 4; b.pop = 0.2; AU.sfx('blip'); }, false, ['ic_rotate']);
   if (d.kind === 'sorter') {
     if (h && b.filter !== k) return A('Sort ' + itemName(k) + ' out the front', () => { b.filter = k; b.pop = 0.3; AU.sfx('blip'); UI.changed(); }, false, [k]);
@@ -1060,7 +1183,7 @@ FA.bldAction = function (b, pick) {
 FA.rotateAt = function (tx, ty) {
   const c = FA.cell(tx, ty);
   if (!c || c.type === 'portal') return false;
-  if (c.type !== 'belt') { const k = FA.def(c).kind; if (k === 'station' || k === 'charger') return false; c.pop = 0.2; }
+  if (c.type !== 'belt') { const k = FA.def(c).kind; if (k === 'station' || k === 'charger' || k === 'splitter') return false; c.pop = 0.2; }   // a Splitter routes itself
   c.dir = (c.dir + 1) % 4;
   AU.sfx('blip'); FA.ipop(tx + 0.5, ty + 0.5, [['ic_rotate']]); UI.changed();
   return true;
@@ -1118,10 +1241,14 @@ FA.status = function (b) {
     if (b.od) s += '. OVERDRIVE +' + Math.round(CFG.overdrive * 100) + '% (Battery Station beside it)';
     return s;
   }
-  if (d.kind === 'splitter') return n + ': ' + (b.out.length >= 2 ? 'BLOCKED: no free side to push into' : 'splits ' + b.split + '% / ' + (100 - b.split) + '% out of its two sides, ' + b.ang + ' degrees apart (click to set)');
+  if (d.kind === 'splitter') {
+    if (!b.outs.length) return n + ': no outputs yet. Put belts or machines on its sides (the side items come in from is the input)';
+    const dn = ['east', 'south', 'west', 'north'];
+    return n + ': ' + b.outs.map(o => (b.pct[o] || 0) + '% ' + dn[o] + (FA.splitHas(b, o) ? ' (' + b.filt[o].map(itemName).join(' + ') + ')' : '')).join(', ') + (b.blocked && b.out.length ? '. BLOCKED' : '') + ' (click to set)';
+  }
   if (d.kind === 'sorter') return n + ': ' + (b.filter ? itemName(b.filter) + ' out the front, everything else out the sides' : 'no filter (E with an item in hand sets it)') + (b.out.length >= 2 ? '. BLOCKED' : '');
   if (d.kind === 'crate') return n + ': ' + b.out.length + '/' + CFG.crateCap + (b.out.length ? ', next out: ' + itemName(b.out[0].kind) : ', empty') + '. Feeds its arrow side; point it at nothing to just store';
-  if (d.kind === 'station') return n + ': ' + (b.bat == null ? 'empty, insert a charged Battery' : 'Battery ' + Math.round(b.bat) + '/' + CFG.batteryMax + (b.bat > 0 ? ', +10 power, ' + Math.ceil(FA.life(b)) + 's left at this load' : ' (flat)'));
+  if (d.kind === 'station') return n + ': ' + (b.bat == null ? 'empty, insert a charged Battery' : 'Battery ' + Math.round(b.bat) + '/' + CFG.batteryMax + (b.bat > 0 ? ', +' + (CFG.stationGen + (b.over > 0 ? CFG.overcharge.power : 0)) + ' power, ' + Math.ceil(FA.life(b)) + 's left at this load' : ' (flat)') + (b.over > 0 ? '. OVERCHARGED ' + Math.ceil(b.over) + 's' : ''));
   if (d.kind === 'charger') {
     const act = Object.keys(b.fuel).filter(k => b.fuel[k] > 0);
     let s = n + ': ' + (b.bat == null ? 'no Battery' : 'Battery ' + Math.round(b.bat) + '/' + CFG.batteryMax);
@@ -1147,7 +1274,8 @@ FA.toJSON = function () {
       if (b.bat !== undefined) o.bat = b.bat;
       if (b.fuel) { o.fuel = b.fuel; o.types = b.types; }
       if (b.filter) o.filter = b.filter;
-      if (b.split !== undefined) { o.split = b.split; o.ang = b.ang; }
+      if (b.pct) { o.pct = b.pct; o.filt = b.filt; o.sig = b.sig; }
+      if (b.over > 0) o.over = b.over;
       return o;
     }),
     belts: f.belts.map(b => ({ x: b.x, y: b.y, dir: b.dir, item: b.item ? b.item.kind : null })),
@@ -1166,8 +1294,15 @@ FA.fromJSON = function (j) {
     if (b.bat !== undefined) b.bat = o.bat == null ? null : o.bat;
     if (b.fuel) { b.fuel = Object.assign(b.fuel, o.fuel || {}); b.types = o.types || []; }
     if (b.filter !== undefined) b.filter = o.filter && ITEMS[o.filter] ? o.filter : null;
-    if (b.split !== undefined) b.split = typeof o.split === 'number' ? Math.max(0, Math.min(100, Math.round(o.split))) : 50;
-    if (b.split !== undefined) b.ang = o.ang === 90 ? 90 : 180;
+    if (b.pct && o.pct && typeof o.pct === 'object') {
+      for (const k in o.pct) if (+k >= 0 && +k < 4) b.pct[k] = Math.max(0, Math.min(100, Math.round(+o.pct[k] || 0)));
+      for (const k in o.filt || {}) if (Array.isArray(o.filt[k])) b.filt[k] = o.filt[k].filter(x => ITEMS[x]);
+      b.sig = typeof o.sig === 'string' ? o.sig : null;
+    } else if (b.pct && typeof o.split === 'number') {   // an older save: two sides off its facing (ang 180 = opposite, 90 = a right angle)
+      const A2 = (b.dir + 1) % 4, B2 = (b.dir + (o.ang === 90 ? 2 : 3)) % 4, s = Math.max(0, Math.min(100, Math.round(o.split)));
+      b.pct[A2] = s; b.pct[B2] = 100 - s; b.sig = [A2, B2].sort().join(',');   // kept if those are still its outputs (FA.splitConn)
+    }
+    if (b.type === 'station' && o.over > 0) b.over = o.over;
   });
   (j.belts || []).forEach(o => {
     if (!FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;

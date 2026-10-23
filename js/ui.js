@@ -518,11 +518,11 @@ const SPELL_DMG = {
   steam: s => s.dmg + ' dmg in a ' + s.r + ' tile ring, slows',
   sandstorm: s => s.dps + ' dmg/s for ' + s.t + 's, follows',
   magma: s => s.dmg + ' dmg + ' + s.splash + ' splash',
-  mud: s => s.dps + ' dmg/s for ' + s.t + 's, -' + Math.round(s.slow * 100) + '% speed',
+  mud: s => s.dps + ' dmg/s for ' + s.t + 's, -' + Math.round(s.slow * 100) + '% speed, ' + s.wall.len + '-tile Earth Wall for ' + s.wall.t + 's',
   meteor: s => s.n + ' meteors x ' + s.dmg + ' dmg',
   thunder: s => s.dmg + ' dmg, chains to ' + s.n,
-  blizzard: s => s.dps + ' dmg/s for ' + s.t + 's, follows',
-  geyser: s => s.n + ' blasts x ' + s.dmg + ' dmg',
+  blizzard: s => s.dps + ' dmg/s for ' + s.t + 's, follows; ice for ' + s.frost.t + 's',
+  geyser: s => s.n + ' blasts x ' + s.dmg + ' dmg; jump up to ' + s.jump.dist + ' tiles',
   nova: s => s.dmg + ' dmg in a ' + s.r + ' tile ring',
 };
 UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a plain fact, null = maxed out
@@ -941,7 +941,7 @@ const CONTROLS = [
     [K('1') + ' - ' + K('7') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, then the building families)'],
     [K('[') + ' ' + K(']'), 'Previous / next hotbar slot'],
     [K('Q') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot)'],
-    [K('R'), 'Turn the belt or building under the cursor (in front of you on a pad: X), or the one you are about to place. Turns the Splitter while its settings are open'],
+    [K('R'), 'Turn the belt or building under the cursor (in front of you on a pad: X), or the one you are about to place. A Splitter never needs turning: it finds its input and outputs itself'],
     [K('CLICK') + ' &nbsp;/&nbsp; ' + K('ENTER'), 'Place the selected building / belt (Enter: on the tile in front). Drag to lay belts'],
     [K('B') + ' &nbsp;/&nbsp; ' + K('DELETE'), 'Demolish mode (full refund)'],
     [K('P') + ' &nbsp;/&nbsp; pad L3 (left stick click)', 'Pin blueprints: a card on the Builder side lists what every unfinished building still needs (red = the Stockpile is short)'],
@@ -972,10 +972,11 @@ const CONTROLS = [
     [K('ESC') + ' ' + K('T') + ' ' + K('Y'), 'Close (pad B / Y)'],
   ]],
   ['SPLITTER SETTINGS', [
-    [K('DRAG'), 'Slide the bar: the left number is the share for the pink side, the right number the cyan side'],
-    [K('A') + ' ' + K('D') + ' &nbsp;or stick / d-pad', 'Nudge the split by 5'],
-    [K('R') + ' &nbsp;/&nbsp; ' + K('E') + ' ' + K('ESC'), 'Turn the Splitter / close (pad X turns, Y flips 180 / 90, A or B closes)'],
-    [K('180') + ' ' + K('90'), 'Whether the two sides are opposite (2 axes) or at a right angle (4 corners); TURN steps through every orientation'],
+    [K('DRAG'), 'Slide a bar: each output\'s share (colours match the arrows on the tile). With 3 outputs the other two make up the rest, so it is always 100'],
+    [K('W') + ' ' + K('S') + ' &nbsp;or stick / d-pad', 'Pick an output'],
+    [K('A') + ' ' + K('D') + ' &nbsp;or stick / d-pad', 'Nudge its share by 5'],
+    [K('1') + ' - ' + K('4'), 'Only Air / Water / Fire / Earth for this output (pad: X moves the cursor, Y toggles). What no output asks for is shared by the outputs without filters'],
+    [K('E') + ' ' + K('ESC'), 'Close (pad A or B). RESET puts the shares back to even and clears the filters'],
   ]],
   ['GAMEPAD: BUILDER', [
     [K('STICK') + ' ' + K('D-PAD'), 'Walk'],
@@ -1057,9 +1058,14 @@ UI.askClose = function (yes) {
   $('askModal').classList.add('hidden');
   if (yes) FA.demolish(a.x, a.y, true); else AU.sfx('blip');
 };
-UI.splitB = null;
+// ---------- Splitter settings: the outputs it found (FA.splitConn) with their shares and element filters ----------
+// 2 outputs: one slider (output 1 on its left, output 2 on its right). 1 or 3 outputs: a slider each, always 100 in all. Every output has
+// four element toggles: lit ones are the only kinds it takes. Keyboard / pad: up / down picks an output, left / right nudges its share by 5,
+// 1-4 (pad: X moves the cursor, Y flips it) toggles an element
+UI.splitB = null; UI.splitFoc = { row: 0, col: 0 }; UI.splitShown = null; UI.splitPad = false;
 UI.openSplit = function (b) {
-  UI.splitB = b;
+  UI.splitB = b; UI.splitFoc = { row: 0, col: 0 }; UI.splitShown = null; UI.splitPad = false;
+  FA.splitConn(b);
   $('splitModal').classList.remove('hidden');
   UI.splitSync();
   AU.sfx('menu_open');
@@ -1070,38 +1076,71 @@ UI.closeSplit = function () {
   $('splitModal').classList.add('hidden');
   AU.sfx('menu_close'); UI.changed();
 };
-UI.splitSet = function (v) {
+// output i (in b.outs order) takes v%; with 3 the other two share what is left in their old ratio, so it always adds up to 100
+UI.splitSet = function (i, v) {
   const b = UI.splitB;
   if (!b) return;
+  const o = b.outs, n = o.length;
+  if (n < 2 || i < 0 || i >= n) return;
   v = Math.max(0, Math.min(100, Math.round(v)));
-  if (v !== b.split) { b.split = v; b.pop = 0.15; UI.changed(); }
+  if (n === 2) { b.pct[o[i]] = v; b.pct[o[1 - i]] = 100 - v; }
+  else {
+    const j = (i + 1) % 3, k = (i + 2) % 3, pj = b.pct[o[j]] || 0, pk = b.pct[o[k]] || 0, rest = 100 - v;
+    const a = pj + pk > 0 ? Math.round(rest * pj / (pj + pk)) : Math.round(rest / 2);
+    b.pct[o[i]] = v; b.pct[o[j]] = a; b.pct[o[k]] = rest - a;
+  }
+  b.acc = {}; b.pop = 0.15; UI.changed();
   UI.splitSync();
 };
-UI.splitAng = function (a) {
+UI.splitNudge = (i, dv) => { const b = UI.splitB; if (b && b.outs[i] !== undefined) UI.splitSet(i, (b.pct[b.outs[i]] || 0) + dv); };
+UI.splitToggle = function (i, el) {
   const b = UI.splitB;
-  if (!b || b.ang === a) return;
-  b.ang = a; b.pop = 0.2; AU.sfx('blip'); UI.changed(); UI.splitSync();
+  if (!b || b.outs[i] === undefined) return;
+  const d = b.outs[i], f = (b.filt[d] || []).slice(), at = f.indexOf(el);
+  if (at >= 0) f.splice(at, 1); else f.push(el);
+  if (f.length) b.filt[d] = f; else delete b.filt[d];
+  b.pop = 0.2; AU.sfx('blip'); UI.changed();
+  UI.splitSync();
 };
-UI.splitTurn = function () {
-  const b = UI.splitB;
-  if (!b) return;
-  b.dir = (b.dir + 1) % 4; b.pop = 0.2; AU.sfx('blip'); UI.changed();
-};
+UI.splitReset = function () { const b = UI.splitB; if (!b) return; b.filt = {}; FA.splitReset(b); AU.sfx('blip'); UI.changed(); UI.splitSync(); };
+// builds the rows when the set of outputs changes, otherwise just refreshes the numbers, toggles and the focus
 UI.splitSync = function () {
   const b = UI.splitB;
   if (!b) return;
-  const [ca, cb] = FA.splitCol, r = $('splitRange');
-  if (+r.value !== b.split) r.value = b.split;
-  r.style.background = 'linear-gradient(90deg,' + ca + ' ' + b.split + '%,' + cb + ' ' + b.split + '%)';
-  $('splitM180').classList.toggle('on', b.ang !== 90); $('splitM90').classList.toggle('on', b.ang === 90);
-  $('splitA').textContent = b.split; $('splitBv').textContent = 100 - b.split;
+  const o = b.outs, n = o.length, box = $('splitBody'), col = FA.splitCol, F = UI.splitFoc;
+  F.row = Math.max(0, Math.min(n - 1, F.row));
+  if (UI.splitShown !== b.sig) {
+    UI.splitShown = b.sig;
+    const sw = i => '<i class="sw" style="background:' + col[i] + '"></i>';
+    let h = '';
+    if (!n) h = '<p class="splitNone">Nothing to route yet. Put belts or machines on its sides: the side items come in from is the input, every other side is an output.</p>';
+    else if (n === 2) h = '<div class="splitRow"><div class="splitSide" style="color:' + col[0] + '">' + sw(0) + '<b data-v="0">50</b><small>%</small></div>' +
+      '<input class="splitR" data-i="0" type="range" min="0" max="100" step="1" tabindex="-1"><div class="splitSide b" style="color:' + col[1] + '"><small>%</small><b data-v="1">50</b>' + sw(1) + '</div></div>';
+    else h = o.map((d, i) => '<div class="splitRow three" data-row="' + i + '"><div class="splitSide" style="color:' + col[i] + '">' + sw(i) + '<b data-v="' + i + '">0</b><small>%</small></div>' +
+      '<input class="splitR" data-i="' + i + '" type="range" min="0" max="100" step="1" tabindex="-1"' + (n === 1 ? ' disabled' : '') + '></div>').join('');
+    if (n) h += '<div class="splitFl"><span>ONLY</span>' + o.map((d, i) => '<div class="splitF" data-row="' + i + '">' + sw(i) +
+      ELEMS.map((el, j) => '<button class="el" data-i="' + i + '" data-el="' + el + '" data-c="' + j + '" title="' + ELEM[el].name + '">' + UI.img(el, 22) + '<kbd>' + (j + 1) + '</kbd></button>').join('') + '</div>').join('') + '</div>';
+    box.innerHTML = h;
+  }
+  box.querySelectorAll('.splitR').forEach(r => {
+    const i = +r.dataset.i, v = b.pct[o[i]] || 0;
+    if (+r.value !== v) r.value = v;
+    r.style.background = n === 2 ? 'linear-gradient(90deg,' + col[0] + ' ' + v + '%,' + col[1] + ' ' + v + '%)' : 'linear-gradient(90deg,' + col[i] + ' ' + v + '%,#2b1d48 ' + v + '%)';
+  });
+  box.querySelectorAll('b[data-v]').forEach(e => { e.textContent = b.pct[o[+e.dataset.v]] || 0; });
+  box.querySelectorAll('button.el').forEach(e => {
+    const i = +e.dataset.i, f = b.filt[o[i]] || [];
+    e.classList.toggle('on', f.indexOf(e.dataset.el) >= 0);
+    e.classList.toggle('cur', UI.splitPad && i === F.row && +e.dataset.c === F.col);
+  });
+  box.querySelectorAll('[data-row]').forEach(e => e.classList.toggle('foc', n > 1 && +e.dataset.row === F.row));
 };
-// the little iso diagram: the tile with an arrow on each output side in that side's colour (turns with the Splitter)
+// the little iso diagram: the tile, a coloured arrow out of each output and grey arrows into it from its inputs
 UI.splitTick = function (dt) {
   const b = UI.splitB;
   if (!b) return;
   if (G.fac.bld.indexOf(b) < 0) { UI.closeSplit(); return; }
-  if (+$('splitRange').value !== b.split) UI.splitSync();
+  if (UI.splitShown !== b.sig) UI.splitSync();   // something was connected or taken away: new outputs, new rows
   const c = $('splitDia'), x = c.getContext('2d'), t = performance.now() / 1000, cx = 160, cy = 78, hw = 54, hh = 27;
   x.clearRect(0, 0, c.width, c.height);
   x.fillStyle = '#4f7a3c';
@@ -1110,18 +1149,22 @@ UI.splitTick = function (dt) {
   x.imageSmoothingEnabled = false;
   const spr = SP.b_splitter;
   if (spr) x.drawImage(spr.c, cx - 30, cy - 78, 60, 102);   // the sprite's base diamond sits at (10, 26)
-  const sides = FA.splitSides(b), pct = [b.split, 100 - b.split];
-  sides.forEach((d, i) => {
-    const dd = DIRS[d], sx = (dd[0] - dd[1]), sy = (dd[0] + dd[1]), m = Math.hypot(sx * hw, sy * hh), nx = sx * hw / m, ny = sy * hh / m;
-    const px = cx + sx * hw * 1.45, py = cy + sy * hh * 1.45, k = pct[i] > 0 ? 1 + 0.18 * (Math.sin(t * 5) * 0.5 + 0.5) : 0.7;
-    x.globalAlpha = pct[i] > 0 ? 1 : 0.35;
-    for (const [s, col] of [[1.35, '#1a0f28'], [1, FA.splitCol[i]]]) {
-      x.fillStyle = col; x.beginPath();
+  const arrow = (d, col, k, inward) => {
+    const dd = DIRS[d], sx = (dd[0] - dd[1]), sy = (dd[0] + dd[1]), m = Math.hypot(sx * hw, sy * hh), f = inward ? -1 : 1, nx = sx * hw / m * f, ny = sy * hh / m * f;
+    const px = cx + sx * hw * 1.45, py = cy + sy * hh * 1.45;
+    for (const [s, cl] of [[1.35, '#1a0f28'], [1, col]]) {
+      x.fillStyle = cl; x.beginPath();
       x.moveTo(px + nx * 22 * s * k, py + ny * 22 * s * k);
       x.lineTo(px - ny * 18 * s * k - nx * 10 * s, py + nx * 18 * s * k - ny * 10 * s);
       x.lineTo(px + ny * 18 * s * k - nx * 10 * s, py - nx * 18 * s * k - ny * 10 * s);
       x.closePath(); x.fill();
     }
-    x.globalAlpha = 1;
+  };
+  b.ins.forEach(d => { x.globalAlpha = 0.6; arrow(d, '#c8b8e8', 0.75, true); });
+  b.outs.forEach((d, i) => {
+    const p = b.pct[d] || 0, on = p > 0 || FA.splitHas(b, d);
+    x.globalAlpha = on ? 1 : 0.35;
+    arrow(d, FA.splitCol[i], on ? 1 + 0.18 * (Math.sin(t * 5 + i) * 0.5 + 0.5) : 0.7, false);
   });
+  x.globalAlpha = 1;
 };

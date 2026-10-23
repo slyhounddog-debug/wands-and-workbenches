@@ -4,6 +4,9 @@
 const WZ = {};
 // Terrain classes: normal speed (most), slow (T_BOG), impassable (T_POND). Paths over water act as bridges.
 const T_GRASS = 0, T_DIRT = 1, T_SAND = 2, T_FLOWER = 3, T_DARK = 4, T_POND = 5, T_PATH = 6, T_BOG = 7;
+const T_ICE = 8, T_WALL = 9;   // temporary terrain from spells (G.w.tmod): Flash Frost ice (full speed, even over water), Earth Wall blocks (impassable)
+// decor that leans when a body pushes through it (G.w.bend)
+const BENDY = new Set(['tuft', 'tuft2', 'tuft3', 'flower0', 'flower1', 'flower2', 'flower3', 'bush', 'reeds']);
 const SPAWN = { x: 100.5, y: 100.5 };
 const BASICS = ['gust', 'fireball', 'spray', 'boulder'];
 const ELEMS = ['air', 'water', 'fire', 'earth'];
@@ -146,13 +149,72 @@ WZ.generate = function () {
       WZ.forage.push(o); add(o); c++;
     }
   }
+  // extra grass tufts all over (their own RNG, so nothing above moved): they lean as the Wizard and big foes push through them
+  const rt = rngMaker(51515);
+  for (let i = 0; i < CFG.bend.tufts; i++) {
+    const x = 1 + rt() * (WW - 2), y = 1 + rt() * (WH - 2), t = tyAt(x, y), roll = rt();
+    if (t === T_POND || t === T_PATH || t === T_SAND || Math.hypot(x - SPAWN.x, y - SPAWN.y) < 2 || nearMark(x, y)) continue;
+    add({ x, y, spr: t === T_BOG ? (roll < 0.5 ? 'reeds' : 'tuft3') : roll < 0.45 ? 'tuft2' : roll < 0.8 ? 'tuft' : 'tuft3', deco: true });
+  }
 };
 
 // ---------- run state ----------
 WZ.maxHp = () => CFG.wizard.hp + CFG.upgrade.hearty * lvl('hearty');
 WZ.speed = () => CFG.wizard.speed * (1 + CFG.upgrade.zoomies * lvl('zoomies'));
-WZ.tile = (x, y) => (x < 0 || y < 0 || x >= CFG.WW || y >= CFG.WH ? T_POND : WZ.terrain[Math.floor(y) * CFG.WW + Math.floor(x)] >> 3);
-WZ.wet = (x, y) => WZ.tile(x, y) === T_POND;
+WZ.tile = (x, y) => {
+  if (x < 0 || y < 0 || x >= CFG.WW || y >= CFG.WH) return T_POND;
+  const i = Math.floor(y) * CFG.WW + Math.floor(x), w = G && G.w;
+  if (w && w.tmodN) { const m = w.tmod[i]; if (m) return m.k === 'ice' ? T_ICE : T_WALL; }
+  return WZ.terrain[i] >> 3;
+};
+WZ.wet = (x, y) => { const t = WZ.tile(x, y); return t === T_POND || t === T_WALL; };   // can't be entered
+// ---------- terrain spells: Earth Wall blocks and Flash Frost ice live in G.w.tmod (tile index -> { k, t, dur }) ----------
+WZ.flowDirty = () => { if (WZ.flow) WZ.flow.cx = -1; WZ.flowCd = 0; };   // monsters re-path round the new terrain
+WZ.setT = function (i, k, t) {
+  const w = G.w, m = w.tmod[i];
+  if (m) { if (m.k === k) m.t = Math.max(m.t, t); return false; }
+  w.tmod[i] = { k, t, dur: t }; w.tmodN++;
+  WZ.flowDirty();
+  return true;
+};
+// an Earth Wall: a line of blocks across (nx, ny) centred on (cx, cy), never on water or on top of the Wizard; foes caught in it are shoved out
+WZ.wall = function (cx, cy, nx, ny, S) {
+  const w = G.w, WW = CFG.WW;
+  let n = 0;
+  for (let s = -S.len / 2; s <= S.len / 2; s += 0.35) {
+    const tx = Math.floor(cx - ny * s), ty = Math.floor(cy + nx * s);
+    if (tx < 1 || ty < 1 || tx >= WW - 1 || ty >= CFG.WH - 1) continue;
+    const i = ty * WW + tx;
+    if ((WZ.terrain[i] >> 3) === T_POND || (Math.abs(w.x - tx - 0.5) < 1.1 && Math.abs(w.y - ty - 0.5) < 1.1)) continue;
+    if (WZ.setT(i, 'wall', S.t)) { n++; WZ.puff(tx + 0.5, ty + 0.5, '#8a6a3c', 3); }
+  }
+  for (const e of w.enemies) if (!e.dead && !e.fly && WZ.blocked(e.x, e.y, 0.3)) { e.kx += nx * 9; e.ky += ny * 9; }
+  if (n) { w.shake = Math.max(w.shake, 0.3); AU.sfx('wall'); }
+  return n;
+};
+// Flash Frost: bog and water within r turn to ice for t seconds (full speed, and water can be walked on)
+WZ.freeze = function (x, y, r, t) {
+  const WW = CFG.WW;
+  let n = 0;
+  for (let ty = Math.floor(y - r); ty <= Math.floor(y + r); ty++) for (let tx = Math.floor(x - r); tx <= Math.floor(x + r); tx++) {
+    if (tx < 0 || ty < 0 || tx >= WW || ty >= CFG.WH || Math.hypot(tx + 0.5 - x, ty + 0.5 - y) > r) continue;
+    const i = ty * WW + tx, b = WZ.terrain[i] >> 3;
+    if ((b === T_BOG || b === T_POND) && WZ.setT(i, 'ice', t)) n++;
+  }
+  return n;
+};
+WZ.tmodTick = function (dt) {
+  const w = G.w, WW = CFG.WW;
+  if (!w.tmodN) return;
+  for (const k in w.tmod) {
+    const m = w.tmod[k];
+    if ((m.t -= dt) > 0) continue;
+    const i = +k, x = i % WW + 0.5, y = Math.floor(i / WW) + 0.5;
+    if (m.k === 'ice' && (WZ.terrain[i] >> 3) === T_POND && Math.abs(w.x - x) < 1.3 && Math.abs(w.y - y) < 1.3) { m.t = 0.5; continue; }   // never melts under his feet
+    delete w.tmod[k]; w.tmodN--; WZ.flowDirty();
+    if (m.k === 'wall') WZ.puff(x, y, '#8a6a3c', 4); else WZ.puff(x, y, '#bfe9ff', 2);
+  }
+};
 // circle-vs-water test (r = body radius)
 WZ.blocked = (x, y, r) => WZ.wet(x - r, y - r) || WZ.wet(x + r, y - r) || WZ.wet(x - r, y + r) || WZ.wet(x + r, y + r);
 // move a body with axis sliding; water can't be entered at all
@@ -177,6 +239,7 @@ WZ.fresh = function () {
     roll: 0, rollCd: 0, rdx: 0, rdy: 0, hurtT: 0, moving: false, bob: 0, shake: 0, ghosts: [],
     enemies: [], proj: [], eproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
     time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
+    arcs: [], decals: [], bend: {}, tmod: {}, tmodN: 0, kick: null, jump: null,   // deliveries in flight, ground marks, leaning grass, spell terrain, recoil, geyser jump
     lm: WZ.marks.map(() => ({ state: 'idle', t: 0, sp: 0, near: false })),
     run: { deliveries: 0, harvested: 0, dmg: 0, weak: 0, elites: 0, shards: 0, marks: 0, xp: 0, spells: {} },
     t: 0,
@@ -239,6 +302,8 @@ WZ.epuff = function (x, y, el, n) {
 };
 WZ.damage = function (d) {   // armor soaks damage first
   const w = G.w;
+  if (w.jump) return;   // airborne on a geyser: nothing reaches him
+  if (d >= CFG.pressure.hit * WZ.maxHp()) FA.pressure(Math.min(1.5, d / WZ.maxHp() * 3), '#ff5a5a');   // a heavy hit shakes the factory too
   const soak = Math.min(w.armor, d);
   w.armor -= soak; d -= soak;
   if (soak > 0) WZ.num(w.x, w.y, '-' + Math.round(soak), '#9fc4ff');
@@ -380,7 +445,74 @@ WZ.zone = function (o) {
 WZ.ring = (x, y, r, col, dur) => G.w.fx_.push({ type: 'ring', x, y, r, t: 0, dur: dur || 0.4, col });
 WZ.boom = (x, y, r, col) => G.w.fx_.push({ type: 'boom', x, y, r, t: 0, dur: 0.35, col });
 WZ.later = (t, fn) => { const c = WZ.ctx; G.w.timers.push({ t, fn: () => { const o = WZ.ctx; WZ.ctx = c; fn(); WZ.ctx = o; } }); };
+// ---------- the marks spells leave on the ground (CFG.spells[s].dec): burns, cracks, frost... light spells faint and short, heavy ones deep ----------
+WZ.decal = function (x, y, r, dec) {
+  const w = G.w, rr = Math.max(0.5, r * dec.r);
+  const old = w.decals.find(o => o.k === dec.k && Math.hypot(o.x - x, o.y - y) < rr * 0.6);   // a fresh hit on the same spot renews it
+  if (old) { old.t = Math.min(old.t, 0.1); old.r = Math.max(old.r, rr); return; }
+  w.decals.push({ x, y, r: rr, k: dec.k, t: 0, dur: dec.t, a: dec.a, s: hash2(Math.floor(x * 7), Math.floor(y * 7), w.decals.length + 3) });
+  if (w.decals.length > CFG.decalMax) w.decals.shift();
+};
+WZ.mark = (x, y, r) => { const c = WZ.ctx, S = c && CFG.spells[c.spell]; if (S && S.dec && !WZ.wet(x, y)) WZ.decal(x, y, r, S.dec); };   // the current spell's mark
+// an aimed spell kicks the Wizard back a little (CFG.spells[s].recoil tiles, over wizard.kickT seconds)
+WZ.recoil = function (a, d) { const w = G.w; if (d && !(w.roll > 0) && !w.jump) w.kick = { x: -a[0], y: -a[1], t: CFG.wizard.kickT, d }; };
+// Geyser Jump: shot into the air and over water / bog to the farthest dry spot ahead (up to J.dist tiles), untouchable while airborne
+WZ.launch = function (J) {
+  const w = G.w, m = Math.hypot(w.fx, w.fy) || 1, ux = w.fx / m, uy = w.fy / m;
+  let tx = w.x, ty = w.y;
+  for (let d = J.dist; d >= J.min; d -= 0.5) {
+    const x = w.x + ux * d, y = w.y + uy * d;
+    if (x < 1 || y < 1 || x > CFG.WW - 1 || y > CFG.WH - 1 || WZ.blocked(x, y, CFG.wizard.radius) || WZ.tile(x, y) === T_BOG) continue;
+    tx = x; ty = y; break;
+  }
+  w.jump = { sx: w.x, sy: w.y, tx, ty, t: 0, T: J.T, h: J.h };
+  w.roll = 0; w.kick = null; w.target = null; w.rollBuf = 0;
+  WZ.ring(w.x, w.y, 1.6, '#7ad0ff', 0.4); WZ.epuff(w.x, w.y, 'water', 14);
+  AU.sfx('launch');
+};
+// grass, flowers and bushes a body pushes through lean the way it moves (G.w.bend: bucket slot -> { t, d }), then spring back (R.drawWorld)
+WZ.bendAt = function (x, y, vx, vy, r) {
+  const sp = Math.hypot(vx, vy);
+  if (sp < 0.6) return;
+  const B = CFG.bend, WW = CFG.WW, bend = G.w.bend, d = (vx - vy) / (sp * 1.414) * Math.min(1, sp / 5), reach = r + B.r;
+  for (let ty = Math.floor(y - 1); ty <= Math.floor(y + 1); ty++) for (let tx = Math.floor(x - 1); tx <= Math.floor(x + 1); tx++) {
+    if (tx < 0 || ty < 0 || tx >= WW || ty >= CFG.WH) continue;
+    const i = ty * WW + tx, b = WZ.bucket[i];
+    if (b) for (let j = 0; j < b.length && j < 32; j++) {
+      const o = b[j];
+      if (o.deco && BENDY.has(o.spr) && Math.hypot(o.x - x, o.y - y) < reach) bend[i * 32 + j] = { t: 0, d };
+    }
+  }
+};
+WZ.bendTick = function (dt) {
+  const w = G.w, B = CFG.bend;
+  for (const k in w.bend) if ((w.bend[k].t += dt) > B.life) delete w.bend[k];
+  if (!w.dead && !w.jump) WZ.bendAt(w.x, w.y, w.vx, w.vy, CFG.wizard.radius);
+  for (const e of w.enemies) if (!e.dead && !e.fly && !(e.fall > 0) && (e.rad >= B.bigRad || e.elite || e.boss)) WZ.bendAt(e.x, e.y, e.mvx || 0, e.mvy || 0, e.rad * (e.sz || 1));
+};
+// ---------- deliveries crossing the split: what the Spell Portal sends leaves the factory's top-right corner (FA.suck), then sails in from
+// the wilds' top-left along a curve, its shadow sweeping over the ground (R.drawArc). On arrival a spell starts its drop-in, a pickup lands ----------
+WZ.send = function (kind, then, spell) {
+  const w = G.w;
+  if (!w || w.dead) return;
+  w.arcs.push({ kind, then, spell: spell || null, t: -(CFG.suck.baseT + CFG.arc.outT), T: CFG.arc.inT, col: ITEMS[kind].color || '#ffffff', seed: Math.random() * 6.283, tx: null, ty: null });
+};
+WZ.arcTick = function (dt) {
+  const w = G.w;
+  if (w.dead) { w.arcs.length = 0; return; }
+  for (let i = w.arcs.length - 1; i >= 0; i--) {
+    const a = w.arcs[i], was = a.t;
+    a.t += dt;
+    if (was < 0 && a.t >= 0) AU.sfx('whoosh');   // it comes into view at the top-left
+    if (a.then === 'pickup' && a.t >= 0 && a.tx === null) { const s = WZ.dryNear(w.x, w.y, 20, [1.8, 3]) || [w.x, w.y]; a.tx = s[0]; a.ty = s[1]; }
+    if (a.t < a.T) continue;
+    w.arcs.splice(i, 1);
+    if (a.then === 'spell') WZ.incoming(a.spell);
+    else { w.pickups.push({ kind: a.kind, x: a.tx, y: a.ty, z: 0.5, t: 0 }); WZ.ring(a.tx, a.ty, 0.9, a.col, 0.3); AU.sfx('portalDrop'); }
+  }
+};
 WZ.explode = function (x, y, r, dmg, col, skip, kb) {
+  WZ.mark(x, y, r);
   WZ.boom(x, y, r, col);
   WZ.each(x, y, r, (t, d, isE) => {
     if (t === skip) return;
@@ -396,6 +528,7 @@ WZ.chain = function (n, dmg, col, range) {
     const e = WZ.nearest(px, py, range || 12, hit);
     if (!e) break;
     hit.push(e); pts.push([e.x, e.y]); px = e.x; py = e.y;
+    WZ.mark(e.x, e.y, 1);
     WZ.hurtE(e, dmg, 0, 0);
   }
   if (pts.length > 1) w.fx_.push({ type: 'bolt', pts, t: 0, dur: 0.35, col });
@@ -439,42 +572,50 @@ WZ.cast = function (spell) {
     case 'gust':
       AU.sfx('zap_air');
       WZ.ring(px, py, S.r, '#e6f8ff', 0.45);
+      WZ.mark(px, py, S.r);
       WZ.each(px, py, S.r, (t, d, isE) => { const m = d || 1; WZ.hit(t, isE, S.dmg, isE ? (t.x - px) / m * S.push : 0, isE ? (t.y - py) / m * S.push : 0); });
       break;
     case 'fireball': {
       AU.sfx('zap_fire');
       const a = WZ.aim();
       WZ.proj({ vx: a[0] * S.speed, vy: a[1] * S.speed, life: S.life, dmg: S.dmg, splash: S.splash, sr: S.sr, col: '#ff7a30', kind: 'fire', size: 7 });
+      WZ.recoil(a, S.recoil);
       break;
     }
     case 'spray':
       AU.sfx('zap_water');
       w.hp = Math.min(WZ.maxHp(), w.hp + S.heal);
       cone(S.n, S.spread, (dx, dy) => WZ.proj({ vx: dx * S.speed, vy: dy * S.speed, life: S.life, dmg: S.dmg, slow: S.slow, slowT: S.slowT, col: '#4aa8ff', size: 4, r: 0.55 }));
+      WZ.recoil(WZ.aim(), S.recoil);
       break;
     case 'boulder': {
       AU.sfx('zap_earth');
       const a = WZ.aim();
       WZ.proj({ vx: a[0] * S.speed, vy: a[1] * S.speed, life: S.life, dmg: S.dmg, splash: S.splash, sr: S.sr, col: '#8a6a3c', kind: 'rock', size: 9, r: 0.75 });
+      WZ.recoil(a, S.recoil);
       break;
     }
     case 'flamethrower':
       AU.sfx('zap_fire');
       cone(S.n, S.spread, (dx, dy) => WZ.proj({ vx: dx * S.speed, vy: dy * S.speed, life: S.life, dmg: S.dmg, col: '#ff9a2b', size: 6, r: 0.55 }));
+      WZ.recoil(WZ.aim(), S.recoil);
       break;
     case 'steam':
       AU.sfx('zap_combo');
       WZ.ring(px, py, S.r, '#f4f4f8', 0.5);
+      WZ.mark(px, py, S.r);
       WZ.each(px, py, S.r, (t, d, isE) => { WZ.hit(t, isE, S.dmg); if (isE) WZ.slowE(t, S.slow, S.slowT); });
       break;
     case 'sandstorm':
       AU.sfx('zap_combo');
+      WZ.mark(px, py, S.r);
       WZ.zone({ r: S.r, t: S.t, dps: S.dps, slow: S.slow, follow: true, col: '#d9b46a' });
       break;
     case 'magma': {
       AU.sfx('zap_fire');
       const a = WZ.aim();
       WZ.proj({ vx: a[0] * S.speed, vy: a[1] * S.speed, life: S.life, dmg: S.dmg, splash: S.splash, sr: S.sr, col: '#ff4a1a', kind: 'magma', size: 8, r: 0.7 });
+      WZ.recoil(a, S.recoil);
       break;
     }
     case 'tempest':
@@ -487,6 +628,10 @@ WZ.cast = function (spell) {
       const e = WZ.nearest(px, py, S.range);
       const x = e ? e.x : px + w.fx * 5, y = e ? e.y : py + w.fy * 5;
       WZ.zone({ x, y, r: S.r, t: S.t, dps: S.dps, slow: S.slow, col: '#6e4a2a' });
+      WZ.mark(x, y, S.r);
+      // Earth Wall: a wall of mud-brick rises across the way between him and the target, so foes have to go round it into the snare
+      const d = Math.hypot(x - px, y - py), nx = d > 0.5 ? (x - px) / d : w.fx, ny = d > 0.5 ? (y - py) / d : w.fy, k = Math.max(2, Math.min(S.wall.dist, d * 0.6));
+      WZ.wall(px + nx * k, py + ny * k, nx, ny, S.wall);
       break;
     }
     case 'meteor': {
@@ -508,10 +653,13 @@ WZ.cast = function (spell) {
       break;
     case 'blizzard':
       AU.sfx('zap_combo');
-      WZ.zone({ r: S.r, t: S.t, dps: S.dps, slow: S.slow, follow: true, col: '#dff4ff' });
+      WZ.mark(px, py, S.r);
+      WZ.zone({ r: S.r, t: S.t, dps: S.dps, slow: S.slow, follow: true, col: '#dff4ff', frost: S.frost.every, fk: S.frost.every });   // keeps freezing round him while it rages
+      if (WZ.freeze(px, py, S.r, S.frost.t)) AU.sfx('freeze');   // Flash Frost: bog and water turn to ice
       break;
     case 'geyser': {
       AU.sfx('zap_water');
+      WZ.launch(S.jump);   // Geyser Jump: one erupts under the Wizard too and throws him over the water ahead
       const list = G.w.enemies.filter(e => !e.dead).sort((a, b) => Math.hypot(a.x - px, a.y - py) - Math.hypot(b.x - px, b.y - py)).slice(0, S.n);
       list.forEach((e, i) => {
         const x = e.x, y = e.y;
@@ -524,6 +672,7 @@ WZ.cast = function (spell) {
       AU.sfx('zap_combo');
       WZ.ring(px, py, S.r, '#fff6c0', 0.6);
       WZ.boom(px, py, S.r, '#ffe36b');
+      WZ.mark(px, py, S.r);
       WZ.each(px, py, S.r, (t, d, isE) => { const m = d || 1; WZ.hit(t, isE, S.dmg, isE ? (t.x - px) / m * S.push : 0, isE ? (t.y - py) / m * S.push : 0); if (isE) WZ.slowE(t, S.slow, S.slowT); });
       break;
   }
@@ -674,6 +823,7 @@ WZ.summonBoss = function () {
   e.weakFlash = G.fac.weakFlash = CFG.boss.weakFlash;
   w.fx_.push({ type: 'beam', x: e.x, y: e.y, col: '#ff4a8a', t: 0, dur: 1.4 });
   WZ.ring(e.x, e.y, 6, '#ff4a8a', 0.8); w.shake = 0.8;
+  FA.pressure(1.4, '#ff4a8a');
   const msg = 'The Primal Chimera rises! Weak to ' + ELEM_WORD[e.weak] + ' (it changes as it weakens)';
   UI.toast(msg, 'R', 'ic_crown'); UI.toast(msg, 'L', e.weak);
   AU.sfx('roar');
@@ -737,7 +887,7 @@ WZ.buildFlow = function () {
   const D = F.dist, Q = F.q, M = F.m, WW = CFG.WW, WH = CFG.WH;
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const x = i + F.x0, y = j + F.y0;
-    M[j * N + i] = x >= 0 && y >= 0 && x < WW && y < WH && (WZ.terrain[y * WW + x] >> 3) !== T_POND ? 1 : 0;
+    M[j * N + i] = x >= 0 && y >= 0 && x < WW && y < WH && !WZ.wet(x + 0.5, y + 0.5) ? 1 : 0;   // water, unless frozen; Earth Walls block
   }
   D.fill(-1);
   const s = H * N + H;
@@ -810,7 +960,10 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     }
   }
   w.fx_ = w.fx_.filter(f => f.t < f.dur);
-  if (w.dead) { w.shrine = null; w.dig = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
+  for (let i = w.decals.length - 1; i >= 0; i--) if ((w.decals[i].t += dt) > w.decals[i].dur) w.decals.splice(i, 1);
+  WZ.tmodTick(dt);
+  WZ.arcTick(dt);
+  if (w.dead) { w.shrine = null; w.dig = null; w.jump = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
   w.time += dt;
   if (w.hurtT > 0) w.hurtT -= dt;
   if (w.mashT > 0) w.mashT -= dt;
@@ -823,6 +976,18 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     if (t.t <= 0) { w.timers.splice(i, 1); t.fn(); }
   }
   if (!G.w || G.w !== w) return;   // a timer may have ended the run (victory screen re-enter)
+
+  // a geyser has him in the air: he flies along its arc, no steering, no rolling, untouchable (WZ.damage)
+  if (w.jump) {
+    const J = w.jump, k = Math.min(1, (J.t += dt) / J.T);
+    w.x = J.sx + (J.tx - J.sx) * k; w.y = J.sy + (J.ty - J.sy) * k; w.vx = 0; w.vy = 0;
+    ix = 0; iy = 0; rollPressed = false; w.rollBuf = 0; w.target = null;
+    if (Math.floor(J.t * 30) % 2) w.fx_.push({ type: 'spark', x: w.x, y: w.y, vx: rand(-1, 1), vy: rand(-1, 1), z: Math.sin(k * Math.PI) * J.h, vz: -2, g: 14, col: Math.random() < 0.4 ? '#ffffff' : '#7ad0ff', t: 0, dur: 0.4, el: 'water' });
+    if (k >= 1) {
+      w.jump = null; w.shake = Math.max(w.shake, 0.3); w.squashT = 0.2;
+      WZ.ring(w.x, w.y, 1.4, '#7ad0ff', 0.35); WZ.puff(w.x, w.y, '#d8c8a8', 10); AU.sfx('thud');
+    }
+  }
 
   // movement
   let dx = 0, dy = 0;
@@ -864,6 +1029,12 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     const rate = (m > 0 ? CFG.wizard.accel : CFG.wizard.friction) * dt;
     if (el <= rate) { w.vx = wx; w.vy = wy; } else { w.vx += ex / el * rate; w.vy += ey / el * rate; }
   }
+  if (w.kick) {   // an aimed spell's recoil: a short shove backwards (it slides along water like any move)
+    const K = w.kick, s = K.d / CFG.wizard.kickT;
+    if (w.roll > 0 || w.jump || (K.t -= dt) <= 0) w.kick = null;
+    else WZ.slide(w, w.x + K.x * s * dt, w.y + K.y * s * dt, CFG.wizard.radius);
+  }
+  if (w.squashT > 0) w.squashT -= dt;
   for (const gh of w.ghosts) gh.t += dt;
   w.ghosts = w.ghosts.filter(gh => gh.t < 0.25);
   if (w.shake > 0) w.shake = Math.max(0, w.shake - dt);
@@ -961,11 +1132,13 @@ WZ.update = function (dt, ix, iy, rollPressed) {
       if (!e.boss) { mx += ox / od * push; my += oy / od * push; }
       WZ.slide(o, o.x - ox / od * push * dt * wo, o.y - oy / od * push * dt * wo, 0.3);
     }
+    const ox0 = e.x, oy0 = e.y;
     if (e.fly) { e.x = Math.max(0.5, Math.min(CFG.WW - 0.5, e.x + (mx + e.kx) * dt)); e.y = Math.max(0.5, Math.min(CFG.WH - 0.5, e.y + (my + e.ky) * dt)); }   // flyers cross water
     else if (WZ.slide(e, e.x + (mx + e.kx) * dt, e.y + (my + e.ky) * dt, 0.3) && !(e.detour > 0) && !steered) {
       e.detour = 0.5 + Math.random() * 0.6; e.side = e.side || (Math.random() < 0.5 ? 1 : -1);
       e.kx = 0; e.ky = 0;
     }
+    if (dt > 0) { e.mvx = (e.x - ox0) / dt; e.mvy = (e.y - oy0) / dt; }   // its walking velocity (the grass it tramples leans that way)
     const decay = Math.exp(-6 * dt); e.kx *= decay; e.ky *= decay;
     e.face = (ex - ey) >= 0 ? 1 : -1;
     // touch damage
@@ -978,6 +1151,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     } else if (d < reach && e.cd <= 0 && w.roll > 0) { e.cd = 0.3; WZ.dodge(); }
   }
   w.enemies = en.filter(e => !e.dead);
+  WZ.bendTick(dt);
 
   // projectiles
   for (let i = w.proj.length - 1; i >= 0; i--) {
@@ -995,6 +1169,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
         WZ.hit(hit, hitE, p.dmg, hitE ? p.vx * 0.15 : 0, hitE ? p.vy * 0.15 : 0);
         if (hitE && p.slow) WZ.slowE(hit, p.slow, p.slowT);
         if (p.splash) WZ.explode(p.x, p.y, p.sr, p.splash, p.kind === 'rock' ? '#a98a5c' : '#ff9a2b', hit);
+        else WZ.mark(p.x, p.y, 1);
       }
       w.proj.splice(i, 1);
     } else if (p.life <= 0) {
@@ -1027,6 +1202,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
       if (z.t <= 0) w.zones.splice(i, 1);
       continue;
     }
+    if (z.frost && (z.fk -= dt) <= 0) { z.fk = z.frost; WZ.freeze(z.x, z.y, z.r, CFG.spells.blizzard.frost.t); }   // the Blizzard freezes the ground it passes over
     WZ.ctx = z.ctx;
     WZ.each(z.x, z.y, z.r, (t, d, isE) => {
       if (z.dps) { if (isE) WZ.hurtE(t, z.dps * dt, 0, 0, true); else { t.hp -= z.dps * dt; t.flash = 0.05; if (t.hp <= 0) { t.hp = 0.0001; WZ.hurtH(t, 1); } } }

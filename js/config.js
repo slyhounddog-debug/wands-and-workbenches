@@ -37,10 +37,21 @@ const CFG = {
   throwRange: 6.5, throwRepeat: 0.15,
   portalGap: 0.22,
   portalCatch: 1.35,         // a throw that lands within this many tiles of a portal that takes it is pulled in, so nothing piles up on the floor beside it
-  suck: { baseT: 0.34, minT: 0.5 },   // Spell Portal intake animation: seconds the item spends being slurped in, and the least time the whole show lasts (it otherwise lasts as long as the spell's drop-in over the Wizard)
+  suck: { baseT: 0.3 },       // Spell Portal intake animation: seconds the item spends being slurped in (then it arcs out of the factory: arc.outT)
+  arc: { outT: 0.24, inT: 0.42, h: 90 },   // deliveries cross the split: seconds rising out of the factory's top-right corner, seconds sailing in from the wilds' top-left onto the Wizard, extra arc height (px)
+  thump: 0.36,                // a Forge / Cauldron that finishes a craft thumps (squash and stretch) this long and puffs exhaust in its elements' colours
+  boing: { T: 0.55, h: 2.6, back: 0.55, min: 1.2, max: 2.8 },   // a rejected throw springs back toward the Builder: flight time, arc height, share of the way back (clamped to min..max tiles)
+  // throwing a combo spell (2 / 3 / 4 elements) or an Elixir into a Battery Station that holds a Battery overcharges it: it fills by this share of a
+  // Battery (up to max x a full one) and gives +power for that many seconds
+  overcharge: { fill: [0, 0, 0.35, 0.6, 1], time: [0, 0, 12, 20, 30], elixir: 0.45, elixirT: 15, max: 1.5, power: 5 },
+  pressure: { hit: 0.18, speed: 10, life: 1.4, range: 11, amp: 6 },   // Spell Portal shockwaves: the Wizard losing this share of max HP in one hit (also events, Wardens, the Chimera), front speed (tiles/s), seconds, reach (tiles), most jitter (px)
+  weather: { tau: 30, min: 6, full: 30, ease: 0.035, shrine: 0.5 },   // wilds weather from the factory: packets/min of an element below min = clear, at full = full weather; ease = how fast it turns (per s); a claimed shrine / Portal Storm adds this much of its element
+  decalMax: 70,               // spell scorch / crack / frost marks on the ground at once (each spell's dec in CFG.spells)
+  bend: { r: 0.45, hold: 0.1, spring: 10, damp: 3.4, amp: 0.6, life: 1.5, bigRad: 0.45, tufts: 15000 },   // grass and flowers lean away from the Wizard and big foes, then spring back; tufts = extra grass tufts sown over the wilds
   wizard: {
     hp: 100, speed: 6.5, accel: 48, friction: 40, radius: 0.3,
     rollTime: 0.45, rollSpeed: 2.3, rollCd: 1.1, armorMax: 100, dodgeCd: 0.3,
+    kickT: 0.16,              // aimed spells push him back over this many seconds (each spell's recoil in CFG.spells = tiles)
   },
   world: {
     respawn: 120, vacuum: 2, minSpawnDist: 8,
@@ -135,11 +146,11 @@ const CFG = {
     anvil:    { name: 'Armor Anvil', kind: 'crafter', cost: { wood: 6, stone: 8, iron: 4 }, unlock: 'armory',
                 desc: 'Hammers Iron Ore + Stone, heated by a Fire Ember, into Armor for the Wizard.' },
     station:  { name: 'Battery Station', kind: 'station', cost: { wood: 8, stone: 6, iron: 4 }, unlock: null,
-                desc: 'A charged Battery here generates +10 power for the whole factory. Drains while anything needs power. Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed.' },
+                desc: 'A charged Battery here generates +10 power for the whole factory. Drains while anything needs power. Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed. Throw a combo spell or an Elixir in to overcharge it (extra charge, +5 power for a while).' },
     charger:  { name: 'Battery Charger', kind: 'charger', cost: { wood: 8, stone: 4, iron: 4 }, unlock: null,
                 desc: 'Recharges a Battery by burning element packets as fuel (16.5s each, 19.5s when thrown in by hand). More element types = faster. Uses no electricity.' },
     splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 2, stone: 1 }, unlock: 'logistics',
-                desc: 'Takes items from behind and deals them out of its front, left and right sides in turn. Blocked sides are skipped. Press E at it to turn it.' },
+                desc: 'Routes what comes in to up to 3 outputs: every side that has something to feed (the side items arrive from is the input). Share them out by %, or give an output element filters (Fire + Earth left, Water + Air right). Click it to set it up.' },
     sorter:   { name: 'Sorter', kind: 'sorter', cost: { wood: 2, stone: 1, shard: 1 }, unlock: 'logistics',
                 desc: 'E while holding an item sets the filter: matching items go out the front, everything else out the sides. E with empty hands clears it.' },
     crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 8, stone: 4 }, unlock: 'logistics',
@@ -204,11 +215,11 @@ const CFG = {
     { id: 'steam',        col: 1, icon: 'steam',        name: 'Steam Burst',   xp: 45, req: ['forge'], pay: { fire: 22, water: 23 }, desc: 'Fire + Water: scalding burst that slows.' },
     { id: 'sandstorm',    col: 1, icon: 'sandstorm',    name: 'Sandstorm',     xp: 45, req: ['forge', 'earth'], pay: { air: 22, earth: 23 }, desc: 'Air + Earth: a grinding storm that follows the Wizard.' },
     { id: 'magma',        col: 1, icon: 'magma',        name: 'Magma Bomb',    xp: 45, req: ['forge', 'earth'], pay: { fire: 22, earth: 23 }, desc: 'Fire + Earth: big blast that leaves burning ground.' },
-    { id: 'mud',          col: 1, icon: 'mud',          name: 'Mud Snare',     xp: 45, req: ['forge', 'earth'], pay: { water: 22, earth: 23 }, desc: 'Water + Earth: a sticky zone that nearly stops foes.' },
+    { id: 'mud',          col: 1, icon: 'mud',          name: 'Mud Snare',     xp: 45, req: ['forge', 'earth'], pay: { water: 22, earth: 23 }, desc: 'Water + Earth: a sticky zone that nearly stops foes, behind an Earth Wall that channels them.' },
     { id: 'meteor',       col: 1, icon: 'meteor',       name: 'Meteor Shower', xp: 90, req: ['flamethrower', 'magma'], pay: { air: 20, fire: 20, earth: 20, flamethrower: 2, magma: 1 }, desc: 'Air + Fire + Earth: 8 meteors on random foes.' },
     { id: 'thunder',      col: 1, icon: 'thunder',      name: 'Thunderstorm',  xp: 90, req: ['flamethrower', 'tempest'], pay: { air: 20, fire: 20, water: 20, tempest: 2, flamethrower: 1 }, desc: 'Air + Fire + Water: chain lightning to 10 foes.' },
-    { id: 'blizzard',     col: 1, icon: 'blizzard',     name: 'Blizzard',      xp: 90, req: ['tempest', 'mud'], pay: { air: 20, water: 20, earth: 20, mud: 2, tempest: 1 }, desc: 'Air + Water + Earth: a freezing storm around the Wizard.' },
-    { id: 'geyser',       col: 1, icon: 'geyser',       name: 'Geyser Eruption', xp: 90, req: ['steam', 'magma'], pay: { fire: 20, water: 20, earth: 20, steam: 2, magma: 1 }, desc: 'Fire + Water + Earth: blasts under the 6 nearest foes.' },
+    { id: 'blizzard',     col: 1, icon: 'blizzard',     name: 'Blizzard',      xp: 90, req: ['tempest', 'mud'], pay: { air: 20, water: 20, earth: 20, mud: 2, tempest: 1 }, desc: 'Air + Water + Earth: a freezing storm around the Wizard. Freezes bog and water into ice he can run on.' },
+    { id: 'geyser',       col: 1, icon: 'geyser',       name: 'Geyser Eruption', xp: 90, req: ['steam', 'magma'], pay: { fire: 20, water: 20, earth: 20, steam: 2, magma: 1 }, desc: 'Fire + Water + Earth: blasts under the 6 nearest foes and launches the Wizard over water and bog.' },
     { id: 'nova',         col: 1, icon: 'nova',         name: 'Elemental Nova', xp: 210, req: ['meteor', 'thunder', 'blizzard', 'geyser'], pay: { air: 50, fire: 50, water: 50, earth: 60, meteor: 1, thunder: 1, blizzard: 1, geyser: 1 }, desc: 'All four: a huge radial blast.' },
     // col 2: Upgrades — many small tiers, cheap first, steep last
     { id: 'expand',  col: 2, icon: 'ic_expand', name: 'Factory Expansion', per: 'Bigger factory floor (stockpile moves back)',
@@ -248,22 +259,25 @@ const CFG = {
   // dmg per hit, r radius (tiles), speed (tiles/s), life (s), splash + sr = splash damage + radius,
   // n = projectiles / targets / blasts, slow = speed taken away (0..1) for slowT seconds, t = zone time, dps in zones
   // drop = seconds of the spell's own drop-in over the Wizard before it casts (the telegraph: he sees it coming)
+  // recoil = tiles an aimed spell pushes the Wizard back. dec = the mark it leaves on the ground: k kind, r x the blast radius, t seconds, a strength
+  // terrain spells: Mud raises an Earth Wall (len tiles, dist tiles toward the target, t s), the Blizzard freezes bog and water into ice
+  // (t s, re-freezing every s while it rages), the Geyser launches the Wizard (up to dist tiles, at least min, T s in the air, h tiles high)
   spells: {
-    gust:         { drop: 0.45, r: 6, dmg: 3.6, push: 12.6 },
-    fireball:     { drop: 0.55, speed: 16, life: 1.6, dmg: 30, splash: 15, sr: 1.6 },
-    spray:        { drop: 0.5, n: 5, spread: 0.8, speed: 12, life: 0.9, dmg: 8, slow: 0.4, slowT: 2, heal: 2 },
-    boulder:      { drop: 0.6, speed: 7, life: 2.5, dmg: 45, splash: 22, sr: 2.1 },
-    flamethrower: { drop: 0.5, n: 8, spread: 0.9, speed: 14, life: 0.75, dmg: 11 },
-    steam:        { drop: 0.6, r: 5.5, dmg: 25, slow: 0.5, slowT: 2.5 },
-    sandstorm:    { drop: 0.65, r: 5, t: 3, dps: 14, slow: 0.3 },
-    magma:        { drop: 0.7, speed: 10, life: 1.2, dmg: 50, splash: 50, sr: 3 },
-    tempest:      { drop: 0.65, n: 5, dmg: 20, range: 12, slowR: 4, slow: 0.3, slowT: 2 },
-    mud:          { drop: 0.55, range: 30, r: 4, t: 3, dps: 6, slow: 0.8 },
-    meteor:       { drop: 0.8, n: 8, gap: 0.22, range: 16, fall: 0.5, r: 2.2, dmg: 40 },
-    thunder:      { drop: 0.6, n: 10, dmg: 30, range: 14 },
-    blizzard:     { drop: 0.7, r: 7, t: 4, dps: 16, slow: 0.6 },
-    geyser:       { drop: 0.55, n: 6, delay: 0.55, gap: 0.08, r: 1.8, dmg: 45 },
-    nova:         { drop: 0.9, r: 8, dmg: 80, push: 30, slow: 0.5, slowT: 2 },
+    gust:         { drop: 0.45, r: 6, dmg: 3.6, push: 12.6, dec: { k: 'scuff', r: 0.45, t: 3, a: 0.35 } },
+    fireball:     { drop: 0.55, speed: 16, life: 1.6, dmg: 30, splash: 15, sr: 1.6, recoil: 0.22, dec: { k: 'burn', r: 0.7, t: 3.2, a: 0.55 } },
+    spray:        { drop: 0.5, n: 5, spread: 0.8, speed: 12, life: 0.9, dmg: 8, slow: 0.4, slowT: 2, heal: 2, recoil: 0.12, dec: { k: 'wet', r: 0.5, t: 3, a: 0.4 } },
+    boulder:      { drop: 0.6, speed: 7, life: 2.5, dmg: 45, splash: 22, sr: 2.1, recoil: 0.38, dec: { k: 'crack', r: 0.75, t: 4.5, a: 0.8 } },
+    flamethrower: { drop: 0.5, n: 8, spread: 0.9, speed: 14, life: 0.75, dmg: 11, recoil: 0.3, dec: { k: 'burn', r: 0.55, t: 3, a: 0.4 } },
+    steam:        { drop: 0.6, r: 5.5, dmg: 25, slow: 0.5, slowT: 2.5, dec: { k: 'wet', r: 0.55, t: 4, a: 0.55 } },
+    sandstorm:    { drop: 0.65, r: 5, t: 3, dps: 14, slow: 0.3, dec: { k: 'sand', r: 0.8, t: 4, a: 0.55 } },
+    magma:        { drop: 0.7, speed: 10, life: 1.2, dmg: 50, splash: 50, sr: 3, recoil: 0.55, dec: { k: 'burn', r: 0.8, t: 5, a: 0.95 } },
+    tempest:      { drop: 0.65, n: 5, dmg: 20, range: 12, slowR: 4, slow: 0.3, slowT: 2, dec: { k: 'scorch', r: 0.7, t: 3.5, a: 0.5 } },
+    mud:          { drop: 0.55, range: 30, r: 4, t: 3, dps: 6, slow: 0.8, dec: { k: 'mud', r: 1, t: 4.5, a: 0.7 }, wall: { len: 9, dist: 3, t: 10 } },
+    meteor:       { drop: 0.8, n: 8, gap: 0.22, range: 16, fall: 0.5, r: 2.2, dmg: 40, dec: { k: 'crater', r: 0.85, t: 5, a: 1 } },
+    thunder:      { drop: 0.6, n: 10, dmg: 30, range: 14, dec: { k: 'scorch', r: 0.9, t: 4, a: 0.75 } },
+    blizzard:     { drop: 0.7, r: 7, t: 4, dps: 16, slow: 0.6, dec: { k: 'frost', r: 0.8, t: 5, a: 0.85 }, frost: { t: 14, every: 0.1 } },
+    geyser:       { drop: 0.55, n: 6, delay: 0.55, gap: 0.08, r: 1.8, dmg: 45, dec: { k: 'wet', r: 0.9, t: 4.5, a: 0.85 }, jump: { dist: 8, min: 2.5, T: 0.8, h: 2.6 } },
+    nova:         { drop: 0.9, r: 8, dmg: 80, push: 30, slow: 0.5, slowT: 2, dec: { k: 'crack', r: 0.6, t: 5, a: 1 } },
   },
   // what each upgrade tier is worth
   upgrade: { swift: 0.125, manual: 0.3, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125, magnet: 0.35 },   // gems: x(1+0.125) per tier on every gem drop chance (cap gemCap); magnet: tiles of extra pickup radius per tier

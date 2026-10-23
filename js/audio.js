@@ -8,7 +8,7 @@ const AU = (() => {
   // midG is everything else. cur = where tone() / noise() send by default while a sfx is being built
   let hiG = null, midG = null, loG = null, duckG = null, cur = null;
   const HI = new Set(['deliver', 'portalDrop', 'incoming', 'incoming_big', 'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'weak', 'warn', 'heart', 'hurt', 'die', 'roar', 'slam', 'volley', 'alert', 'dodge', 'victory', 'evwarn']);
-  const LO = new Set(['pickup', 'drop', 'blip', 'crank', 'gem', 'place', 'throw', 'thud', 'dig', 'rustle', 'step_b', 'step_w', 'menu_open', 'menu_close', 'tab', 'craft', 'bank', 'shard',
+  const LO = new Set(['pickup', 'drop', 'blip', 'crank', 'gem', 'place', 'throw', 'thud', 'boing', 'whoosh', 'dig', 'rustle', 'step_b', 'step_w', 'menu_open', 'menu_close', 'tab', 'craft', 'bank', 'shard',
     'st_work', 'st_missing', 'st_starve', 'st_jam', 'st_full', 'st_off']);
   const reps = {};   // name -> { t, n }: rapid repeats of a low sound get quieter
   function duck(depth) {
@@ -188,6 +188,13 @@ const AU = (() => {
       case 'charge': tone(880, 0.1, 'sine', 0.08); tone(1320, 0.14, 'sine', 0.08, 0, 0.08); break;
       case 'throw': noise(0.12, 0.05, 2500); tone(500, 0.12, 'sine', 0.06, 1.6); break;
       case 'thud': tone(140, 0.1, 'triangle', 0.1, 0.6); break;
+      case 'boing': noise(0.02, 0.08, 4000); tone(1800, 0.03, 'square', 0.05); tone(220, 0.32, 'sine', 0.11, 3.2, 0.02); tone(330, 0.22, 'triangle', 0.05, 2.4, 0.06); break;   // a rejected throw: a click, then a spring
+      case 'whoosh': noise(0.3, 0.05, 1200); tone(900, 0.28, 'sine', 0.04, 0.45); break;   // a delivery sails into the wilds
+      case 'overcharge': tone(N(0), 0.25, 'sawtooth', 0.06, 2); [12, 19, 24].forEach((s, i) => tone(N(s), 0.12, 'square', 0.05, 0, 0.08 + i * 0.05)); noise(0.2, 0.05, 5000, 0.05); break;
+      case 'pressure': tone(55, 0.5, 'sine', 0.16, 0.6); noise(0.35, 0.07, 120); break;   // a shockwave out of the Spell Portal
+      case 'wall': tone(70, 0.45, 'square', 0.1, 1.5); noise(0.4, 0.1, 250); break;
+      case 'freeze': [24, 31, 28, 36].forEach((s, i) => tone(N(s), 0.1, 'triangle', 0.05, 0, i * 0.04)); noise(0.3, 0.04, 6000); break;
+      case 'launch': tone(160, 0.35, 'sine', 0.1, 4); noise(0.35, 0.08, 900); break;
       case 'crank': tone(300 + Math.random() * 80, 0.06, 'square', 0.05, 1.3); break;
       case 'craft': tone(660, 0.08, 'triangle', 0.09); tone(990, 0.12, 'triangle', 0.08, 0, 0.07); break;
       case 'clank': tone(1200, 0.12, 'square', 0.05, 0.5); tone(800, 0.15, 'triangle', 0.06, 0.7); break;

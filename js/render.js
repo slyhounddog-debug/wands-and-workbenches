@@ -55,6 +55,11 @@ function dspr(ctx, s, x, y, S, alpha, flip) {
   } else ctx.drawImage(s.c, px, py, w, h);
   if (alpha !== undefined && alpha !== 1) ctx.globalAlpha = 1;
 }
+// a sprite leaning over: the base stays put and the top slides sideways by k x its height (grass pushed aside)
+function dsprSkew(ctx, s, x, y, S, k) {
+  ctx.save(); ctx.translate(snap(x), Math.round(y / R.px) * R.px); ctx.transform(1, 0, -k, 1, 0, 0);
+  ctx.drawImage(s.c, -s.ax * S, -s.ay * S, s.c.width * S, s.c.height * S); ctx.restore();
+}
 // draw a sprite squashed/stretched around its anchor (sx = width scale, sy = height scale)
 function dsprSq(ctx, s, x, y, S, sx, sy, alpha, flip) {
   if (Math.abs(sx - 1) < 0.02 && Math.abs(sy - 1) < 0.02) { dspr(ctx, s, x, y, S, alpha, flip); return; }
@@ -221,6 +226,20 @@ R.drawFactory = function (main, dt) {
     ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.closePath(); ctx.fill();
     ctx.strokeStyle = '#f4d898'; ctx.lineWidth = 8; ctx.setLineDash([16, 16]); ctx.lineDashOffset = -Math.floor(t * 4) * 8; ctx.stroke(); ctx.setLineDash([]);
   }
+  // shockwaves rolling out of the Spell Portal across the floor (FA.pressure); the machines they pass jitter (FA.quake)
+  if (f.waves.length) {
+    const ps0 = FA.portal('spell'), c = R.toScreen(v, ps0.x + 0.5, ps0.y + 1), PR = CFG.pressure;
+    for (const wv of f.waves) {
+      const r = Math.ceil(wv.t * PR.speed * 2) / 2, a = (1 - wv.t / PR.life) * Math.min(1, wv.amp);
+      for (let i = 0; i < 3; i++) {
+        const rr = r - i * 0.7;
+        if (rr <= 0) continue;
+        ctx.globalAlpha = a * [1, 0.7, 0.4][i]; ctx.strokeStyle = i === 1 ? '#ffffff' : wv.col; ctx.lineWidth = i ? 8 : 16;
+        diamond(ctx, c[0], c[1], rr * v.hw * 1.414, rr * v.hh * 1.414); ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
 
   const piles = FA.piles();
   const list = [];
@@ -253,7 +272,7 @@ R.drawFactory = function (main, dt) {
   for (const b of f.bld) {
     const k = b.done && FA.def(b).kind;
     if (!k || k === 'station' || k === 'charger') continue;
-    if (k === 'splitter') FA.splitSides(b).forEach((d, i) => R.splitArrow(ctx, v, b, t, d, FA.splitCol[i], i ? 100 - b.split : b.split));
+    if (k === 'splitter') b.outs.forEach((d, i) => R.splitArrow(ctx, v, b, t, d, FA.splitCol[i], b.pct[d] || 0, b.filt[d]));
     else if (k === 'sorter') { R.outArrow(ctx, v, b, t, b.dir, '#9dff9d'); if (b.filter) { R.outArrow(ctx, v, b, t, (b.dir + 1) % 4); R.outArrow(ctx, v, b, t, (b.dir + 3) % 4); } }
     else R.outArrow(ctx, v, b, t);
   }
@@ -280,8 +299,18 @@ R.drawFactory = function (main, dt) {
     const s = R.toScreen(v, p.x, p.y);
     ctx.globalAlpha = Math.min(1, p.t * 2); ctx.fillStyle = p.col;
     if (p.el) { R.elPix(ctx, p.el, Math.round(s[0] / P) * P, Math.round((s[1] - p.z * 22) / P) * P, P); continue; }
-    const sz = p.dust ? (p.t > 0.25 ? 8 : 4) : 4;
+    const sz = p.dust ? (p.t > 0.25 ? 8 : 4) : p.sz || 4;
     ctx.fillRect(Math.round((s[0] - sz / 2) / P) * P, Math.round((s[1] - p.z * 22) / P) * P, sz, sz);
+  }
+  ctx.globalAlpha = 1;
+  // where a throw hit: a tiny ring leaning the way it flew, a spray of three chips on past it (red when it bounced off)
+  for (const r of f.rings) {
+    const k = r.t / 0.3, s = R.toScreen(v, r.x, r.y), sdx = (r.dx - r.dy) * v.hw, sdy = (r.dx + r.dy) * v.hh, m = Math.hypot(sdx, sdy) || 1, nx = sdx / m, ny = sdy / m;
+    const rad = Math.round((10 + k * 28) / P) * P, cx = s[0] + nx * rad * 0.4, cy = s[1] - 28 + ny * rad * 0.4;
+    ctx.globalAlpha = 1 - k; ctx.strokeStyle = r.col; ctx.lineWidth = 2 * P;
+    diamond(ctx, cx, cy, rad, rad / 2); ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    for (let i = -1; i <= 1; i++) { const a = Math.atan2(ny, nx) + i * 0.65; ctx.fillRect(Math.round((cx + Math.cos(a) * (rad + 8)) / P) * P, Math.round((cy + Math.sin(a) * (rad / 2 + 4)) / P) * P, P * 2, P * 2); }
   }
   ctx.globalAlpha = 1;
 
@@ -354,9 +383,9 @@ R.outArrow = function (ctx, v, b, t, dir, col) {
   ctx.closePath(); ctx.fill();
 };
 
-// a Splitter's output arrow: pulses in its side's colour (the same colour as that end of the slider), bigger for a bigger share;
-// a side with 0% is a small dim arrow that doesn't pulse
-R.splitArrow = function (ctx, v, b, t, dir, col, pct) {
+// a Splitter's output arrow: pulses in its output's colour (the same colour as its row in the modal), bigger for a bigger share;
+// a side with 0% is a small dim arrow that doesn't pulse. An output with filters carries their icons past its tip
+R.splitArrow = function (ctx, v, b, t, dir, col, pct, filt) {
   const dd = DIRS[dir], p = R.toScreen(v, b.x + 0.5 + dd[0] * 0.68, b.y + 0.5 + dd[1] * 0.68);
   const sdx = (dd[0] - dd[1]) * v.hw, sdy = (dd[0] + dd[1]) * v.hh, m = Math.hypot(sdx, sdy), nx = sdx / m, ny = sdy / m;
   const on = pct > 0, k = on ? (0.8 + pct / 500) * (1 + 0.22 * (Math.sin(t * 5 + dir) * 0.5 + 0.5)) : 0.6;
@@ -370,11 +399,17 @@ R.splitArrow = function (ctx, v, b, t, dir, col, pct) {
     ctx.closePath(); ctx.fill();
   }
   ctx.globalAlpha = 1;
-  if (R.inTip(b)) txt(ctx, pct + '%', p[0] - nx * 4, p[1] + (ny > 0 ? 36 : -30), 12, col, 'center', 'd');
+  const tip = R.inTip(b);
+  if (filt && filt.length) {   // the kinds this output takes, in a little row beyond the arrow
+    const fx = p[0] + nx * 44, fy = p[1] + ny * 30 + 16, sp = 36;
+    if (tip) pbox(ctx, fx - filt.length * sp / 2 - 4, fy - 40, filt.length * sp + 8, 44, '#2b1d48', col);
+    filt.forEach((k, i) => dspr(ctx, itemSprite(k), fx + (i - (filt.length - 1) / 2) * sp, fy, 4, tip ? 1 : 0.6));
+  } else if (tip) txt(ctx, pct + '%', p[0] - nx * 4, p[1] + (ny > 0 ? 36 : -30), 12, col, 'center', 'd');
 };
 
 R.drawBelt = function (ctx, v, b, t) {
   const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), hw = v.hw * 0.9, hh = v.hh * 0.9, lift = 8;
+  p[0] += FA.quake(b.x, b.y);   // a shockwave passing through
   ctx.fillStyle = 'rgba(30,70,30,0.3)';
   diamond(ctx, p[0] + 4, p[1] + 4, hw, hh); ctx.fill();
   ctx.fillStyle = '#4a4f5c';
@@ -410,10 +445,14 @@ R.drawBelt = function (ctx, v, b, t) {
 R.isNear = b => (R.focus && R.focus.list.some(e => e.t.kind === 'bld' && e.t.o === b)) || R.hoverB === b;
 R.drawBuilding = function (ctx, v, b, t) {
   const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), S = 4, d = FA.def(b);
+  const qk = FA.quake(b.x, b.y);   // a shockwave from the Spell Portal passing through: it rattles sideways and flickers
+  p[0] += qk;
   const spr = R.bldSprite(b);
   const base = p[1] + v.hh * 0.9 - 2;
   const pop = Math.max(0, b.pop);
   const sq = 1 + Math.sin(pop * 18) * pop * 0.5;
+  // a finished craft: a vertical thump, squashed down then stretched up, settling (machine recoil)
+  const th = b.thump > 0 ? 1 - b.thump / CFG.thump : 1, tq = th < 1 ? 1 - 0.24 * Math.cos(th * Math.PI * 2.5) * (1 - th) : 1;
   const top = p[1] - 128;
   if (!b.done) {
     dsprSq(ctx, spr, p[0], base, S, 1, sq, 0.45);
@@ -434,7 +473,8 @@ R.drawBuilding = function (ctx, v, b, t) {
     ctx.fillStyle = glow; ctx.globalAlpha = 0.22;
     diamond(ctx, p[0], p[1], v.hw * 0.85, v.hh * 0.85); ctx.fill(); ctx.globalAlpha = 1;
   }
-  dsprSq(ctx, spr, p[0], base, S, 1 + (sq - 1) * -0.5, sq);
+  dsprSq(ctx, spr, p[0], base, S, (1 + (sq - 1) * -0.5) * (1 + (1 - tq) * 0.6), sq * tq);
+  if (Math.abs(qk) > 1.5 && Math.floor(t * 30) % 2) dsprSq(ctx, { c: spr.white || spr.c, ax: spr.ax, ay: spr.ay }, p[0], base, S, 1, sq * tq, 0.35);
   if (d.kind === 'harness') {
     const bob = Math.round(Math.sin(b.anim * (working ? 3 : 1)) * 1.5) * 4;
     const cy = base - 28 - bob;
@@ -503,8 +543,22 @@ R.drawBuilding = function (ctx, v, b, t) {
   }
   if (b.type === 'station') {
     const fr = b.bat == null ? 0 : b.bat / CFG.batteryMax;
+    if (b.over > 0) {   // overcharged: a crackling white-gold rim and arcs leaping off the Battery
+      ctx.strokeStyle = Math.floor(t * 16) % 2 ? '#fff07a' : '#ffffff'; ctx.lineWidth = 8;
+      diamond(ctx, p[0], p[1], v.hw * (0.95 + (Math.sin(t * 20) > 0 ? 0.08 : 0)), v.hh * (0.95 + (Math.sin(t * 20) > 0 ? 0.08 : 0))); ctx.stroke();
+      ctx.strokeStyle = '#fff6b0'; ctx.lineWidth = 4;
+      for (let i = 0; i < 3; i++) {
+        if (Math.random() < 0.35) continue;
+        const a = Math.random() * 6.283, x0 = p[0], y0 = base - 60;
+        ctx.beginPath(); ctx.moveTo(x0, y0);
+        for (let j = 1; j <= 3; j++) ctx.lineTo(Math.round((x0 + Math.cos(a) * j * 14 + (Math.random() - 0.5) * 12) / 4) * 4, Math.round((y0 + Math.sin(a) * j * 9 - j * 6) / 4) * 4);
+        ctx.stroke();
+      }
+      if (Math.sin(t * 10) > 0) dspr(ctx, SP.ic_bolt, p[0] + 40, base - 70, 4);
+    }
     if (b.bat != null) dspr(ctx, SP.it_battery, p[0], base - 44, 4);
-    if (tip) R.bar(ctx, p[0], top + 52, 64, fr, b.bat > 0 ? '#3ad06b' : '#8a8a8a');
+    if (tip) R.bar(ctx, p[0], top + 52, 64, Math.min(1, fr), b.bat > 0 ? '#3ad06b' : '#8a8a8a');
+    if (tip && fr > 1) R.bar(ctx, p[0], top + 66, 64, (fr - 1) / (CFG.overcharge.max - 1), '#fff07a', 8);   // the charge past full
     if (b.bat != null && b.bat > 0 && Math.sin(t * 8) > 0) {
       ctx.fillStyle = '#fff07a';
       for (let i = 0; i < 5; i++) ctx.fillRect(Math.round((p[0] - 20 + i * 10) / 4) * 4, Math.round((base - 84 + (i % 2 ? -8 : 8)) / 4) * 4, 8, 4);
@@ -718,28 +772,24 @@ R.drawSuck = function (ctx, v, s, base) {
     if (spr) dsprSq(ctx, spr, q[0], q[1] + 20, 4, 1 - 0.5 * e, 1 + 0.6 * e, 1);
     ring(1.2 - 0.3 * Math.ceil(u * 4) / 4, col, 0.35 + u * 0.6, 0.09);   // the ring leans in to swallow it
   } else {
-    const k = Math.min(1, (s.t - T) / Math.max(0.05, s.dur - T)), top = cy - 70 - 330 * Math.sqrt(k), fl = Math.floor(s.t * 40);
+    const k = Math.min(1, (s.t - T) / Math.max(0.05, s.dur - T));
     // the gulp: a shock ring rolling out of the portal's plane
     const kk = Math.min(1, k * 2.2);
     if (kk < 1) { ring(0.45 + 0.85 * Math.ceil(kk * 4) / 4, '#ffffff', 1 - kk, 0.12); ring(0.3 + 0.7 * Math.ceil(kk * 4) / 4, col, 1 - kk, 0.16); }
-    // the column of light climbing out of the ring: flickering bands, a white core, narrowing as it goes
-    const w = Math.max(P * 2, Math.round((34 * (1 - k) + 6) / P) * P);
-    for (let y = Math.round(cy / 12) * 12; y > top; y -= 12) {
-      const fade = Math.min(1, (y - top) / 70) * (1 - k * 0.5);
-      ctx.globalAlpha = fade; ctx.fillStyle = '#1a0f28'; ctx.fillRect(snap(cx - w / 2) - P, y, w + 2 * P, 12);   // pixel-art outline
-      ctx.fillStyle = col; ctx.fillRect(snap(cx - w / 2), y, w, 12);
-      if ((y / 12 + fl) % 3 === 0) { ctx.fillStyle = '#ffffff'; ctx.globalAlpha = fade * 0.55; ctx.fillRect(snap(cx - w / 2), y, w, 6); }   // bands racing up the column
-      ctx.globalAlpha = fade; ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(cx - w / 6), y, Math.max(P, Math.round(w / 3 / P) * P), 12);
+    // then it shoots up and out over the top-right corner of the factory, toward the wilds (they pick it up at their top-left: R.drawArc)
+    const ex = CFG.HALF + 70, ey = -90;
+    const at = u => [cx + (ex - cx) * u * u, cy + (ey - cy) * u - Math.sin(u * Math.PI) * CFG.arc.h];
+    if (k < 0.3) { const w0 = Math.round(30 * (1 - k / 0.3) / P) * P; if (w0 > 0) { ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.6; ctx.fillRect(snap(cx - w0 / 2), cy - 90, w0, 90); ctx.globalAlpha = 1; } }   // the launch flash
+    for (let i = 6; i >= 1; i--) {   // its trail
+      const u = k - i * 0.06; if (u <= 0) continue;
+      const q = at(u); blk(q[0], q[1], 26 - i * 3, i % 2 ? col : '#ffffff', 0.9 - i * 0.12);
     }
-    ctx.globalAlpha = 1;
-    // the item itself rides the column, stretched thin by the speed
-    const ky = cy - 330 * Math.sqrt(k) * 0.9 - 6;
-    if (k < 0.95) blk(cx, ky + 4, 46 * (1 - k * 0.5), col, 0.6 * (1 - k));
-    if (spr && k < 0.95) dsprSq(ctx, spr, cx, ky + 20, 4, 0.85 * (1 - k * 0.6), 1.5 - k * 0.5, 1 - k * 0.5);
-    // sparks spiralling off it
-    for (let i = 0; i < 9; i++) {
-      const p = (k * 1.3 + i / 9) % 1, a = sd + i * 2.4 + p * 8, r = (14 + 30 * p) * (1 - k * 0.4);
-      blk(cx + Math.cos(a) * r, cy - 330 * Math.sqrt(k) * p * 0.95 + Math.sin(a) * r * 0.25, 12 - p * 6, i % 3 ? col : '#ffffff', 1 - p * 0.6);
+    const q = at(k), q2 = at(Math.min(1, k + 0.05)), ang = Math.atan2(q2[1] - q[1], q2[0] - q[0]);
+    blk(q[0], q[1], 40, col, 0.55);
+    if (spr) { ctx.save(); ctx.translate(snap(q[0]), Math.round(q[1] / P) * P); ctx.rotate(Math.round((ang + Math.PI / 2) / 0.39) * 0.39); ctx.scale(0.85, 1.4); ctx.drawImage(spr.c, -spr.ax * 4, -spr.ay * 4 / 2, spr.c.width * 4, spr.c.height * 4); ctx.restore(); }
+    for (let i = 0; i < 6; i++) {   // sparks peeling off
+      const u = Math.max(0, k - (i % 3) * 0.08), qq = at(u), a = sd + i * 2.4 + k * 9;
+      blk(qq[0] + Math.cos(a) * (12 + i * 4), qq[1] + Math.sin(a) * (8 + i * 3), 8, i % 2 ? col : '#ffffff', 1 - k * 0.5);
     }
   }
 };
@@ -796,6 +846,12 @@ R.drawFly = function (ctx, v, o, t) {
   if (o.t < 0) return;   // still waiting its turn to leave the portal
   const p = R.toScreen(v, o.x, o.y);
   ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(Math.round((p[0] - 10) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 20, 8);
+  if (o.boing) {   // a bounce-back: it wobbles like a spring (squashed off the hit, stretched on the way up) and tumbles
+    const k = o.t / o.T, w = Math.sin(k * Math.PI * 3) * (1 - k) * 0.45, spr = itemSprite(o.kind);
+    ctx.save(); ctx.translate(snap(p[0]), Math.round((p[1] - o.z * 44 + 6) / 4) * 4); ctx.rotate(Math.round(k * 4) / 4 * Math.PI * (o.tx > o.sx ? 1 : -1));
+    ctx.scale(1 + w, 1 - w); if (spr) ctx.drawImage(spr.c, -spr.ax * 4, -spr.ay * 4, spr.c.width * 4, spr.c.height * 4); ctx.restore();
+    return;
+  }
   R.item(ctx, o.kind, p[0], p[1] - o.z * 44 + 6, 4, t);
 };
 
@@ -841,19 +897,21 @@ R.drawGhost = function (ctx, v, g, t) {
   diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill();
   const dd = DIRS[g.dir], sdx = (dd[0] - dd[1]) * v.hw * 0.45, sdy = (dd[0] + dd[1]) * v.hh * 0.45;
   if (g.type !== 'belt') dspr(ctx, R.bldSprite({ type: g.type }), p[0], p[1] + v.hh * 0.9 - 2, 4, 0.55);
-  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8;
-  const ex = p[0] + sdx * 1.2, ey = p[1] + sdy * 1.2;
-  ctx.beginPath(); ctx.moveTo(p[0] - sdx * 0.6, p[1] - sdy * 0.6); ctx.lineTo(ex, ey); ctx.stroke();
-  const m = Math.hypot(sdx, sdy), nx = sdx / m, ny = sdy / m;
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath(); ctx.moveTo(ex + nx * 8, ey + ny * 8); ctx.lineTo(ex - nx * 12 - ny * 14, ey - ny * 12 + nx * 14); ctx.lineTo(ex - nx * 12 + ny * 14, ey - ny * 12 - nx * 14); ctx.fill();
+  if (g.type !== 'splitter') {   // a Splitter has no front: it routes to whatever its sides touch
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8;
+    const ex = p[0] + sdx * 1.2, ey = p[1] + sdy * 1.2;
+    ctx.beginPath(); ctx.moveTo(p[0] - sdx * 0.6, p[1] - sdy * 0.6); ctx.lineTo(ex, ey); ctx.stroke();
+    const m = Math.hypot(sdx, sdy), nx = sdx / m, ny = sdy / m;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.moveTo(ex + nx * 8, ey + ny * 8); ctx.lineTo(ex - nx * 12 - ny * 14, ey - ny * 12 + nx * 14); ctx.lineTo(ex - nx * 12 + ny * 14, ey - ny * 12 - nx * 14); ctx.fill();
+  }
   if (g.type !== 'belt' && g.type !== 'hand' && G.credits[g.type] > 0) dspr(ctx, SP.ic_gift, p[0], p[1] - 100 + (Math.sin(t * 6) > 0 ? 0 : 4), 4);
   // a Station beside a Forge / Cauldron (or the other way round) will overdrive it
   const pair = g.type === 'station' ? ['forge', 'cauldron'] : g.type === 'forge' || g.type === 'cauldron' ? ['station'] : null;
   if (g.ok && pair && DIRS.some(dd => { const c = FA.cell(g.x + dd[0], g.y + dd[1]); return c && pair.indexOf(c.type) >= 0; })) {
     if (Math.sin(t * 10) > 0) dspr(ctx, SP.ic_bolt, p[0], p[1] - 120, 4);   // it will overdrive its neighbour
   }
-  if (!R.padMode) R.iprompt(ctx, p[0], p[1] + v.hh + 30, 'R', ['ic_rotate']);
+  if (!R.padMode && g.type !== 'splitter') R.iprompt(ctx, p[0], p[1] + v.hh + 30, 'R', ['ic_rotate']);
 };
 R.drawDemo = function (ctx, v, g, t) {
   const p = R.toScreen(v, g.x + 0.5, g.y + 0.5);
@@ -954,7 +1012,7 @@ R.drawWorld = function (main, dt) {
   const WW = CFG.WW, WH = CFG.WH;
   const objs = [];
   const bk = WZ.bucket, ter = WZ.terrain, pal = WZ.palette;
-  const wt = w.t;
+  const wt = w.t, wind = G.fac.weather.air;
   for (let d = Math.max(0, d0); d <= Math.min(WW + WH - 2, d1); d++) {
     for (let u = uMin; u <= uMax; u++) {
       if (((d + u) & 1) !== 0) continue;
@@ -962,18 +1020,21 @@ R.drawWorld = function (main, dt) {
       if (x < 0 || y < 0 || x >= WW || y >= WH) continue;
       const i = y * WW + x;
       const sx = (x - y) * v.hw + v.ox, sy = (x + y + 1) * v.hh + v.oy;
-      const tt = ter[i], ty = tt >> 3;
+      const tt = ter[i], ty = tt >> 3, tm = w.tmodN ? w.tmod[i] : null;
       ctx.fillStyle = pal[tt];
       diamond(ctx, sx, sy, v.hw + 1.5, v.hh + 1.5); ctx.fill();
-      if (ty === T_POND && ((x * 7 + y * 3 + Math.floor(wt * 2)) % 9) === 0) { ctx.fillStyle = '#bfe6ff'; ctx.fillRect(Math.round(sx / 3) * 3 - 9, Math.round(sy / 3) * 3, 18, 3); }
-      if (ty === T_BOG && ((x * 5 + y * 11) % 4) === 0) { ctx.fillStyle = '#4a5a2a'; ctx.fillRect(Math.round(sx / 3) * 3 - 6, Math.round(sy / 3) * 3 - 3, 12, 6); }
+      if (tm && tm.k === 'ice') R.drawIce(ctx, v, sx, sy, tm, x, y, wt);
+      else if (ty === T_POND && ((x * 7 + y * 3 + Math.floor(wt * 2)) % 9) === 0) { ctx.fillStyle = '#bfe6ff'; ctx.fillRect(Math.round(sx / 3) * 3 - 9, Math.round(sy / 3) * 3, 18, 3); }
+      else if (ty === T_BOG && ((x * 5 + y * 11) % 4) === 0) { ctx.fillStyle = '#4a5a2a'; ctx.fillRect(Math.round(sx / 3) * 3 - 6, Math.round(sy / 3) * 3 - 3, 12, 6); }
+      if (tm && tm.k === 'wall') objs.push({ d: x + y + 1, t: 'wall', o: tm, x, y });
       const b = bk[i];
       if (b) for (let j = 0; j < b.length; j++) {
         const o = b[j];
-        if (!o.broken || o.kind === 'bush') objs.push({ d: o.x + o.y, t: o.lm ? 'lm' : o.deco ? 'deco' : o.forage ? 'forage' : 'harv', o });
+        if (!o.broken || o.kind === 'bush') objs.push({ d: o.x + o.y, t: o.lm ? 'lm' : o.deco ? 'deco' : o.forage ? 'forage' : 'harv', o, k: i * 32 + j });
       }
     }
   }
+  for (const dc of w.decals) R.drawDecal(ctx, v, dc);
   for (const z of w.zones) R.drawZone(ctx, v, z);
   for (const f of w.fx_) if (f.type === 'ring' || f.type === 'warn') R.drawFx(ctx, v, f); else if (f.type === 'drop') R.drawDrop(ctx, v, f, true);
 
@@ -987,8 +1048,16 @@ R.drawWorld = function (main, dt) {
     if (it.t === 'deco') {
       const p = R.toScreen(v, o.x, o.y);
       if (p[0] < left - 60 || p[0] > right + 60) continue;
-      dspr(ctx, SP[o.spr], p[0], p[1], S);
-    } else if (it.t === 'harv') {
+      let sk = 0;
+      if (BENDY.has(o.spr)) {
+        const bn = w.bend[it.k], B = CFG.bend;
+        if (bn) { const u = bn.t - B.hold; sk = bn.d * B.amp * (u <= 0 ? 1 : Math.exp(-u * B.damp) * Math.cos(u * B.spring)); }   // pushed over, then springing back
+        if (wind > 0.04) sk += wind * 0.22 * (0.55 + 0.45 * Math.sin(wt * 2.3 + o.x * 1.3 + o.y * 0.7));   // Air weather sways the grass
+        sk = Math.round(sk * 10) / 10;   // in chunky steps
+      }
+      if (sk) dsprSkew(ctx, SP[o.spr], p[0], p[1], S, sk); else dspr(ctx, SP[o.spr], p[0], p[1], S);
+    } else if (it.t === 'wall') R.drawWall(ctx, v, it.x, it.y, o, wt);
+    else if (it.t === 'harv') {
       const p = R.toScreen(v, o.x, o.y), spr = SP[o.kind];
       ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(snap(p[0] - 18), Math.round(p[1] / 3) * 3 - 3, 36, 9);
       const shake = o.flash > 0 ? (Math.random() < 0.5 ? -3 : 3) : 0;
@@ -1011,6 +1080,8 @@ R.drawWorld = function (main, dt) {
   for (const p of w.proj) R.drawProj(ctx, v, p);
   for (const p of w.eproj) R.drawProj(ctx, v, p);
   for (const f of w.fx_) if (f.type !== 'ring' && f.type !== 'warn') R.drawFx(ctx, v, f);
+  for (const a of w.arcs) R.drawArc(ctx, v, a);
+  R.drawWeather(ctx, wt);
 
   for (const pk of w.pickups) {   // off-screen pointers to pickups
     const p = R.toScreen(v, pk.x, pk.y);
@@ -1256,8 +1327,23 @@ R.drawWizard = function (ctx, v, w) {
     ctx.globalAlpha = 1;
     return;
   }
+  if (w.jump) {   // a geyser has him: high in the air (his shadow shrinks below) in one somersault
+    const J = w.jump, k = Math.min(1, J.t / J.T), lift = Math.sin(k * Math.PI) * J.h * 30;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; const sw = Math.round((30 - lift * 0.06) / 3) * 3; ctx.fillRect(snap(p[0] - sw / 2), Math.round(p[1] / 3) * 3 - 3, sw, 9);
+    ctx.save(); ctx.translate(snap(p[0]), Math.round((p[1] - lift - 24) / 3) * 3); ctx.rotate(Math.floor(k * 8) / 8 * 6.283 * (flip ? -1 : 1));
+    ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S + 24, spr.c.width * S, spr.c.height * S); ctx.restore();
+    return;
+  }
   const blink = w.hurtT > 0 && Math.floor(w.hurtT * 20) % 2;
-  if (w.mashT > 0) dsprSq(ctx, spr, p[0], p[1] - bob, S, 1.15, 0.85, blink ? 0.4 : 1, flip);   // squashed while digging
+  const kk = w.kick ? w.kick.t / CFG.wizard.kickT : 0, sl = w.squashT > 0 ? w.squashT / 0.2 : 0;
+  if (kk > 0 || sl > 0) {
+    // an aimed spell's recoil: he rocks back away from the shot (further for heavier spells) and squashes; a geyser landing squashes him
+    const K = w.kick, heavy = K ? Math.min(1, K.d / 0.55) : 0, sdx = K ? K.x - K.y : 0, lean = (sdx > 0.05 ? 1 : sdx < -0.05 ? -1 : 0) * (0.12 + 0.2 * heavy) * kk;
+    const sx = 1 + 0.12 * kk * heavy + 0.2 * sl, sy = 1 - 0.1 * kk * heavy - 0.2 * sl;
+    ctx.save(); ctx.translate(snap(p[0] + (sdx > 0 ? 1 : -1) * Math.round(6 * kk * heavy / 3) * 3), Math.round((p[1] - bob) / 3) * 3);
+    ctx.rotate(Math.round(lean * 20) / 20); ctx.scale(sx * (flip ? -1 : 1), sy); ctx.globalAlpha = blink ? 0.4 : 1;
+    ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S, spr.c.width * S, spr.c.height * S); ctx.restore(); ctx.globalAlpha = 1;
+  } else if (w.mashT > 0) dsprSq(ctx, spr, p[0], p[1] - bob, S, 1.15, 0.85, blink ? 0.4 : 1, flip);   // squashed while digging
   else dspr(ctx, spr, p[0], p[1] - bob, S, blink ? 0.4 : 1, flip);
   if (Math.sin(G.w.t * 6) > 0) { ctx.fillStyle = '#fff07a'; ctx.fillRect(snap(p[0] + (flip ? -27 : 21)), Math.round((p[1] - 48 - bob) / 3) * 3, 6, 6); }
   if (w.rollCd > 0) R.hpBar(ctx, p[0], p[1] + 9, 27, 1 - w.rollCd / CFG.wizard.rollCd, '#ffffff');
@@ -1280,6 +1366,128 @@ R.drawZone = function (ctx, v, z) {
   ctx.globalAlpha = Math.min(0.8, fr);
   ctx.strokeStyle = z.col; ctx.lineWidth = 6; ctx.setLineDash([18, 12]); ctx.lineDashOffset = -Math.floor(G.w.t * 10) * 6;
   diamond(ctx, s[0], s[1], rx, ry); ctx.stroke(); ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+};
+// Flash Frost ice over bog / water (G.w.tmod): pale and glinting, it creaks and blinks for its last 2 seconds
+R.drawIce = function (ctx, v, sx, sy, m, x, y, t) {
+  const grow = Math.min(1, (m.dur - m.t) / 0.25), end = m.t < 2, Y = q => Math.round(q / 3) * 3;
+  ctx.globalAlpha = end && Math.floor(t * 8) % 2 ? 0.55 : 0.85;
+  ctx.fillStyle = '#d2eeff'; diamond(ctx, sx, sy, (v.hw + 1.5) * grow, (v.hh + 1.5) * grow); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#ffffff';
+  if ((x * 3 + y * 5) % 3 === 0) { ctx.fillRect(snap(sx - 12), Y(sy - 3), 9, 3); ctx.fillRect(snap(sx - 3), Y(sy - 6), 6, 3); }   // glints
+  if ((x + y * 7) % 4 === 1) ctx.fillRect(snap(sx + 6), Y(sy + 3), 6, 3);
+  if (end) { ctx.fillStyle = '#7aa8c8'; ctx.fillRect(snap(sx - 15), Y(sy), 12, 3); ctx.fillRect(snap(sx - 6), Y(sy + 3), 9, 3); ctx.fillRect(snap(sx + 3), Y(sy - 3), 9, 3); }   // cracking up
+};
+// an Earth Wall block: rises out of the ground, crumbles back into it at the end
+R.drawWall = function (ctx, v, x, y, m, t) {
+  const p = R.toScreen(v, x + 0.5, y + 0.5), hw = v.hw, hh = v.hh;
+  const H = Math.round(36 * Math.min(1, (m.dur - m.t) / 0.25) * Math.min(1, m.t / 0.6) / 3) * 3;
+  if (H <= 0) return;
+  const shake = m.t < 1 && Math.floor(t * 20) % 2 ? 3 : 0, cx = p[0] + shake, cy = p[1];
+  const face = (pts, col) => { ctx.fillStyle = col; ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.closePath(); ctx.fill(); };
+  face([[cx - hw, cy], [cx, cy + hh], [cx, cy + hh - H], [cx - hw, cy - H]], '#7a5430');
+  face([[cx, cy + hh], [cx + hw, cy], [cx + hw, cy - H], [cx, cy + hh - H]], '#5a3c20');
+  ctx.fillStyle = '#a8804c'; diamond(ctx, cx, cy - H, hw, hh); ctx.fill();
+  ctx.fillStyle = '#c89a5c'; diamond(ctx, cx, cy - H - 3, hw * 0.55, hh * 0.55); ctx.fill();
+  ctx.fillStyle = '#3e2a14';   // stones in the faces
+  ctx.fillRect(snap(cx - hw * 0.6), Math.round((cy - H * 0.4) / 3) * 3, 9, 6); ctx.fillRect(snap(cx + hw * 0.35), Math.round((cy - H * 0.55 + 6) / 3) * 3, 9, 6);
+};
+// a spell's mark on the ground (G.w.decals). Every shape comes from the decal's own seed, so it holds still while it fades
+R.drawDecal = function (ctx, v, dc) {
+  const s = R.toScreen(v, dc.x, dc.y);
+  if (s[0] < CFG.HALF - 260 || s[0] > CFG.W + 260 || s[1] < -160 || s[1] > CFG.H + 160) return;
+  const k = dc.t / dc.dur, a = dc.a * Math.min(1, dc.t / 0.12) * Math.min(1, (1 - k) / 0.4), rx = dc.r * v.hw * 1.414, ry = dc.r * v.hh * 1.414;
+  const H = n => { const q = Math.sin(dc.s * 977 + n * 12.9898) * 43758.5453; return q - Math.floor(q); }, Y = q => Math.round(q / 3) * 3;
+  const blot = (col, sc, al) => {
+    ctx.globalAlpha = a * al; ctx.fillStyle = col;
+    diamond(ctx, snap(s[0]), Y(s[1]), Math.round(rx * sc * 0.62 / 3) * 3, Math.round(ry * sc * 0.62 / 3) * 3); ctx.fill();
+    for (let i = 0; i < 6; i++) {
+      const an = H(i) * 6.283, d = 0.3 + H(i + 9) * 0.45, z = 0.3 + H(i + 20) * 0.3;
+      diamond(ctx, snap(s[0] + Math.cos(an) * rx * sc * d), Y(s[1] + Math.sin(an) * ry * sc * d), Math.round(rx * sc * z / 3) * 3, Math.round(ry * sc * z / 3) * 3); ctx.fill();
+    }
+  };
+  const rays = (col, n, len, wd) => {
+    ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = wd;
+    for (let i = 0; i < n; i++) {
+      let an = (i + H(i + 30) * 0.6) / n * 6.283, x = s[0], y = s[1];
+      ctx.beginPath(); ctx.moveTo(snap(x), Y(y));
+      for (let j = 1; j <= 3; j++) { an += (H(i * 3 + j + 40) - 0.5) * 0.9; x = s[0] + Math.cos(an) * rx * len * j / 3; y = s[1] + Math.sin(an) * ry * len * j / 3; ctx.lineTo(snap(x), Y(y)); }
+      ctx.stroke();
+    }
+  };
+  switch (dc.k) {
+    case 'burn': blot('#1a120c', 1, 0.6); blot('#3a2414', 0.55, 0.6); break;
+    case 'crater': blot('#1a120c', 1, 0.65); rays('#120c08', 7, 1.15, 6); blot('#4a2a14', 0.45, 0.7); break;
+    case 'crack': blot('#4a3420', 0.7, 0.35); rays('#1e140c', 5 + Math.floor(H(1) * 3), 1.05, a > 0.7 ? 6 : 3); break;
+    case 'frost': blot('#eaf8ff', 1, 0.6); rays('#ffffff', 6, 0.9, 3); break;
+    case 'wet': blot('#1e3c64', 1, 0.35); blot('#4a7ab0', 0.4, 0.3); break;
+    case 'scorch': blot('#141018', 0.6, 0.55); rays('#141018', 4, 0.8, 3); break;
+    case 'sand': blot('#d9b46a', 1, 0.45); break;
+    case 'mud': blot('#4a3018', 1, 0.5); blot('#6e4a2a', 0.5, 0.5); break;
+    case 'scuff': blot('#c8e890', 1, 0.28); break;
+  }
+  // fresh burns still glow: a few embers blinking in the black
+  if ((dc.k === 'burn' || dc.k === 'crater') && k < 0.45) {
+    ctx.fillStyle = '#ff9a3a';
+    for (let i = 0; i < 5; i++) if (Math.sin(G.w.t * 9 + i * 2.1) > 0) { ctx.globalAlpha = a * (1 - k / 0.45); ctx.fillRect(snap(s[0] + (H(i + 60) - 0.5) * rx), Y(s[1] + (H(i + 70) - 0.5) * ry), 6, 3); }
+  }
+  ctx.globalAlpha = 1;
+};
+// the second half of a delivery's trip (WZ.send): it sails in over the wilds' top-left corner and lobs down onto the Wizard (a pickup: onto
+// where it will land), its shadow sweeping in over the ground along a curve and growing as it comes down
+R.drawArc = function (ctx, v, a) {
+  if (a.t < 0) return;
+  const w = G.w, k = Math.min(1, a.t / a.T), tx = a.tx !== null ? a.tx : w.x, ty = a.ty !== null ? a.ty : w.y;
+  const g0 = R.toTile(v, CFG.HALF + 70, 300), dx = tx - g0[0], dy = ty - g0[1], m = Math.hypot(dx, dy) || 1, Y = q => Math.round(q / 3) * 3;
+  const at = u => {
+    const bend = Math.sin(u * Math.PI) * Math.min(3, m * 0.12), gx = g0[0] + dx * u - dy / m * bend, gy = g0[1] + dy * u + dx / m * bend;
+    const s = R.toScreen(v, gx, gy);
+    return [s[0], s[1], 360 + (66 - 360) * u + Math.sin(u * Math.PI) * CFG.arc.h];   // ground point + height above it
+  };
+  const q = at(k), spr = itemSprite(a.kind);
+  ctx.globalAlpha = 0.15 + 0.3 * k; ctx.fillStyle = '#000000';
+  diamond(ctx, snap(q[0]), Y(q[1]), Math.round((9 + 15 * k) / 3) * 3, Math.round((5 + 7 * k) / 3) * 3); ctx.fill();
+  for (let i = 5; i >= 1; i--) {   // a sparkling trail behind it
+    const u = k - i * 0.05; if (u <= 0) continue;
+    const p = at(u), sz = Math.round((21 - i * 3) / 3) * 3;
+    ctx.globalAlpha = 0.85 - i * 0.14; ctx.fillStyle = i % 2 ? a.col : '#ffffff'; ctx.fillRect(snap(p[0] - sz / 2), Y(p[1] - p[2] - sz / 2), sz, sz);
+  }
+  ctx.globalAlpha = 0.5; ctx.fillStyle = a.col; ctx.fillRect(snap(q[0] - 15), Y(q[1] - q[2] - 15), 30, 30);
+  ctx.globalAlpha = 1;
+  if (spr) dsprSq(ctx, spr, q[0], q[1] - q[2] + 12, 3, 0.85, 1.25);
+  if (k > 0.85) { ctx.globalAlpha = (1 - k) / 0.15; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6; diamond(ctx, snap(q[0]), Y(q[1] - q[2]), 30, 15); ctx.stroke(); ctx.globalAlpha = 1; }
+};
+// the wilds' weather follows what the factory is processing (G.fac.weather, 0..1 per element, turning slowly): a colour wash per element,
+// plus Fire embers drifting up, Water rain, Air wind streaks, Earth dust; heavy work on several elements mixes them
+R.drawWeather = function (ctx, t) {
+  const Wt = G.fac.weather, L = CFG.HALF, H = CFG.H, P = 3, Q = q => Math.round(q / P) * P;
+  const rnd = (i, s) => { const q = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return q - Math.floor(q); };
+  const wash = { fire: ['#ff6a20', 0.13], water: ['#2a5aff', 0.11], air: ['#eef8ff', 0.09], earth: ['#b07a30', 0.12] };
+  for (const el in wash) if (Wt[el] > 0.02) { ctx.globalAlpha = Wt[el] * wash[el][1]; ctx.fillStyle = wash[el][0]; ctx.fillRect(L, 0, L, H); }
+  let n = Math.round(Wt.fire * 46);
+  for (let i = 0; i < n; i++) {   // embers rising and flickering
+    const y = H + 20 - ((t * (40 + rnd(i, 1) * 70) + rnd(i, 2) * (H + 40)) % (H + 40)), x = L + ((rnd(i, 3) * L + Math.sin(t * 1.3 + i) * 18) % L + L) % L;
+    ctx.globalAlpha = Math.min(1, Wt.fire * 1.5) * (0.5 + 0.5 * Math.sin(t * 9 + i)); ctx.fillStyle = i % 3 ? '#ff9a3a' : '#ffe36b';
+    ctx.fillRect(Q(x), Q(y), i % 4 ? 3 : 6, i % 4 ? 3 : 6);
+  }
+  n = Math.round(Wt.water * 70);
+  ctx.fillStyle = '#c8e4ff';
+  for (let i = 0; i < n; i++) {   // slanting rain
+    const y = ((t * (520 + rnd(i, 4) * 200) + rnd(i, 5) * H) % (H + 30)) - 15, x = L + ((rnd(i, 6) * L - y * 0.25) % L + L) % L;
+    ctx.globalAlpha = 0.35 + Wt.water * 0.45; ctx.fillRect(Q(x), Q(y), 3, 15);
+  }
+  n = Math.round(Wt.air * 26);
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < n; i++) {   // gusts of wind streaking across
+    const x = L - 90 + (t * (380 + rnd(i, 7) * 220) + rnd(i, 8) * (L + 180)) % (L + 180), y = rnd(i, 9) * H + Math.sin(t * 2 + i) * 9;
+    ctx.globalAlpha = 0.2 + Wt.air * 0.35; ctx.fillRect(Q(x), Q(y), Q(24 + rnd(i, 10) * 36), 3);
+  }
+  n = Math.round(Wt.earth * 40);
+  for (let i = 0; i < n; i++) {   // dust motes drifting and bobbing
+    const x = L + ((t * (18 + rnd(i, 11) * 30) + rnd(i, 12) * L) % L), y = (rnd(i, 13) * H + Math.sin(t * 1.1 + i * 1.7) * 14 + H) % H;
+    ctx.globalAlpha = 0.35 + Wt.earth * 0.4; ctx.fillStyle = i % 2 ? '#c8a060' : '#8a6a3c'; ctx.fillRect(Q(x), Q(y), 6, 6);
+  }
   ctx.globalAlpha = 1;
 };
 R.drawFx = function (ctx, v, f) {

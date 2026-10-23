@@ -313,6 +313,14 @@ task(() => {
     x.fillStyle = '#4aa84a'; x.fillRect(1, 2, 1, 4); x.fillRect(3, 0, 1, 6); x.fillRect(5, 1, 1, 5); x.fillRect(7, 3, 1, 3);
     x.fillStyle = '#7bd462'; x.fillRect(2, 3, 1, 3); x.fillRect(4, 2, 1, 4);
   }), 4, 5);
+  reg('tuft2', mk(5, 4, x => {   // a little sprig
+    x.fillStyle = '#3c9a44'; x.fillRect(0, 2, 1, 2); x.fillRect(2, 0, 1, 4); x.fillRect(4, 1, 1, 3);
+    x.fillStyle = '#86dc6a'; x.fillRect(1, 1, 1, 3); x.fillRect(3, 2, 1, 2);
+  }), 2, 3);
+  reg('tuft3', mk(7, 9, x => {   // tall dark grass
+    x.fillStyle = '#2e7a3a'; x.fillRect(1, 3, 1, 6); x.fillRect(3, 0, 1, 9); x.fillRect(5, 2, 1, 7);
+    x.fillStyle = '#58b850'; x.fillRect(2, 4, 1, 5); x.fillRect(4, 1, 1, 8); x.fillRect(6, 5, 1, 4); x.fillRect(0, 6, 1, 3);
+  }), 3, 8);
   reg('bush', mk(16, 12, x => {
     circ(x, 8, 7, 5.5, '#2e8a3e'); circ(x, 4, 8, 3.5, '#2e8a3e'); circ(x, 12, 8, 3.5, '#2e8a3e');
     circ(x, 7, 5, 3.5, '#46b452');

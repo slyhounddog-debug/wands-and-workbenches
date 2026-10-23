@@ -359,6 +359,7 @@ WZ.evStart = function () {
   if (p.id === 'storm') w.surge = p.surge;
   UI.toast(msg, 'L', p.el[0] || 'ic_skull'); UI.toast(msg, 'R', p.el[0] || 'ic_skull');
   AU.sfx('roar'); w.shake = Math.max(w.shake, 0.5);
+  FA.pressure(1, '#ffd23a');   // the factory feels it too
   w.fx_.push({ type: 'title', x: w.x, y: w.y, text: WZ.evName(p).toUpperCase() + '!', col: '#ffd23a', t: 0, dur: 1.8 });
 };
 WZ.evFoes = a => { let n = 0; for (const e of G.w.enemies) if (e.evt && !e.dead && e.evtKey === a.evKey) n++; return n; };
@@ -516,6 +517,7 @@ WZ.updKeep = function (m, s, d, dt) {
     e.elite = true; e.guard = true; e.warden = true; e.mark = m.id; e.ai = 'warden'; e.sz = 1.05; e.weak = WZ.WARDEN_WEAK(m.el); e.resist = null; e.weakCol = ELEM[m.el].color;
     e.slam = { every: W.slamEvery, r: W.slamR, dmg: W.slamDmg }; e.slamT = 3; e.vol = { t: 5, every: W.volleyEvery, n: W.volleyN, dmg: W.volleyDmg };
     WZ.ring(m.x, m.y, 6, ELEM[m.el].color, 0.7); w.shake = 0.5; AU.sfx('roar');
+    FA.pressure(1.2, ELEM[m.el].color);
     UI.toast('The ' + ELEM_WORD[m.el] + ' Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'L', e.weak);
   } else if (s.state === 'active' && !w.enemies.some(e => e.mark === m.id && !e.dead)) WZ.claimKeep(m);
 };

@@ -105,20 +105,15 @@
     <div id="treeR" class="tree right hidden"></div>
     <div id="nodeTip" class="px hidden"></div>
 
-    <!-- Splitter settings (click a Splitter): the two sides share the belt by this slider; colours match the arrows on the tile -->
+    <!-- Splitter settings (click a Splitter): its outputs (found from what touches its sides) share by % and can each be limited to some
+         elements; the rows are built by UI.splitSync, colours match the arrows on the tile -->
     <div id="splitModal" class="hidden">
       <div id="splitPanel" class="px">
         <h2><i data-ic="b:splitter" data-s="28"></i>SPLITTER</h2>
         <canvas id="splitDia" width="320" height="150"></canvas>
-        <div class="splitMode"><span>SPLIT</span><button class="big ghost" id="splitM180">180</button><button class="big ghost" id="splitM90">90</button><span>DEGREES</span></div>
-        <div class="splitRow">
-          <div class="splitSide a"><i></i><b id="splitA">50</b><small>%</small></div>
-          <input id="splitRange" type="range" min="0" max="100" step="1" value="50" tabindex="-1">
-          <div class="splitSide b"><small>%</small><b id="splitBv">50</b><i></i></div>
-        </div>
+        <div id="splitBody"></div>
         <div class="splitBtns">
-          <button class="big ghost" id="splitRot"><i data-ic="ic_rotate" data-s="16"></i>TURN <kbd>R</kbd></button>
-          <button class="big ghost" id="splitReset">50 / 50</button>
+          <button class="big ghost" id="splitReset">RESET</button>
           <button class="big" id="splitDone">DONE <kbd>E</kbd></button>
         </div>
       </div>

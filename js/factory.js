@@ -68,7 +68,7 @@ FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 's
 FA.fresh = function (w, h) {
   const f = { w, h, grid: new Array(w * h).fill(null), bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
     portalQ: [], eggQ: [], portalT: 0, nextId: 1, gen: 0, demand: 0, lowT: 0, flash: 0, flashCol: '#fff', skillFlash: 0, t: 0,
-    log: { spell: [], skill: [] }, working: 0, thumps: [], bump: 0, bumpAmp: 0, weakFlash: 0, stockNext: 0 };
+    log: { spell: [], skill: [] }, working: 0, thumps: [], sucks: [], bump: 0, bumpAmp: 0, weakFlash: 0, stockNext: 0 };
   for (const p of FA.portalCells(w, h)) f.grid[p.y * w + p.x] = { type: 'portal', x: p.x, y: p.y, which: p.which };
   return f;
 };
@@ -116,7 +116,7 @@ FA.resize = function (w2, h2) {
   old.bld.forEach(o => place(o, f.bld));
   old.belts.forEach(o => place(o, f.belts));
   const shift = o => { o.x += dx; o.y += dy; };
-  f.floor.forEach(shift); f.parts.forEach(shift); f.pops.forEach(shift);
+  f.floor.forEach(shift); f.parts.forEach(shift); f.pops.forEach(shift); (f.sucks || []).forEach(shift);
   f.flying.forEach(o => { o.x += dx; o.y += dy; o.sx += dx; o.sy += dy; o.tx += dx; o.ty += dy; });
   const bd = G.bd;
   bd.x += dx; bd.y += dy; bd.target = null; bd.then = null;
@@ -372,9 +372,9 @@ FA.takeOut = function (b) {   // one item per press
 FA.fuelTotal = c => c.fuel.air + c.fuel.water + c.fuel.fire + c.fuel.earth;
 
 // ---------- portals ----------
-FA.enterPortal = function (c, kind) {   // returns false if this portal doesn't take that item
+FA.enterPortal = function (c, kind, x, y) {   // returns false if this portal doesn't take that item; (x, y) = where it went in, for the intake animation
   if (!FA.portalTakes(c, kind)) return false;
-  if (c.which === 'skill') FA.bank(kind); else FA.deliver(kind);
+  if (c.which === 'skill') FA.bank(kind); else FA.deliver(kind, x, y);
   return true;
 };
 FA.bank = function (kind) {
@@ -407,7 +407,7 @@ FA.unbank = function () {
   }
   return null;
 };
-FA.deliver = function (kind) {
+FA.deliver = function (kind, x, y) {
   const f = G.fac, p = FA.portal('spell');
   G.stats.deliveries++;
   G.w.run.deliveries++;
@@ -419,7 +419,7 @@ FA.deliver = function (kind) {
   G.stats.sent[kind] = (G.stats.sent[kind] || 0) + 1;   // for the goals: Potions sent, Eggs hatched, combo spells delivered
   if (ITEMS[kind].egg) G.stats.eggs = (G.stats.eggs || 0) + 1;
   else if ((SPELL_EL[kind] || []).length >= 2) G.stats.combos = (G.stats.combos || 0) + 1;
-  FA.ipop(p.x + 0.5, p.y + 1, [[kind]]);
+  FA.suck(kind, x === undefined ? p.x + 0.5 : x, y === undefined ? p.y + 1 : y);
   if (kind === 'sigil') WZ.summonBoss();
   else if (ITEMS[kind].egg) WZ.hatch(kind);
   else if (ITEMS[kind].pickup) {
@@ -433,6 +433,12 @@ FA.deliver = function (kind) {
     WZ.incoming(spell);
   }
   AU.sfx('deliver');
+};
+// the Spell Portal's intake show: the item is slurped into the ring, then a column of light shoots up out of the factory, lasting as long as
+// the spell's own drop-in over the Wizard (drawn by R.drawSuck from G.fac.sucks)
+FA.suck = function (kind, x, y) {
+  const f = G.fac, sp = ELEM[kind] ? BASIC_SPELL[kind] : kind, drop = (CFG.spells[sp] && CFG.spells[sp].drop) || 0;
+  f.sucks.push({ kind, x, y, t: 0, dur: Math.max(CFG.suck.minT, drop), col: ITEMS[kind].color || '#ffffff', seed: Math.random() * 6.283 });
 };
 // a second after a spell resolves in the wilds, tell the Builder how it went (combos always, basics only on weak hits)
 FA.landed = function (c) {
@@ -463,7 +469,7 @@ FA.pushSide = function (b, di) {
   if (!o) return false;
   const dd = DIRS[di], c = FA.cell(b.x + dd[0], b.y + dd[1]);
   if (!c) return false;
-  if (c.type === 'portal') { if (!FA.enterPortal(c, o.kind)) return false; }
+  if (c.type === 'portal') { if (!FA.enterPortal(c, o.kind, b.x + 0.5, b.y + 0.5)) return false; }
   else if (c.type === 'belt') { if (c.item || o.kind === 'battery' || (c.dir + 2) % 4 === di) return false; c.item = { kind: o.kind, prog: 0, moved: true }; }
   else if (FA.canInsert(c, o.kind)) FA.insert(c, o.kind, o.charge);
   else return false;
@@ -575,6 +581,7 @@ FA.update = function (dt) {
   if (f.skillFlash > 0) f.skillFlash -= dt;
   if (f.weakFlash > 0) f.weakFlash -= dt;
   if (f.bumpAmp > 0) { f.bump += dt; if (f.bump > 0.4) f.bumpAmp = 0; }
+  for (let i = f.sucks.length - 1; i >= 0; i--) { f.sucks[i].t += dt; if (f.sucks[i].t > f.sucks[i].dur) f.sucks.splice(i, 1); }
   for (let i = f.thumps.length - 1; i >= 0; i--) { f.thumps[i].t += dt; if (f.thumps[i].t > 0.5 + f.thumps[i].tier * 0.12) f.thumps.splice(i, 1); }
   FA.power();
   if (f.demand > f.gen) {
@@ -647,7 +654,7 @@ FA.update = function (dt) {
       it.prog = 1;
       if (!nc) continue;
       if (nc.type === 'belt') { if (!nc.item) { nc.item = { kind: it.kind, prog: 0, moved: true }; bl.item = null; } }
-      else if (nc.type === 'portal') { if (FA.enterPortal(nc, it.kind)) bl.item = null; }
+      else if (nc.type === 'portal') { if (FA.enterPortal(nc, it.kind, bl.x + 0.5, bl.y + 0.5)) bl.item = null; }
       else if (FA.canInsert(nc, it.kind)) { FA.insert(nc, it.kind); bl.item = null; }
     }
   }
@@ -801,18 +808,34 @@ FA.throwOne = function (aimX, aimY, cd) {
   AU.sfx('throw');
   return true;
 };
+// the portal (cell) nearest to (x, y) that takes this kind and is within CFG.portalCatch tiles of it, else null
+FA.portalNear = function (x, y, kind) {
+  let best = null, bd = CFG.portalCatch;
+  for (const p of FA.portalCells(G.fac.w, G.fac.h)) {
+    const c = FA.cell(p.x, p.y);
+    if (!c || !FA.portalTakes(c, kind)) continue;
+    const d = Math.hypot(Math.max(p.x - x, 0, x - p.x - 1), Math.max(p.y - y, 0, y - p.y - 1));
+    if (d <= bd) { bd = d; best = c; }
+  }
+  return best;
+};
 FA.land = function (o) {
   if (o.stock) { G.stock[o.kind] = (G.stock[o.kind] || 0) + (o.n || 1); FA.pileIn(o.kind); AU.sfx('drop'); UI.changed(); return; }
   const tx = Math.floor(o.x), ty = Math.floor(o.y), c = FA.cell(tx, ty);
-  const fell = () => FA.dropAt(o.kind, o.x, o.y, o.charge);
+  const toPortal = c => {
+    if (!FA.enterPortal(c, o.kind, o.x, o.y)) return false;
+    if (o.fromBuilder && c.which === 'spell') G.flags.portalHand = true;
+    return true;
+  };
+  // a throw that comes down close to a portal that takes it is pulled in, so it never lies beside the portal looking blocked
+  const fell = () => { const pc = FA.portalNear(o.x, o.y, o.kind); if (pc && toPortal(pc)) return true; FA.dropAt(o.kind, o.x, o.y, o.charge); return false; };
   const bounce = () => {   // couldn't go in: hop back toward where it came from
     const dx = o.sx - o.x, dy = o.sy - o.y, d = Math.hypot(dx, dy) || 1;
     FA.dropAt(o.kind, o.x + dx / d * 0.85, o.y + dy / d * 0.85, o.charge);
     AU.sfx('error');
   };
   if (c && c.type === 'portal') {
-    if (FA.enterPortal(c, o.kind)) { if (o.fromBuilder && c.which === 'spell') G.flags.portalHand = true; }
-    else { bounce(); FA.ipop(o.x, o.y, [[o.kind], ['ic_x']]); }
+    if (!toPortal(c)) { bounce(); FA.ipop(o.x, o.y, [[o.kind], ['ic_x']]); }
     return;
   }
   if (c && c.type === 'belt') {
@@ -824,8 +847,7 @@ FA.land = function (o) {
     return bounce();
   }
   if (FA.reserved(tx, ty) && (RES[o.kind] || ELEM[o.kind])) { G.stock[o.kind] = (G.stock[o.kind] || 0) + 1; FA.ipop(o.x, o.y, [[o.kind]]); AU.sfx('drop'); return; }
-  fell();
-  AU.sfx('thud');
+  if (!fell()) AU.sfx('thud');
 };
 
 // ---------- the Builder ----------
@@ -889,14 +911,15 @@ FA.distTo = function (t) {
 
 FA.startGather = function (b) {
   const el = FA.def(b).elem;
-  G.bd.gather = { b, t: 0, total: FA.cycle(b.type) + CFG.gatherExtra, el };
+  G.bd.gather = { b, t: 0, total: 1, el };   // the meter only moves when E is tapped (FA.crank)
   G.bd.target = null;
   AU.sfx('blip');
 };
+FA.tapGain = () => (1 + CFG.upgrade.manual * lvl('manual')) / CFG.manual.taps;   // share of the meter one tap of E fills
 FA.crank = function () {
   const g = G.bd.gather;
   if (!g) return;
-  g.t += CFG.crankBoost;
+  g.t += FA.tapGain();
   G.bd.squash = 0.15;
   FA.eburst(g.b.x + 0.5, g.b.y + 0.5, g.el, 4);
   AU.sfx('crank');
@@ -905,7 +928,7 @@ FA.updGather = function (dt) {
   const bd = G.bd, g = bd.gather;
   if (!g) return;
   if (G.fac.grid[g.b.y * G.fac.w + g.b.x] !== g.b) { bd.gather = null; return; }
-  g.t += dt; bd.bob += dt * 9;
+  bd.bob += dt * 9;
   if (g.t >= g.total) {
     bd.gather = null;
     if (FA.canHold(g.el)) FA.addHands(g.el, 1); else FA.dropAt(g.el, bd.x, bd.y);
@@ -1021,7 +1044,7 @@ FA.bldAction = function (b, pick) {
     if (!h && b.filter) return A('Clear filter (' + itemName(b.filter) + ')', () => { b.filter = null; AU.sfx('blip'); UI.changed(); }, false, [b.filter, 'ic_x']);
     return turn;
   }
-  if (d.kind === 'harness') return FA.canHold(d.elem) ? A('Hand-gather ' + ELEM[d.elem].name + ' (then tap to crank)', () => FA.startGather(b), false, [d.elem]) : FULL;
+  if (d.kind === 'harness') return FA.canHold(d.elem) ? A('Hand-gather ' + ELEM[d.elem].name + ' (tap to fill the meter)', () => FA.startGather(b), false, [d.elem]) : FULL;
   if (d.kind === 'crafter') {
     const list = FA.recipesFor(b.type);
     if (list.length > 1) {

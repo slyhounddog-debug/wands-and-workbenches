@@ -12,7 +12,7 @@ const CFG = {
   satchel: 5,
   autosave: 9,
   beltTime: 0.9,              // seconds per tile before Swift Belts
-  gatherExtra: 2.5, crankBoost: 0.4,
+  manual: { taps: 8 },        // hand-harnessing: taps of E to fill the meter and get one packet (the meter never fills by itself); Quick Hands adds upgrade.manual per tier to each tap
   buffer: 3,
   fuelPerPacket: 15, fuelCap: 120,
   starterSplit: 70,           // the starting Splitter: % of the Air packets that go straight to the Spell Portal (the rest feed the Spawner)
@@ -36,6 +36,8 @@ const CFG = {
   stateSoundR: 7,            // machines within this many tiles of the Builder chirp when their state changes
   throwRange: 6.5, throwRepeat: 0.15,
   portalGap: 0.22,
+  portalCatch: 1.35,         // a throw that lands within this many tiles of a portal that takes it is pulled in, so nothing piles up on the floor beside it
+  suck: { baseT: 0.34, minT: 0.5 },   // Spell Portal intake animation: seconds the item spends being slurped in, and the least time the whole show lasts (it otherwise lasts as long as the spell's drop-in over the Wizard)
   wizard: {
     hp: 100, speed: 6.5, accel: 48, friction: 40, radius: 0.3,
     rollTime: 0.45, rollSpeed: 2.3, rollCd: 1.1, armorMax: 100, dodgeCd: 0.3,
@@ -48,10 +50,10 @@ const CFG = {
     sepPad: 0.12, sepForce: 4,  // monsters keep (rad + rad + sepPad) apart so packs stay readable
     slowTerrain: 0.55,        // speed multiplier on bog tiles (wizard + monsters); water can't be entered at all
   },
-  harvest: {      // node counts are 50% up on the original 60/35/25
-    tree: { hp: 20, drop: 'wood', n: 3, count: 90 },
-    rock: { hp: 30, drop: 'stone', n: 3, count: 53 },
-    ore:  { hp: 40, drop: 'iron', n: 2, count: 37 },
+  harvest: {      // node counts are 50% up on the original 60/35/25, then +10% (broken nodes grow back after world.respawn seconds)
+    tree: { hp: 20, drop: 'wood', n: 3, count: 99 },
+    rock: { hp: 30, drop: 'stone', n: 3, count: 58 },
+    ore:  { hp: 40, drop: 'iron', n: 2, count: 41 },
   },
   enemies: {      // gem = [guaranteed XP gems, chance of one more] (1 gem = 1 XP, never fractional). w = spawn weight anywhere; biome foes (w: 0) spawn by terrain
     slime:  { name: 'Slime',        hp: 14, speed: 2.2, dmg: 7, gem: [0, 0.30], w: 50, col: '#6fd36b' },
@@ -85,9 +87,9 @@ const CFG = {
   // forage spots in the wilds: the Wizard stands still at one and mashes the roll button to dig / search it.
   // drop = resources always found, bonus = chance of one more of that kind; a bush gives one pickup (potion or armor)
   forage: {
-    mound:  { count: 45, taps: 10, drop: { stone: 2 }, bonus: { iron: 0.35 } },
-    sticks: { count: 50, taps: 8,  drop: { wood: 3 },  bonus: { wood: 0.5 } },
-    bush:   { count: 26, taps: 4,  potion: 0.6 },   // otherwise Armor Plate
+    mound:  { count: 50, taps: 10, drop: { stone: 2 }, bonus: { iron: 0.35 } },
+    sticks: { count: 55, taps: 8,  drop: { wood: 3 },  bonus: { wood: 0.5 } },
+    bush:   { count: 29, taps: 4,  potion: 0.6 },   // otherwise Armor Plate
     reach: 1.15, decay: 2.5, respawn: 150, bushRespawn: 240,
   },
   // DEV ONLY: the solo-testing Wizard bot (js/devbot.js, toggled with F4 on the F3 overlay or __wands.bot('wizard')). Distances are tiles.
@@ -116,39 +118,39 @@ const CFG = {
     potion: { heal: 35 }, elixir: { heal: 80 },
     armor: { armor: 35 }, plate: { armor: 70 },
   },
-  // costs are 50% up on the original (belts stay 1 Wood)
+  // costs were 50% up on the original, then cut ~30% (belts stay 1 Wood; Splitter and Sorter are 2 Wood + 1 Stone, the Sorter still wants its Shard)
   buildings: {
-    air:      { name: 'Air Harnesser',   kind: 'harness', elem: 'air',   cost: { wood: 9, stone: 6 },            cycle: 3.75, power: 2, unlock: null,
-                desc: 'Makes Air Pockets every 3.75s. Draws 2 power (hand-gathering is free, so the factory can always restart). Stand beside it and press E to hand-gather.' },
-    water:    { name: 'Water Harnesser', kind: 'harness', elem: 'water', cost: { wood: 12, stone: 9 },           cycle: 5.625, power: 2, unlock: 'water',
-                desc: 'Makes Water Drops every 5.6s. Draws 2 power (hand-gathering is free).' },
-    fire:     { name: 'Fire Harnesser',  kind: 'harness', elem: 'fire',  cost: { wood: 12, stone: 6, iron: 3 },  cycle: 5.625, power: 2, unlock: 'fire',
-                desc: 'Makes Fire Embers every 5.6s. Draws 2 power.' },
-    earth:    { name: 'Earth Harnesser', kind: 'harness', elem: 'earth', cost: { wood: 15, stone: 12 },          cycle: 6.875, power: 2, unlock: 'earth',
-                desc: 'Makes Earth Chunks every 6.9s. Draws 2 power.' },
-    cauldron: { name: 'Alchemy Cauldron', kind: 'crafter', cost: { wood: 9, stone: 9 }, unlock: 'alchemy',
+    air:      { name: 'Air Harnesser',   kind: 'harness', elem: 'air',   cost: { wood: 6, stone: 4 },            cycle: 3.41, power: 2, unlock: null,
+                desc: 'Makes Air Pockets every 3.4s. Draws 2 power (hand-gathering is free, so the factory can always restart). Stand beside it and press E to hand-gather.' },
+    water:    { name: 'Water Harnesser', kind: 'harness', elem: 'water', cost: { wood: 8, stone: 6 },           cycle: 5.11, power: 2, unlock: 'water',
+                desc: 'Makes Water Drops every 5.1s. Draws 2 power (hand-gathering is free).' },
+    fire:     { name: 'Fire Harnesser',  kind: 'harness', elem: 'fire',  cost: { wood: 8, stone: 4, iron: 2 },  cycle: 5.11, power: 2, unlock: 'fire',
+                desc: 'Makes Fire Embers every 5.1s. Draws 2 power.' },
+    earth:    { name: 'Earth Harnesser', kind: 'harness', elem: 'earth', cost: { wood: 10, stone: 8 },          cycle: 6.25, power: 2, unlock: 'earth',
+                desc: 'Makes Earth Chunks every 6.25s. Draws 2 power.' },
+    cauldron: { name: 'Alchemy Cauldron', kind: 'crafter', cost: { wood: 6, stone: 6 }, unlock: 'alchemy',
                 desc: 'Brews Health Potions (2 Water + 1 Wood). Wood-fired, no power. Send potions through the Spell Portal: they land beside the Wizard.' },
-    forge:    { name: 'Elemental Forge', kind: 'crafter', cost: { wood: 18, stone: 15, iron: 6 }, unlock: 'forge',
+    forge:    { name: 'Elemental Forge', kind: 'crafter', cost: { wood: 13, stone: 10, iron: 4 }, unlock: 'forge',
                 desc: 'Fuses element packets into combo spells (each spell is unlocked separately) and crafts Batteries from 2 Iron Ore. Press E at it to switch recipe.' },
-    anvil:    { name: 'Armor Anvil', kind: 'crafter', cost: { wood: 9, stone: 12, iron: 6 }, unlock: 'armory',
+    anvil:    { name: 'Armor Anvil', kind: 'crafter', cost: { wood: 6, stone: 8, iron: 4 }, unlock: 'armory',
                 desc: 'Hammers Iron Ore + Stone, heated by a Fire Ember, into Armor for the Wizard.' },
-    station:  { name: 'Battery Station', kind: 'station', cost: { wood: 12, stone: 9, iron: 5 }, unlock: null,
+    station:  { name: 'Battery Station', kind: 'station', cost: { wood: 8, stone: 6, iron: 4 }, unlock: null,
                 desc: 'A charged Battery here generates +10 power for the whole factory. Drains while anything needs power. Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed.' },
-    charger:  { name: 'Battery Charger', kind: 'charger', cost: { wood: 12, stone: 6, iron: 5 }, unlock: null,
+    charger:  { name: 'Battery Charger', kind: 'charger', cost: { wood: 8, stone: 4, iron: 4 }, unlock: null,
                 desc: 'Recharges a Battery by burning element packets as fuel (16.5s each, 19.5s when thrown in by hand). More element types = faster. Uses no electricity.' },
-    splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 6, stone: 3 }, unlock: 'logistics',
+    splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 2, stone: 1 }, unlock: 'logistics',
                 desc: 'Takes items from behind and deals them out of its front, left and right sides in turn. Blocked sides are skipped. Press E at it to turn it.' },
-    sorter:   { name: 'Sorter', kind: 'sorter', cost: { wood: 6, stone: 4, iron: 2, shard: 1 }, unlock: 'logistics',
+    sorter:   { name: 'Sorter', kind: 'sorter', cost: { wood: 2, stone: 1, shard: 1 }, unlock: 'logistics',
                 desc: 'E while holding an item sets the filter: matching items go out the front, everything else out the sides. E with empty hands clears it.' },
-    crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 12, stone: 6 }, unlock: 'logistics',
+    crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 8, stone: 4 }, unlock: 'logistics',
                 desc: 'Holds up to 30 packets, spells or pickups (never raw resources) and feeds them out of its arrow side, one at a time.' },
-    spawner1: { name: 'Creature Spawner I', kind: 'crafter', tier: 1, cost: { wood: 15, stone: 12, iron: 4 }, unlock: null,
+    spawner1: { name: 'Creature Spawner I', kind: 'crafter', tier: 1, cost: { wood: 10, stone: 8, iron: 3 }, unlock: null,
                 desc: 'Hatches single-element creature Eggs from element packets. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. E switches recipe.' },
-    spawner2: { name: 'Creature Spawner II', kind: 'crafter', tier: 2, cost: { wood: 18, stone: 15, iron: 8 }, unlock: 'spawn2',
+    spawner2: { name: 'Creature Spawner II', kind: 'crafter', tier: 2, cost: { wood: 13, stone: 10, iron: 6 }, unlock: 'spawn2',
                 desc: 'Hatches two-element creature Eggs: phoenix, storm cloud, lava golem, swamp shambler. Each recipe is unlocked on its own.' },
-    spawner3: { name: 'Creature Spawner III', kind: 'crafter', tier: 3, cost: { wood: 24, stone: 20, iron: 12 }, unlock: 'spawn3',
+    spawner3: { name: 'Creature Spawner III', kind: 'crafter', tier: 3, cost: { wood: 17, stone: 14, iron: 8 }, unlock: 'spawn3',
                 desc: 'Hatches three-element creature Eggs: dragon, storm leviathan, kiln titan. Each recipe is unlocked on its own.' },
-    altar:    { name: 'Summoning Altar', kind: 'crafter', cost: { stone: 20, iron: 10, shard: 6 }, unlock: 'summon',
+    altar:    { name: 'Summoning Altar', kind: 'crafter', cost: { stone: 14, iron: 7, shard: 6 }, unlock: 'summon',
                 desc: 'Binds an Elemental Nova and Aether Shards into a Boss Sigil. Send the Sigil through the Spell Portal to summon the Primal Chimera.' },
   },
   // hotbar slots: 'hand', 'belt' or a family (members cycle with Q / the wheel over the slot / pad right-trigger)
@@ -217,6 +219,10 @@ const CFG = {
       tiers: [12, 18, 25, 33, 43, 54, 65, 80],
       kinds: [['air'], ['air'], ['air', 'water'], ['air', 'water'], ['water', 'fire'], ['water', 'fire'], ['fire', 'earth'], ['air', 'water', 'fire', 'earth']],
       combos: { 6: { steam: 1 }, 7: { steam: 1, sandstorm: 1 } } },
+    { id: 'manual',  col: 2, icon: 'ic_hand', name: 'Quick Hands', per: '+30% hand-harnessing speed',
+      tiers: [4, 14, 28],
+      kinds: [['air'], ['air'], ['air', 'water']],
+      combos: {} },
     { id: 'belts',   col: 2, icon: 'belt', name: 'Swift Belts', per: '+15% belt speed',
       tiers: [15, 24, 35, 48, 62, 76],
       kinds: [['air'], ['air'], ['air', 'water'], ['water', 'fire'], ['fire', 'earth'], ['air', 'fire', 'earth']],
@@ -260,7 +266,7 @@ const CFG = {
     nova:         { drop: 0.9, r: 8, dmg: 80, push: 30, slow: 0.5, slowT: 2 },
   },
   // what each upgrade tier is worth
-  upgrade: { swift: 0.125, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125, magnet: 0.35 },   // gems: x(1+0.125) per tier on every gem drop chance (cap gemCap); magnet: tiles of extra pickup radius per tier
+  upgrade: { swift: 0.125, manual: 0.3, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125, magnet: 0.35 },   // gems: x(1+0.125) per tier on every gem drop chance (cap gemCap); magnet: tiles of extra pickup radius per tier
   firstTierPay: 0.5,          // tier 1 of every upgrade track asks for half the usual spells
   costScale: { xp: 0.7, pay: 0.5 },   // the skill-tree rebalance: XP costs x0.7, banked spell costs x0.5 (applied once below, after the dev-tool overrides)
   gemCap: 0.95,               // no gem chance ever goes above this, whatever Gem Wisdom says
@@ -453,7 +459,7 @@ const sentN = (g, ...ks) => ks.reduce((a, k) => a + ((g.stats.sent || {})[k] || 
 const QUESTS = {
   B: [
     { from: 0,  icon: 'wood',  text: 'Walk to the Stockpile and left-click (pad A) to grab some Wood', xp: 2, done: g => g.flags.tookPile, hint: { pile: 'wood' } },
-    { from: 2,  icon: 'air',   text: 'Stand by the Air Harnesser: press E to hand-gather, then tap E to crank it faster', xp: 3, done: g => g.flags.gathered, hint: { use: 'air' } },
+    { from: 2,  icon: 'air',   text: 'Stand by the Air Harnesser: press E to hand-gather, then keep tapping E to fill the meter', xp: 3, done: g => g.flags.gathered, hint: { use: 'air' } },
     { from: 3,  icon: 'ic_portal', text: 'Throw (right-click / pad B) a packet into the Spell Portal', xp: 3, done: g => g.flags.portalHand, hint: { portal: 'spell' } },
     { from: 5,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, done: g => (g.bankTotal || 0) >= 5, prog: g => [g.bankTotal || 0, 5], hint: { portal: 'skill' } },
     { from: 6,  icon: 'b:air', text: 'Build a second Air Harnesser: press 3, click a tile, then throw Wood & Stone at it', xp: 8, done: g => FA.count('air') >= 2, hint: { build: 'air' } },

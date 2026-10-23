@@ -658,7 +658,11 @@ R.drawPortal = function (ctx, v, t, which) {
   ctx.fillStyle = skill ? '#ffd23a' : '#ffffff';
   for (let i = 0; i < 4; i++) { const an = t * 1.5 + i * 1.57; ctx.fillRect(Math.cos(an) * 0.6 - 0.06, Math.sin(an) * 0.6 - 0.06, 0.12, 0.12); }
   ctx.restore();
-  if (flash > 0) { ctx.fillStyle = skill ? '#ffe36b' : '#ffffff'; ctx.globalAlpha = flash * 0.4; ctx.fillRect(base[0] - 64, base[1] - 140, 128, 136); ctx.globalAlpha = 1; }
+  if (flash > 0) {   // the whole ring lights up (an oval in the portal's own plane, not a box)
+    ctx.save(); ctx.translate(base[0], base[1] - 72); ctx.transform(-v.hw, v.hh, 0, 72, 0, 0);
+    ctx.fillStyle = skill ? '#ffe36b' : '#ffffff'; ctx.globalAlpha = Math.min(0.7, flash * 0.6); ctx.beginPath(); ctx.ellipse(0, 0, 1.02, 1.02, 0, 0, 6.283); ctx.fill();
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
   if (boss) {   // the element that hurts the boss right now, floating in the middle of the portal
     const sc = wfl && Math.sin(t * 12) > 0 ? 1.3 : 1;
     dsprSq(ctx, itemSprite(boss.weak), base[0], base[1] - 52 + (Math.sin(t * 4) > 0 ? 0 : 4), 4, sc, sc);
@@ -669,9 +673,75 @@ R.drawPortal = function (ctx, v, t, which) {
       dspr(ctx, itemSprite(nx), base[0] + 80, base[1] - 98, 3, 0.8);
     }
   }
+  if (!skill) for (const s of f.sucks) R.drawSuck(ctx, v, s, base);
   dspr(ctx, SP[skill ? 'ic_skill' : 'ic_portal'], base[0], base[1] - 160, 4);
   const q = f.portalQ.filter(e => e.which === which).length + (which === 'spell' ? f.eggQ.length : 0);
   if (q) txt(ctx, q + ' queued', base[0], base[1] - 146, 12, '#ffe36b', 'center', 'd');
+};
+
+// What happens to something the Spell Portal accepts: (1) it is slurped in, spiralling toward the heart of the ring, stretching thin and
+// leaving a trail while a ring closes on the spot it came from; (2) the portal gulps and a column of light with the item riding it fires
+// straight up out of the factory, as long as the spell's own drop-in over the Wizard (the matching portal opening above his head).
+R.drawSuck = function (ctx, v, s, base) {
+  const P = R.px, T = CFG.suck.baseT, spr = itemSprite(s.kind), el = ELEM[s.kind] ? s.kind : null, col = s.col, sd = s.seed;
+  const cx = base[0], cy = base[1] - 72;   // the heart of the ring
+  const st = R.toScreen(v, s.x, s.y), x0 = st[0], y0 = st[1] - 28;
+  const blk = (x, y, sz, c, a) => {
+    sz = Math.round(sz / P) * P; if (sz <= 0) return;
+    ctx.globalAlpha = a === undefined ? 1 : a; ctx.fillStyle = c;
+    if (el && c === col) R.elPix(ctx, el, snap(x), Math.round(y / P) * P, Math.max(P, Math.round(sz / 3 / P) * P));
+    else ctx.fillRect(snap(x - sz / 2), Math.round((y - sz / 2) / P) * P, sz, sz);
+    ctx.globalAlpha = 1;
+  };
+  const ring = (r, c, a, w) => {   // a ring in the portal's own plane
+    ctx.save(); ctx.translate(cx, cy); ctx.transform(-v.hw, v.hh, 0, 72, 0, 0);
+    ctx.globalAlpha = a; ctx.strokeStyle = c; ctx.lineWidth = w; ctx.beginPath(); ctx.ellipse(0, 0, r, r, 0, 0, 6.283); ctx.stroke();
+    ctx.restore(); ctx.globalAlpha = 1;
+  };
+  if (s.t < T) {
+    const u = s.t / T;
+    // the spot it came from: a dashed ring closing in
+    ctx.globalAlpha = 0.9 - u * 0.4; ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.setLineDash([12, 8]);
+    const rr = 0.9 * (1 - Math.floor(u * 5) / 5);
+    if (rr > 0) { diamond(ctx, st[0], st[1], rr * v.hw * 1.414, rr * v.hh * 1.414); ctx.stroke(); }
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    const at = k => {   // where the item is at progress k (accelerating, spiralling in)
+      const e = k * k, a = sd + k * 7;
+      return [x0 + (cx - x0) * e + Math.sin(a) * 26 * (1 - e), y0 + (cy - y0) * e + Math.cos(a) * 12 * (1 - e) - Math.sin(k * Math.PI) * 30];
+    };
+    for (let i = 5; i >= 1; i--) {   // trail
+      const k = u - i * 0.075; if (k <= 0) continue;
+      const q = at(k); blk(q[0], q[1] + 12, 24 - i * 3, i % 2 ? col : '#ffffff', 0.85 - i * 0.14);
+    }
+    const q = at(u), e = u * u;
+    blk(q[0], q[1] + 4, 44 * (1 - 0.4 * e), col, 0.5);
+    if (spr) dsprSq(ctx, spr, q[0], q[1] + 20, 4, 1 - 0.5 * e, 1 + 0.6 * e, 1);
+    ring(1.2 - 0.3 * Math.ceil(u * 4) / 4, col, 0.35 + u * 0.6, 0.09);   // the ring leans in to swallow it
+  } else {
+    const k = Math.min(1, (s.t - T) / Math.max(0.05, s.dur - T)), top = cy - 70 - 330 * Math.sqrt(k), fl = Math.floor(s.t * 40);
+    // the gulp: a shock ring rolling out of the portal's plane
+    const kk = Math.min(1, k * 2.2);
+    if (kk < 1) { ring(0.45 + 0.85 * Math.ceil(kk * 4) / 4, '#ffffff', 1 - kk, 0.12); ring(0.3 + 0.7 * Math.ceil(kk * 4) / 4, col, 1 - kk, 0.16); }
+    // the column of light climbing out of the ring: flickering bands, a white core, narrowing as it goes
+    const w = Math.max(P * 2, Math.round((34 * (1 - k) + 6) / P) * P);
+    for (let y = Math.round(cy / 12) * 12; y > top; y -= 12) {
+      const fade = Math.min(1, (y - top) / 70) * (1 - k * 0.5);
+      ctx.globalAlpha = fade; ctx.fillStyle = '#1a0f28'; ctx.fillRect(snap(cx - w / 2) - P, y, w + 2 * P, 12);   // pixel-art outline
+      ctx.fillStyle = col; ctx.fillRect(snap(cx - w / 2), y, w, 12);
+      if ((y / 12 + fl) % 3 === 0) { ctx.fillStyle = '#ffffff'; ctx.globalAlpha = fade * 0.55; ctx.fillRect(snap(cx - w / 2), y, w, 6); }   // bands racing up the column
+      ctx.globalAlpha = fade; ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(cx - w / 6), y, Math.max(P, Math.round(w / 3 / P) * P), 12);
+    }
+    ctx.globalAlpha = 1;
+    // the item itself rides the column, stretched thin by the speed
+    const ky = cy - 330 * Math.sqrt(k) * 0.9 - 6;
+    if (k < 0.95) blk(cx, ky + 4, 46 * (1 - k * 0.5), col, 0.6 * (1 - k));
+    if (spr && k < 0.95) dsprSq(ctx, spr, cx, ky + 20, 4, 0.85 * (1 - k * 0.6), 1.5 - k * 0.5, 1 - k * 0.5);
+    // sparks spiralling off it
+    for (let i = 0; i < 9; i++) {
+      const p = (k * 1.3 + i / 9) % 1, a = sd + i * 2.4 + p * 8, r = (14 + 30 * p) * (1 - k * 0.4);
+      blk(cx + Math.cos(a) * r, cy - 330 * Math.sqrt(k) * p * 0.95 + Math.sin(a) * r * 0.25, 12 - p * 6, i % 3 ? col : '#ffffff', 1 - p * 0.6);
+    }
+  }
 };
 
 R.drawPile = function (ctx, v, k, pos) {

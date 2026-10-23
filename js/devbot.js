@@ -1,7 +1,7 @@
 'use strict';
 // DEV ONLY: a deliberately mediocre Wizard so one person can run the Builder-side iteration loop solo.
 // Toggle: F4 while the F3 overlay is open, or __wands.bot('wizard') / __wands.bot(null). Off on every load, never saved.
-// It plays through the real input layer: each frame it writes a gamepad-shaped state into IN.pad[1] (the Wizard's pad),
+// It plays through the real input layer: each frame it writes a gamepad-shaped state into IN.pad[slot] (the Wizard's pad; see DevBot.plug),
 // and Main.controls / WZ.update handle it exactly like a human's stick and roll button (water slide, bog slow, i-frames,
 // forage mashing). It only READS game state to decide; it never calls anything that moves, rolls or picks up. Neutral while
 // paused, dead or with a skill tree open; it never presses the tree buttons.
@@ -28,9 +28,24 @@ const DevBot = { on: null, st: null, stats: null };
     const was = DevBot.on;
     DevBot.on = who === 'wizard' ? 'wizard' : null;
     if (DevBot.on && !was) DevBot.reset();
-    if (!DevBot.on && was) { IN.pad[1] = null; IN.prevBtn[1] = []; }
+    if (!DevBot.on && was) DevBot.unplug();
     DevBot.chip();
     return DevBot.info();
+  };
+  // The player screen decides which pad slot is the Wizard's (G.ctl.pw, -1 when the Wizard is on the keyboard). The bot plugs a
+  // virtual controller into that slot, or a free one it claims as the Wizard's, and gives the claim back when it is switched off.
+  DevBot.plug = function () {
+    const st = DevBot.st, c = G.ctl;
+    if (st.slot === undefined || st.g !== G) { st.pwOrig = c.pw; st.slot = c.pw >= 0 ? c.pw : (c.pb === 1 ? 0 : 1); }
+    if (c.pw !== st.slot) c.pw = st.slot;
+    return st.slot;
+  };
+  DevBot.unplug = function () {
+    const st = DevBot.st;
+    if (!st || st.slot === undefined) return;
+    if (G && G.ctl && st.g === G && G.ctl.pw === st.slot) G.ctl.pw = st.pwOrig;
+    IN.pad[st.slot] = null; IN.prevBtn[st.slot] = [];
+    st.slot = undefined;
   };
   DevBot.toggle = function () { DevBot.set(DevBot.on ? null : 'wizard'); if (window.AU) AU.sfx('blip'); };
 
@@ -208,7 +223,7 @@ const DevBot = { on: null, st: null, stats: null };
     } else if (!w.dead) st.deadSeen = false;
     const pad = NEUTRAL();
     const idle = G.paused || w.dead || UI.treeOpen.L || UI.treeOpen.R || Main.graceT > 0;
-    if (idle) { st.dir = [0, 0]; st.mash = false; st.rollReq = false; st.mode = w.dead ? 'dead' : 'waiting'; IN.pad[1] = pad; return; }
+    if (idle) { st.dir = [0, 0]; st.mash = false; st.rollReq = false; st.mode = w.dead ? 'dead' : 'waiting'; IN.pad[DevBot.plug()] = pad; return; }
     st.now += dt; s.t += dt;
     st.acc -= dt;
     if (st.acc <= 0) { st.acc = c.tick; think(st, w); }
@@ -220,6 +235,6 @@ const DevBot = { on: null, st: null, stats: null };
     if (st.mash) { st.mashT -= dt; if (st.mashT <= 0) { st.mashT = c.mashGap; pad.a = true; } } else st.mashT = 0;
     if (st.rollReq) { pad.a = true; st.rollReq = false; }
     pad.any = pad.a;
-    IN.pad[1] = pad;
+    IN.pad[DevBot.plug()] = pad;
   };
 })();

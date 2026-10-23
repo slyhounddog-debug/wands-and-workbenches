@@ -973,7 +973,7 @@ const CONTROLS = [
   ]],
   ['DEBUG (for now)', [
     [K('F3') + ' &nbsp;or&nbsp; ' + K('`'), 'Toggle the debug overlay: XP and packets per minute, bank and portal rates, time to the next affordable skill, the next event, creature counts'],
-    [K('F4') + ' &nbsp;with the overlay open', 'Dev bot: plays the Wizard (pad 2) so one person can test the factory solo. Press again to turn it off'],
+    [K('F4') + ' &nbsp;with the overlay open', 'Dev bot: plays the Wizard (a virtual controller) so one person can test the factory solo. Press again to turn it off'],
     [K('F12') + ' &nbsp;console', 'In the browser console, <code>__wands</code> is the test hook:'],
     ['<code>__wands.start(slot)</code>', 'Start a new game in slot 1-3'],
     ['<code>__wands.deliver(kind)</code>', 'Send an item through the Spell Portal, e.g. <code>"fire"</code>'],

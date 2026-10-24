@@ -4,8 +4,8 @@
 const RULES = [
   // ---------- general ----------
   [/^WW$|^WH$/, 'Size of the Wizard\'s wilderness in tiles (width / height). Read when a run starts, so reload the screen.'],
-  [/^factorySizes\.(\d+)\.0$/, m => `Factory floor WIDTH in tiles once Factory Expansion tier ${m[1]} is owned (tier 0 = the starting size).`],
-  [/^factorySizes\.(\d+)\.1$/, m => `Factory floor HEIGHT in tiles once Factory Expansion tier ${m[1]} is owned (tier 0 = the starting size).`],
+  [/^factory.base.(w|h)$/, m => `The starting factory floor ${m[1] === "w" ? "width" : "height"} in tiles (the Stockpile sits in its south-west corner).`],
+  [/^factory.freeIron$/, "Floor Tiles added before the Iron cost starts (each tile costs 1 Wood + 1 Stone, and 1 Iron after this many)."],
   [/^start\.(\w+)$/, m => `${m[1]} in the Stockpile at the start of a new game.`],
   [/^satchel$/, 'How many items the Builder can carry at once before any Bigger Satchel upgrades.'],
   [/^autosave$/, 'Seconds between automatic saves (a save also happens shortly after any change).'],

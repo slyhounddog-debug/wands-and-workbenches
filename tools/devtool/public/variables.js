@@ -15,7 +15,7 @@ export const tools = h('span', { style: 'display:flex;gap:8px;align-items:center
 // layout constants of the 8-bit pipeline: changing them breaks the renderer rather than tuning anything
 const SKIP = new Set(['W', 'H', 'HALF', 'FT', 'WT']);
 // read once when a game or the world starts: changing them needs a reload (or a new game for the factory size)
-const ON_RELOAD = /^(start\.|harvest\.\w+\.count|forage\.\w+\.count|marks\.(camps|shrines|crypts|spacing)|factorySizes|WW|WH)/;
+const ON_RELOAD = /^(start\.|harvest\.\w+\.count|forage\.\w+\.count|marks\.(camps|shrines|crypts|spacing)|factory|WW|WH)/;
 const NOTES = {
   world: 'Spawning, respawns and terrain speed in the wilds.', enemies: 'Per foe: hp, speed, dmg, xp and spawn weight w.',
   spells: 'Every number a delivered spell uses (damage, radius, projectiles, slows).', tree: 'Skill-tree costs: xp, pay (banked spells), tiers (XP per tier).',

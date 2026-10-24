@@ -116,7 +116,7 @@ Players.ACH = [
   A('packets_1500', 'B', 'Element Tycoon', 'ic_trophy', 'Send 1500 element packets', 1500, st('packets')),
   A('forge', 'B', 'Forgemaster', 'b:forge', 'Unlock the Elemental Forge', 1, node('forge')),
   A('logistics', 'B', 'Traffic Controller', 'b:splitter', 'Unlock Logistics', 1, node('logistics')),
-  A('expand', 'B', 'Room to Grow', 'ic_expand', 'Expand the factory 3 times', 3, g => g.tree.expand || 0),
+  A('expand', 'B', 'Room to Grow', 'ic_expand', 'Add 20 Floor Tiles to the factory', 20, g => Math.max(g.stats.tiles || 0, (g.tree.expand || 0) * 8)),
   A('charge10', 'B', 'Battery Boss', 'battery', 'Fully charge 10 Batteries', 10, st('charged')),
   A('eggs25', 'B', 'Egg Factory', 'egg_zephyr', 'Send 25 Eggs to the Wizard', 25, st('eggs')),
   A('combos50', 'B', 'Combo Cook', 'steam', 'Send 50 combo spells', 50, st('combos')),

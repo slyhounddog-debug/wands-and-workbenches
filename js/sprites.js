@@ -261,6 +261,10 @@ task(() => {
     x.fillStyle = '#ffe36b';   // a "Y" fork on the lid
     x.fillRect(cx, cy - 10, 1, 3); x.fillRect(cx - 2, cy - 12, 2, 1); x.fillRect(cx + 1, cy - 12, 2, 1); x.fillRect(cx - 3, cy - 13, 1, 1); x.fillRect(cx + 3, cy - 13, 1, 1);
   });
+  bsprite('b_expand', (x, cx, cy) => {   // a slab of floor: grass over a dirt rim
+    isoBox(x, cx, cy + 2, 9, 4, '#9be880', '#8a5c34', '#6a4426');
+    x.fillStyle = '#c4f4a8'; x.fillRect(cx - 3, cy - 3, 2, 1); x.fillRect(cx + 2, cy - 2, 2, 1);
+  });
   bsprite('b_crate', (x, cx, cy) => {
     isoBox(x, cx, cy, 8, 10, '#d8a066', '#a8683a', '#8a5528');
     x.fillStyle = '#6e3f1c';

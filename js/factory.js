@@ -8,24 +8,23 @@ const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];   // 0 = east (+x) 1 = south (+
 const lvl = id => { const v = G.tree[id]; return typeof v === 'number' ? v : (v ? 1 : 0); };
 
 const FA = {};
-// ----- layout (depends on the factory size, which grows with Factory Expansion) -----
+// ----- layout: a fixed grid (G.fac.w x G.fac.h) of which only the tiles in G.fac.land are floor. The Stockpile Zone is fixed in the base rectangle's south-west corner -----
 FA.W = () => G.fac.w;
 FA.H = () => G.fac.h;
-FA.spellY = h => Math.floor((h === undefined ? G.fac.h : h) / 2) - 2;   // Spell Portal rows spellY, spellY+1 on the east edge
-FA.portalCells = (w, h) => {
-  const sy = FA.spellY(h);
-  return [{ x: w - 1, y: sy, which: 'spell' }, { x: w - 1, y: sy + 1, which: 'spell' }, { x: w - 1, y: sy + 4, which: 'skill' }, { x: w - 1, y: sy + 5, which: 'skill' }];
-};
-FA.portal = which => { const sy = FA.spellY(); return { x: G.fac.w - 1, y: which === 'skill' ? sy + 4 : sy }; };   // top cell of a portal
-FA.zone = () => ({ x0: 0, y0: G.fac.h - 5, x1: 4, y1: G.fac.h - 1 });
+FA.base = () => CFG.factory.base;
+// the two portals stand on the east edge of the floor they came with (G.fac.pp = the Spell Portal's top cell; the Skill Portal is 4 rows lower)
+FA.portalCells = () => { const p = G.fac.pp; return [{ x: p.x, y: p.y, which: 'spell' }, { x: p.x, y: p.y + 1, which: 'spell' }, { x: p.x, y: p.y + 4, which: 'skill' }, { x: p.x, y: p.y + 5, which: 'skill' }]; };
+FA.portal = which => { const p = G.fac.pp; return { x: p.x, y: which === 'skill' ? p.y + 4 : p.y }; };   // top cell of a portal
+FA.zone = () => { const B = CFG.factory.base; return { x0: B.x0, y0: B.y0 + B.h - 5, x1: B.x0 + 4, y1: B.y0 + B.h - 1 }; };
 FA.piles = () => {
-  const h = G.fac.h;
-  // a 2x2 block on screen: wood | stone over iron | shard (the zone is 5x5 in the south-west corner)
+  const z = FA.zone(), x = z.x0, y = z.y0;
+  // a 2x2 block on screen: wood | stone over iron | shard (the zone is 5x5 in the south-west corner of the base floor)
   // the four spell spots (element packets the Wizard picked up) sit at the corners of the zone around them
-  return { wood: { x: 1.0, y: h - 2.5 }, stone: { x: 2.5, y: h - 4.0 }, iron: { x: 3.1, y: h - 0.4 }, shard: { x: 4.6, y: h - 1.9 }, core: { x: 4.3, y: h - 3.3 },
-    air: { x: 0.8, y: h - 4.3 }, water: { x: 0.7, y: h - 0.7 }, fire: { x: 4.6, y: h - 4.6 }, earth: { x: 4.5, y: h - 0.3 } };
+  return { wood: { x: x + 1.0, y: y + 2.5 }, stone: { x: x + 2.5, y: y + 1.0 }, iron: { x: x + 3.1, y: y + 4.6 }, shard: { x: x + 4.6, y: y + 3.1 }, core: { x: x + 4.3, y: y + 1.7 },
+    air: { x: x + 0.8, y: y + 0.7 }, water: { x: x + 0.7, y: y + 4.3 }, fire: { x: x + 4.6, y: y + 0.4 }, earth: { x: x + 4.5, y: y + 4.7 } };
 };
 FA.inb = (x, y) => x >= 0 && y >= 0 && x < G.fac.w && y < G.fac.h;
+FA.owned = (x, y) => FA.inb(x, y) && G.fac.land[y * G.fac.w + x] === 1;   // is this tile factory floor?
 FA.cell = (x, y) => (FA.inb(x, y) ? G.fac.grid[y * G.fac.w + x] : undefined);
 FA.setCell = (x, y, v) => { G.fac.grid[y * G.fac.w + x] = v; };
 FA.reserved = (x, y) => { const z = FA.zone(); return x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1; };
@@ -65,23 +64,31 @@ FA.portalTakes = (c, k) => (c.which === 'skill' ? FA.isBankable(k) : FA.isDelive
 FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 'crate'; };
 
 FA.fresh = function (w, h) {
-  const f = { w, h, grid: new Array(w * h).fill(null), bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
+  const f = { w, h, grid: new Array(w * h).fill(null), land: new Array(w * h).fill(0), pp: { x: 0, y: 0 }, added: 0, bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
     portalQ: [], eggQ: [], portalT: 0, nextId: 1, gen: 0, demand: 0, lowT: 0, flash: 0, flashCol: '#fff', skillFlash: 0, t: 0,
     log: { spell: [], skill: [] }, working: 0, thumps: [], sucks: [], bump: 0, bumpAmp: 0, weakFlash: 0, stockNext: 0,
     rings: [], waves: [],   // throw impact rings, Spell Portal shockwaves
     elAct: { air: 0, water: 0, fire: 0, earth: 0 }, weather: { air: 0, water: 0, fire: 0, earth: 0 } };   // element packets handled lately -> the wilds' weather (0..1 each)
-  for (const p of FA.portalCells(w, h)) f.grid[p.y * w + p.x] = { type: 'portal', x: p.x, y: p.y, which: p.which };
   return f;
 };
+// floor tiles: land[] (1 = floor), the portals sit on the east edge of the floor they came with
+FA.setLand = function (x0, y0, w, h) { const f = G.fac; for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) f.land[y * f.w + x] = 1; };
+FA.setPortals = function (px, py) {
+  const f = G.fac;
+  f.pp = { x: px, y: py };
+  for (const p of FA.portalCells()) f.grid[p.y * f.w + p.x] = { type: 'portal', x: p.x, y: p.y, which: p.which };
+};
 FA.initial = function () {
-  const sz = CFG.factorySizes[0];
-  G.fac = FA.fresh(sz[0], sz[1]);
-  const sy = FA.spellY(), w = sz[0];
-  const st = FA.makeBuilding('station', 1, sy + 2, true, false, 0); st.bat = CFG.batteryMax;   // a full Battery already inside, out at the far west edge
-  FA.makeBuilding('charger', 3, sy + 2, true, false, 0).bat = 0;   // a spare, flat Battery waits in the Charger
+  const F = CFG.factory, B = F.base;
+  G.fac = FA.fresh(F.w, F.h);
+  FA.setLand(B.x0, B.y0, B.w, B.h);
+  FA.setPortals(B.x0 + B.w - 1, B.y0 + 1);
+  const ox = B.x0, oy = B.y0, sy = oy + 1;   // the base rectangle's own coordinates (the Stockpile fills its south-west 5x5, rows 3-7)
+  const st = FA.makeBuilding('station', ox + 1, oy + 1, true, false, 0); st.bat = CFG.batteryMax;   // a full Battery already inside
+  FA.makeBuilding('charger', ox + 3, oy + 1, true, false, 0).bat = 0;   // a spare, flat Battery waits in the Charger
   // one Air Harnesser, 2 belts, then a free Splitter beside the portals, turned north at 90 degrees: pink side A = east (2 belts straight
   // into the Spell Portal's top cell), cyan side B = south (a Creature Spawner, Zephyr Wisps, then 2 belts into the lower cell)
-  const sx = w - 4;
+  const sx = ox + B.w - 4;
   FA.makeBuilding('air', sx - 3, sy, true, false, 0);
   FA.addBelt(sx - 2, sy, 0); FA.addBelt(sx - 1, sy, 0);
   const sp = FA.makeBuilding('splitter', sx, sy, true, true, 3);
@@ -91,40 +98,23 @@ FA.initial = function () {
   FA.splitConn(sp); sp.pct = { 0: CFG.starterSplit, 1: 100 - CFG.starterSplit };   // its outputs are east (the portal belts) and south (the Spawner)
   G.bd = FA.freshBuilder();
 };
-FA.freshBuilder = () => ({ x: 5.5, y: G.fac.h - 6.5, vx: 0, vy: 0, fx: 1, fy: 0, target: null, then: null, stuckT: 0, gather: null, apT: 0,
-  bob: 0, moving: false, squash: 0, throwCd: 0, dustT: 0 });
+FA.freshBuilder = () => { const B = CFG.factory.base; return { x: B.x0 + 6.5, y: B.y0 + 4.5, vx: 0, vy: 0, fx: 1, fy: 0, target: null, then: null, stuckT: 0, gather: null, apT: 0,
+  bob: 0, moving: false, squash: 0, throwCd: 0, dustT: 0 }; };
 
-// Factory Expansion: grow the floor west/north-south. Everything shifts so the portals stay on the east edge;
-// the Stockpile Zone stays in the south-west corner, so it ends up further from the portals each time.
-FA.resize = function (w2, h2) {
-  const f = G.fac, dx = w2 - f.w, dy = FA.spellY(h2) - FA.spellY(f.h);
-  const old = { bld: f.bld, belts: f.belts };
-  f.w = w2; f.h = h2;
-  f.grid = new Array(w2 * h2).fill(null);
-  for (const p of FA.portalCells(w2, h2)) f.grid[p.y * w2 + p.x] = { type: 'portal', x: p.x, y: p.y, which: p.which };
-  f.bld = []; f.belts = [];
-  const refund = (o) => {   // anything that would land in the new Stockpile Zone (or off the floor) is refunded
-    if (o.type === 'belt') { G.stock.wood += 1; if (o.item) FA.dropAt(o.item.kind, 6.5, h2 - 6.5); return; }
-    if (o.done && !o.free) { const c = FA.def(o).cost; for (const k in c) G.stock[k] += c[k]; }
-    else if (o.done && o.free) G.credits[o.type] = (G.credits[o.type] || 0) + 1;
-    else for (const k in o.got) G.stock[k] += o.got[k];
-    if (o.bat != null) FA.dropAt('battery', 6.5, h2 - 6.5, o.bat);
-  };
-  const place = (o, list) => {
-    o.x += dx; o.y += dy;
-    if (!FA.inb(o.x, o.y) || FA.reserved(o.x, o.y) || f.grid[o.y * w2 + o.x]) { refund(o); return; }
-    list.push(o); f.grid[o.y * w2 + o.x] = o;
-  };
-  old.bld.forEach(o => place(o, f.bld));
-  old.belts.forEach(o => place(o, f.belts));
-  const shift = o => { o.x += dx; o.y += dy; };
-  f.floor.forEach(shift); f.parts.forEach(shift); f.pops.forEach(shift); (f.sucks || []).forEach(shift);
-  f.flying.forEach(o => { o.x += dx; o.y += dy; o.sx += dx; o.sy += dy; o.tx += dx; o.ty += dy; });
-  const bd = G.bd;
-  bd.x += dx; bd.y += dy; bd.target = null; bd.then = null;
-  if (bd.gather) bd.gather = null;
-  if (typeof R !== 'undefined') { R.fcam.x += dx; R.fcam.y += dy; }
-  FA.burst(bd.x, bd.y, '#ffe36b', 30);
+// Floor Tiles: a blueprint placed just outside the floor; thrown its materials like any building, it turns into floor when finished.
+// The Iron cost only starts after the first CFG.factory.freeIron tiles were placed.
+FA.tileCost = () => { const c = Object.assign({}, CFG.buildings.expand.cost); if (G.fac.added >= CFG.factory.freeIron) c.iron = 1; return c; };
+FA.canExpand = (x, y) => FA.inb(x, y) && !FA.owned(x, y) && !FA.reserved(x, y) && !G.fac.grid[y * G.fac.w + x] &&
+  DIRS.some(d => FA.owned(x + d[0], y + d[1]));
+FA.costOf = b => b.cost || FA.def(b).cost;   // a Floor Tile's cost depends on how many came before it
+FA.finishTile = function (b) {   // the blueprint is paid for: the tile becomes floor and the blueprint goes away
+  const f = G.fac;
+  f.land[b.y * f.w + b.x] = 1;
+  f.bld.splice(f.bld.indexOf(b), 1);
+  FA.setCell(b.x, b.y, null);
+  G.stats.tiles = (G.stats.tiles || 0) + 1;
+  FA.burst(b.x + 0.5, b.y + 0.5, '#8ee06a', 20); FA.ipop(b.x + 0.5, b.y + 0.5, [['ic_check']]);
+  AU.sfx('complete'); UI.changed();
 };
 
 FA.makeBuilding = function (type, x, y, done, free, dir) {
@@ -133,7 +123,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
     powered: true, draw: 0, pop: 0, anim: Math.random() * 6 };
   if (d.kind === 'crafter') { b.recipe = null; b.inv = {}; b.prog = 0; }
   if (d.kind === 'station') b.bat = null;
-  if (d.kind === 'charger') { b.bat = null; b.fuel = { air: 0, water: 0, fire: 0, earth: 0 }; b.types = []; }
+  if (d.kind === 'charger') { b.bat = null; b.fuel = { air: 0, water: 0, fire: 0, earth: 0, wood: 0, stone: 0 }; b.types = []; }
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
   if (d.kind === 'harness') b.hand = 0;   // how far the Builder has hand-cranked the next packet: it stays when he walks away
   if (d.kind === 'splitter') { b.pct = {}; b.filt = {}; b.outs = []; b.ins = []; b.sig = null; b.acc = {}; b.src = {}; }
@@ -144,6 +134,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
 };
 FA.onComplete = function (b, quiet) {
   b.done = true;
+  if (FA.def(b).kind === 'expand') { FA.finishTile(b); return; }
   if (FA.def(b).kind === 'crafter' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
   if (!quiet) {
     FA.burst(b.x + 0.5, b.y + 0.5, '#ffe36b', 22);
@@ -237,18 +228,19 @@ FA.pickFloor = function (it) {   // one item per press (hold to keep grabbing)
 };
 
 // ---------- placement / demolish ----------
-FA.canPlace = (x, y) => FA.inb(x, y) && !FA.reserved(x, y) && !G.fac.grid[y * G.fac.w + x];
+FA.canPlace = (x, y) => FA.owned(x, y) && !FA.reserved(x, y) && !G.fac.grid[y * G.fac.w + x];
 FA.needOf = function (b) {
-  const cost = FA.def(b).cost, need = {};
+  const cost = FA.costOf(b), need = {};
   for (const k in cost) { const n = cost[k] - (b.got[k] || 0); if (n > 0) need[k] = n; }
   return need;
 };
 FA.needText = need => Object.keys(need).map(k => need[k] + ' ' + RES[k].name).join(', ');
 FA.place = function (type, x, y, dir) {
   if (!FA.unlocked(type)) { UI.toast('Unlock ' + CFG.buildings[type].name + ' in the Skill Tree first.', 'L', 'ic_lock'); AU.sfx('error'); return false; }
-  if (!FA.canPlace(x, y)) return false;
+  if (type === 'expand' ? !FA.canExpand(x, y) : !FA.canPlace(x, y)) return false;
   const credit = G.credits[type] > 0;
   const b = FA.makeBuilding(type, x, y, credit, credit, dir);
+  if (type === 'expand') { b.cost = FA.tileCost(); G.fac.added++; }
   if (credit) { G.credits[type]--; FA.burst(x + 0.5, y + 0.5, '#7be0ff', 20); FA.ipop(x + 0.5, y + 0.5, [['ic_gift']]); AU.sfx('complete'); }
   else AU.sfx('place');
   b.pop = 0.4;
@@ -285,6 +277,7 @@ FA.demolish = function (x, y, force) {
     if (c.inv) for (const k in c.inv) { if (RES[k]) G.stock[k] += c.inv[k]; else for (let i = 0; i < c.inv[k]; i++) FA.dropAt(k, cx, cy); }
     if (c.bat != null) FA.dropAt('battery', cx, cy, c.bat);
     f.bld.splice(f.bld.indexOf(c), 1);
+    if (c.type === 'expand') f.added = Math.max(0, f.added - 1);   // an unfinished Floor Tile never counted
   }
   FA.setCell(x, y, null);
   FA.burst(cx, cy, '#ff9a8a');
@@ -330,7 +323,7 @@ FA.canInsert = function (b, kind) {
   }
   if (d.kind === 'charger') {
     if (kind === 'battery') return b.bat == null;
-    return !!ELEM[kind] && FA.fuelTotal(b) + CFG.fuelPerPacket <= CFG.fuelCap;
+    return FA.isFuel(kind) && FA.fuelTotal(b) + CFG.fuelPerPacket <= CFG.fuelCap;
   }
   if (d.kind === 'station') return kind === 'battery' && b.bat == null;
   if (d.kind === 'splitter') return kind !== 'battery' && b.out.length < 2;
@@ -384,7 +377,9 @@ FA.takeOut = function (b) {   // one item per press
   FA.addHands(o.kind, 1, o.charge);
   AU.sfx('pickup'); G.bd.squash = 0.2;
 };
-FA.fuelTotal = c => c.fuel.air + c.fuel.water + c.fuel.fire + c.fuel.earth;
+// a Charger burns element packets, Wood and Stone alike (the same seconds per item)
+FA.isFuel = k => !!ELEM[k] || k === 'wood' || k === 'stone';
+FA.fuelTotal = c => { let n = 0; for (const k in c.fuel) n += c.fuel[k]; return n; };
 
 // ---------- portals ----------
 FA.enterPortal = function (c, kind, x, y) {   // returns false if this portal doesn't take that item; (x, y) = where it went in, for the intake animation
@@ -974,13 +969,14 @@ FA.land = function (o) {
     if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind, o.charge, true); FA.impact(o); AU.sfx('drop'); FA.ipop(o.x, o.y, [[o.kind]]); return; }
     return bounce();
   }
+  if (!FA.owned(tx, ty)) { bounce(); FA.ipop(o.x, o.y, [[o.kind], ['ic_x']]); return; }   // it came down off the edge of the floor
   if (FA.reserved(tx, ty) && (RES[o.kind] || ELEM[o.kind])) { G.stock[o.kind] = (G.stock[o.kind] || 0) + 1; FA.ipop(o.x, o.y, [[o.kind]]); AU.sfx('drop'); return; }
   if (!fell()) AU.sfx('thud');
 };
 
 // ---------- the Builder ----------
 FA.solid = function (tx, ty) {
-  if (!FA.inb(tx, ty)) return true;
+  if (!FA.owned(tx, ty)) return true;   // the void beyond the floor
   const c = G.fac.grid[ty * G.fac.w + tx];
   return !!c && c.type !== 'belt';
 };
@@ -1267,13 +1263,14 @@ FA.status = function (b) {
 FA.toJSON = function () {
   const f = G.fac;
   return {
-    w: f.w, h: f.h,
+    v: 2, w: f.w, h: f.h, land: f.land.join(''), pp: f.pp, added: f.added,   // v2: a fixed grid + which tiles are floor (v1 saves were one rectangle)
     bld: f.bld.map(b => {
       const o = { type: b.type, x: b.x, y: b.y, dir: b.dir, done: b.done, free: b.free, got: b.got, out: b.out, timer: b.timer };
       if (b.inv) { o.recipe = b.recipe; o.inv = b.inv; o.prog = b.prog; }
       if (b.bat !== undefined) o.bat = b.bat;
       if (b.fuel) { o.fuel = b.fuel; o.types = b.types; }
       if (b.hand > 0) o.hand = Math.round(b.hand * 1000) / 1000;
+      if (b.cost) o.cost = b.cost;
       if (b.pct) { o.pct = b.pct; o.filt = b.filt; o.sig = b.sig; }
       if (b.over > 0) o.over = b.over;
       return o;
@@ -1284,9 +1281,25 @@ FA.toJSON = function () {
   };
 };
 const LEGACY_SORTER = { wood: 2, stone: 1, shard: 1 };
+// an old (v1) save was one rectangle with its own origin: it moves onto the fixed grid with its south-west corner on the base rectangle's, so the Stockpile stays where it was.
+// FA.lastShift is how far everything moved (the Builder's position is moved by Main.applySave).
+FA.lastShift = { dx: 0, dy: 0 };
 FA.fromJSON = function (j) {
-  const sz = CFG.factorySizes[Math.min(lvl('expand'), CFG.factorySizes.length - 1)];
-  G.fac = FA.fresh(j.w || sz[0], j.h || sz[1]);
+  const F = CFG.factory, B = F.base;
+  G.fac = FA.fresh(F.w, F.h);
+  FA.lastShift = { dx: 0, dy: 0 };
+  if (j.v >= 2 && typeof j.land === 'string' && j.land.length === F.w * F.h && j.pp) {
+    for (let i = 0; i < j.land.length; i++) G.fac.land[i] = j.land[i] === '1' ? 1 : 0;
+    G.fac.added = j.added | 0;
+    FA.setPortals(j.pp.x | 0, j.pp.y | 0);
+  } else {
+    const ow = j.w || 20, oh = j.h || 14, dx = B.x0, dy = B.y0 + B.h - oh;
+    FA.lastShift = { dx, dy };
+    FA.setLand(dx, dy, ow, oh);
+    FA.setPortals(dx + ow - 1, dy + Math.floor(oh / 2) - 2);
+    const mv = o => Object.assign({}, o, { x: o.x + dx, y: o.y + dy });
+    j = Object.assign({}, j, { bld: (j.bld || []).map(mv), belts: (j.belts || []).map(mv), floor: (j.floor || []).map(mv) });
+  }
   (j.bld || []).forEach(o => {
     if (o.type === 'sorter') {   // the Sorter was dropped (a Splitter's element toggles do its job): refund it and set its contents down
       for (const k in LEGACY_SORTER) G.stock[k] = (G.stock[k] || 0) + LEGACY_SORTER[k];
@@ -1295,6 +1308,7 @@ FA.fromJSON = function (j) {
     }
     if (!CFG.buildings[o.type] || !FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;
     const b = FA.makeBuilding(o.type, o.x, o.y, false, o.free, o.dir || 0);
+    if (o.cost && typeof o.cost === 'object') b.cost = o.cost;
     b.done = !!o.done; b.got = o.got || {}; b.out = Array.isArray(o.out) ? o.out.filter(x => x && ITEMS[x.kind]) : []; b.timer = o.timer || 0;
     if (b.inv) { b.recipe = o.recipe && CFG.recipes[o.recipe] ? o.recipe : null; b.inv = o.inv || {}; b.prog = o.prog || 0; }
     if (b.bat !== undefined) b.bat = o.bat == null ? null : o.bat;

@@ -62,7 +62,7 @@ Main.applySave = function (slot, s) {
   G.ev = WZ.evFresh(s.ev && s.ev.n || 0);
   FA.fromJSON(s.fac || {});
   G.bd = FA.freshBuilder();
-  if (s.bd && FA.inb(Math.floor(s.bd.x), Math.floor(s.bd.y))) { G.bd.x = s.bd.x; G.bd.y = s.bd.y; }
+  if (s.bd && FA.owned(Math.floor(s.bd.x + FA.lastShift.dx), Math.floor(s.bd.y + FA.lastShift.dy))) { G.bd.x = s.bd.x + FA.lastShift.dx; G.bd.y = s.bd.y + FA.lastShift.dy; }
   while (G.hands.length > FA.cap()) { const it = G.hands.shift(); FA.dropAt(it.kind, G.bd.x, G.bd.y, it.charge); }   // an old save held more than the pile allows: the extras go on the floor
   Main.enter();
 };
@@ -184,13 +184,13 @@ function handleMouseFactory(dt) {
       const thing = FA.thingAt(tx, ty, px, py);
       G.mRepeat = CFG.pickRepeat * 1.5;
       if (thing) { bd.then = thing; bd.target = { x: thing.x, y: thing.y }; }
-      else if (FA.inb(tx, ty)) { bd.then = null; bd.target = { x: px, y: py }; }
+      else if (FA.owned(tx, ty)) { bd.then = null; bd.target = { x: px, y: py }; }
       bd.stuckT = 0;
     } else if (sel === 'belt') {
       FA.placeBelt(tx, ty, G.placeDir);
       G.drag = { x: tx, y: ty };
     } else if (!FA.place(sel, tx, ty, G.placeDir) && FA.inb(tx, ty) && FA.unlocked(sel)) {
-      UI.toast(FA.reserved(tx, ty) ? 'The Stockpile Zone has to stay clear.' : 'That tile is taken.', 'L', 'ic_x'); AU.sfx('error');
+      UI.toast(sel === 'expand' ? 'Floor Tiles go on empty ground right beside the floor.' : FA.reserved(tx, ty) ? 'The Stockpile Zone has to stay clear.' : !FA.owned(tx, ty) ? 'There is no floor there: add Floor Tiles first.' : 'That tile is taken.', 'L', 'ic_x'); AU.sfx('error');
     }
   } else if (m.l && sel === 'hand' && !G.demolish && !bd.target) {   // hold to keep taking
     G.mRepeat -= dt;
@@ -228,7 +228,7 @@ function handleMouseWizard() {
 function placeInFront(quiet) {
   const [tx, ty] = frontTile(), sel = G.selected;
   if (G.demolish) { FA.demolish(tx, ty); return true; }
-  if (sel === 'hand') { UI.toast('Pick a building first (1 to 7 or LB/RB).', 'L', 'ic_hand'); return true; }
+  if (sel === 'hand') { UI.toast('Pick a building first (1 to 8 or LB/RB).', 'L', 'ic_hand'); return true; }
   if (!FA.unlocked(sel) && sel !== 'belt') { FA.place(sel, tx, ty, G.placeDir); return true; }   // says what to unlock
   if (sel === 'belt' ? FA.placeBelt(tx, ty, G.placeDir) : FA.place(sel, tx, ty, G.placeDir)) return true;
   if (!quiet) { FA.ipop(tx + 0.5, ty + 0.5, [['ic_x']]); AU.sfx('error'); }
@@ -594,7 +594,7 @@ Main.updateFocus = function () {
     else R.demo = { x: gx, y: gy };
   } else if (G.selected !== 'hand' && FA.inb(gx, gy)) {
     const c = FA.cell(gx, gy);
-    const ok = G.selected === 'belt' ? (FA.canPlace(gx, gy) || (c && c.type === 'belt')) : FA.canPlace(gx, gy) && FA.unlocked(G.selected);
+    const ok = G.selected === 'belt' ? (FA.canPlace(gx, gy) || (c && c.type === 'belt')) : G.selected === 'expand' ? FA.canExpand(gx, gy) : FA.canPlace(gx, gy) && FA.unlocked(G.selected);
     R.ghost = { type: G.selected, x: gx, y: gy, ok: !!ok, dir: G.placeDir };
   }
 };

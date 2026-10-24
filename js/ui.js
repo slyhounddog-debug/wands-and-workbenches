@@ -332,7 +332,7 @@ UI.updateDebug = function (dt) {
 
 // ---------- hotbar: single slots plus families (Harnessers, Crafters, Power, Logistics, Spawners) whose member cycles ----------
 UI.tipT = 0; UI.tipHover = false;
-const KEYLBL = ['1', '2', '3', '4', '5', '6', '7'];
+const KEYLBL = ['1', '2', '3', '4', '5', '6', '7', '8'];
 UI.isFam = id => !!CFG.families[id];
 UI.slotOf = id => { for (const f in CFG.families) if (CFG.families[f].members.indexOf(id) >= 0) return f; return id; };   // the slot a building lives in
 UI.famMember = function (f) {   // the member the slot currently shows: the last one picked, else the first unlocked
@@ -381,7 +381,8 @@ UI.showTip = function (slot) {
   else if (id === 'belt') h = '<b>Wooden Belt</b> <span class="cost">' + UI.img('wood', 16) + '1</span><p>Moves items one tile at a time. Click-drag to lay a line; R rotates. Belts can\'t pull from the Stockpile.</p>';
   else {
     const d = CFG.buildings[id];
-    const cost = Object.keys(d.cost).map(k => UI.img(k, 16) + d.cost[k]).join(' ');
+    const dc = id === 'expand' ? FA.tileCost() : d.cost;   // a Floor Tile adds Iron after the first CFG.factory.freeIron
+    const cost = Object.keys(dc).map(k => UI.img(k, 16) + dc[k]).join(' ');
     const list = Object.keys(CFG.recipes).filter(r => CFG.recipes[r].machine === id);
     const rec = list.length ? '<div class="recs">' + list.slice(0, 6).map(UI.recipeHtml).join('') + (list.length > 6 ? '<span class="rec">+' + (list.length - 6) + ' more</span>' : '') + '</div>' : '';
     const lockNode = d.unlock && CFG.tree.find(n => n.id === d.unlock);
@@ -530,7 +531,6 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
   const L = UI.nodeLevel(n), up = CFG.upgrade[n.id], nx = L < UI.nodeMax(n) ? L + 1 : null;
   const row = (label, f) => [label, f(L), nx === null ? null : f(nx)];
   switch (n.id) {
-    case 'expand': return [row('Factory floor', l => CFG.factorySizes[Math.min(l, CFG.factorySizes.length - 1)].join('x'))];
     case 'swift': return [row('Harnesser speed', l => fPct(up * l)), row('Air Pocket every', l => fSec(CFG.buildings.air.cycle / (1 + up * l))), row('Water Drop every', l => fSec(CFG.buildings.water.cycle / (1 + up * l)))];
     case 'manual': return [row('Hand-harnessing speed', l => fPct(up * l)), row('Taps to fill the meter', l => (CFG.manual.taps / (1 + up * l)).toFixed(1))];
     case 'belts': return [row('Belt speed', l => fPct(up * l)), row('Time per tile', l => fSec(CFG.beltTime / (1 + up * l)))];
@@ -622,11 +622,6 @@ UI.buy = function (id) {
   const label = n.name + (n.tiers ? ' ' + G.tree[id] : '');
   UI.toast('Unlocked: ' + label, 'L', n.icon); UI.toast('Unlocked: ' + label, 'R', n.icon);
   if (id === 'hearty') G.w.hp = Math.min(WZ.maxHp(), G.w.hp + CFG.upgrade.hearty);
-  if (id === 'expand') {
-    const sz = CFG.factorySizes[Math.min(G.tree.expand, CFG.factorySizes.length - 1)];
-    FA.resize(Math.max(sz[0], G.fac.w), Math.max(sz[1], G.fac.h));   // never smaller than the floor already built (older saves started bigger)
-    UI.toast('The factory floor grew to ' + sz[0] + 'x' + sz[1] + '!', 'L', 'ic_expand');
-  }
   FA.refreshRecipes();
   UI.refreshTrees();
   UI.updateHotbar(true);
@@ -939,7 +934,7 @@ const CONTROLS = [
     [K('RIGHT-CLICK'), 'Throw one item along the dotted line (hold = rapid). While hand-gathering: cancel the gather'],
     [K('SHIFT') + ' + ' + K('RIGHT-CLICK'), 'Throw the whole stack'],
     [K('E'), 'Use: hand-gather a Harnesser (tap again and again to fill the meter), turn a belt or machine, switch recipe'],
-    [K('1') + ' - ' + K('7') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, then the building families)'],
+    [K('1') + ' - ' + K('8') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, the building families, then Floor Tiles)'],
     [K('[') + ' ' + K(']'), 'Previous / next hotbar slot'],
     [K('Q') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot)'],
     [K('R'), 'Turn the belt or building under the cursor (in front of you on a pad: X), or the one you are about to place. A Splitter never needs turning: it finds its input and outputs itself'],

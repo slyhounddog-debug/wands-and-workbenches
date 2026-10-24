@@ -6,8 +6,9 @@ const CFG = {
   // Everything is drawn into a low-res buffer and scaled up by P, so the whole game shares one pixel grid.
   FT: { TW: 80, TH: 40, S: 4, P: 4 },   // factory iso tile (in screen px) + sprite scale + pixel size
   WT: { TW: 60, TH: 30, S: 3, P: 3 },   // wizard world
-  // factory grows through the Expansion upgrade: index = tier owned (starts at 16x12, the sixth tier reaches 28x20)
-  factorySizes: [[16, 12], [18, 13], [20, 14], [22, 15], [24, 17], [26, 19], [28, 20]],
+  // the factory grid is fixed (w x h tiles); the floor starts as the base rectangle (12x8) and grows one placed Floor Tile at a time. The Stockpile Zone is the
+  // south-west 5x5 of the base rectangle and never moves. The first freeIron tiles cost wood + stone only, later ones add 1 Iron.
+  factory: { w: 48, h: 36, base: { x0: 18, y0: 14, w: 12, h: 8 }, freeIron: 28 },
   start: { wood: 10, stone: 6, iron: 0 },
   satchel: 5,
   autosave: 9,
@@ -155,7 +156,9 @@ const CFG = {
     station:  { name: 'Battery Station', kind: 'station', cost: { wood: 8, stone: 6, iron: 4 }, unlock: null,
                 desc: 'A charged Battery here generates +10 power for the whole factory. Drains while anything needs power. Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed. Throw a combo spell or an Elixir in to overcharge it (extra charge, +5 power for a while).' },
     charger:  { name: 'Battery Charger', kind: 'charger', cost: { wood: 8, stone: 4, iron: 4 }, unlock: null,
-                desc: 'Recharges a Battery by burning element packets as fuel (16.5s each, 19.5s when thrown in by hand). More element types = faster. Uses no electricity.' },
+                desc: 'Recharges a Battery by burning element packets, Wood or Stone as fuel (16.5s each, 19.5s when thrown in by hand). More kinds = faster. Uses no electricity.' },
+    expand:   { name: 'Floor Tile', kind: 'expand', cost: { wood: 1, stone: 1 }, unlock: null,
+                desc: 'Place it on the edge of the floor and throw its Wood and Stone at it (from the 29th tile on, 1 Iron too): when it is finished the tile becomes factory floor. The Stockpile never moves.' },
     splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 2, stone: 1 }, unlock: 'logistics',
                 desc: 'Routes what comes in to up to 3 outputs: every side that has something to feed (the side items arrive from is the input). Share them out by %, or give an output element filters (Fire + Earth left, Water + Air right). Click it to set it up.' },
     crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 8, stone: 4 }, unlock: 'logistics',
@@ -177,8 +180,8 @@ const CFG = {
     logi:    { name: 'Logistics',  members: ['splitter', 'crate'] },
     spawn:   { name: 'Creature Spawners', members: ['spawner1', 'spawner2', 'spawner3'] },
   },
-  hotbar: ['hand', 'belt', 'harness', 'craft', 'power', 'logi', 'spawn'],
-  hotkeys: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7'],
+  hotbar: ['hand', 'belt', 'harness', 'craft', 'power', 'logi', 'spawn', 'expand'],
+  hotkeys: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'],
   recipes: {
     // machine, inputs (any mix of belt / hand / thrown), output, craft time, power draw, skill-tree node(s) that unlock it
     potion:       { machine: 'cauldron', in: { water: 2, wood: 1 },            out: 'potion',  time: 6,  power: 0, tier: 'alchemy', use: 'Heals the Wizard 35 HP' },
@@ -227,10 +230,6 @@ const CFG = {
     { id: 'geyser',       col: 1, icon: 'geyser',       name: 'Geyser Eruption', xp: 90, req: ['steam', 'magma'], pay: { fire: 20, water: 20, earth: 20, steam: 2, magma: 1 }, desc: 'Fire + Water + Earth: blasts under the 6 nearest foes and launches the Wizard over water and bog.' },
     { id: 'nova',         col: 1, icon: 'nova',         name: 'Elemental Nova', xp: 210, req: ['meteor', 'thunder', 'blizzard', 'geyser'], pay: { air: 50, fire: 50, water: 50, earth: 60, meteor: 1, thunder: 1, blizzard: 1, geyser: 1 }, desc: 'All four: a huge radial blast.' },
     // col 2: Upgrades — many small tiers, cheap first, steep last
-    { id: 'expand',  col: 2, icon: 'ic_expand', name: 'Factory Expansion', per: 'Bigger factory floor (stockpile moves back)',
-      tiers: [30, 45, 65, 85, 105, 130],
-      kinds: [['air'], ['air', 'water'], ['air', 'water', 'fire'], ['air', 'fire', 'earth'], ['air', 'water', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']],
-      combos: { 3: { sandstorm: 2 }, 4: { blizzard: 1, thunder: 1 }, 5: { meteor: 1, geyser: 1 } } },
     { id: 'swift',   col: 2, icon: 'ic_fast', name: 'Swift Harnessing', per: '+12.5% harnesser speed',
       tiers: [12, 18, 25, 33, 43, 54, 65, 80],
       kinds: [['air'], ['air'], ['air', 'water'], ['air', 'water'], ['water', 'fire'], ['water', 'fire'], ['fire', 'earth'], ['air', 'water', 'fire', 'earth']],
@@ -496,7 +495,7 @@ const QUESTS = {
     { from: 15, icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter to route packets', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && b.type === 'splitter'), hint: { make: 'splitter' } },
     { from: 16, icon: 'armor', text: 'Unlock the Armory and send Armor to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'anvil' } },
     { icon: 'plate', text: 'Plate up the Wizard: send 4 more Armor or Heavy Plates', xp: 12, gift: { stock: { iron: 6 } }, stat: g => sentN(g, 'armor', 'plate'), n: 4, hint: { make: 'anvil' } },
-    { from: 17, icon: 'ic_expand', text: 'Expand the factory floor once', xp: 15, done: g => (g.tree.expand || 0) >= 1, hint: { tree: 1 } },
+    { from: 17, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 8) and throw 1 Wood + 1 Stone at it', xp: 15, done: g => (g.stats.tiles || 0) >= 1, hint: { make: 'expand' } },
     { icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner1' } },
     { from: 19, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, done: g => g.flags.triple, hint: { combo: 3 } },
     { from: 20, icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, done: g => g.flags.sent_nova, hint: { combo: 4 } },

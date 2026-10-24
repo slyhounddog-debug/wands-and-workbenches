@@ -188,31 +188,41 @@ R.drawFactory = function (main, dt) {
     ctx.fillRect(Math.round(cx / P) * P, Math.round(cy / P) * P, 96, 16); ctx.fillRect(Math.round(cx / P) * P + 16, Math.round(cy / P) * P - 12, 56, 12);
   }
 
-  const c0 = R.toScreen(v, 0, 0), c1 = R.toScreen(v, W, 0), c2 = R.toScreen(v, W, H), c3 = R.toScreen(v, 0, H);
-  const rim = 32;
-  ctx.fillStyle = '#8a5c34'; ctx.beginPath(); ctx.moveTo(c3[0], c3[1]); ctx.lineTo(c2[0], c2[1]); ctx.lineTo(c2[0], c2[1] + rim); ctx.lineTo(c3[0], c3[1] + rim); ctx.fill();
-  ctx.fillStyle = '#6a4426'; ctx.beginPath(); ctx.moveTo(c2[0], c2[1]); ctx.lineTo(c1[0], c1[1]); ctx.lineTo(c1[0], c1[1] + rim); ctx.lineTo(c2[0], c2[1] + rim); ctx.fill();
-  ctx.fillStyle = '#5ab84a';
-  ctx.beginPath(); ctx.moveTo(c3[0], c3[1]); ctx.lineTo(c2[0], c2[1]); ctx.lineTo(c1[0], c1[1]); ctx.lineTo(c1[0], c1[1] + 8); ctx.lineTo(c2[0], c2[1] + 8); ctx.lineTo(c3[0], c3[1] + 8); ctx.fill();
-
-  // shiny grass
+  // the floor is just the owned tiles (f.land): a dirt rim hangs under every edge where the floor ends, then each tile's grass, then a sheen and twinkles clipped to the floor
+  const rim = 32, vis = (sx, sy) => sx > -90 && sx < CFG.HALF + 90 && sy > -60 && sy < CFG.H + 60;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!FA.owned(x, y)) continue;
     const sx = (x - y) * v.hw + v.ox, sy = (x + y + 1) * v.hh + v.oy;
-    if (sx < -90 || sx > CFG.HALF + 90 || sy < -60 || sy > CFG.H + 60) continue;
+    if (!vis(sx, sy + rim / 2)) continue;
+    const bl = R.toScreen(v, x, y + 1), bb = R.toScreen(v, x + 1, y + 1), br = R.toScreen(v, x + 1, y);
+    if (!FA.owned(x, y + 1)) { ctx.fillStyle = '#8a5c34'; ctx.beginPath(); ctx.moveTo(bl[0], bl[1]); ctx.lineTo(bb[0], bb[1]); ctx.lineTo(bb[0], bb[1] + rim); ctx.lineTo(bl[0], bl[1] + rim); ctx.fill(); }
+    if (!FA.owned(x + 1, y)) { ctx.fillStyle = '#6a4426'; ctx.beginPath(); ctx.moveTo(bb[0], bb[1]); ctx.lineTo(br[0], br[1]); ctx.lineTo(br[0], br[1] + rim); ctx.lineTo(bb[0], bb[1] + rim); ctx.fill(); }
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!FA.owned(x, y)) continue;
+    const sx = (x - y) * v.hw + v.ox, sy = (x + y + 1) * v.hh + v.oy;
+    if (!vis(sx, sy)) continue;
     ctx.fillStyle = (x + y) & 1 ? '#8ee06a' : '#82d65f';
     diamond(ctx, sx, sy, v.hw + 1, v.hh + 1); ctx.fill();
   }
+  ctx.save(); ctx.beginPath();
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!FA.owned(x, y)) continue;
+    const sx = (x - y) * v.hw + v.ox, sy = (x + y + 1) * v.hh + v.oy;
+    if (!vis(sx, sy)) continue;
+    ctx.moveTo(sx, sy - v.hh); ctx.lineTo(sx + v.hw, sy); ctx.lineTo(sx, sy + v.hh); ctx.lineTo(sx - v.hw, sy); ctx.closePath();
+  }
+  ctx.clip();
   // a pixel-band sheen sweeping across the meadow, plus twinkles
-  ctx.save();
-  ctx.beginPath(); ctx.moveTo(c0[0], c0[1]); ctx.lineTo(c1[0], c1[1]); ctx.lineTo(c2[0], c2[1]); ctx.lineTo(c3[0], c3[1]); ctx.closePath(); ctx.clip();
-  const ph = ((t * 0.08) % 1.6) - 0.3;
+  const ph = ((t * 0.08) % 1.6) - 0.3, cw = R.toScreen(v, 0, H), ce = R.toScreen(v, W, 0);
   ctx.fillStyle = 'rgba(255,255,255,0.13)';
   ctx.beginPath();
-  const sx0 = c3[0] + (c1[0] - c3[0]) * ph;
+  const sx0 = cw[0] + (ce[0] - cw[0]) * ph;
   ctx.moveTo(sx0, 0); ctx.lineTo(sx0 + 120, 0); ctx.lineTo(sx0 - 200, CFG.H); ctx.lineTo(sx0 - 320, CFG.H); ctx.fill();
-  for (let i = 0; i < 30; i++) {
-    const gx = Math.abs((Math.sin(i * 12.9898) * 43758.5453) % 1) * W, gy = Math.abs((Math.sin(i * 78.233) * 12543.123) % 1) * H;
-    if (Math.sin(t * 2 + i * 1.7) < 0.5) continue;
+  const bz = CFG.factory.base;
+  for (let i = 0; i < 40; i++) {
+    const gx = bz.x0 - 8 + Math.abs((Math.sin(i * 12.9898) * 43758.5453) % 1) * (bz.w + 16), gy = bz.y0 - 8 + Math.abs((Math.sin(i * 78.233) * 12543.123) % 1) * (bz.h + 16);
+    if (Math.sin(t * 2 + i * 1.7) < 0.5 || !FA.owned(Math.floor(gx), Math.floor(gy))) continue;
     const p = R.toScreen(v, gx, gy), x = Math.round(p[0] / P) * P, y = Math.round(p[1] / P) * P;
     ctx.fillStyle = '#ffffff'; ctx.fillRect(x - P, y, P * 3, P); ctx.fillRect(x, y - P, P, P * 3);
   }
@@ -436,6 +446,13 @@ R.drawBelt = function (ctx, v, b, t) {
     ctx.lineTo(cx + ny * 16 + nx * 6, cy - nx * 8 + ny * 6); ctx.lineTo(cx - ny * 16 + nx * 6, cy + nx * 8 + ny * 6);
     ctx.fill();
   }
+  // bold chevrons chase along the belt so the direction it runs is obvious at a glance
+  const px = -ny, py = nx;
+  ctx.strokeStyle = '#fff1c0'; ctx.lineWidth = 6; ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
+  for (let i = 0; i < 2; i++) {
+    const ph2 = Math.floor(((t * speed * 0.8 + i / 2) % 1) * 8) / 8 - 0.5, cx = p[0] + sdx * ph2, cy = p[1] - lift + sdy * ph2;
+    ctx.beginPath(); ctx.moveTo(cx - nx * 9 + px * 16, cy - ny * 9 + py * 8); ctx.lineTo(cx + nx * 9, cy + ny * 9); ctx.lineTo(cx - nx * 9 - px * 16, cy - ny * 9 - py * 8); ctx.stroke();
+  }
   ctx.restore();
   if (b.item) {
     const ph = Math.min(0.5, b.item.prog - 0.5);
@@ -457,10 +474,16 @@ R.drawBuilding = function (ctx, v, b, t) {
   const th = b.thump > 0 ? 1 - b.thump / CFG.thump : 1, tq = th < 1 ? 1 - 0.24 * Math.cos(th * Math.PI * 2.5) * (1 - th) : 1;
   const top = p[1] - 128;
   if (!b.done) {
+    if (b.type === 'expand') {   // a Floor Tile waiting for its materials: a slab of floor that rises as it is paid for
+      const need = Object.values(FA.costOf(b)).reduce((a2, c2) => a2 + c2, 0), gt = Object.values(b.got).reduce((a2, c2) => a2 + c2, 0);
+      R.drawTileSlab(ctx, v, p, 4 + Math.round(gt / need * 8) + (b.pop > 0 ? 4 : 0), 0.6 + 0.3 * gt / need);
+      ctx.strokeStyle = '#d6eeff'; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw - 3, v.hh - 1.5); ctx.stroke();
+    } else {
     dsprSq(ctx, spr, p[0], base, S, 1, sq, 0.45);
     ctx.strokeStyle = '#78c8ff'; ctx.lineWidth = 4; ctx.setLineDash([12, 8]); ctx.lineDashOffset = -Math.floor(t * 6) * 4;
     diamond(ctx, p[0], p[1], v.hw * 0.95, v.hh * 0.95); ctx.stroke(); ctx.setLineDash([]);
-    const cost = d.cost, tot = Object.values(cost).reduce((a, b2) => a + b2, 0), got = Object.values(b.got).reduce((a, b2) => a + b2, 0);
+    }
+    const cost = FA.costOf(b), tot = Object.values(cost).reduce((a, b2) => a + b2, 0), got = Object.values(b.got).reduce((a, b2) => a + b2, 0);
     if (!R.inTip(b)) return;   // what a blueprint still needs only shows when the Builder is close
     R.bar(ctx, p[0], top + 76, 72, got / tot, '#7be0ff');
     const need = FA.needOf(b), keys = Object.keys(need);
@@ -906,11 +929,9 @@ R.drawBuilder = function (ctx, v, bd, t) {
 // the footprint lies on the ground under everything (a lifted dark shadow, a cyan / red wash and marching dashes: nothing like the grass),
 // the hovering piece is depth-sorted with the buildings, and the links show what it would connect to.
 R.drawGhostGround = function (ctx, v, g, t) {
-  const p = R.toScreen(v, g.x + 0.5, g.y + 0.5), col = g.ok ? '#3a6cff' : '#ff4a4a';   // deep blue: it has to stand out from the light green floor
-  ctx.fillStyle = 'rgba(8,16,40,0.4)'; diamond(ctx, p[0] + 8, p[1] + 8, v.hw, v.hh); ctx.fill();   // the shadow the hovering piece casts
-  ctx.globalAlpha = Math.sin(t * 6) > 0 ? 0.8 : 0.62; ctx.fillStyle = col; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill(); ctx.globalAlpha = 1;
-  ctx.strokeStyle = '#1a0f28'; ctx.lineWidth = 12; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.stroke();
-  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8; ctx.setLineDash([16, 16]); ctx.lineDashOffset = -Math.floor(t * 6) * 8; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.stroke(); ctx.setLineDash([]);
+  const p = R.toScreen(v, g.x + 0.5, g.y + 0.5), col = g.ok ? '#5ab4ff' : '#ff6a6a';
+  ctx.fillStyle = 'rgba(0,0,0,0.12)'; diamond(ctx, p[0] + 6, p[1] + 6, v.hw * 0.9, v.hh * 0.9); ctx.fill();   // a soft shadow under the hovering piece
+  ctx.globalAlpha = 0.55 + 0.12 * Math.sin(t * 5); ctx.fillStyle = col; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill(); ctx.globalAlpha = 1;
 };
 // what the piece would connect to: neighbours that would feed it (an input finished) and neighbours it would feed (an output started)
 R.ghostLinks = function (g) {
@@ -923,6 +944,7 @@ R.ghostLinks = function (g) {
     const ck = c.type === 'belt' ? 'belt' : c.type === 'portal' ? 'portal' : FA.def(c).kind, done = c.type === 'belt' || c.type === 'portal' || c.done;
     const feeds = c.type === 'belt' ? c.dir === back : done && (ck === 'harness' || ck === 'crafter' || ck === 'crate') ? c.dir === back : done && ck === 'splitter' && dk === 'belt' && g.dir !== d;
     const accepts = ck === 'belt' ? c.dir !== back : ck === 'portal' || !done || ck === 'crafter' || ck === 'charger' || ck === 'splitter' || ck === 'crate';
+    if (dk === 'belt' && ck === 'belt') continue;   // belt to belt joins on its own: links only mark a building's input or output
     if (feeds && takes) out.push({ x: nx, y: ny, into: true });
     else if ((gives ? g.dir === d : routes) && accepts && !feeds) out.push({ x: nx, y: ny, into: false });
   }
@@ -947,13 +969,12 @@ R.drawGhostLinks = function (ctx, v, g, t) {
 };
 R.drawGhost = function (ctx, v, g, t) {
   const p = R.toScreen(v, g.x + 0.5, g.y + 0.5), hov = Math.sin(t * 4) > 0 ? 8 : 4;
-  if (g.type === 'belt') {   // a pale slab hovering over the tile, so a belt reads as a piece and not as a patch of floor
-    ctx.fillStyle = g.ok ? '#d8e6ff' : '#ffc0c0'; ctx.globalAlpha = 0.85; diamond(ctx, p[0], p[1] - 16 - hov, v.hw * 0.62, v.hh * 0.62); ctx.fill(); ctx.globalAlpha = 1;
-    ctx.strokeStyle = '#1a0f28'; ctx.lineWidth = 4; diamond(ctx, p[0], p[1] - 16 - hov, v.hw * 0.62, v.hh * 0.62); ctx.stroke();
-  }
+  if (g.type === 'belt') { ctx.globalAlpha = g.ok ? 0.75 : 0.4; R.drawBelt(ctx, v, { x: g.x, y: g.y, dir: g.dir, item: null }, t); ctx.globalAlpha = 1; }   // the real belt, see-through: its chevrons show the way it will run
+  if (g.type === 'expand') R.drawTileSlab(ctx, v, p, hov + 4, g.ok ? 0.75 : 0.4);
+  ctx.strokeStyle = g.ok ? '#d6eeff' : '#ffd0d0'; ctx.lineWidth = 8; diamond(ctx, p[0], p[1], v.hw - 4, v.hh - 2); ctx.stroke();   // the tile's edge stays clear whatever stands on it
   const dd = DIRS[g.dir], sdx = (dd[0] - dd[1]) * v.hw * 0.45, sdy = (dd[0] + dd[1]) * v.hh * 0.45;
-  if (g.type !== 'belt') dspr(ctx, R.bldSprite({ type: g.type }), p[0], p[1] + v.hh * 0.9 - 2 - hov, 4, 0.7);
-  if (g.type !== 'splitter') {   // a Splitter has no front: it routes to whatever its sides touch
+  if (g.type !== 'belt' && g.type !== 'expand') dspr(ctx, R.bldSprite({ type: g.type }), p[0], p[1] + v.hh * 0.9 - 2 - hov, 4, 0.85);
+  if (g.type !== 'splitter' && g.type !== 'belt' && g.type !== 'expand') {   // a Splitter has no front: it routes to whatever its sides touch
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8;
     const ex = p[0] + sdx * 1.2, ey = p[1] + sdy * 1.2;
     ctx.beginPath(); ctx.moveTo(p[0] - sdx * 0.6, p[1] - sdy * 0.6); ctx.lineTo(ex, ey); ctx.stroke();
@@ -967,7 +988,15 @@ R.drawGhost = function (ctx, v, g, t) {
   if (g.ok && pair && DIRS.some(dd => { const c = FA.cell(g.x + dd[0], g.y + dd[1]); return c && pair.indexOf(c.type) >= 0; })) {
     if (Math.sin(t * 10) > 0) dspr(ctx, SP.ic_bolt, p[0], p[1] - 120, 4);   // it will overdrive its neighbour
   }
-  if (!R.padMode && g.type !== 'splitter') R.iprompt(ctx, p[0], p[1] + v.hh + 30, 'R', ['ic_rotate']);
+};
+// a floor tile as a slab of grass with a dirt rim, lifted by lift px (used by the Floor Tile ghost and blueprint)
+R.drawTileSlab = function (ctx, v, p, lift, alpha) {
+  const hw = v.hw * 0.96, hh = v.hh * 0.96, th = 14;
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#8a5c34'; ctx.beginPath(); ctx.moveTo(p[0] - hw, p[1] - lift); ctx.lineTo(p[0], p[1] + hh - lift); ctx.lineTo(p[0], p[1] + hh - lift + th); ctx.lineTo(p[0] - hw, p[1] - lift + th); ctx.fill();
+  ctx.fillStyle = '#6a4426'; ctx.beginPath(); ctx.moveTo(p[0], p[1] + hh - lift); ctx.lineTo(p[0] + hw, p[1] - lift); ctx.lineTo(p[0] + hw, p[1] - lift + th); ctx.lineTo(p[0], p[1] + hh - lift + th); ctx.fill();
+  ctx.fillStyle = '#9be880'; diamond(ctx, p[0], p[1] - lift, hw, hh); ctx.fill();
+  ctx.globalAlpha = 1;
 };
 R.drawDemo = function (ctx, v, g, t) {
   const p = R.toScreen(v, g.x + 0.5, g.y + 0.5);

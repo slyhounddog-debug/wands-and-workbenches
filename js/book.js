@@ -47,42 +47,65 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     rows.push(row('Weak to / resists', UI.img(c.weak, 16) + ' / ' + UI.img(c.resist, 16)));
     rows.push(row('Egg recipe', UI.recipeHtml(rec)), row('Hatch', (c.n || 1) + ' creature' + ((c.n || 1) > 1 ? 's' : '') + ' per Egg, ' + c.time + 's at a Creature Spawner, ' + c.power + ' power'));
     rows.push(row('Health', '' + c.hp), row('Touch damage', '' + c.dmg), row('Speed', c.speed + ' tiles/s' + (c.fly ? ', flies' : '')));
-    rows.push(row('Gems', c.gem[0] + (c.gem[0] ? ' guaranteed + ' : '') + pct(c.gem[1]) + ' chance of one more'));
+    rows.push(row('Gems', (c.gem[0] ? c.gem[0] + ' guaranteed + ' : '') + pct(c.gem[1]) + ' chance of ' + (c.gem[0] ? 'one more' : 'one')));
     rows.push(row('Variants', pct(CFG.crafted.eliteChance) + ' elite (x' + CFG.crafted.eliteHp + ' HP, x' + CFG.crafted.eliteDmg + ' damage), ' + pct(CFG.crafted.mutChance) + ' one mutation, HP / speed / damage +-' + pct(CFG.crafted.jitter)));
     rows.push(row('Drops', pct(CFG.crafted.recycle) + ' chance of a ' + UI.img(c.order[0], 16) + ' packet that rides home to the Stockpile'));
     return rows.join('');
   }
 
-  Book.render = function () {
-    const el = $('book'), pg = Book.page, ids = pg === 'spells' ? SPELL_ORDER : CREATURE_ORDER, id = Book.sel[pg];
-    SPV.stop(); CPV.stop();
-    const sp = pg === 'spells';
-    let h = '<div class="bookPanel px"><div class="treeHead"><h2>' + UI.img('ic_book', 32) + 'COLLECTION BOOK</h2><div class="tabs bkTabs">' +
-      ['spells', 'creatures'].map(p => '<button class="tab' + (p === pg ? ' on' : '') + '" data-p="' + p + '">' + (p === 'spells' ? 'SPELLS' : 'CREATURES') + '</button>').join('') +
-      '</div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div><div class="bookBody"><div class="bookList">';
-    h += ids.map(i => {
-      const nm = sp ? SPELLS[i] : CFG.creatures[i].name, icon = sp ? spellIcon(i) : i, e = sp ? spellEls(i) : CFG.creatures[i].order;
-      return '<div class="bkItem' + (i === id ? ' on' : '') + '" data-id="' + i + '">' + UI.img(icon, 32) + '<b>' + nm + '</b><span>' + els(e) + '</span></div>';
-    }).join('');
-    h += '</div><div class="bookDetail">';
-    const nm = sp ? SPELLS[id] : CFG.creatures[id].name, desc = sp ? SPELL_INFO[id].desc : (CFG.creatures[id].note);
-    h += '<div class="tth bkh">' + UI.img(sp ? spellIcon(id) : id, 48) + '<div><b>' + nm + '</b><small>' + (sp ? klass(spellEls(id).length) + ' SPELL' : klass(CFG.creatures[id].order.length) + ' CREATURE') + '</small></div></div>';
-    h += '<p>' + desc + '</p>';
-    if (sp) h += '<canvas class="spv bkDemo" width="186" height="100"></canvas><div class="spvc">' + SPV.caption(id) + '</div>';
-    else h += '<canvas class="cpv bkDemo" width="' + CPV.W + '" height="' + CPV.H + '"></canvas><div class="spvc">' + CPV.caption(id) + '</div>';
-    h += '<div class="bkRows">' + (sp ? spellRows(id) : creatureRows(id)) + '</div></div></div>';
-    h += '<p class="hint"><kbd>C</kbd> / Esc closes. <kbd>W</kbd><kbd>S</kbd> or <kbd>UP</kbd><kbd>DOWN</kbd> pick an entry, <kbd>A</kbd><kbd>D</kbd> flip the page' + (IN.padList.length ? ' <kbd>STICK</kbd> pick <kbd>LB</kbd><kbd>RB</kbd> page <kbd>B</kbd> close' : '') + '. The game waits while the book is open.</p></div>';
-    el.innerHTML = h;
-    el.querySelector('[data-close]').onclick = () => Book.close();
-    el.querySelectorAll('.tab').forEach(b => { b.onclick = () => Book.setPage(b.dataset.p); });
-    el.querySelectorAll('.bkItem').forEach(b => { b.onclick = () => Book.pick(b.dataset.id); });
+  // has the player made / met it yet? (the entry stays fully readable either way: unseen ones are just greyed out)
+  const st = () => G.stats;
+  const seenSpell = id => ((st().made || {})[id] || 0) > 0 || ((st().sent || {})[id] || 0) > 0 || (!!BASIC_EL[id] && ((st().sent || {})[BASIC_EL[id]] || 0) > 0);
+  const seenCreature = id => ((st().met || {})[id] || 0) > 0 || ((st().sent || {})['egg_' + id] || 0) > 0;
+  const seen = (pg, id) => (pg === 'spells' ? seenSpell(id) : seenCreature(id));
+
+  // The shell (header, tabs, list, detail) is built once per open; picking an entry only swaps the text, the stats and the demo, so nothing
+  // jumps and the list keeps its place. Both pages share one layout: the list tiles, the header, the demo box (same size) and the stats column.
+  let ref = null;
+  Book.build = function () {
+    const el = $('book');
+    el.innerHTML = '<div class="bookPanel px"><div class="treeHead"><h2>' + UI.img('ic_book', 32) + 'COLLECTION BOOK</h2><div class="tabs bkTabs">' +
+      '<button class="tab" data-p="spells">SPELLS</button><button class="tab" data-p="creatures">CREATURES</button></div><div class="bkCount"></div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>' +
+      '<div class="bookBody"><div class="bookList"></div><div class="bookDetail"><div class="tth bkh"></div>' +
+      '<div class="bkLeft"><p class="bkDesc"></p><div class="bkDemoBox"><canvas class="bkDemo"></canvas></div><div class="spvc"></div></div><div class="bkRows"></div></div></div>' +
+      '<p class="hint"><kbd>C</kbd> / Esc closes. <kbd>W</kbd><kbd>S</kbd> or <kbd>UP</kbd><kbd>DOWN</kbd> pick an entry, <kbd>A</kbd><kbd>D</kbd> flip the page' + (IN.padList.length ? ' <kbd>STICK</kbd> pick <kbd>LB</kbd><kbd>RB</kbd> page <kbd>B</kbd> close' : '') + '. Greyed entries are ones you have not made or met yet: you can still read everything. The game waits while the book is open.</p></div>';
+    const q = c => el.querySelector(c);
+    ref = { el, list: q('.bookList'), head: q('.bkh'), desc: q('.bkDesc'), cv: q('canvas.bkDemo'), cap: q('.spvc'), rows: q('.bkRows'), detail: q('.bookDetail'), count: q('.bkCount'), page: null };
+    q('[data-close]').onclick = () => Book.close();
+    el.querySelectorAll('.tab').forEach(bt => { bt.onclick = () => Book.setPage(bt.dataset.p); });
     el.onmousedown = e => { if (e.target === el) Book.close(); };
-    const cv = el.querySelector('canvas.bkDemo');
-    if (cv) (sp ? SPV : CPV).mount(cv, id);
-    const on = el.querySelector('.bkItem.on'); if (on) on.scrollIntoView({ block: 'nearest' });
   };
-  Book.setPage = function (p) { if (p === Book.page) return; Book.page = p; AU.sfx('tab'); Book.render(); };
-  Book.pick = function (id) { Book.sel[Book.page] = id; AU.sfx('blip'); Book.render(); };
+  Book.fillList = function () {   // the tiles of the current page (once per page flip)
+    const pg = Book.page, sp = pg === 'spells', ids = sp ? SPELL_ORDER : CREATURE_ORDER;
+    ref.list.innerHTML = ids.map(i => {
+      const nm = sp ? SPELLS[i] : CFG.creatures[i].name, icon = sp ? spellIcon(i) : i;
+      return '<div class="bkItem" data-id="' + i + '">' + UI.img(icon, 32) + '<b>' + nm + '</b><u></u></div>';
+    }).join('');
+    ref.list.querySelectorAll('.bkItem').forEach(b => { b.onclick = () => Book.pick(b.dataset.id); });
+    ref.list.querySelectorAll('.bkItem').forEach(b => { const ok = seen(pg, b.dataset.id); b.classList.toggle('unseen', !ok); b.querySelector('u').textContent = ok ? '' : '?'; });
+    ref.el.querySelectorAll('.tab').forEach(bt => bt.classList.toggle('on', bt.dataset.p === pg));
+    const n = ids.filter(i => seen(pg, i)).length;
+    ref.count.textContent = (sp ? 'MADE ' : 'MET ') + n + ' / ' + ids.length;
+  };
+  Book.fillDetail = function () {   // the selected entry: text, stats and demo, swapped in place
+    const pg = Book.page, sp = pg === 'spells', id = Book.sel[pg], ok = seen(pg, id);
+    ref.list.querySelectorAll('.bkItem').forEach(b => b.classList.toggle('on', b.dataset.id === id));
+    const nm = sp ? SPELLS[id] : CFG.creatures[id].name, desc = sp ? SPELL_INFO[id].desc : CFG.creatures[id].note;
+    const n = sp ? spellEls(id).length : CFG.creatures[id].order.length;
+    ref.head.innerHTML = UI.img(sp ? spellIcon(id) : id, 48) + '<div><b>' + nm + '</b><small>' + klass(n) + (sp ? ' SPELL' : ' CREATURE') + '</small></div>' +
+      '<span class="bkSt' + (ok ? ' on' : '') + '">' + (ok ? UI.img('ic_check', 12) + (sp ? 'MADE' : 'MET') : UI.img('ic_lock', 12) + (sp ? 'NOT MADE YET' : 'NOT MET YET')) + '</span>';
+    ref.desc.textContent = desc;
+    ref.cap.textContent = sp ? SPV.caption(id) : CPV.caption(id);
+    ref.rows.innerHTML = sp ? spellRows(id) : creatureRows(id);
+    ref.detail.classList.toggle('unseen', !ok);
+    if (ref.page !== pg) { ref.page = pg; ref.cv.width = sp ? 186 : CPV.W; ref.cv.height = sp ? 100 : CPV.H; }   // both fill the same box on screen
+    SPV.stop(); CPV.stop();
+    (sp ? SPV : CPV).mount(ref.cv, id);
+    ref.list.querySelector('.bkItem.on').scrollIntoView({ block: 'nearest' });
+  };
+  Book.render = function () { Book.build(); Book.fillList(); Book.fillDetail(); };
+  Book.setPage = function (p) { if (p === Book.page) return; Book.page = p; AU.sfx('tab'); Book.fillList(); Book.fillDetail(); };
+  Book.pick = function (id) { if (id === Book.sel[Book.page]) return; Book.sel[Book.page] = id; AU.sfx('blip'); Book.fillDetail(); };
   Book.step = function (d) {
     const ids = Book.page === 'spells' ? SPELL_ORDER : CREATURE_ORDER, i = ids.indexOf(Book.sel[Book.page]);
     Book.pick(ids[(i + d + ids.length) % ids.length]);

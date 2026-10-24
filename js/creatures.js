@@ -123,6 +123,7 @@ WZ.spawnSpot = function () {
 // a creature with its own rolls: stats +-jitter, size, palette variant, elite / mutation
 WZ.makeCreature = function (id, x, y, o) {
   o = o || {};
+  const met = G.stats.met || (G.stats.met = {}); met[id] = (met[id] || 0) + 1;   // the Collection Book greys out creatures you have never met
   const C = CFG.crafted, def = CFG.creatures[id], e = WZ.makeEnemy(id, x, y, false), j = () => 1 + (Math.random() * 2 - 1) * C.jitter;
   e.hp = e.maxHp = e.maxHp * j(); e.spd *= j(); e.dmg *= j();
   e.ai = def.ai; e.var = Math.floor(Math.random() * C.variants); e.sz = 1 + (Math.random() * 2 - 1) * C.size; e.fly = !!def.fly;

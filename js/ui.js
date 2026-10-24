@@ -115,6 +115,8 @@ UI.updateHud = function (dt) {
   // the charge left in every Battery building, added up (an overcharged one counts past full), against what they could hold
   let bc = 0, bcap = 0;
   for (const b of f.bld) if (FA.isCell(b) && b.done) { bcap += CFG.batteryMax; bc += b.bat; }
+  // the Cores and Ward Keys waiting in the Stockpile (only the ones there are any of)
+  setHtml('tComp', Object.keys(RES).filter(k => (isCoreKind(k) || isKeyKind(k)) && G.stock[k] > 0).map(k => UI.img(k, 20) + '<b>' + G.stock[k] + '</b>').join(''));
   setTxt('batTxt', Math.round(bc) + (bcap ? ' / ' + bcap : ''));
   $('batFill').style.width = (bcap ? Math.min(100, bc / bcap * 100) : 0).toFixed(0) + '%';
   $('powCard').classList.toggle('low', low);
@@ -187,7 +189,6 @@ UI.giftList = function (gift) {
   for (const k in gift.stock || {}) out.push([k, gift.stock[k], k]);
   for (const k in gift.credit || {}) out.push(['b:' + k, gift.credit[k], 'b_' + k]);
   for (const k of gift.pickup || []) { const e = out.find(o => o[0] === k); if (e) e[1]++; else out.push([k, 1, k]); }
-  for (const el in gift.offer || {}) out.push(['off_' + el, gift.offer[el], 'off_' + el]);
   return out;
 };
 UI.giftHtml = (gift, size) => UI.giftList(gift).map(e => UI.img(e[0], size) + (e[1] > 1 ? '<b>' + e[1] + '</b>' : '')).join('');
@@ -199,8 +200,6 @@ UI.giveGift = function (gift) {
   for (const k in gift.stock || {}) FA.toStock(k, gift.stock[k]);
   for (const k in gift.credit || {}) { G.credits[k] = (G.credits[k] || 0) + gift.credit[k]; FA.ipop(G.bd.x, G.bd.y - 1.2, [['ic_gift']]); }
   if (gift.pickup) G.pend = (G.pend || []).concat(gift.pickup);
-  for (const el in gift.offer || {}) G.aug.off[el] += gift.offer[el];   // Offerings go straight into the Wizard's pockets
-  if (gift.offer && G.w && !G.w.dead) WZ.icon(G.w.x, G.w.y, 'off_' + Object.keys(gift.offer)[0]);
 };
 // finished a goal: XP, the gift, then a fanfare on that player's half (floating icons, ring, sound, the card flashes)
 UI.questDone = function (side, q) {
@@ -298,11 +297,11 @@ UI.debugEvent = function () {
   const when = i.active ? 'RUNNING ' + fmtTime(i.active.t) : i.deferred ? 'deferred ' + fmtTime(i.clear) : 'in ' + fmtTime(Math.max(0, i.left));
   return '<div>Event: <b>' + WZ.evTitle(i.plan) + '</b> ' + when + '</div><div class="dim">Crafted alive ' + WZ.craftedAlive() + '/' + CFG.crafted.cap + '  Eggs queued ' + G.fac.eggQ.length + '  made ' + (G.stats.crafted || 0) + '  killed ' + (G.stats.craftedKills || 0) + '  events ' + (G.stats.events || 0) + '</div>';
 };
-// the Wizard's worn augments, Offerings, Ward Keys and held spell (F3 overlay)
+// the Wizard's worn garments, the Wardrobe Shelf, open keeps, Cores and held spell (F3 overlay)
 UI.debugGear = function () {
   const A = G.aug, worn = AUG_SLOTS.map(s => s[1] + ' ' + (A.worn[s[0]] ? AUGS[A.worn[s[0]]].name : '-')).join(' | ');
-  return '<div>Worn: <b>' + worn + '</b></div><div class="dim">Owned ' + AUG_ORDER.filter(k => A.own[k]).join(',') + '  Offerings ' + ELEMS.map(e => e[0].toUpperCase() + A.off[e]).join(' ') +
-    '  Keys ' + (ELEMS.filter(e => A.key[e]).join(',') || '-') + '  Held spell <b>' + (G.hold.on ? (G.hold.spell || 'empty') : 'locked') + '</b>  Feather ' + Math.ceil(A.cd.phoenix) + 's</div>';
+  return '<div>Worn: <b>' + worn + '</b></div><div class="dim">Shelf ' + (G.fac.shelf.join(',') || '-') + '  Cores ' + ELEMS.map(e => e[0].toUpperCase() + (G.stock['core_' + e] || 0)).join(' ') +
+    '  Open keeps ' + (ELEMS.filter(e => A.key[e]).join(',') || '-') + '  Held spell <b>' + (G.hold.on ? (G.hold.spell || 'empty') : 'locked') + '</b>  Feather ' + Math.ceil(A.cd.phoenix) + 's</div>';
 };
 UI.updateDebug = function (dt) {
   const el = $('debug');
@@ -827,9 +826,9 @@ UI.lastSlot = function () {
 const HOWTO = {
   'THE IDEA': [
     ['Two jobs, one team', 'The <b>Builder</b> (left) runs an elemental factory. The <b>Wizard</b> (right) explores the wilds but has <b>no attack of his own</b>: every spell he casts is made in the factory and sent through the <b>Spell Portal</b>.'],
-    ['The loop', 'The Wizard stands near trees, rocks and ore so delivered spells smash them. Drops vacuum into him and land in the factory <b>Stockpile</b>. The Builder carries them to blueprints to grow the factory, which makes stronger spells, potions and armor.'],
+    ['The loop', 'The Wizard stands near trees, rocks and ore so delivered spells smash them. Drops vacuum into him and land in the factory <b>Stockpile</b>. The Builder carries them to blueprints to grow the factory, which makes stronger spells, potions, shield potions and garments.'],
     ['Two portals', 'The <b>Spell Portal</b> sends things to the Wizard. The <b>Skill Portal</b> banks element packets and spells as currency for the <b>Skill Tree</b>, together with XP from kills.'],
-    ['Follow the goals', 'Each player has their own goal card (Builder on the left, Wizard on the right) and the two run at the same time. Every goal pays XP, and the bigger ones add a gift: spells for the skill tree, building materials, a free Battery, potions and armor. A gold arrow points at where to go, and the right hotbar slot or skill-tree button blinks.'],
+    ['Follow the goals', 'Each player has their own goal card (Builder on the left, Wizard on the right) and the two run at the same time. Every goal pays XP, and the bigger ones add a gift: spells for the skill tree, building materials, a free Battery, potions and shield potions. A gold arrow points at where to go, and the right hotbar slot or skill-tree button blinks.'],
     ['Winning', 'Late on, claim a <b>Stronghold</b> for a <b>Warden Core</b> (Summoning costs one), build the <b>Summoning Altar</b>, bind an Elemental Nova and Aether Shards into a <b>Boss Sigil</b> and send it through the Spell Portal. Beat the <b>Primal Chimera</b> to win. You can keep playing afterwards.'],
   ],
   'FACTORY': [
@@ -851,21 +850,21 @@ const HOWTO = {
     ['Terrain', 'Grass, dirt, sand and paths are normal speed. <b>Bog</b> (dark olive, reeds) slows everyone down. <b>Water</b> can\'t be crossed at all, except by the paths that bridge it. Monsters never spawn in water.'],
     ['XP gems', 'XP comes only as <b>gems</b>: each kill has a chance to drop one (1 gem = 1 XP; crafted pairs and triples always drop some, elites always drop 3). Gems lying close together merge into one <b>Big Gem</b>. <b>Gem Wisdom</b> raises the drop chances, <b>Loot Magnet</b> widens the pickup range.'],
     ['Events', 'Every 10 to 15 minutes of play something happens in the wilds: a <b>Migration</b>, a <b>Stampede</b>, an <b>Elite Hunt</b>, a <b>Mutation Bloom</b>, a <b>Portal Storm</b> or the <b>Chimera\'s Brood</b>, then the cycle starts again, harder. The card under the goal shows what and when from five minutes out, with the elements to stock up on; toasts warn at 5 min, 2 min and 30 s. Clearing one showers XP gems (and a Shard from Cycle 2). Nothing starts while the Chimera is out.'],
-    ['Strongholds', 'Four far-off keeps, one per element, marked on the map. Walk near one to <b>scout</b> it: its guards, its <b>Warden</b> and what the Warden is weak to show up. Each keep has a <b>two-step door</b>. First its approach terrain: the Water keep stands on an island, the Fire keep behind scorched ground, the Earth keep behind a ring of cracked rock, the Air keep across a broken bridge over a chasm. Then its <b>Ward Key</b>, which the first elite of that element drops (it opens the arena and is never used up). Beat the Warden and the guards to claim it: lots of Aether Shards and a <b>Warden Core</b> (each keep pays its Core once per save). The first Warden to fall also makes the Wizard <b>glow</b> for good and opens the <b>held-spell slot</b>.'],
-    ['Augments', 'The Wizard\'s own loot. <b>Augments</b> are garments in four slots (Hat, Robe, Boots, Charm) that give him a new <b>verb</b>, never a number: <b>Tide-Walking Boots</b> walk on water, the <b>Emberward Cloak</b> crosses scorched ground, the <b>Stonefist Charm</b> lets a Gust shove boulders and crack rock open, the <b>Gale Circlet</b> turns the roll into a blink across gaps. The <b>Bogwalker Shroud</b>, <b>Phoenix Feather</b>, <b>Static Cloak</b> and <b>Kilnsight Mask</b> come from single creatures. Each drops, guaranteed, the first time its source is defeated (wild or crafted): the Collection Book lists every creature\'s drops, so it tells you what to hatch and hunt. Swap them any time, free, with the quick drawer (<kbd>I</kbd>: it never pauses the game) or in the full wardrobe, the Collection Book\'s third tab (<kbd>C</kbd>).'],
-    ['Pickups', 'Potions and armor sent through the Spell Portal fall beside the Wizard. Walk over them to use them. They wait if HP or armor is already full.'],
+    ['Strongholds', 'Four far-off keeps, one per element, marked on the map. Walk near one to <b>scout</b> it: its guards, its <b>Warden</b> and what the Warden is weak to show up. Each keep has a <b>two-step door</b>. First its approach terrain: the Water keep stands on an island, the Fire keep behind scorched ground, the Earth keep behind a ring of cracked rock, the Air keep across a broken bridge over a chasm. Then its <b>Ward Key</b>: the first elite of that element drops it, it flies home to the Stockpile, and the Builder sends it through the Spell Portal while the Wizard stands near the keep. It sails down onto the door and opens it for good (the Portal bounces it back if the Wizard is too far away). Beat the Warden and the guards to claim it: lots of Aether Shards and a <b>Warden Core</b> (each keep pays its Core once per save). The first Warden to fall also makes the Wizard <b>glow</b> for good and opens the <b>held-spell slot</b>.'],
+    ['Augments', 'The Wizard\'s own gear. <b>Augments</b> are garments in four slots (Hat, Robe, Boots, Charm) that give him a new <b>verb</b>, never a number: <b>Tide-Walking Boots</b> walk on water, the <b>Emberward Cloak</b> crosses scorched ground, the <b>Stonefist Charm</b> lets a Gust shove boulders and crack rock open, the <b>Gale Circlet</b> turns the roll into a blink across gaps. The <b>Bogwalker Shroud</b>, <b>Phoenix Feather</b>, <b>Static Cloak</b> and <b>Kilnsight Mask</b> mix two or three elements. The Wizard does not find them: the <b>Builder forges them at the Armory</b> from <b>Cores</b> (Stone, Tide, Ember and Gale Cores dropped by the creatures of that element: rare from normal kills, more from pairs and triples, a sure chunk from elites) plus Iron Ore and an Aether Shard. Cores fly home to the Stockpile like shards; the Collection Book\'s Wardrobe page shows every recipe and where each Core comes from. A finished garment goes through the Spell Portal and drops into the wilds like a creature: the Wizard puts it on by <b>walking onto it</b>. The garment he was wearing pops off and flies to the <b>Wardrobe Shelf</b> beside the Spell Portal (it grows a slot for every garment stored), where the Builder can take it and send it back whenever they want to swap.'],
+    ['Pickups', 'Potions and Shield Potions sent through the Spell Portal fall beside the Wizard. Walk over them to use them. They wait if HP or shield is already full.'],
     ['Weaknesses', 'Biome monsters take <b>double damage</b> from one element and half from another: <b>Ember Imps</b> (sand, dirt) hate Water, <b>Bog Lurkers</b> hate Fire, <b>Gale Wisps</b> (far meadows) hate Earth, <b>Stone Golems</b> (far dark woods) hate Air. Combo spells count every element in them. A small diamond over a foe shows its weakness, and yellow numbers with a ! mean a weak hit.'],
     ['Elites', 'Big gold-ringed monsters with a crown. Much tougher, but they drop <b>Aether Shards</b> and lots of XP. Each one is weak to one element.'],
-    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard walks up: clear them. <b>Crypts</b> (purple) open if he waits at the door, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours) want an <b>Offering</b>: creatures of that element drop them now and then (elites always do). Stand at the Shrine holding its Offering and press the roll button to deliver it and claim the Shard. From then on, while the Wizard stands on it, the factory\'s Harnessers of that element run <b>25% faster</b>.'],
+    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard walks up: clear them. <b>Crypts</b> (purple) open if he waits at the door, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours) want that element\'s <b>Core</b>: creatures of that element drop them now and then (elites always do). Stand near the Shrine and have the Builder send its Core through the Spell Portal: it sails down onto the Shrine and claims the Shard. From then on, while the Wizard stands on it, the factory\'s Harnessers of that element run <b>25% faster</b>.'],
     ['Foraging', '<b>Dirt Mounds</b>, <b>Stick Piles</b> and <b>Berry Bushes</b> are scattered everywhere. Stand still at one and <b>mash the roll button</b> (<kbd>.</kbd>, pad <b>A</b>) to dig out Stone (sometimes Iron Ore) or Wood, or shake a Health Potion or Armor Plate out of a bush. Move while pressing it to roll away instead. They grow back after a while. Wearing the Kilnsight Mask also shows <b>buried caches</b> glinting in the grass: dig those the same way.'],
     ['Dodging', 'The roll makes the Wizard <b>invulnerable</b> while he flickers white. A hit he rolls through pops <b>DODGE!</b>.'],
     ['The Primal Chimera', 'The boss. It only takes real damage from its current weakness (shown on the boss bar and its glowing belly), and the weakness changes every quarter of its health, so the factory has to switch what it sends. Roll or walk out of the pink slam marks and dodge its orbs.'],
   ],
   'CONTROLS': [
     ['Builder: keyboard & mouse', '<kbd>WASD</kbd> walk, <kbd>left-click</kbd> pick up one (hold to repeat; walks there first), <kbd>right-click</kbd> throw along the lead line (hold = rapid), <kbd>E</kbd> use: gather, crank, rotate, switch recipe, <kbd>1</kbd>-<kbd>7</kbd> or wheel: slot, <kbd>Q</kbd> (or wheel over a family slot): next member of the slot, <kbd>R</kbd> rotate, click: place (with a building selected), drag belts, <kbd>B</kbd> demolish, <kbd>Enter</kbd> place in front, <kbd>T</kbd> skill tree (in it: right-click a skill to pin it, <kbd>Q</kbd> takes the last deposit back out), <kbd>Tab</kbd> cycle targets, <kbd>Shift</kbd>+<kbd>right-click</kbd> throw the whole stack, <kbd>H</kbd> controls card, <kbd>F3</kbd> or <kbd>`</kbd> debug numbers.'],
-    ['Wizard: keyboard', '<kbd>Arrows</kbd> walk, <kbd>.</kbd> roll-dodge (invulnerable; standing still at a mound, stick pile, bush or cache it digs instead, and at a Shrine with its Offering it delivers it), <kbd>Z</kbd> or <kbd>\'</kbd> fire the held spell, <kbd>I</kbd> quick wardrobe drawer, <kbd>Y</kbd> skill tree.'],
+    ['Wizard: keyboard', '<kbd>Arrows</kbd> walk, <kbd>.</kbd> roll-dodge (invulnerable; standing still at a mound, stick pile, bush or cache it digs instead), <kbd>Z</kbd> or <kbd>\'</kbd> fire the held spell, <kbd>Y</kbd> skill tree. Walk onto a garment the Builder sends to wear it.'],
     ['Swap jobs', 'Hold <kbd>X</kbd> (or Start on a pad) for 1.5s. Then arrows + <kbd>.</kbd> use / <kbd>,</kbd> throw drive the Builder, and WASD + <kbd>Space</kbd> roll + clicking on the right half drive the Wizard.'],
-    ['Gamepads', 'The Builder pad: stick move, A pick up (hold to sweep; with a building selected: place in front; hold with Belt to lay belts), B throw (LT + B: whole stack), X use, right stick cycle targets, X in the tree: undo the last deposit, LB/RB slot, RT next member of a family slot, Back demolish, L3 pin blueprints, Y tree. The Wizard pad: stick move, A roll, X fire the held spell, B wardrobe, Y tree. Hold Start to swap. (Which controller plays which job is chosen on the player screen before each game.)'],
+    ['Gamepads', 'The Builder pad: stick move, A pick up (hold to sweep; with a building selected: place in front; hold with Belt to lay belts), B throw (LT + B: whole stack), X use, right stick cycle targets, X in the tree: undo the last deposit, LB/RB slot, RT next member of a family slot, Back demolish, L3 pin blueprints, Y tree. The Wizard pad: stick move, A roll, X fire the held spell, Y tree. Hold Start to swap. (Which controller plays which job is chosen on the player screen before each game.)'],
   ],
 };
 UI.howPage = function (tab) {
@@ -875,9 +874,9 @@ UI.howPage = function (tab) {
   if (HOWTO[tab]) body = HOWTO[tab].map(h => '<h3>' + h[0] + '</h3><p>' + h[1] + '</p>').join('');
   else {
     const uses = {
-      wood: 'Every building, belts (1 each), Cauldron brews',
-      stone: 'Every building, Armor',
-      iron: 'Forge, Anvil, Battery, Heavy Battery, Altar, Armor, Floor Tiles after the 28th',
+      wood: 'Every building, belts (1 each), fuel for a Battery',
+      stone: 'Every building, fuel for a Battery',
+      iron: 'Forge, Armory, Battery, Heavy Battery, Altar, every garment, Floor Tiles after the 28th',
       shard: 'Rare: only from landmarks and elites. Summoning Altar, Boss Sigil',
       core: 'Once per Stronghold per save. Costs of Summoning',
       sigil: 'Spell Portal: summons the Primal Chimera beside the Wizard',
@@ -895,7 +894,7 @@ UI.howPage = function (tab) {
         return '<span class="rec">' + Object.keys(R.in).map(k => UI.img(k, 24) + (R.in[k] > 1 ? 'x' + R.in[k] : '')).join(' ') + ' > ' + UI.img(R.out, 24) + ' <b>' + recipeName(id) + '</b>' + (R.power ? ' <i>' + R.power + UI.img('ic_bolt', 12) + '</i>' : '') + '</span>';
       }).join('') + '</div>';
     }
-    body += '<p class="dim">Eggs hatch into creatures when sent through the Spell Portal (never the Skill Portal). Health Potion heals 35, Greater Elixir heals 80, Armor Plate +35 armor, Heavy Plate +70 armor. Combo spells need no unlocking: the Forge makes them as soon as you can feed it the packets (a triple needs its parent pairs made once first).</p>';
+    body += '<p class="dim">Eggs hatch into creatures when sent through the Spell Portal (never the Skill Portal). Health Potion heals 35, Greater Elixir heals 80, Shield Potion +35 armor, Greater Shield Potion +70 armor. Combo spells need no unlocking: the Forge makes them as soon as you can feed it the packets (a triple needs its parent pairs made once first).</p>';
   }
   $('menuHow').innerHTML = '<h2>HOW TO PLAY</h2><div class="tabs">' + tabs.map(t => '<button class="tab' + (t === tab ? ' on' : '') + '" data-t="' + t + '">' + t + '</button>').join('') + '</div><div class="howBody">' + body + '</div><button class="big ghost back">BACK</button>';
   $('menuHow').querySelectorAll('.tab').forEach(b => { b.onclick = () => { AU.sfx('tab'); UI.howPage(b.dataset.t); }; });
@@ -946,9 +945,8 @@ const CONTROLS = [
   ]],
   ['WIZARD: KEYBOARD', [
     [K('ARROWS'), 'Walk'],
-    [K('.'), 'Roll (invulnerable); with the Gale Circlet it is a short blink. Standing still at a mound, stick pile, bush or buried cache: dig. At a Shrine with its Offering in your pockets: deliver it'],
+    [K('.'), 'Roll (invulnerable); with the Gale Circlet it is a short blink. Standing still at a mound, stick pile, bush or buried cache: dig.'],
     [K('Z') + ' &nbsp;or&nbsp; ' + K('\''), 'Fire the spell the Wizard is holding (after the first Warden falls: the next spell delivered waits in the slot)'],
-    [K('I') + ' &nbsp;or&nbsp; ' + K(';'), 'Wizard\'s quick wardrobe: a small drawer flies in from the right and the game keeps running. Press again to step along your augments, rest on one and it is worn (click a tile to wear or take it off). The full wardrobe, with Offerings, Ward Keys and the held spell, is the Collection Book\'s third tab (C)'],
     [K('Y'), 'Wizard Skill Tree'],
   ]],
   ['PLAYER SELECT (before each game)', [
@@ -991,9 +989,8 @@ const CONTROLS = [
   ]],
   ['GAMEPAD: WIZARD', [
     [K('STICK') + ' ' + K('D-PAD'), 'Walk'],
-    [K('A'), 'Roll (blink with the Gale Circlet) / dig / deliver an Offering at a Shrine'],
+    [K('A'), 'Roll (blink with the Gale Circlet) / dig'],
     [K('X'), 'Fire the held spell'],
-    [K('B'), 'Wizard\'s quick wardrobe drawer (the game keeps running): B again steps along your augments, rest on one to wear it'],
     [K('Y'), 'Wizard Skill Tree'],
     [K('START') + ' &nbsp;hold', 'Swap jobs (either pad)'],
   ]],

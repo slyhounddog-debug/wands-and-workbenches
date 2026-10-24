@@ -106,7 +106,7 @@ const DevBot = { on: null, st: null, stats: null };
     if (st.strafeT <= 0) { st.strafe = -st.strafe; st.strafeT = rnd(c.strafeMin, c.strafeMax); }
 
     // pickups worth walking to: heals while hurt, armor while not full
-    const usable = p => p.z === 0 && (CFG.pickups[p.kind].heal ? w.hp < maxHp - 5 : w.armor < CFG.wizard.armorMax - 5);
+    const usable = p => p.z === 0 && !!CFG.pickups[p.kind] && (CFG.pickups[p.kind].heal ? w.hp < maxHp - 5 : w.armor < CFG.wizard.armorMax - 5);
     const nearestPickup = rad => {
       let b = null, bd = rad;
       for (const p of w.pickups) { if (!usable(p)) continue; const d = Math.hypot(p.x - w.x, p.y - w.y); if (d < bd) { bd = d; b = p; } }

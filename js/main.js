@@ -15,14 +15,20 @@ window.addEventListener('resize', fit);
 const SAVE_VERSION = 4;
 const TREE_VERSION = 2;   // v2: spells and creatures left the skill tree (Main.refundTree gives back what was spent on every removed node)
 const QUEST_VERSION = 6;   // v6 re-sequenced the Builder goals around building things with elements (each carried-over goal has v5 = its old index: Main.questOf); v5 split the single goal chain into two tracks, Builder and Wizard (Main.splitQuest); v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1; v4 inserted the first-creature-kill goal at 5 and the two Stronghold goals before Summoning: goals from the old 5 shift by 1, from the old 21 (Summoning) by 3
+// the Stockpile: the starting materials, and a count (0) for every other resource (shards, Cores, element Cores, Ward Keys) and element packet
+function blankStock() {
+  const s = { wood: CFG.start.wood, stone: CFG.start.stone, iron: CFG.start.iron, air: 0, water: 0, fire: 0, earth: 0 };
+  for (const k in RES) if (s[k] === undefined) s[k] = 0;
+  return s;
+}
 function blankState(slot) {
   return {
-    slot, xp: 0, tree: {}, stock: { wood: CFG.start.wood, stone: CFG.start.stone, iron: CFG.start.iron, shard: 0, core: 0, air: 0, water: 0, fire: 0, earth: 0 }, fam: {}, pinBp: false,
+    slot, xp: 0, tree: {}, stock: blankStock(), fam: {}, pinBp: false,
     bank: {}, bankTotal: 0,
     credits: { battery: 0, heavybat: 0 },
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
     flags: {}, quest: { B: 0, W: 0 }, qbase: { B: null, W: null }, bankLog: [], pins: { L: null, R: null }, lock: null,
-    aug: WZ.augFresh(), hold: { on: false, spell: null },   // the Wizard's augments / Offerings / Ward Keys (his own inventory), and the held-spell slot (unlocked by the first Warden)
+    aug: WZ.augFresh(), hold: { on: false, spell: null },   // what he wears and which keeps are open, and the held-spell slot (unlocked by the first Warden)
     hands: [], swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
@@ -77,6 +83,9 @@ Main.applySave = function (slot, s) {
   G.ev = WZ.evFresh(s.ev && s.ev.n || 0);
   FA.fromJSON(s.fac || {});
   if (G.flags.recharged) G.flags.fed = true;   // the old "recharge the spare Battery" goal is the new "feed the Battery" one
+  // an old save's wardrobe: garments he owned but was not wearing go on the Wardrobe Shelf, Offerings he carried come back as Cores
+  if (G.aug.legacyOwn) { for (const id of G.aug.legacyOwn) FA.shelfAdd(id); delete G.aug.legacyOwn; }
+  if (G.aug.legacyOff) { for (const el in G.aug.legacyOff) G.stock['core_' + el] += G.aug.legacyOff[el]; delete G.aug.legacyOff; }
   looseBat += FA.lostBat;
   if (looseBat) G.credits.battery += looseBat;
   G.bd = FA.freshBuilder();
@@ -132,27 +141,30 @@ Main.questOf = function (s) {
 };
 // a save that parses and has the essentials (used to decide what's safe to keep as the backup)
 Main.saveOk = s => !!s && s.v >= 4 && !!s.fac && !!s.stock && isFinite(s.xp);
-// the Wizard's gear for a save: augments, Offerings and Ward Keys still lying in the wilds count as his (like loose shards)
-Main.augSaved = function () {
-  const a = JSON.parse(JSON.stringify(G.aug));
-  if (G.w) for (const dr of G.w.drops) {
-    if (!WZ.isLoot(dr.kind)) continue;
-    const el = dr.kind.slice(4);
-    if (dr.kind.startsWith('aug_')) a.own[el] = true; else if (dr.kind.startsWith('off_')) a.off[el] += dr.val || 1; else a.key[el] = true;
-  }
-  return a;
+// the Stockpile for a save: shards, Cores and Ward Keys still lying in the wilds count as banked, and so does whatever is still flying home
+Main.stockSaved = function () {
+  const st = Object.assign({}, G.stock), add = (k, n) => { st[k] = (st[k] || 0) + n; };
+  if (G.w) for (const d of G.w.drops) if (d.kind === 'shard' || d.kind === 'core' || WZ.isLoot(d.kind)) add(d.kind, d.val || 1);
+  const fl = FA.inFlight();
+  for (const k in fl) add(k, fl[k]);
+  return st;
+};
+// the factory for a save: a garment still in the air or lying in the wilds comes back on the Wardrobe Shelf
+Main.facSaved = function () {
+  const j = FA.toJSON();
+  for (const id of WZ.looseGarments()) if (j.shelf.indexOf(id) < 0) j.shelf.push(id);
+  return j;
 };
 Main.save = function () {
   if (!G) return;
   const key = 'wands2_save_slot' + G.slot;
   try {
     // shards still lying in the wilds count as banked in the save, so quitting mid-run never loses them
-    const loose = G.w ? G.w.drops.filter(d => d.kind === 'shard').reduce((a, d) => a + d.val, 0) : 0;
-    const looseCores = G.w ? G.w.drops.filter(d => d.kind === 'core').reduce((a, d) => a + d.val, 0) : 0;
+    const stockSaved = Main.stockSaved();
     const data = JSON.stringify({
-      v: SAVE_VERSION, qv: QUEST_VERSION, tv: TREE_VERSION, xp: G.xp, tree: G.tree, stock: Object.assign({}, G.stock, { shard: G.stock.shard + loose, core: G.stock.core + looseCores }, ...Object.entries(FA.inFlight()).map(([k, n]) => ({ [k]: G.stock[k] + n + (k === 'shard' ? loose : k === 'core' ? looseCores : 0) }))), ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
-      flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: FA.toJSON(), at: Date.now(),
-      bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp, aug: Main.augSaved(), hold: G.hold,
+      v: SAVE_VERSION, qv: QUEST_VERSION, tv: TREE_VERSION, xp: G.xp, tree: G.tree, stock: stockSaved, ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
+      flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: Main.facSaved(), at: Date.now(),
+      bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp, aug: G.aug, hold: G.hold,
     });
     if (!Main.saveOk(JSON.parse(data))) throw new Error('the new save failed its own check');
     // rolling backup: the save we're about to replace becomes the backup, if it was good
@@ -170,7 +182,7 @@ Main.enter = function () {
   UI.show('menu', false); UI.show('game', true);
   UI.show('pause', false); UI.show('results', false); UI.help(false);
   UI.openTree('L', false); UI.openTree('R', false);
-  Book.close(true); Ward.close(true);
+  Book.close(true);
   UI.buildHotbar();
   UI.show('victory', false);
   R.fcam.x = G.bd.x; R.fcam.y = G.bd.y; R.wcam.x = G.w.x; R.wcam.y = G.w.y;
@@ -192,7 +204,7 @@ Main.helpFoot = function () {
     (pw ? pw + ' = Wizard (A roll). ' : '') + '<kbd>H</kbd> hides this.';
 };
 Main.toTitle = function (noSave) {
-  DevBot.set(null); Book.close(true); Ward.close(true);
+  DevBot.set(null); Book.close(true);
   if (!noSave && G) { WZ.bankLooseShards(); Main.save(); }
   STATE = 'menu';
   UI.splitB = null; UI.show('splitModal', false); UI.askB = null; UI.show('askModal', false);
@@ -332,9 +344,8 @@ Main.controls = function (dt) {
   const throwHeld = (altB && IN.down('Comma')) || (p0 && p0.bHeld);
   // a Wizard keyboard: arrows + . when it is shared and not swapped, WASD + Space when swapped; alone on the keyboard it takes both
   let roll = (c.kbW && !(sh && G.swapped) && IN.hit('Period')) || (c.kbW && (!sh || G.swapped) && IN.hit('Space')) || (c.kbW && sh && G.swapped && IN.hit('KeyE')) || (p1 && p1.a);
-  // the Wizard's own buttons: fire the held spell (Z or ' on the keyboard, X on his pad) and open his wardrobe (I or ; / B on his pad)
+  // the Wizard's own button: fire the held spell (Z or ' on the keyboard, X on his pad)
   let hold = (c.kbW && (IN.hit('KeyZ') || IN.hit('Quote'))) || (p1 && p1.x);
-  const wardrobe = (c.kbW && (IN.hit('KeyI') || IN.hit('Semicolon'))) || (p1 && p1.b);
   // throw the whole stack: Shift + right-click (Shift + , when swapped), or LT + B on a pad
   const stackThrow = (IN.shift() && ((IN.mouse.rp && mouseInFactory() && Main.mouseB()) || (altB && IN.hit('Comma')))) || (p0 && p0.b && p0.ltHeld);
   // pick a target on purpose: right stick / R3 on a pad, Tab / Shift+Tab on the keyboard
@@ -352,7 +363,6 @@ Main.controls = function (dt) {
   if (IN.hit('KeyY') || (p1 && p1.y)) UI.openTree('R');
   if (IN.hit('KeyH')) { UI.help(); G.helpT = 0; }
   if (IN.hit('KeyC') && !frozenNow() && !UI.splitB && !UI.askB) Book.open();   // the Collection Book: every spell and creature
-  if (wardrobe && !frozenNow() && !UI.splitB && !UI.askB) { Ward.press(); hold = false; }   // the Wizard's quick wardrobe (a drawer, the game keeps running): open, then step along his augments
   if ((IN.hit('KeyP') || (p0 && p0.l3)) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
   if (IN.hit('F3') || IN.hit('Backquote')) { UI.debugOn = !UI.debugOn; AU.sfx('blip'); }
   if (IN.hit('F4') && UI.debugOn) DevBot.toggle();   // dev-only: only while the F3 overlay is open
@@ -601,10 +611,9 @@ Main.hintFor = function (q) {
     if (h.harv) for (const o of WZ.harv) { if (!o.broken && o.kind === 'tree') near(o); }
     else if (h.forage) for (const o of WZ.forage) { if (!o.broken && WZ.forageSeen(o)) near(o); }
     else {
-      const have = ELEMS.filter(el => G.aug.off[el] > 0);   // a Shrine goal points at a Shrine whose Offering he is carrying
       for (const m of WZ.marks) {
         const done = w.lm[m.id].state === 'done';
-        if (h.mark === 'myshrine' ? !(m.type === 'shrine' && done) : done || (h.mark === 'shrine' ? m.type !== 'shrine' || (have.length && have.indexOf(m.el) < 0) : h.mark === 'camp' && m.type !== 'camp' && m.type !== 'crypt')) continue;
+        if (h.mark === 'myshrine' ? !(m.type === 'shrine' && done) : done || (h.mark === 'shrine' ? m.type !== 'shrine' : h.mark === 'camp' && m.type !== 'camp' && m.type !== 'crypt')) continue;
         near(m);
       }
     }
@@ -726,7 +735,6 @@ function frame(ts) {
     try {
       Snap.tick();   // dev-only: the snapshot bar and its keys (inert unless the F3 overlay is open)
       Book.tick(dt);   // the Collection Book's keys and pad while it is open
-      Ward.tick(dt);   // the Wizard's wardrobe, likewise
       if (Snap.mode !== 'off') { AU.hum(0); Snap.draw(ctx, ts); Main.still = 0; }   // a snapshot view is up: the simulation is frozen and the cached frame shows
       else {
       if (!G.paused) Main.step(dt);
@@ -764,7 +772,6 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btnTreeR').onclick = () => UI.openTree('R');
   $('btnBook').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB) Book.open(); };
   $('btnBookR').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB) Book.open(); };
-  $('btnWard').onclick = $('gearCard').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB && !UI.askB && !G.paused) Ward.toggle(); };
   $('pBook').onclick = () => Book.open(true);
   $('btnDemo').onclick = () => { G.demolish = !G.demolish; AU.sfx('blip'); };
   $('btnSwap').onclick = () => UI.toast('Hold X (or Start on a pad) for 1.5 seconds to swap jobs.', 'L', 'ic_swap');

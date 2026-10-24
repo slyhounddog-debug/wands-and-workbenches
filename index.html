@@ -24,6 +24,7 @@
       <div class="res" id="tIron"></div>
       <div class="res shard" id="tShard"></div>
       <div class="res core" id="tCore"></div>
+      <div class="res comp" id="tComp"></div>
       <div class="res xp" id="tXp"></div>
       <div class="res bank" id="tBank"></div>
     </div>
@@ -77,9 +78,9 @@
         <div class="bar hp"><i data-ic="ic_heart" data-s="14"></i><div id="hpFill"></div><span id="hpTxt"></span></div>
         <div class="bar arm"><i data-ic="ic_shield" data-s="14"></i><div id="armFill"></div><span id="armTxt"></span></div>
       </div>
-      <!-- the Wizard's worn augments (hat, robe, boots, charm) and, once the first Warden has fallen, the held spell; click it (or I) for the wardrobe -->
-      <div class="card px" id="gearCard" title="Wizard's wardrobe: augments, Offerings, Ward Keys (I)"></div>
-      <div class="iconbtns right"><button id="btnWard" class="px" title="Wizard's wardrobe: augments, Offerings, Ward Keys"><i data-ic="aug_tide" data-s="28"></i><kbd>I</kbd></button><button id="btnBookR" class="px" title="Collection Book: every spell and creature"><i data-ic="ic_book" data-s="28"></i><kbd>C</kbd></button><button id="btnTreeR" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>Y</kbd></button></div>
+      <!-- the Wizard's worn garments (hat, robe, boots, charm) and, once the first Warden has fallen, the held spell: just a readout, he changes clothes by walking onto garments the Builder sends -->
+      <div class="card px" id="gearCard" title="What the Wizard is wearing (and the held spell). Garments the Builder forges land in the wilds: walk onto one to put it on"></div>
+      <div class="iconbtns right"><button id="btnBookR" class="px" title="Collection Book: every spell and creature"><i data-ic="ic_book" data-s="28"></i><kbd>C</kbd></button><button id="btnTreeR" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>Y</kbd></button></div>
       <div class="card px pin hidden" id="pinR"></div>
     </div>
     <div id="eggQ" class="px hidden"></div>
@@ -98,7 +99,7 @@
       <div class="hcol">
         <h3><i data-ic="ic_hat" data-s="16"></i>WIZARD</h3>
         <div><kbd>ARROWS</kbd> walk &nbsp; <kbd>.</kbd> roll (invulnerable)</div>
-        <div>Spells fire by themselves when the factory delivers them. <kbd>I</kbd> wardrobe (augments, Offerings, keys).</div>
+        <div>Spells fire by themselves when the factory delivers them. Walk onto a garment the Builder sends to wear it.</div>
         <div>Stand near trees and rocks: spells harvest them too.</div>
         <div>Water blocks you. Bog slows you. The map shows landmarks.</div>
         <div><kbd>Y</kbd> skill tree (pauses the game) &nbsp; hold <kbd>X</kbd> swap</div>
@@ -142,8 +143,6 @@
     <div id="victory" class="overlay hidden"></div>
     <!-- the Collection Book: every spell and creature, with live demos (opens over the paused game) -->
     <div id="book" class="hidden"></div>
-    <!-- the Wizard's quick wardrobe: a small drawer that flies in from the right edge and never pauses the game (the full wardrobe is the Collection Book's third page) -->
-    <div id="ward"></div>
     <div id="pause" class="overlay hidden">
       <div id="pauseMain" class="panel px">
         <h2>PAUSED</h2>
@@ -209,7 +208,6 @@
 <script src="js/creaturepreview.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/book.js"></script>
-<script src="js/wardrobe.js"></script>
 <script src="js/players.js"></script>
 <script src="js/devbot.js"></script>
 <script src="js/snapshot.js"></script>

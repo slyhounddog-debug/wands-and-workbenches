@@ -160,8 +160,8 @@ task(() => {
     x.fillStyle = '#fff'; x.fillRect(4, 3, 1, 3);
     x.fillStyle = c2; x.fillRect(6, 3, 1, 6);
   }), 6, 10);
-  chest('it_armor', '#c8d4e4', '#6a7890');
-  chest('it_plate', '#8ab0ff', '#3a4e90');
+  flask('it_armor', '#6a9aff', false);   // the Shield Potion and the Greater Shield Potion: blue flasks
+  flask('it_plate', '#3a5aff', true);
   reg('gem', mk(6, 6, x => { poly(x, [[3, 0], [6, 3], [3, 6], [0, 3]], '#7be0ff'); poly(x, [[3, 0], [0, 3], [3, 3]], '#d5f6ff'); }), 3, 3);
   reg('it_shard', mapSprite(['...o....', '..oco...', '..occo..', '.occwco.', '.occwco.', 'occcccco', '.occcco.', '..oCCo..', '...oo...'],
     { o: '#3a1a5a', c: '#c890ff', C: '#8a54d0', w: '#ffffff' }), 4, 9);
@@ -619,8 +619,8 @@ task(() => {
   icn('magnet', ['wr...bw', 'rr...bb', 'rr...bb', 'rr...bb', 'rrr.bbb', '.rrrbb.', '..rrb..']);
 });
 
-// ---------- the Wizard's augments, Offerings and Ward Keys (js/augments.js) ----------
-// it_aug_<id> / it_off_<el> / it_key_<el> are the icons (they are drops in the wilds and rows in the wardrobe); ao_<id> are the worn overlays: 12 wide x 16 tall,
+// ---------- the Wizard's garments, Cores and Ward Keys (js/augments.js) ----------
+// it_aug_<id> / it_core_<el> / it_key_<el> are the icons (they are drops in the wilds, pile items in the Stockpile and rows in the Collection Book); ao_<id> are the worn overlays: 12 wide x 16 tall,
 // anchored at the Wizard's feet like his own sprite (head rows 6-8, shoulders 9, feet 14-15), drawn over him by R.drawWizard
 task(() => {
   const P = { o: '#2b1d3e', w: '#ffffff', y: '#ffd23a', b: '#4aa8ff', B: '#2a72c8', r: '#e8501a', R: '#a82a1a', O: '#ffb030', a: '#a9b0b8', A: '#6a7280',
@@ -634,9 +634,9 @@ task(() => {
   ic('aug_phoenix', ['......oo.', '.....orRo', '....orROo', '...orRryo', '..orRrryo', '.orRrryyo', 'orRrryyo.', 'oyrryoo..', 'oyyoo....', 'oyo......', 'oo.......']);
   ic('aug_static', ['..oooooo..', '.obbbbbbo.', 'obbbbqqbbo', 'obbbqqbbbo', 'obbqqbbbbo', 'obbbqqbbbo', 'obbbbqqbbo', 'obbbqqbbbo', 'obBbbbbbBo', '.oo.oo.oo.']);
   ic('aug_kiln', ['..oooooo..', '.oddddddo.', 'oddDddDddo', 'odOOddOOdo', 'odOOddOOdo', 'oddddddddo', '.oddppddo.', '..oddddo..', '...oooo...']);
-  for (const el of ELEMS) {   // an Offering: the element's crystal in a gold dish; a Ward Key: a key with the element's gem for a bow
+  for (const el of ELEMS) {   // a Core: a faceted orb in the element's colours; a Ward Key: a key with the element's gem for a bow
     const E = { o: '#2b1d3e', c: ELEM[el].color, C: ELEM[el].dark, w: '#ffffff', y: '#ffd23a', Y: '#c8921a' };
-    reg('it_off_' + el, mapSprite(['....o....', '...ocC...', '..ocwcC..', '.occcccC.', 'ocwcccCCo', '.occccCo.', '..occCo..', '.oyyyyyo.', '..oYYYo..'], E), 4.5, 9);
+    reg('it_core_' + el, mapSprite(['..ooooo..', '.occccco.', 'ocwwcccCo', 'ocwcccCCo', 'occcccCCo', 'occcCCCCo', '.occCCCo.', '..ooooo..'], E), 4.5, 8);
     reg('it_key_' + el, mapSprite(['.ooo........', 'occco.......', 'ocwcoyyyyyyy', 'occcoYYYYYYY', '.ooo...y.y.y', '.......Y.Y.Y'], E), 6, 6);
   }
   // worn overlays

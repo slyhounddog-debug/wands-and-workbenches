@@ -573,8 +573,7 @@ button.big.slot em { grid-column: 2; grid-row: 1 / 4; align-self: center; font-s
 .bookPanel .hint { flex: none; margin: 8px 0 0; }
 
 /* ===== the Wizard's gear: worn augments + the held spell on his HUD, and the wardrobe (js/wardrobe.js) ===== */
-#gearCard { padding: 6px 8px 6px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
-#gearCard:hover { background: var(--panel-2); }
+#gearCard { padding: 6px 8px 6px; display: flex; align-items: center; gap: 6px; }
 #gearCard .gs { position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: var(--panel-lo); box-shadow: inset 0 0 0 2px var(--ink); }
 #gearCard .gs.em img { opacity: .3; filter: grayscale(1); }
 #gearCard .gs small { position: absolute; left: 2px; top: 1px; font: 7px var(--display); color: var(--muted); }
@@ -585,59 +584,8 @@ button.big.slot em { grid-column: 2; grid-row: 1 / 4; align-self: center; font-s
 #gearCard .gs.hold.full { animation: hintBlink .6s steps(2) infinite; }
 #gearCard .gs.hold kbd { position: absolute; right: -6px; bottom: -8px; font-size: 7px; min-width: 14px; padding: 2px 3px 1px; }
 #gearCard .gs.lockd { margin-left: auto; opacity: .45; }
-/* the quick drawer: flies in from the right edge of the wilds, the game keeps running */
-#ward { position: absolute; right: 0; top: 258px; z-index: 60; width: 392px; transform: translateX(110%); transition: transform .3s steps(6); pointer-events: none; }
-#ward.open { transform: none; pointer-events: auto; }
-.wdr { background: #1c1230; padding: 8px 10px 10px; }
-.wdrHead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.wdrHead h4 { margin: 0; font: 9px var(--display); color: var(--gold); display: flex; align-items: center; gap: 6px; flex: 1; }
-.wdrHead .x { width: 22px; height: 22px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
-.dSlots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
-.dSlot { position: relative; height: 46px; display: flex; align-items: center; justify-content: center; background: var(--panel-lo); box-shadow: inset 0 0 0 2px #3a3550; }
-.dSlot small { position: absolute; left: 3px; top: 2px; font: 6px var(--display); color: var(--muted); }
-.dSlot.full { background: #33235a; box-shadow: inset 0 0 0 2px var(--gold); }
-.dGrid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 92px; gap: 6px; }
-.dTile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 2px; background: var(--panel-2); cursor: pointer; box-shadow: 0 3px 0 0 var(--ink); text-align: center; overflow: hidden; }
-.dTile:hover { background: var(--panel-hi); }
-.dTile b { font: 700 13px var(--body); line-height: 1; }
-.dTile i { position: absolute; top: 2px; right: 3px; }
-.dTile.worn { box-shadow: inset 0 -3px 0 0 var(--mint), 0 3px 0 0 var(--ink); }
-.dTile.on { background: #6a4a20; box-shadow: 0 0 0 3px var(--gold); z-index: 1; }
-.dTile.on u { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--gold); animation: dwell linear forwards; }
-@keyframes dwell { from { width: 0; } to { width: 100%; } }
-.dTile.no { background: #2a2338; box-shadow: inset 0 0 0 2px #3a3550, 0 3px 0 0 var(--ink); }
-.dTile.no img { filter: grayscale(1) brightness(.5); }
-.dTile.no b { color: #8a84a0; }
-/* the full wardrobe: the Collection Book's third page */
+/* the Collection Book (Wardrobe page shares its layout) */
 .bookPanel h3 { margin: 14px 0 8px; font: 10px var(--display); color: var(--sky); }
-.wardBody { flex: 1; min-height: 0; display: grid; grid-template-columns: 560px 1fr 330px; gap: 22px; margin-top: 12px; }
-.wSlots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.wSlot { position: relative; height: 112px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 14px 4px 6px; background: var(--panel-lo); box-shadow: inset 0 0 0 3px #3a3550; text-align: center; }
-.wSlot small { position: absolute; left: 6px; top: 5px; font: 8px var(--display); color: var(--muted); }
-.wSlot b { font: 700 16px var(--body); line-height: 1; }
-.wSlot .emp { font: 9px var(--display); color: #6a6280; }
-.wSlot.full { background: #33235a; box-shadow: inset 0 0 0 3px var(--gold); cursor: pointer; }
-.wGrid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 132px; gap: 8px; }
-.wTile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px 4px; background: var(--panel-2); cursor: pointer; box-shadow: 0 4px 0 0 var(--ink); text-align: center; }
-.wTile:hover { background: var(--panel-hi); }
-.wTile.on { background: #6a4a20; box-shadow: 0 0 0 4px var(--gold); z-index: 1; }
-.wTile b { font: 700 16px var(--body); line-height: 1; }
-.wTile u { position: absolute; top: 4px; left: 6px; text-decoration: none; font: 7px var(--display); color: var(--muted); }
-.wTile i { position: absolute; top: 4px; right: 6px; font: 7px var(--display); font-style: normal; color: var(--mint); display: inline-flex; align-items: center; gap: 3px; }
-.wTile.worn { box-shadow: inset 0 -4px 0 0 var(--mint), 0 4px 0 0 var(--ink); }
-.wTile.worn.on { box-shadow: 0 0 0 4px var(--gold); }
-.wTile.no { background: #2a2338; box-shadow: inset 0 0 0 3px #3a3550, 0 4px 0 0 var(--ink); }
-.wTile.no img { filter: grayscale(1) brightness(.5); }
-.wTile.no b { color: #8a84a0; }
-.wTile.no.on { background: #4a4258; box-shadow: 0 0 0 4px var(--gold); }
-.wMid { display: grid; gap: 6px; align-content: start; min-height: 0; }
-.wMid .bkh { margin-bottom: 4px; }
-.wBtn { margin-top: 10px; width: 100%; min-width: 0; font-size: 11px; }
-.wRight { display: grid; gap: 4px; align-content: start; }
-.wRight h3 { margin-top: 0; }
-.wRight .bkr { grid-template-columns: 34px 1fr; }
-.wRight .bkr em { justify-content: space-between; font-size: 16px; }
-.wRight .bkr.off { opacity: .55; }
 .cnt { font: 10px var(--display); color: var(--gold); display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
 .cnt.z { color: var(--muted); }
 
@@ -657,9 +605,9 @@ button.big.slot em { grid-column: 2; grid-row: 1 / 4; align-self: center; font-s
 .bkDesc { min-height: 0; margin-bottom: 6px; }
 .bkd { min-height: 24px; padding: 2px 6px; }
 .bkd span { font-size: 14px; }
-.wardBody { grid-template-columns: 560px minmax(0, 1fr) 330px; }
-.wMid { grid-template-columns: minmax(0, 1fr); }
-.wMid .bkh { grid-column: auto; }
 .bookDetail { grid-template-columns: 400px 1fr; }
 .bookDetail { grid-template-rows: auto auto auto; }
 .bookList { overflow-y: auto; min-height: 0; padding-right: 4px; }
+.res.comp { gap: 2px; }
+.res.comp:empty { display: none; }
+.res.comp b { margin-right: 6px; }

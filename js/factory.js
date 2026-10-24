@@ -21,7 +21,10 @@ FA.piles = () => {
   // a 2x2 block on screen: wood | stone over iron | shard (the zone is 5x5 in the south-west corner of the base floor)
   // the four spell spots (element packets the Wizard picked up) sit at the corners of the zone around them
   return { wood: { x: x + 1.0, y: y + 2.5 }, stone: { x: x + 2.5, y: y + 1.0 }, iron: { x: x + 3.1, y: y + 4.6 }, shard: { x: x + 4.6, y: y + 3.1 }, core: { x: x + 4.3, y: y + 1.7 },
-    air: { x: x + 0.8, y: y + 0.7 }, water: { x: x + 0.7, y: y + 4.3 }, fire: { x: x + 4.6, y: y + 0.4 }, earth: { x: x + 4.5, y: y + 4.7 } };
+    air: { x: x + 0.8, y: y + 0.7 }, water: { x: x + 0.7, y: y + 4.3 }, fire: { x: x + 4.6, y: y + 0.4 }, earth: { x: x + 4.5, y: y + 4.7 },
+    // the element Cores (a 2x2 block on screen in the middle) and the Ward Keys (near their element's corner): only drawn while there are any
+    core_air: { x: x + 2.0, y: y + 2.0 }, core_water: { x: x + 3.0, y: y + 2.0 }, core_fire: { x: x + 2.0, y: y + 3.0 }, core_earth: { x: x + 3.0, y: y + 3.0 },
+    key_air: { x: x + 1.5, y: y + 1.5 }, key_water: { x: x + 1.4, y: y + 3.6 }, key_fire: { x: x + 3.7, y: y + 1.0 }, key_earth: { x: x + 3.7, y: y + 3.9 } };
 };
 FA.inb = (x, y) => x >= 0 && y >= 0 && x < G.fac.w && y < G.fac.h;
 FA.owned = (x, y) => FA.inb(x, y) && G.fac.land[y * G.fac.w + x] === 1;   // is this tile factory floor?
@@ -58,19 +61,20 @@ FA.unlocked = id => {
   const u = CFG.buildings[id].unlock;
   return !u || !!G.tree[u];
 };
-FA.isDeliverable = k => !!ITEMS[k] && !!(ITEMS[k].elem || ITEMS[k].spell || ITEMS[k].pickup || ITEMS[k].sigil || ITEMS[k].egg);   // Spell Portal
+FA.isDeliverable = k => !!ITEMS[k] && (!!(ITEMS[k].elem || ITEMS[k].spell || ITEMS[k].pickup || ITEMS[k].sigil || ITEMS[k].egg || ITEMS[k].aug) || FA.isUnlockKind(k));   // Spell Portal
 FA.isBankable = k => SPELL_KINDS.indexOf(k) >= 0;                                                 // Skill Portal
 // a Sigil only goes through while the Wizard is alive and no Chimera is already out
 // an Egg is taken while the crafted-creature cap has room, then it waits in the portal queue; a full queue stops the portal taking more
 FA.eggRoom = () => G.fac.eggQ.length < CFG.crafted.queue || (!G.w.dead && WZ.craftedAlive() < CFG.crafted.cap);
-FA.portalTakes = (c, k) => (c.which === 'skill' ? FA.isBankable(k) : FA.isDeliverable(k) && (k !== 'sigil' || (!G.w.dead && !G.w.boss)) && (!ITEMS[k].egg || FA.eggRoom()));
+FA.portalTakes = (c, k) => (c.which === 'skill' ? FA.isBankable(k) : FA.isDeliverable(k) && (k !== 'sigil' || (!G.w.dead && !G.w.boss)) && (!ITEMS[k].egg || FA.eggRoom()) &&
+  (!ITEMS[k].aug || (!G.w.dead)) && (!FA.isUnlockKind(k) || !!WZ.unlockTarget(k)));   // a garment needs a living Wizard; a Core / key only goes when he stands near the shrine / keep it opens
 FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 'crate'; };
 
 FA.fresh = function (w, h) {
   const f = { w, h, grid: new Array(w * h).fill(null), land: new Array(w * h).fill(0), pp: { x: 0, y: 0 }, added: 0, bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
     portalQ: [], eggQ: [], portalT: 0, nextId: 1, gen: 0, demand: 0, lowT: 0, flash: 0, flashCol: '#fff', skillFlash: 0, t: 0,
     log: { spell: [], skill: [] }, working: 0, thumps: [], sucks: [], bump: 0, bumpAmp: 0, weakFlash: 0, stockNext: 0,
-    rings: [], waves: [],   // throw impact rings, Spell Portal shockwaves
+    rings: [], waves: [], shelf: [],   // throw impact rings, Spell Portal shockwaves; shelf = the garments on the Wardrobe Shelf (ids)
     elAct: { air: 0, water: 0, fire: 0, earth: 0 }, weather: { air: 0, water: 0, fire: 0, earth: 0 } };   // element packets handled lately -> the wilds' weather (0..1 each)
   return f;
 };
@@ -106,7 +110,7 @@ FA.freshBuilder = () => { const B = CFG.factory.base; return { x: B.x0 + 6.5, y:
 // Floor Tiles: a blueprint placed just outside the floor; thrown its materials like any building, it turns into floor when finished.
 // The Iron cost only starts after the first CFG.factory.freeIron tiles were placed.
 FA.tileCost = () => { const c = Object.assign({}, CFG.buildings.expand.cost); if (G.fac.added >= CFG.factory.freeIron) c.iron = 1; return c; };
-FA.canExpand = (x, y) => FA.inb(x, y) && !FA.owned(x, y) && !FA.reserved(x, y) && !G.fac.grid[y * G.fac.w + x] &&
+FA.canExpand = (x, y) => FA.inb(x, y) && !FA.owned(x, y) && !FA.reserved(x, y) && !FA.shelfTile(x, y) && !G.fac.grid[y * G.fac.w + x] &&
   DIRS.some(d => FA.owned(x + d[0], y + d[1]));
 FA.costOf = b => b.cost || FA.def(b).cost;   // a Floor Tile's cost depends on how many came before it
 FA.finishTile = function (b) {   // the blueprint is paid for: the tile becomes floor and the blueprint goes away
@@ -195,6 +199,36 @@ FA.inFlight = function () {   // what the saved stock must add: stock-bound item
   return out;
 };
 FA.say = a => { if (a.ic) FA.ipop(G.bd.x, G.bd.y - 0.3, a.ic.map(k => [k])); else if (a.label) FA.pop(G.bd.x, G.bd.y - 0.3, a.label, '#ffd0a0'); };   // why an action can't happen
+
+// ---------- the Wardrobe Shelf ----------
+// The garment the Wizard takes off flies through the portal to a shelf beside the Spell Portal; the Builder takes it from there and can send it back whenever
+// he likes. The shelf is not a building: it grows one slot (a tile along the factory's north edge, starting at the portal's column) per stored garment, so
+// there is nothing there until the first garment comes home. FA.shelfTiles lists every tile it could ever use (nothing is built or expanded on them).
+FA.shelfTiles = () => { const p = G.fac.pp, out = []; for (let i = 0; i < CFG.aug.wardrobeMax; i++) out.push({ x: p.x - i, y: p.y - 2 }); return out; };
+FA.shelfTile = (x, y) => !!G.fac.pp && FA.shelfTiles().some(t => t.x === x && t.y === y);
+FA.shelfSlot = i => { const all = FA.shelfTiles(), free = all.filter(q => !FA.owned(q.x, q.y)), a = free.length ? free : all; return a[Math.min(i, a.length - 1)]; };
+FA.shelfAdd = id => { const s = G.fac.shelf; if (AUGS[id] && s.indexOf(id) < 0) { s.push(id); UI.changed(); } };
+FA.toShelf = function (id, delay) {   // out of the Spell Portal and across to the next free slot
+  const f = G.fac, port = FA.portal('spell'), s = FA.shelfSlot(f.shelf.length + f.flying.filter(o => o.shelf).length);
+  const px = port.x + 0.5, py = port.y + 1, tx = s.x + 0.5, ty = s.y + 0.5, d = Math.hypot(tx - px, ty - py);
+  f.flying.push({ kind: 'aug_' + id, shelf: id, sx: px, sy: py, x: px, y: py, z: 0.8, tx, ty, t: -(delay || 0), T: Math.min(1.6, 0.6 + d * 0.06), h: 1.5 + d * 0.15 });
+};
+FA.takeShelf = function (i) {   // one garment per press, into the hands
+  const f = G.fac, id = f.shelf[i];
+  if (!id || !FA.canHold('aug_' + id)) return;
+  f.shelf.splice(i, 1);
+  FA.addHands('aug_' + id, 1);
+  G.bd.squash = 0.2; AU.sfx('pickup'); UI.changed();
+};
+// has this garment been made and not yet lost track of? (worn, on the shelf, in the Builder's hands, on a belt, in a machine's output, in the air or in the wilds)
+FA.augMade = function (id) {
+  const k = 'aug_' + id, f = G.fac, is = o => o.kind === k;
+  if (G.aug.worn[AUGS[id].slot] === id || f.shelf.indexOf(id) >= 0) return true;
+  if (G.hands.some(is) || f.floor.some(is) || f.flying.some(is) || f.portalQ.some(is) || f.belts.some(b => b.item && b.item.kind === k) || f.bld.some(b => b.out.some(is))) return true;
+  return !!G.w && (G.w.arcs.some(is) || G.w.pickups.some(is));
+};
+FA.isUnlockKind = k => isCoreKind(k) || isKeyKind(k);   // Cores open shrines, Ward Keys open keeps (the Spell Portal only takes them when the Wizard is near the right one)
+FA.beltOk = k => !RES[k];   // belts carry what the machines make (packets, spells, potions, Eggs, garments): never raw resources, shards, Cores or keys
 
 // ---------- hands & floor items ----------
 // The hands are ONE pile of single items, G.hands (bottom first, the last one grabbed on top), at most FA.cap() items in total whatever they are.
@@ -292,7 +326,7 @@ FA.demolish = function (x, y, force) {
 // ---------- recipes ----------
 // Production is the only gate for spells and creatures: a recipe needs its tree node only when it has a tier (potions, armor, the Sigil),
 // and a Triple / the Nova needs its parent spells to have been MADE at least once (G.stats.made, counted from crafter output)
-FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
+FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (!r.aug || !FA.augMade(r.aug)) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
 FA.recipesFor = type => Object.keys(CFG.recipes).filter(id => CFG.recipes[id].machine === type && FA.recipeOk(id));
 FA.refreshRecipes = function () {
   for (const b of G.fac.bld) if (b.done && FA.def(b).kind === 'crafter' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
@@ -326,7 +360,7 @@ FA.canInsert = function (b, kind) {
     return !!need && (b.inv[kind] || 0) < Math.max(6, need * 3);
   }
   if (d.kind === 'cell') return FA.isFuel(kind) && FA.fuelTotal(b) + CFG.fuelPerPacket <= CFG.fuelCap;
-  if (d.kind === 'splitter') return b.out.length < 2;
+  if (d.kind === 'splitter') return FA.beltOk(kind) && b.out.length < 2;
   if (d.kind === 'crate') return !RES[kind] && b.out.length < CFG.crateCap;
   return false;
 };
@@ -417,13 +451,15 @@ FA.deliver = function (kind, x, y) {
   if (ELEM[kind]) FA.eburst(p.x + 0.5, p.y + 1, kind, 8);
   f.log.spell.push(f.t);
   G.flags['sent_' + kind] = true;
+  if (ITEMS[kind].aug) G.flags.sent_aug = true;
   G.stats.sent[kind] = (G.stats.sent[kind] || 0) + 1;   // for the goals: Potions sent, Eggs hatched, combo spells delivered
   if (ITEMS[kind].egg) G.stats.eggs = (G.stats.eggs || 0) + 1;
   else if ((SPELL_EL[kind] || []).length >= 2) G.stats.combos = (G.stats.combos || 0) + 1;
   FA.suck(kind, x === undefined ? p.x + 0.5 : x, y === undefined ? p.y + 1 : y);
   if (kind === 'sigil') WZ.summonBoss();
   else if (ITEMS[kind].egg) WZ.hatch(kind);
-  else if (ITEMS[kind].pickup) WZ.send(kind, 'pickup');   // it arcs out of the factory and sails into the wilds, then lands beside him
+  else if (ITEMS[kind].pickup || ITEMS[kind].aug) WZ.send(kind, 'pickup');   // it arcs out of the factory and sails into the wilds, then lands (a garment where a creature would drop in)
+  else if (FA.isUnlockKind(kind)) WZ.send(kind, 'unlock');   // a Core / Ward Key sails down onto the shrine / keep it opens
   else {
     const spell = BASIC_SPELL[kind] || kind;
     if (!BASIC_SPELL[kind]) {
@@ -517,7 +553,7 @@ FA.pushSide = function (b, di) {
   const dd = DIRS[di], c = FA.cell(b.x + dd[0], b.y + dd[1]);
   if (!c) return false;
   if (c.type === 'portal') { if (!FA.enterPortal(c, o.kind, b.x + 0.5, b.y + 0.5)) return false; }
-  else if (c.type === 'belt') { if (c.item || (c.dir + 2) % 4 === di) return false; c.item = { kind: o.kind, prog: 0, moved: true }; }
+  else if (c.type === 'belt') { if (c.item || !FA.beltOk(o.kind) || (c.dir + 2) % 4 === di) return false; c.item = { kind: o.kind, prog: 0, moved: true }; }
   else if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind); if (c.src) c.src[(di + 2) % 4] = b.id; }   // a Splitter remembers who feeds it
   else return false;
   b.out.shift();
@@ -834,7 +870,7 @@ FA.updCell = function (b, dt) {
 
 // ---------- throwing ----------
 // will this receiver take a thrown item of kind k? (portal / belt / building / blueprint / the Stockpile Zone)
-FA.accepts = (o, k) => (o === 'zone' ? !!(RES[k] || ELEM[k]) : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item : FA.canInsert(o, k) || FA.canOver(o, k));
+FA.accepts = (o, k) => (o === 'zone' ? !!(RES[k] || ELEM[k]) : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item && FA.beltOk(k) : FA.canInsert(o, k) || FA.canOver(o, k));
 // every receiver in throwing range that would take kind k, with a priority (lower = preferred)
 FA.throwList = function (k) {
   const bd = G.bd, out = [];
@@ -845,7 +881,7 @@ FA.throwList = function (k) {
     else if (FA.canOver(b, k)) add(b.x + 0.5, b.y + 0.5, b, 2.6);   // overcharging is on purpose: the portal stays the first choice for spells
   }
   if (RES[k] || ELEM[k]) { const z = FA.zone(); add((z.x0 + z.x1 + 1) / 2, (z.y0 + z.y1 + 1) / 2, 'zone', 1.1); }
-  for (const bl of G.fac.belts) if (!bl.item) add(bl.x + 0.5, bl.y + 0.5, bl, 2.2);
+  if (FA.beltOk(k)) for (const bl of G.fac.belts) if (!bl.item) add(bl.x + 0.5, bl.y + 0.5, bl, 2.2);
   return out;
 };
 // ---------- deliberate target selection (pad right stick / Tab): G.lock pins one target until it stops being valid ----------
@@ -948,7 +984,8 @@ FA.catchNear = function (x, y, kind) {
 FA.impact = (o, bad) => G.fac.rings.push({ x: o.x, y: o.y, dx: o.x - o.sx, dy: o.y - o.sy, t: 0, col: bad ? '#ff6a6a' : ITEMS[o.kind].color || '#ffffff' });
 FA.land = function (o) {
   if (o.stock) { G.stock[o.kind] = (G.stock[o.kind] || 0) + (o.n || 1); FA.pileIn(o.kind); AU.sfx('drop'); UI.changed(); return; }
-  if (o.boing) { FA.dropAt(o.kind, o.x, o.y); AU.sfx('thud'); return; }   // the end of a bounce-back: it just lands
+  if (o.boing) { FA.dropAt(o.kind, o.x, o.y); AU.sfx('thud'); return; }
+  if (o.shelf) { FA.shelfAdd(o.shelf); FA.ipop(o.tx, o.ty - 0.2, [[o.kind], ['ic_check']]); FA.burst(o.tx, o.ty, AUGS[o.shelf].col, 10); AU.sfx('drop'); return; }   // the end of a bounce-back: it just lands
   const tx = Math.floor(o.x), ty = Math.floor(o.y), c = FA.cell(tx, ty);
   const toPortal = c => {
     if (!FA.enterPortal(c, o.kind, o.x, o.y)) return false;
@@ -979,9 +1016,9 @@ FA.land = function (o) {
     return;
   }
   if (c && c.type === 'belt') {
-    if (!c.item) { c.item = { kind: o.kind, prog: 0.5, moved: true }; FA.impact(o); AU.sfx('drop'); return; }
+    if (!c.item && FA.beltOk(o.kind)) { c.item = { kind: o.kind, prog: 0.5, moved: true }; FA.impact(o); AU.sfx('drop'); return; }
     if (near()) return;
-    return bounce();   // the belt is full
+    return bounce();   // the belt is full, or it is a resource (belts only carry what machines make)
   }
   if (c) {
     if (into(c)) return;
@@ -1048,6 +1085,7 @@ FA.moveBuilder = function (dt, ix, iy) {
 FA.distTo = function (t) {
   const bd = G.bd;
   if (t.kind === 'pile') { const p = FA.piles()[t.o]; return Math.hypot(p.x - bd.x, p.y - bd.y); }
+  if (t.kind === 'shelf') return Math.hypot(t.x - bd.x, t.y - bd.y);
   if (t.kind === 'floor') return Math.hypot(t.o.x - bd.x, t.o.y - bd.y) + 0.4;
   return Math.hypot(t.o.x + 0.5 - bd.x, t.o.y + 0.5 - bd.y);
 };
@@ -1086,7 +1124,8 @@ FA.updGather = function (dt) {
 FA.candidates = function () {
   const bd = G.bd, out = [], piles = FA.piles();
   for (const it of G.fac.floor) out.push({ kind: 'floor', o: it, x: it.x, y: it.y, r: 1.3 });
-  for (const k in piles) out.push({ kind: 'pile', o: k, x: piles[k].x, y: piles[k].y, r: CFG.reach });
+  for (const k in piles) if (!(FA.isUnlockKind(k) && !G.stock[k])) out.push({ kind: 'pile', o: k, x: piles[k].x, y: piles[k].y, r: CFG.reach });
+  G.fac.shelf.forEach((id, i) => { const s = FA.shelfSlot(i); out.push({ kind: 'shelf', o: i, x: s.x + 0.5, y: s.y + 0.5, r: CFG.reach }); });
   for (const b of G.fac.bld) out.push({ kind: 'bld', o: b, x: b.x + 0.5, y: b.y + 0.5, r: CFG.reach });
   for (const p of FA.portalCells(G.fac.w, G.fac.h)) out.push({ kind: 'portal', o: FA.cell(p.x, p.y), x: p.x + 0.5, y: p.y + 0.5, r: CFG.reach });
   const tx = Math.floor(bd.x), ty = Math.floor(bd.y);
@@ -1099,7 +1138,7 @@ FA.candidates = function () {
 // mode 'pick' (left-click / A: take one item) or 'use' (E / X: crank, gather, rotate, switch recipe, set a filter).
 // Nothing here puts an item down: throwing is the only way to get rid of what you hold.
 // the kind of item a pick target would hand over (for sweeping and same-kind priority)
-FA.itemOf = c => (c.kind === 'floor' ? c.o.kind : c.kind === 'pile' ? c.o : c.kind === 'belt' ? c.o.item && c.o.item.kind : c.kind === 'bld' && c.o.out && c.o.out.length ? c.o.out[0].kind : null);
+FA.itemOf = c => (c.kind === 'floor' ? c.o.kind : c.kind === 'pile' ? c.o : c.kind === 'shelf' ? 'aug_' + G.fac.shelf[c.o] : c.kind === 'belt' ? c.o.item && c.o.item.kind : c.kind === 'bld' && c.o.out && c.o.out.length ? c.o.out[0].kind : null);
 // holding pick sweeps: the nearest thing in reach that hands over the same kind as the stack in hand
 FA.sweepTarget = function (kind) {
   const bd = G.bd;
@@ -1138,6 +1177,11 @@ FA.actionFor = function (t, mode) {
       const it = t.o;
       if (!pick || f.floor.indexOf(it) < 0) return NONE;
       return FA.canHold(it.kind) ? A('Pick up ' + itemName(it.kind), () => FA.pickFloor(it), true, [it.kind]) : FULL;
+    }
+    case 'shelf': {   // a garment on the Wardrobe Shelf
+      const id = f.shelf[t.o];
+      if (!pick || !id) return NONE;
+      return FA.canHold('aug_' + id) ? A('Take ' + itemName('aug_' + id), () => FA.takeShelf(t.o), false, ['aug_' + id]) : FULL;
     }
     case 'pile': {
       if (!pick) return NONE;
@@ -1249,7 +1293,8 @@ FA.thingAt = function (tx, ty, fx, fy) {
   for (const it of G.fac.floor) { const d = Math.hypot(it.x - fx, it.y - fy); if (d < bd) { bd = d; best = { kind: 'floor', o: it, x: it.x, y: it.y }; } }
   if (best) return best;
   const piles = FA.piles();
-  for (const k in piles) if (Math.hypot(piles[k].x - fx, piles[k].y - fy) < 0.8) return { kind: 'pile', o: k, x: piles[k].x, y: piles[k].y };
+  for (const k in piles) if (!(FA.isUnlockKind(k) && !G.stock[k]) && Math.hypot(piles[k].x - fx, piles[k].y - fy) < 0.8) return { kind: 'pile', o: k, x: piles[k].x, y: piles[k].y };
+  for (let i = 0; i < G.fac.shelf.length; i++) { const s = FA.shelfSlot(i); if (Math.hypot(s.x + 0.5 - fx, s.y + 0.5 - fy) < 0.8) return { kind: 'shelf', o: i, x: s.x + 0.5, y: s.y + 0.5 }; }
   const c = FA.cell(tx, ty);
   if (!c) return null;
   if (c.type === 'portal') return { kind: 'portal', o: c, x: tx + 0.5, y: ty + 0.5 };
@@ -1317,7 +1362,8 @@ FA.toJSON = function () {
       return o;
     }),
     belts: f.belts.map(b => ({ x: b.x, y: b.y, dir: b.dir, item: b.item ? b.item.kind : null })),
-    floor: f.floor.concat(f.flying.filter(o => !o.stock).map(o => ({ kind: o.kind, x: o.tx, y: o.ty }))).map(o => ({ kind: o.kind, x: o.x, y: o.y })),
+    shelf: f.shelf.concat(f.flying.filter(o => o.shelf).map(o => o.shelf)),   // garments still flying to the shelf count as on it
+    floor: f.floor.concat(f.flying.filter(o => !o.stock && !o.shelf).map(o => ({ kind: o.kind, x: o.tx, y: o.ty }))).map(o => ({ kind: o.kind, x: o.x, y: o.y })),
     portalQ: f.portalQ, eggQ: f.eggQ,
   };
 };
@@ -1380,9 +1426,10 @@ FA.fromJSON = function (j) {
   (j.belts || []).forEach(o => {
     if (!FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;
     const b = FA.addBelt(o.x, o.y, o.dir);
-    if (o.item && known(o.item)) b.item = { kind: o.item, prog: 0.5, moved: false };
+    if (o.item && known(o.item)) { if (FA.beltOk(o.item)) b.item = { kind: o.item, prog: 0.5, moved: false }; else FA.dropAt(o.item, o.x + 0.5, o.y + 0.5); }   // belts no longer carry resources: it lands beside the belt
   });
   (j.floor || []).forEach(o => { if (known(o.kind)) G.fac.floor.push({ kind: o.kind, x: o.x, y: o.y, z: 0, vz: 0, t: 1 }); });
+  G.fac.shelf = (j.shelf || []).filter((id, i, a) => AUGS[id] && a.indexOf(id) === i);
   G.fac.portalQ = (j.portalQ || []).filter(q => q && ITEMS[q.kind]);
   G.fac.eggQ = (j.eggQ || []).filter(k => ITEMS[k] && ITEMS[k].egg);
   FA.refreshRecipes();

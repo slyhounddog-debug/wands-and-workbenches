@@ -14,11 +14,10 @@
     "harness.water.cycle": 4.25,
     "harness.fire.cycle": 4.75,
     "harness.earth.cycle": 5,
-    "tree.#water.pay.air": 8,
-    "tree.#water.xp": 20,
-    "tree.#fire.xp": 30,
-    "tree.#earth.xp": 45,
     "upgrade.gems": 0.12,
-    "gemCap": 3.5
+    "gemCap": 3.5,
+    "harvest.tree.n": 5,
+    "forage.mound.drop.stone": 3,
+    "forage.cache.drop.stone": 3
   }
 }

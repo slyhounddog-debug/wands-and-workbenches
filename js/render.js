@@ -258,7 +258,7 @@ R.drawFactory = function (main, dt) {
   const ps = FA.portal('spell'), pk = FA.portal('skill');
   list.push({ d: ps.x + ps.y + 2, t: 'portal', o: 'spell' });
   list.push({ d: pk.x + pk.y + 2, t: 'portal', o: 'skill' });
-  for (const k2 in piles) list.push({ d: piles[k2].x + piles[k2].y, o: k2, t: 'pile' });
+  for (const k2 in piles) if (!(FA.isUnlockKind(k2) && !G.stock[k2])) list.push({ d: piles[k2].x + piles[k2].y, o: k2, t: 'pile' });   // Cores and keys only show while there are any
   const piles2 = [];
   for (const o of f.floor) {
     const g = o.z <= 0 && piles2.find(q => q.kind === o.kind && Math.abs(q.x - o.x) < 0.45 && Math.abs(q.y - o.y) < 0.45);
@@ -281,6 +281,7 @@ R.drawFactory = function (main, dt) {
     }
   }
   if (R.ghost) R.drawGhostGround(ctx, v, R.ghost, t);
+  R.drawShelf(ctx, v, t);
   for (const b of f.bld) {
     const k = b.done && FA.def(b).kind;
     if (!k || k === 'cell') continue;
@@ -830,6 +831,19 @@ R.drawSuck = function (ctx, v, s, base) {
   }
 };
 
+// the Wardrobe Shelf: one wooden plinth per stored garment along the factory's back edge beside the Spell Portal (nothing until the first one comes home)
+R.drawShelf = function (ctx, v, t) {
+  const sh = G.fac.shelf;
+  for (let i = 0; i < sh.length; i++) {
+    const s = FA.shelfSlot(i), p = R.toScreen(v, s.x + 0.5, s.y + 0.5), hw = v.hw * 0.9, hh = v.hh * 0.9, th = 20;
+    ctx.fillStyle = '#7a4a22'; ctx.beginPath(); ctx.moveTo(p[0] - hw, p[1] - th); ctx.lineTo(p[0], p[1] + hh - th); ctx.lineTo(p[0], p[1] + hh); ctx.lineTo(p[0] - hw, p[1]); ctx.fill();
+    ctx.fillStyle = '#5a3418'; ctx.beginPath(); ctx.moveTo(p[0], p[1] + hh - th); ctx.lineTo(p[0] + hw, p[1] - th); ctx.lineTo(p[0] + hw, p[1]); ctx.lineTo(p[0], p[1] + hh); ctx.fill();
+    ctx.fillStyle = '#c28a52'; diamond(ctx, p[0], p[1] - th, hw, hh); ctx.fill();
+    ctx.fillStyle = '#e0aa6c'; diamond(ctx, p[0], p[1] - th, hw * 0.7, hh * 0.7); ctx.fill();
+    if (R.pickOf(i)) R.pickFx(ctx, p[0], p[1] - th, t, 1.4);
+    R.item(ctx, 'aug_' + sh[i], p[0], p[1] - th + 4 - (Math.sin(t * 2.4 + i * 1.7) > 0 ? 4 : 0), 4, t, R.pickOf(i));
+  }
+};
 R.drawPile = function (ctx, v, k, pos) {
   const p = R.toScreen(v, pos.x, pos.y), n = G.stock[k];
   const cnt = Math.min(15, Math.ceil(n / 2));
@@ -1047,7 +1061,7 @@ R.key = which => { const alt = Main.kbShared() && G.swapped; if (which === 'cycl
 R.drawFocus = function (ctx, v, f, t) {
   f.list.forEach((e, i) => {
     const tg = e.t, a = e.a;
-    if (tg.kind === 'floor' || tg.kind === 'pile') return;   // no bubble over loose items or the Stockpile: the item itself lights up (R.pickFx)
+    if (tg.kind === 'floor' || tg.kind === 'pile' || tg.kind === 'shelf') return;   // no bubble over loose items, the Stockpile or the shelf: the item itself lights up (R.pickFx)
     let x = tg.x, y = tg.y, lift = 120;
     if (tg.kind === 'floor') lift = 56;
     if (tg.kind === 'pile') lift = 74;
@@ -1310,14 +1324,14 @@ R.drawMark = function (ctx, v, m) {
     }
     if (s.state === 'active') ic = [['ic_skull', w.enemies.filter(e => e.mark === m.id).length]];   // foes left
   } else if (m.type === 'shrine') {
-    const col = ELEM[m.el].color, on = done && w.shrine === m.el, has = G.aug.off[m.el] > 0, near = d < M.shrineR;
+    const col = ELEM[m.el].color, on = done && w.shrine === m.el, near = d < CFG.unlockR;
     ctx.strokeStyle = col; ctx.lineWidth = on || (near && !done) ? 6 : 3; ctx.globalAlpha = on ? (Math.sin(t * 8) > 0 ? 1 : 0.6) : near && !done ? 0.9 : 0.35;
     diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4, M.shrineR * v.hh * 1.4); ctx.stroke(); ctx.globalAlpha = 1;
     if (s.flash > 0) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 9; ctx.globalAlpha = s.flash / 0.5; diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4 * (1.6 - s.flash), M.shrineR * v.hh * 1.4 * (1.6 - s.flash)); ctx.stroke(); ctx.globalAlpha = 1; }   // just claimed
-    if (!done && near && !w.dead) R.iprompt(ctx, p[0], p[1] - 150, has ? R.wkey() : null, has ? ['off_' + m.el] : ['off_' + m.el, 'ic_x'], CFG.W, CFG.HALF, has);   // the Offering it wants, and the button that delivers it
+    if (!done && near && !w.dead) R.iprompt(ctx, p[0], p[1] - 150, null, ['core_' + m.el, 'ic_portal'], CFG.W, CFG.HALF, false);   // the Core it wants, sent through the Spell Portal (the Builder's job)
     dspr(ctx, SP.lm_shrine, p[0], p[1], S);
     dspr(ctx, SP['cr_' + m.el], p[0], p[1] - 39 - (Math.sin(t * (on ? 8 : 3)) > 0 ? 3 : 0), S, done && !on ? 0.6 : 1);
-    if (!done && !near) ic = [['off_' + m.el]];   // what it wants
+    if (!done && !near) ic = [['core_' + m.el]];   // what it wants
     if (on) {   // boosting: the shrine's power streams up into a little portal (and out of the factory's Spell Portal)
       const top = p[1] - 168, rw = 27 + (Math.sin(t * 6) > 0 ? 3 : 0);
       ctx.fillStyle = '#2a1050'; diamond(ctx, p[0], top, rw, rw / 2.5); ctx.fill();

@@ -89,7 +89,7 @@ WZ.onDeath = function (e) {
     if (Math.random() < CFG.crafted.recycle) WZ.drop(CFG.creatures[e.type].order[0], e.x, e.y, 1);   // a packet of its primary element comes back
   }
   if (e.evt) w.evKills = (w.evKills || 0) + 1;
-  WZ.lootDrops(e);   // augments, Offerings and Ward Keys (augments.js)
+  WZ.lootDrops(e);   // Cores and Ward Keys (augments.js)
 };
 // the Phoenix's one rebirth: true when the death was cancelled
 WZ.rebirth = function (e) {
@@ -542,6 +542,7 @@ WZ.claimKeep = function (m) {
   const core = !G.flags[key];
   if (core) { G.flags[key] = true; WZ.drop('core', m.x, m.y, 1); }   // one Core per Stronghold per save
   WZ.dropGems(m.x, m.y, K.gems);
+  WZ.dropCores(m.el, CFG.cores.warden, m.x, m.y);   // a chunk of its element's Cores
   G.stats.keeps = (G.stats.keeps || 0) + 1; G.stats.landmarks = (G.stats.landmarks || 0) + 1; w.run.marks++;
   WZ.ring(m.x, m.y, 5, ELEM[m.el].color, 0.7); WZ.puff(m.x, m.y, '#ffd23a', 24);
   AU.sfx('chest');

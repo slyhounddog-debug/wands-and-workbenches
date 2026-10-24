@@ -349,8 +349,10 @@ WZ.bankLooseShards = function () {
     if (dr.kind === 'shard') { G.stock.shard += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; }
     else if (dr.kind === 'core') G.stock.core += dr.val;
   }
-  WZ.bankLoot(w.drops);   // augments, Offerings and Ward Keys still on the ground are his too
+  WZ.bankLoot(w.drops);   // Cores and Ward Keys still on the ground are the Stockpile's too
   w.drops = w.drops.filter(dr => dr.kind !== 'shard' && dr.kind !== 'core' && !WZ.isLoot(dr.kind));
+  for (const id of WZ.looseGarments()) FA.shelfAdd(id);   // a garment nobody walked onto goes to the Wardrobe Shelf
+  w.pickups = w.pickups.filter(p => !ITEMS[p.kind].aug); w.arcs = w.arcs.filter(a => !ITEMS[a.kind].aug);
 };
 WZ.reenter = function () { WZ.bankLooseShards(); G.w = WZ.fresh(); };
 
@@ -595,7 +597,9 @@ WZ.bendTick = function (dt) {
 WZ.send = function (kind, then, spell) {
   const w = G.w;
   if (!w || w.dead) return;
-  w.arcs.push({ kind, then, spell: spell || null, t: -(CFG.suck.baseT + CFG.arc.outT), T: CFG.arc.inT, col: ITEMS[kind].color || '#ffffff', seed: Math.random() * 6.283, tx: null, ty: null });
+  const a = { kind, then, spell: spell || null, t: -(CFG.suck.baseT + CFG.arc.outT), T: CFG.arc.inT, col: ITEMS[kind].color || '#ffffff', seed: Math.random() * 6.283, tx: null, ty: null };
+  if (then === 'unlock') { const m = WZ.unlockTarget(kind); if (!m) return; a.mark = m.id; a.tx = m.x; a.ty = m.y; a.T = CFG.arc.inT * 1.3; }   // a Core / key sails down onto the shrine / keep it opens
+  w.arcs.push(a);
 };
 WZ.arcTick = function (dt) {
   const w = G.w;
@@ -604,10 +608,14 @@ WZ.arcTick = function (dt) {
     const a = w.arcs[i], was = a.t;
     a.t += dt;
     if (was < 0 && a.t >= 0) AU.sfx('whoosh');   // it comes into view at the top-left
-    if (a.then === 'pickup' && a.t >= 0 && a.tx === null) { const s = WZ.dryNear(w.x, w.y, 20, [1.8, 3]) || [w.x, w.y]; a.tx = s[0]; a.ty = s[1]; }
+    if (a.then === 'pickup' && a.t >= 0 && a.tx === null) {   // a garment drops in like a creature (on screen, not on top of him); a potion lands beside him
+      const s = (ITEMS[a.kind].aug ? WZ.spawnSpot() : WZ.dryNear(w.x, w.y, 20, [1.8, 3])) || [w.x, w.y];
+      a.tx = s[0]; a.ty = s[1];
+    }
     if (a.t < a.T) continue;
     w.arcs.splice(i, 1);
     if (a.then === 'spell') WZ.incoming(a.spell);
+    else if (a.then === 'unlock') WZ.unlockLand(a);
     else { w.pickups.push({ kind: a.kind, x: a.tx, y: a.ty, z: 0.5, t: 0 }); WZ.ring(a.tx, a.ty, 0.9, a.col, 0.3); AU.sfx('portalDrop'); }
   }
 };
@@ -843,7 +851,7 @@ WZ.claim = function (m) {
   WZ.ring(m.x, m.y, 4, '#c890ff', 0.6); WZ.puff(m.x, m.y, '#c890ff', 18);
   AU.sfx('chest'); UI.changed();   // the shards themselves fly out and pop up at the factory's shard pile
 };
-// (shrines are claimed by delivering an Offering: WZ.shrineAt / WZ.shrineOffer in augments.js)
+// (shrines are claimed by a Core the Builder sends through the Spell Portal while the Wizard is near: WZ.unlockTarget / WZ.unlockLand in augments.js)
 WZ.foesNear = (m, n) => {
   for (let i = 0; i < n; i++) {
     const s = WZ.dryNear(m.x, m.y, 12, [1.2, 3.5]);
@@ -888,7 +896,7 @@ WZ.updMarks = function (dt) {
       }
     } else if (m.type === 'stronghold') {
       WZ.updKeep(m, s, d, dt);
-    } else {   // shrines: claimed by delivering the element's Offering (WZ.shrineOffer), then they boost their element's harnessers while he stands on them
+    } else {   // shrines: claimed by the element's Core coming down on them (WZ.unlockLand), then they boost their element's harnessers while he stands on them
       if (s.flash > 0) s.flash -= dt;
       if (s.state === 'done' && d < M.shrineR) w.shrine = m.el;
     }
@@ -950,6 +958,7 @@ WZ.bossDown = function (e) {
   w.boss = null;
   WZ.dropGems(e.x, e.y, CFG.enemies.boss.gem[0]);
   for (let i = 0; i < B.shards; i++) WZ.drop('shard', e.x, e.y, 1);
+  for (const el of ELEMS) WZ.dropCores(el, CFG.cores.boss, e.x, e.y);
   for (let i = 0; i < 6; i++) WZ.later(i * 0.15, () => { WZ.boom(e.x + rand(-1.5, 1.5), e.y + rand(-1.5, 1.5), 2.5, i % 2 ? '#ffe36b' : '#ff4a8a'); AU.sfx('hit'); });
   WZ.puff(e.x, e.y, '#ff4a8a', 40); w.shake = 1;
   for (const o of w.enemies) if (!o.dead && o !== e && Math.hypot(o.x - e.x, o.y - e.y) < 22) { o.dead = true; WZ.puff(o.x, o.y, CFG.enemies[o.type].col, 6); }   // its brood scatters
@@ -1083,10 +1092,8 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   const m = Math.hypot(dx, dy);
   if (m > 0) { dx /= m; dy /= m; w.fx = dx; w.fy = dy; }
   // standing still at a forage spot, the roll button digs instead (move while pressing it to roll away)
-  const sh = w.roll > 0 ? null : WZ.shrineAt();
-  w.dig = w.roll > 0 || sh ? null : WZ.forageAt(w.x, w.y);
-  if (rollPressed && sh && m === 0) { WZ.shrineOffer(sh); w.mashAt = w.t; rollPressed = false; }   // standing at a Shrine with its Offering: the roll button delivers it
-  else if (rollPressed && w.dig && m === 0) { WZ.mash(w.dig); w.mashAt = w.t; rollPressed = false; }
+  w.dig = w.roll > 0 ? null : WZ.forageAt(w.x, w.y);
+  if (rollPressed && w.dig && m === 0) { WZ.mash(w.dig); w.mashAt = w.t; rollPressed = false; }
   else if (rollPressed && m === 0 && w.t - (w.mashAt || -9) < 0.35) rollPressed = false;   // extra mashes after it's dug don't roll him off
   // a roll pressed a moment too early (still rolling / cooling down) is kept for CFG.inputBuffer seconds
   if (rollPressed && (w.rollCd > 0 || w.roll > 0)) { w.rollBuf = CFG.inputBuffer; rollPressed = false; }
@@ -1165,6 +1172,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     p.t += dt;
     if (p.z > 0) { p.z = Math.max(0, p.z - dt * 14); if (p.z === 0) { WZ.puff(p.x, p.y, ITEMS[p.kind].color, 8); AU.sfx('thud'); } continue; }
     if (Math.hypot(p.x - w.x, p.y - w.y) > 0.8 + CFG.upgrade.magnet * lvl('magnet')) continue;   // Loot Magnet reaches these too
+    if (ITEMS[p.kind].aug) { WZ.wearGarment(ITEMS[p.kind].id); w.pickups.splice(i, 1); continue; }
     const def = CFG.pickups[p.kind];
     if (def.heal) {
       if (w.hp >= WZ.maxHp()) { p.full = true; continue; }

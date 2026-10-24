@@ -572,6 +572,11 @@ R.drawBuilding = function (ctx, v, b, t) {
         R.pile(ctx, R.rep(k, R2.in[k] - have), x, base - 70 - have * 8, t, 0, 0.35);
       });
       if (b.prog > 0) R.bar(ctx, p[0], top + 52, 84, b.prog / R2.time, ITEMS[R2.out].color);
+      if (b.type === 'spawner' && b.prog > 0) {   // the creature being hatched, as a small icon in a state box (nothing while it idles: the faint Egg ghost beside it says what it will make)
+        const cs = SP[ITEMS[R2.out].creature], k = Math.max(1, Math.floor(36 / Math.max(cs.c.width, cs.c.height)));
+        pbox(ctx, p[0] - 28, top - 6, 56, 52, '#2b1d48');
+        dspr(ctx, cs, p[0], top + 40 + (Math.sin(t * 5) > 0 ? 0 : 4), k);
+      }
       if (b.draw > 0 && !b.powered) R.noPower(ctx, p[0], top - 16, t);
     } else dspr(ctx, SP.ic_lock, p[0], top + 44, 4);
     R.pile(ctx, b.out.map(o => o.kind), p[0] + 44, base - 24, t, b.id + 3);   // what it has made, waiting to be taken

@@ -600,19 +600,16 @@ task(() => {
     x.fillStyle = '#140a20'; x.fillRect(7, 14, 2, 4); x.fillRect(30, 14, 2, 4);
     x.fillStyle = '#6e4423'; x.fillRect(19, 2, 2, 12);
   }), 20, 35);
-  // Creature Spawners: a hatchery base, a clutch of eggs, tier pips on the front
-  for (let t = 1; t <= 3; t++) {
-    const pip = ['#7bff9a', '#ffe36b', '#ff6a4a'][t - 1];
-    bsprite('b_spawner' + t, (x, cx, cy) => {
-      isoBox(x, cx, cy, 9, 5, '#d8c6a0', '#a8956a', '#867552');
-      isoBox(x, cx, cy - 5, 6, 3, '#c8b88c', '#988660', '#76684a');
-      x.fillStyle = '#fff5d8'; x.beginPath(); x.ellipse(cx, cy - 13, 4, 5.2, 0, 0, Math.PI * 2); x.fill();
-      x.fillStyle = '#d8c6a0'; x.fillRect(cx - 1, cy - 12, 3, 6); x.fillStyle = '#ffffff'; x.fillRect(cx - 3, cy - 16, 1, 2);
-      x.fillStyle = pip; for (let i = 0; i < t; i++) x.fillRect(cx - 8 + i * 3, cy - 3, 2, 2);
-      if (t >= 2) { x.fillStyle = '#fff5d8'; x.beginPath(); x.ellipse(cx - 6, cy - 9, 2, 2.6, 0, 0, Math.PI * 2); x.fill(); }
-      if (t >= 3) { x.fillStyle = '#fff5d8'; x.beginPath(); x.ellipse(cx + 6, cy - 9, 2, 2.6, 0, 0, Math.PI * 2); x.fill(); x.fillStyle = '#ffe36b'; x.fillRect(cx - 1, cy - 20, 3, 1); }
-    });
-  }
+  // the Creature Spawner: a hatchery base and a clutch of eggs, three coloured pips on the front (one, two or three elements per Egg)
+  bsprite('b_spawner', (x, cx, cy) => {
+    isoBox(x, cx, cy, 9, 5, '#d8c6a0', '#a8956a', '#867552');
+    isoBox(x, cx, cy - 5, 6, 3, '#c8b88c', '#988660', '#76684a');
+    x.fillStyle = '#fff5d8'; x.beginPath(); x.ellipse(cx, cy - 13, 4, 5.2, 0, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#d8c6a0'; x.fillRect(cx - 1, cy - 12, 3, 6); x.fillStyle = '#ffffff'; x.fillRect(cx - 3, cy - 16, 1, 2);
+    ['#7bff9a', '#ffe36b', '#ff6a4a'].forEach((pip, i) => { x.fillStyle = pip; x.fillRect(cx - 8 + i * 3, cy - 3, 2, 2); });
+    x.fillStyle = '#fff5d8'; x.beginPath(); x.ellipse(cx - 6, cy - 9, 2, 2.6, 0, 0, Math.PI * 2); x.fill();
+    x.beginPath(); x.ellipse(cx + 6, cy - 9, 2, 2.6, 0, 0, Math.PI * 2); x.fill();
+  });
   const ipal = { o: '#2b1d3e', w: '#ffffff', r: '#e8384a', R: '#a82a3a', y: '#ffd23a', b: '#4a8aff', B: '#2a5ac8', a: '#a8b0b8', A: '#6a7280' };
   const icn = (name, rows) => reg('ic_' + name, mapSprite(rows, ipal), Math.max.apply(null, rows.map(r => r.length)) / 2, rows.length);
   icn('keep', ['a.a.a.a', 'aaaaaaa', 'aAaaaAa', 'aAaoaAa', 'aAaoaAa', 'aaaoaaa', 'aaaaaaa']);

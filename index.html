@@ -59,6 +59,7 @@
       <div class="card px pin hidden" id="bpCard"></div>
       <div class="iconbtns">
         <button id="btnTree" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>T</kbd></button>
+        <button id="btnBook" class="px" title="Collection Book: every spell and creature"><i data-ic="ic_book" data-s="28"></i><kbd>C</kbd></button>
         <button id="btnDemo" class="px" title="Demolish mode"><i data-ic="ic_bomb" data-s="28"></i><kbd>B</kbd></button>
         <button id="btnSwap" class="px" title="Swap roles (hold)"><i data-ic="ic_swap" data-s="28"></i><kbd>X</kbd></button>
         <button id="btnHelp" class="px" title="Controls"><i data-ic="ic_help" data-s="28"></i><kbd>H</kbd></button>
@@ -76,7 +77,7 @@
         <div class="bar hp"><i data-ic="ic_heart" data-s="14"></i><div id="hpFill"></div><span id="hpTxt"></span></div>
         <div class="bar arm"><i data-ic="ic_shield" data-s="14"></i><div id="armFill"></div><span id="armTxt"></span></div>
       </div>
-      <div class="iconbtns right"><button id="btnTreeR" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>Y</kbd></button></div>
+      <div class="iconbtns right"><button id="btnBookR" class="px" title="Collection Book: every spell and creature"><i data-ic="ic_book" data-s="28"></i><kbd>C</kbd></button><button id="btnTreeR" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>Y</kbd></button></div>
       <div class="card px pin hidden" id="pinR"></div>
     </div>
     <div id="eggQ" class="px hidden"></div>
@@ -137,10 +138,13 @@
 
     <div id="results" class="panel px hidden"></div>
     <div id="victory" class="overlay hidden"></div>
+    <!-- the Collection Book: every spell and creature, with live demos (opens over the paused game) -->
+    <div id="book" class="hidden"></div>
     <div id="pause" class="overlay hidden">
       <div id="pauseMain" class="panel px">
         <h2>PAUSED</h2>
         <button id="pResume" class="big">RESUME</button>
+        <button id="pBook" class="big ghost">COLLECTION BOOK</button>
         <button id="pSet" class="big ghost">SETTINGS</button>
         <button id="pQuit" class="big ghost">SAVE &amp; TITLE</button>
       </div>
@@ -197,7 +201,9 @@
 <script src="js/creatures.js"></script>
 <script src="js/render.js"></script>
 <script src="js/spellpreview.js"></script>
+<script src="js/creaturepreview.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/book.js"></script>
 <script src="js/players.js"></script>
 <script src="js/devbot.js"></script>
 <script src="js/snapshot.js"></script>

@@ -95,7 +95,7 @@ FA.initial = function () {
   FA.addBelt(sx - 2, sy, 0); FA.addBelt(sx - 1, sy, 0);
   const sp = FA.makeBuilding('splitter', sx, sy, true, true, 3);
   FA.addBelt(sx + 1, sy, 0); FA.addBelt(sx + 2, sy, 0);
-  FA.makeBuilding('spawner1', sx, sy + 1, true, false, 0);
+  FA.makeBuilding('spawner', sx, sy + 1, true, false, 0);
   FA.addBelt(sx + 1, sy + 1, 0); FA.addBelt(sx + 2, sy + 1, 0);
   FA.splitConn(sp); sp.pct = { 0: CFG.starterSplit, 1: 100 - CFG.starterSplit };   // its outputs are east (the portal belts) and south (the Spawner)
   G.bd = FA.freshBuilder();
@@ -291,7 +291,9 @@ FA.demolish = function (x, y, force) {
 };
 
 // ---------- recipes ----------
-FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (r.out !== 'battery' || !!G.tree.forge); };
+// Production is the only gate for spells and creatures: a recipe needs its tree node only when it has a tier (potions, armor, the Sigil, the Battery),
+// and a Triple / the Nova needs its parent spells to have been MADE at least once (G.stats.made, counted from crafter output)
+FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (r.out !== 'battery' || !!G.tree.forge) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
 FA.recipesFor = type => Object.keys(CFG.recipes).filter(id => CFG.recipes[id].machine === type && FA.recipeOk(id));
 FA.refreshRecipes = function () {
   for (const b of G.fac.bld) if (b.done && FA.def(b).kind === 'crafter' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
@@ -1349,6 +1351,7 @@ FA.fromJSON = function (j) {
       (o.out || []).forEach(x => { if (x && ITEMS[x.kind]) FA.dropAt(x.kind, o.x + 0.5, o.y + 0.5, x.charge); });
       return;
     }
+    if (/^spawner[123]$/.test(o.type)) o = Object.assign({}, o, { type: 'spawner' });   // the three Spawner tiers became one
     if (ELEM[o.type]) o = Object.assign({}, o, { type: 'harness', el: o.type, grow: CFG.harness.growT });   // the four Harnessers became one that switches element
     if (!CFG.buildings[o.type] || !FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;
     const b = FA.makeBuilding(o.type, o.x, o.y, false, o.free, o.dir || 0);

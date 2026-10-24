@@ -120,7 +120,7 @@ Players.ACH = [
   A('charge10', 'B', 'Battery Boss', 'battery', 'Fully charge 10 Batteries', 10, st('charged')),
   A('eggs25', 'B', 'Egg Factory', 'egg_zephyr', 'Send 25 Eggs to the Wizard', 25, st('eggs')),
   A('combos50', 'B', 'Combo Cook', 'steam', 'Send 50 combo spells', 50, st('combos')),
-  A('nova', 'B', 'Nova Maker', 'nova', 'Unlock the Elemental Nova', 1, node('nova')),
+  A('nova', 'B', 'Nova Maker', 'nova', 'Craft the Elemental Nova at the Forge', 1, g => (g.stats.made || {}).nova || 0),
   A('summon', 'B', 'Summoner', 'b:altar', 'Unlock Summoning', 1, node('summon')),
   A('time1h', 'B', 'Dedicated Builder', 'ic_clock', 'Play for one hour in one save', 3600, st('time')),
   A('goalsB', 'B', 'Foreman', 'ic_wrench', 'Finish 12 Builder goals', 12, g => g.quest.B),

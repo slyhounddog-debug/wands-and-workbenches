@@ -13,6 +13,7 @@ window.addEventListener('resize', fit);
 
 // ---------- new / load / save ----------
 const SAVE_VERSION = 4;
+const TREE_VERSION = 2;   // v2: spells and creatures left the skill tree (Main.refundTree gives back what was spent on every removed node)
 const QUEST_VERSION = 6;   // v6 re-sequenced the Builder goals around building things with elements (each carried-over goal has v5 = its old index: Main.questOf); v5 split the single goal chain into two tracks, Builder and Wizard (Main.splitQuest); v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1; v4 inserted the first-creature-kill goal at 5 and the two Stronghold goals before Summoning: goals from the old 5 shift by 1, from the old 21 (Summoning) by 3
 function blankState(slot) {
   return {
@@ -55,8 +56,10 @@ Main.applySave = function (slot, s) {
   G.flags = s.flags || {}; G.quest = Main.questOf(s); G.placeDir = s.placeDir || 0;
   if (s.qbase && typeof s.quest === 'object') G.qbase = Object.assign(G.qbase, s.qbase);   // null = measured from when the goal first shows
   if ((s.qv || 1) < 6) G.qbase.B = null;   // the Builder's goals moved: its old baseline belonged to another goal
+  G.refund = Main.refundTree();   // spells, creatures and other removed nodes: what they cost comes back (toasted in Main.enter)
   G.bankLog = Array.isArray(s.bankLog) ? s.bankLog.filter(k => ITEMS[k]) : [];
   G.pins = Object.assign({ L: null, R: null }, s.pins || {}); G.pinBp = !!s.pinBp;
+  for (const side of ['L', 'R']) if (G.pins[side] && !CFG.tree.some(n => n.id === G.pins[side])) G.pins[side] = null;   // a pin on a node that no longer exists
   // the hands: one pile of single items, bottom first. Older saves held one stack { kind, n } (and for a moment a queue of them): expand them in order.
   G.hands = [].concat(s.hands || [], Array.isArray(s.handQ) ? s.handQ : []).filter(h => h && ITEMS[h.kind]).reduce((a, h) => { for (let i = 0; i < (h.n || 1); i++) a.push(h.kind === 'battery' ? { kind: 'battery', charge: h.charge || 0 } : { kind: h.kind }); return a; }, []);
   G.w = WZ.fresh();
@@ -69,6 +72,33 @@ Main.applySave = function (slot, s) {
 };
 // older saves had ONE goal chain (an index): bring it up to the v4 numbering, then hand each track the first of its goals
 // that continues an old goal that was still open (goals with no `from` are new, so they are skipped rather than redone)
+// What each node that no longer exists cost, as [XP, banked spells, Warden Cores]: a save that owns one gets all of it back on load, and the key is dropped.
+const REMOVED_NODES = {
+  spawn2: [50, { air: 8, water: 8, fire: 8 }], spawn3: [105, { air: 10, water: 10, fire: 10, earth: 10 }, 1],
+  flamethrower: [31, { air: 11, fire: 12 }], tempest: [31, { air: 11, water: 12 }], steam: [31, { fire: 11, water: 12 }], sandstorm: [31, { air: 11, earth: 12 }],
+  magma: [31, { fire: 11, earth: 12 }], mud: [31, { water: 11, earth: 12 }],
+  meteor: [63, { air: 10, fire: 10, earth: 10, flamethrower: 1, magma: 1 }], thunder: [63, { air: 10, fire: 10, water: 10, tempest: 1, flamethrower: 1 }],
+  blizzard: [63, { air: 10, water: 10, earth: 10, mud: 1, tempest: 1 }], geyser: [63, { fire: 10, water: 10, earth: 10, steam: 1, magma: 1 }],
+  nova: [147, { air: 25, fire: 25, water: 25, earth: 30, meteor: 1, thunder: 1, blizzard: 1, geyser: 1 }],
+  cr_phoenix: [30, { fire: 6, air: 6 }], cr_thunderhead: [30, { air: 6, water: 6 }], cr_lavagolem: [30, { fire: 6, earth: 6 }], cr_shambler: [30, { water: 6, earth: 6 }],
+  cr_dragon: [60, { air: 8, fire: 8, earth: 8 }], cr_leviathan: [60, { air: 8, fire: 8, water: 8 }], cr_titan: [60, { fire: 8, water: 8, earth: 8 }],
+  // nodes removed in earlier passes (the Harnesser unlocks and Factory Expansion) that older saves may still carry
+  water: [14, { air: 4 }], fire: [21, { air: 8, water: 8 }], earth: [31, { air: 5, water: 5, fire: 5 }],
+};
+const REMOVED_EXPAND = [[21, { air: 8 }], [31, { air: 11, water: 11 }], [46, { air: 11, water: 11, fire: 11 }], [59, { air: 14, fire: 14, earth: 14, sandstorm: 1 }],
+  [74, { air: 13, water: 13, fire: 13, earth: 13, blizzard: 1, thunder: 1 }], [91, { air: 16, water: 16, fire: 16, earth: 16, meteor: 1, geyser: 1 }]];   // tier 1..6 of Factory Expansion
+Main.refundTree = function () {
+  const back = { xp: 0, core: 0, bank: {} };
+  const give = (xp, pay, core) => { back.xp += xp; back.core += core || 0; for (const k in pay) back.bank[k] = (back.bank[k] || 0) + pay[k]; };
+  for (const id in G.tree) {
+    if (REMOVED_NODES[id]) { give(...REMOVED_NODES[id]); delete G.tree[id]; if (G.tree[id] === undefined && SPELL_INFO[id]) G.stats.made[id] = Math.max(1, G.stats.made[id] || 0); }
+    else if (id === 'expand') { for (let i = 0; i < Math.min(REMOVED_EXPAND.length, +G.tree.expand || 0); i++) give(...REMOVED_EXPAND[i]); delete G.tree.expand; }
+  }
+  if (!back.xp && !back.core && !Object.keys(back.bank).length) return null;
+  G.xp += back.xp; G.stock.core += back.core;
+  for (const k in back.bank) G.bank[k] = (G.bank[k] || 0) + back.bank[k];
+  return back;
+};
 Main.splitQuest = function (old) {
   const at = side => { const i = QUESTS[side].findIndex(q => q.from != null && q.from >= old); return i < 0 ? QUESTS[side].length : i; };
   return { B: at('B'), W: at('W') };
@@ -96,7 +126,7 @@ Main.save = function () {
     const loose = G.w ? G.w.drops.filter(d => d.kind === 'shard').reduce((a, d) => a + d.val, 0) : 0;
     const looseCores = G.w ? G.w.drops.filter(d => d.kind === 'core').reduce((a, d) => a + d.val, 0) : 0;
     const data = JSON.stringify({
-      v: SAVE_VERSION, qv: QUEST_VERSION, xp: G.xp, tree: G.tree, stock: Object.assign({}, G.stock, { shard: G.stock.shard + loose, core: G.stock.core + looseCores }, ...Object.entries(FA.inFlight()).map(([k, n]) => ({ [k]: G.stock[k] + n + (k === 'shard' ? loose : k === 'core' ? looseCores : 0) }))), ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
+      v: SAVE_VERSION, qv: QUEST_VERSION, tv: TREE_VERSION, xp: G.xp, tree: G.tree, stock: Object.assign({}, G.stock, { shard: G.stock.shard + loose, core: G.stock.core + looseCores }, ...Object.entries(FA.inFlight()).map(([k, n]) => ({ [k]: G.stock[k] + n + (k === 'shard' ? loose : k === 'core' ? looseCores : 0) }))), ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
       flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: FA.toJSON(), at: Date.now(),
       bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp,
     });
@@ -116,12 +146,18 @@ Main.enter = function () {
   UI.show('menu', false); UI.show('game', true);
   UI.show('pause', false); UI.show('results', false); UI.help(false);
   UI.openTree('L', false); UI.openTree('R', false);
+  Book.close(true);
   UI.buildHotbar();
   UI.show('victory', false);
   R.fcam.x = G.bd.x; R.fcam.y = G.bd.y; R.wcam.x = G.w.x; R.wcam.y = G.w.y;
   Main.metrics = { t: 0, next: 0, samples: [] };
   Main.helpFoot();
   AU.music(true); AU.hold(false);
+  if (G.refund) {   // a save that owned skill-tree nodes that no longer exist: say what came back
+    const r = G.refund; G.refund = null;
+    const msg = 'Skill tree changed: refunded ' + r.xp + ' XP' + (Object.keys(r.bank).length ? ' and ' + Object.values(r.bank).reduce((a, n) => a + n, 0) + ' banked spells' : '') + (r.core ? ' and a Warden Core' : '') + '. Spells and creatures are in the Collection Book now.';
+    UI.toast(msg, 'L', 'ic_xp'); UI.toast(msg, 'R', 'ic_xp'); UI.changed();
+  }
 };
 // the controls card's footer: which controller plays which job
 Main.helpFoot = function () {
@@ -132,7 +168,7 @@ Main.helpFoot = function () {
     (pw ? pw + ' = Wizard (A roll). ' : '') + '<kbd>H</kbd> hides this.';
 };
 Main.toTitle = function (noSave) {
-  DevBot.set(null);
+  DevBot.set(null); Book.close(true);
   if (!noSave && G) { WZ.bankLooseShards(); Main.save(); }
   STATE = 'menu';
   UI.splitB = null; UI.show('splitModal', false); UI.askB = null; UI.show('askModal', false);
@@ -288,6 +324,7 @@ Main.controls = function (dt) {
   if (IN.hit('KeyT') || (p0 && p0.y && !UI.splitB)) UI.openTree('L');
   if (IN.hit('KeyY') || (p1 && p1.y)) UI.openTree('R');
   if (IN.hit('KeyH')) { UI.help(); G.helpT = 0; }
+  if (IN.hit('KeyC') && !frozenNow() && !UI.splitB && !UI.askB) Book.open();   // the Collection Book: every spell and creature
   if ((IN.hit('KeyP') || (p0 && p0.l3)) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
   if (IN.hit('F3') || IN.hit('Backquote')) { UI.debugOn = !UI.debugOn; AU.sfx('blip'); }
   if (IN.hit('F4') && UI.debugOn) DevBot.toggle();   // dev-only: only while the F3 overlay is open
@@ -523,10 +560,8 @@ Main.hintFor = function (q) {
   else if (h.build) { const bp = G.fac.bld.find(b => b.type === h.build && !b.done); if (bp) out.f = at(bp); else out.slot = h.build; }
   else if (h.make) make(h.make);
   else if (h.tree) out.tree = true;
-  else if (h.combo) {   // needs a spell with that many elements unlocked, then the Forge
-    const ok = FA.recipesFor('forge').some(id => Object.keys(CFG.recipes[id].in).length >= h.combo && id !== 'battery');
-    if (!ok) out.tree = true; else make('forge');
-  } else if (h.harv || h.mark || h.forage) {   // mark: 'shrine' / 'camp' (camps + crypts) = the nearest unclaimed one, 'myshrine' = a claimed shrine to stand on
+  else if (h.combo) make('forge');   // combo spells need no unlock: the Forge (and the packets it fuses) is the whole gate
+  else if (h.harv || h.mark || h.forage) {   // mark: 'shrine' / 'camp' (camps + crypts) = the nearest unclaimed one, 'myshrine' = a claimed shrine to stand on
     const w = G.w;
     let best = null, bd = 1e9;
     const near = o => { const d = Math.hypot(o.x - w.x, o.y - w.y); if (d < bd) { bd = d; best = o; } };
@@ -654,6 +689,7 @@ function frame(ts) {
   if (STATE === 'play' && G) {
     try {
       Snap.tick();   // dev-only: the snapshot bar and its keys (inert unless the F3 overlay is open)
+      Book.tick(dt);   // the Collection Book's keys and pad while it is open
       if (Snap.mode !== 'off') { AU.hum(0); Snap.draw(ctx, ts); Main.still = 0; }   // a snapshot view is up: the simulation is frozen and the cached frame shows
       else {
       if (!G.paused) Main.step(dt);
@@ -689,6 +725,9 @@ window.addEventListener('DOMContentLoaded', () => {
   UI.buildMenu();
   $('btnTree').onclick = () => UI.openTree('L');
   $('btnTreeR').onclick = () => UI.openTree('R');
+  $('btnBook').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB) Book.open(); };
+  $('btnBookR').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB) Book.open(); };
+  $('pBook').onclick = () => Book.open(true);
   $('btnDemo').onclick = () => { G.demolish = !G.demolish; AU.sfx('blip'); };
   $('btnSwap').onclick = () => UI.toast('Hold X (or Start on a pad) for 1.5 seconds to swap jobs.', 'L', 'ic_swap');
   $('btnHelp').onclick = () => UI.help();

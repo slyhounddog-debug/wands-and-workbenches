@@ -157,12 +157,8 @@ const CFG = {
                 desc: 'Routes what comes in to up to 3 outputs: every side that has something to feed (the side items arrive from is the input). Share them out by %, or give an output element filters (Fire + Earth left, Water + Air right). Click it to set it up.' },
     crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 8, stone: 4 }, unlock: 'logistics',
                 desc: 'Holds up to 30 packets, spells or pickups (never raw resources) and feeds them out of its arrow side, one at a time.' },
-    spawner1: { name: 'Creature Spawner I', kind: 'crafter', tier: 1, cost: { wood: 10, stone: 8, iron: 3 }, unlock: null,
-                desc: 'Hatches single-element creature Eggs from element packets. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. E switches recipe.' },
-    spawner2: { name: 'Creature Spawner II', kind: 'crafter', tier: 2, cost: { wood: 13, stone: 10, iron: 6 }, unlock: 'spawn2',
-                desc: 'Hatches two-element creature Eggs: phoenix, storm cloud, lava golem, swamp shambler. Each recipe is unlocked on its own.' },
-    spawner3: { name: 'Creature Spawner III', kind: 'crafter', tier: 3, cost: { wood: 17, stone: 14, iron: 8 }, unlock: 'spawn3',
-                desc: 'Hatches three-element creature Eggs: dragon, storm leviathan, kiln titan. Each recipe is unlocked on its own.' },
+    spawner:  { name: 'Creature Spawner', kind: 'crafter', cost: { wood: 10, stone: 8, iron: 3 }, unlock: null,
+                desc: 'Hatches a creature Egg from the element packets fed into it: one element = a basic creature, two = a pair, three = a triple. E switches recipe. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP.' },
     altar:    { name: 'Summoning Altar', kind: 'crafter', cost: { stone: 14, iron: 7, shard: 6 }, unlock: 'summon',
                 desc: 'Binds an Elemental Nova and Aether Shards into a Boss Sigil. Send the Sigil through the Spell Portal to summon the Primal Chimera.' },
   },
@@ -173,7 +169,7 @@ const CFG = {
     craft:   { name: 'Crafters',   members: ['cauldron', 'forge', 'anvil', 'altar'] },
     power:   { name: 'Power',      members: ['station', 'charger'] },
     logi:    { name: 'Logistics',  members: ['splitter', 'crate'] },
-    spawn:   { name: 'Creature Spawners', members: ['spawner1', 'spawner2', 'spawner3'] },
+    spawn:   { name: 'Creature Spawner', members: ['spawner'] },
   },
   hotbar: ['hand', 'belt', 'harness', 'craft', 'power', 'logi', 'spawn', 'expand'],
   hotkeys: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'],
@@ -185,17 +181,17 @@ const CFG = {
     plate:        { machine: 'anvil',    in: { iron: 3, stone: 2, fire: 1, earth: 1 }, out: 'plate', time: 11, power: 2, tier: 'armory', use: '+70 armor for the Wizard' },
     sigil:        { machine: 'altar',    in: { nova: 1, shard: 5 },             out: 'sigil',   time: 12, power: 6, tier: 'summon', use: 'Summons the Primal Chimera beside the Wizard' },
     battery:      { machine: 'forge', in: { iron: 2 },               out: 'battery',      time: 8,  power: 3, tier: 'forge', use: 'Charge it, then slot it into a Station for power' },
-    flamethrower: { machine: 'forge', in: { air: 1, fire: 1 },       out: 'flamethrower', time: 8,  power: 5, tier: 'flamethrower' },
-    steam:        { machine: 'forge', in: { fire: 1, water: 1 },     out: 'steam',        time: 8,  power: 5, tier: 'steam' },
-    sandstorm:    { machine: 'forge', in: { air: 1, earth: 1 },      out: 'sandstorm',    time: 8,  power: 5, tier: 'sandstorm' },
-    magma:        { machine: 'forge', in: { fire: 1, earth: 1 },     out: 'magma',        time: 9,  power: 5, tier: 'magma' },
-    tempest:      { machine: 'forge', in: { air: 1, water: 1 },      out: 'tempest',      time: 8,  power: 5, tier: 'tempest' },
-    mud:          { machine: 'forge', in: { water: 1, earth: 1 },    out: 'mud',          time: 8,  power: 5, tier: 'mud' },
-    meteor:       { machine: 'forge', in: { air: 1, fire: 1, earth: 1 },   out: 'meteor',   time: 14, power: 6, tier: 'meteor' },
-    thunder:      { machine: 'forge', in: { air: 1, fire: 1, water: 1 },   out: 'thunder',  time: 14, power: 6, tier: 'thunder' },
-    blizzard:     { machine: 'forge', in: { air: 1, water: 1, earth: 1 },  out: 'blizzard', time: 14, power: 6, tier: 'blizzard' },
-    geyser:       { machine: 'forge', in: { fire: 1, water: 1, earth: 1 }, out: 'geyser',   time: 14, power: 6, tier: 'geyser' },
-    nova:         { machine: 'forge', in: { air: 1, fire: 1, water: 1, earth: 1 }, out: 'nova', time: 20, power: 8, tier: 'nova' },
+    flamethrower: { machine: 'forge', in: { air: 1, fire: 1 },       out: 'flamethrower', time: 8,  power: 5 },
+    steam:        { machine: 'forge', in: { fire: 1, water: 1 },     out: 'steam',        time: 8,  power: 5 },
+    sandstorm:    { machine: 'forge', in: { air: 1, earth: 1 },      out: 'sandstorm',    time: 8,  power: 5 },
+    magma:        { machine: 'forge', in: { fire: 1, earth: 1 },     out: 'magma',        time: 9,  power: 5 },
+    tempest:      { machine: 'forge', in: { air: 1, water: 1 },      out: 'tempest',      time: 8,  power: 5 },
+    mud:          { machine: 'forge', in: { water: 1, earth: 1 },    out: 'mud',          time: 8,  power: 5 },
+    meteor:       { machine: 'forge', in: { air: 1, fire: 1, earth: 1 },   out: 'meteor',   time: 14, power: 6, parents: ['flamethrower', 'magma'] },
+    thunder:      { machine: 'forge', in: { air: 1, fire: 1, water: 1 },   out: 'thunder',  time: 14, power: 6, parents: ['flamethrower', 'tempest'] },
+    blizzard:     { machine: 'forge', in: { air: 1, water: 1, earth: 1 },  out: 'blizzard', time: 14, power: 6, parents: ['tempest', 'mud'] },
+    geyser:       { machine: 'forge', in: { fire: 1, water: 1, earth: 1 }, out: 'geyser',   time: 14, power: 6, parents: ['steam', 'magma'] },
+    nova:         { machine: 'forge', in: { air: 1, fire: 1, water: 1, earth: 1 }, out: 'nova', time: 20, power: 8, parents: ['meteor', 'thunder', 'blizzard', 'geyser'] },
   },
   // ===== Skill tree =====
   // Every node costs XP *and* spells. Spells are banked by sending them through the Skill Portal in the factory.
@@ -208,19 +204,7 @@ const CFG = {
     { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 68, req: ['alchemy'], pay: { air: 18, fire: 30, earth: 20 }, desc: 'Unlock the Armor Anvil: armor pickups for the Wizard.' },
     { id: 'logistics', col: 0, icon: 'b:splitter', name: 'Logistics',       xp: 60, req: ['alchemy'], pay: { air: 20, water: 20, fire: 20 }, desc: 'Unlock the Splitter and the Storage Crate.' },
     { id: 'heavy',     col: 0, icon: 'battery',    name: 'Heavy Batteries', xp: 120, req: ['armory'], pay: { air: 25, water: 25, fire: 30, earth: 30, magma: 2 }, desc: 'Batteries in a Station last 50% longer before they run flat. You still haul them by hand.' },
-    { id: 'summon',   col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: ['nova'], pay: { air: 40, water: 40, fire: 40, earth: 40 }, core: 1, desc: 'Unlock the Summoning Altar: craft a Boss Sigil and face the Primal Chimera. Needs a Warden Core from a Stronghold. Beat it to win.' },
-    // col 1: Spells (each Forge recipe on its own).
-    { id: 'flamethrower', col: 1, icon: 'flamethrower', name: 'Flamethrower',  xp: 45, req: ['forge'], pay: { air: 22, fire: 23 }, desc: 'Air + Fire: 8 fire bolts in a cone.' },
-    { id: 'tempest',      col: 1, icon: 'tempest',      name: 'Tempest Chain', xp: 45, req: ['forge'], pay: { air: 22, water: 23 }, desc: 'Air + Water: chain lightning to 5 foes, slows nearby.' },
-    { id: 'steam',        col: 1, icon: 'steam',        name: 'Steam Burst',   xp: 45, req: ['forge'], pay: { fire: 22, water: 23 }, desc: 'Fire + Water: scalding burst that slows.' },
-    { id: 'sandstorm',    col: 1, icon: 'sandstorm',    name: 'Sandstorm',     xp: 45, req: ['forge'], pay: { air: 22, earth: 23 }, desc: 'Air + Earth: a grinding storm that follows the Wizard.' },
-    { id: 'magma',        col: 1, icon: 'magma',        name: 'Magma Bomb',    xp: 45, req: ['forge'], pay: { fire: 22, earth: 23 }, desc: 'Fire + Earth: big blast that leaves burning ground.' },
-    { id: 'mud',          col: 1, icon: 'mud',          name: 'Mud Snare',     xp: 45, req: ['forge'], pay: { water: 22, earth: 23 }, desc: 'Water + Earth: a sticky zone that nearly stops foes, behind an Earth Wall that channels them.' },
-    { id: 'meteor',       col: 1, icon: 'meteor',       name: 'Meteor Shower', xp: 90, req: ['flamethrower', 'magma'], pay: { air: 20, fire: 20, earth: 20, flamethrower: 2, magma: 1 }, desc: 'Air + Fire + Earth: 8 meteors on random foes.' },
-    { id: 'thunder',      col: 1, icon: 'thunder',      name: 'Thunderstorm',  xp: 90, req: ['flamethrower', 'tempest'], pay: { air: 20, fire: 20, water: 20, tempest: 2, flamethrower: 1 }, desc: 'Air + Fire + Water: chain lightning to 10 foes.' },
-    { id: 'blizzard',     col: 1, icon: 'blizzard',     name: 'Blizzard',      xp: 90, req: ['tempest', 'mud'], pay: { air: 20, water: 20, earth: 20, mud: 2, tempest: 1 }, desc: 'Air + Water + Earth: a freezing storm around the Wizard. Freezes bog and water into ice he can run on.' },
-    { id: 'geyser',       col: 1, icon: 'geyser',       name: 'Geyser Eruption', xp: 90, req: ['steam', 'magma'], pay: { fire: 20, water: 20, earth: 20, steam: 2, magma: 1 }, desc: 'Fire + Water + Earth: blasts under the 6 nearest foes and launches the Wizard over water and bog.' },
-    { id: 'nova',         col: 1, icon: 'nova',         name: 'Elemental Nova', xp: 210, req: ['meteor', 'thunder', 'blizzard', 'geyser'], pay: { air: 50, fire: 50, water: 50, earth: 60, meteor: 1, thunder: 1, blizzard: 1, geyser: 1 }, desc: 'All four: a huge radial blast.' },
+    { id: 'summon',   col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: ['forge'], pay: { air: 40, water: 40, fire: 40, earth: 40 }, core: 1, desc: 'Unlock the Summoning Altar: craft a Boss Sigil and face the Primal Chimera. Needs a Warden Core from a Stronghold. Beat it to win.' },
     // col 2: Upgrades — many small tiers, cheap first, steep last
     { id: 'swift',   col: 2, icon: 'ic_fast', name: 'Swift Harnessing', per: '+12.5% harnesser speed',
       tiers: [12, 18, 25, 33, 43, 54, 65, 80],
@@ -278,7 +262,7 @@ const CFG = {
   // what each upgrade tier is worth
   upgrade: { swift: 0.125, manual: 0.3, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125, magnet: 0.35 },   // gems: x(1+0.125) per tier on every gem drop chance (cap gemCap); magnet: tiles of extra pickup radius per tier
   firstTierPay: 0.5,          // tier 1 of every upgrade track asks for half the usual spells
-  costScale: { xp: 0.7, pay: 0.5 },   // the skill-tree rebalance: XP costs x0.7, banked spell costs x0.5 (applied once below, after the dev-tool overrides)
+  costScale: { xp: 0.7, pay: 0.5, unlock: 0.9 },   // the skill-tree rebalance: XP costs x0.7, banked spell costs x0.5 (applied once below, after the dev-tool overrides); unlock: the Factory unlock nodes are a further 10% cheaper now that spells and creatures left the tree
   gemCap: 0.95,               // no gem chance ever goes above this, whatever Gem Wisdom says
   bigGem: { r: 0.7, tiers: [1, 3, 8, 20] },   // resting gems within r tiles merge into one Big Gem; the sprite grows at these totals
   // ---- Creature production: Eggs are crafted at a Creature Spawner and sent through the Spell Portal ----
@@ -358,8 +342,8 @@ if (window.OV) OV.tune(CFG, window.TUNING);
       n.tiers = n.tiers.map(sx);
       for (const i in n.combos || {}) for (const k in n.combos[i]) n.combos[i][k] = sp(n.combos[i][k]);
     } else {
-      n.xp = sx(n.xp);
-      for (const k in n.pay) n.pay[k] = sp(n.pay[k]);
+      n.xp = sx(n.xp * S.unlock);
+      for (const k in n.pay) n.pay[k] = sp(n.pay[k] * S.unlock);
     }
   }
 })();
@@ -373,23 +357,20 @@ const WEAK_TO = { fire: 'water', water: 'earth', earth: 'air', air: 'fire' };
     c.weak = WEAK_TO[c.order[0]]; c.resist = c.order[c.order.length - 1];
     if (c.weak === c.resist) console.warn('creature ' + id + ' resists what it is weak to');
     CFG.enemies[id] = { name: c.name, hp: c.hp, speed: c.speed, dmg: c.dmg, gem: c.gem, w: 0, col: c.col, weak: c.weak, resist: c.resist, rad: c.rad, crafted: true, creature: id };
-    CFG.recipes['egg_' + id] = { machine: 'spawner' + c.tier, in: c.cost, out: 'egg_' + id, time: c.time, power: c.power,
-      tier: c.tier === 1 ? null : 'cr_' + id, use: 'Hatches a ' + c.name + ' beside the Wizard' };
+    CFG.recipes['egg_' + id] = { machine: 'spawner', in: c.cost, out: 'egg_' + id, time: c.time, power: c.power,
+      use: 'Hatches a ' + c.name + ' beside the Wizard' };
   }
+  const NOTE = {
+    zephyr: 'Drifts erratically and phase-dashes through you.', puddle: 'Slow. Bursts into a slowing splash zone when it dies.', cinder: 'Keeps its distance and spits ember bolts.',
+    pebble: 'Armored: x0.55 damage from anything but its weakness, and it cannot be knocked back.', phoenix: 'Flashes, then swoops in a dive. Reborn once at 30% HP.',
+    thunderhead: 'Hovers and fires telegraphed chain zaps.', lavagolem: 'Slow. Leaves magma trails and blasts when it dies (telegraphed).',
+    shambler: 'Lays mud-snare zones across your path. Regenerates in bog and at the shore.', dragon: 'A telegraphed flame-breath fan; wing gusts knock you back.',
+    leviathan: 'A fast flyer: chain zaps and steam-burst dives.', titan: 'Its armor cracks at 75 / 50 / 25% HP, and every crack vents a telegraphed steam burst.',
+  };
+  for (const id in NOTE) CFG.creatures[id].note = NOTE[id];
   const W = CFG.strong.warden;
   CFG.enemies.warden = { name: W.name, hp: W.hp, speed: W.speed, dmg: W.dmg, gem: [3, 0], w: 0, col: '#ffd23a', rad: W.rad };
-  // new tree nodes: the Spawner tiers (Tier 3 costs a Warden Core), one node per pair / triple creature, and the Loot Magnet track
-  const at = CFG.tree.findIndex(n => n.id === 'heavy');
-  CFG.tree.splice(at, 0,
-    { id: 'spawn2', col: 3, icon: 'b:spawner2', name: 'Spawner II', xp: 50, req: ['forge'], pay: { air: 8, water: 8, fire: 8 }, desc: 'Unlock the Tier 2 Creature Spawner: two-element creatures (each its own spell-style node).' },
-    { id: 'spawn3', col: 3, icon: 'b:spawner3', name: 'Spawner III', xp: 105, req: ['spawn2'], pay: { air: 10, water: 10, fire: 10, earth: 10 }, core: 1, desc: 'Unlock the Tier 3 Creature Spawner: three-element creatures. Needs a Warden Core from a Stronghold.' });
-  const spellOf = { phoenix: 'flamethrower', thunderhead: 'tempest', lavagolem: 'magma', shambler: 'mud', dragon: 'meteor', leviathan: 'thunder', titan: 'geyser' };
-  for (const id in spellOf) {
-    const c = CFG.creatures[id], pay = {};
-    for (const k in c.cost) pay[k] = c.tier === 2 ? 6 : 8;
-    CFG.tree.push({ id: 'cr_' + id, col: 3, icon: 'egg_' + id, name: c.name, xp: c.tier === 2 ? 30 : 60, req: [spellOf[id], 'spawn' + c.tier], pay,
-      desc: 'Hatch the ' + c.name + ' (' + c.order.map(k => k[0].toUpperCase() + k.slice(1)).join(' + ') + '): needs its spell and Spawner tier.' });
-  }
+  // the Loot Magnet track (spells and creatures are not in the tree: the Collection Book lists them and production gates them)
   CFG.tree.push({ id: 'magnet', col: 2, icon: 'ic_magnet', name: 'Loot Magnet', per: '+0.35 tiles of pickup range',
     tiers: [8, 12, 18, 25, 34], pk: [6, 9, 13, 18, 24],
     kinds: [['air'], ['air', 'water'], ['water', 'earth'], ['fire', 'earth'], ['air', 'water', 'fire', 'earth']], combos: {} });
@@ -415,6 +396,24 @@ const SPELLS = {
   flamethrower: 'Flamethrower', steam: 'Steam Burst', sandstorm: 'Sandstorm', magma: 'Magma Bomb',
   tempest: 'Tempest Chain', mud: 'Mud Snare', meteor: 'Meteor Shower', thunder: 'Thunderstorm',
   blizzard: 'Blizzard', geyser: 'Geyser Eruption', nova: 'Elemental Nova',
+};
+// the Collection Book's text for every spell (these used to be the skill-tree node descriptions)
+const SPELL_INFO = {
+  gust: { desc: 'Air: a push of wind that knocks foes back and chops trees and rocks.' },
+  fireball: { desc: 'Fire: a fast fireball that bursts on the first foe and burns what is near.' },
+  spray: { desc: 'Water: a fan of droplets that slow foes and patch the Wizard up a little.' },
+  boulder: { desc: 'Earth: a slow, heavy boulder with a big crushing burst.' },
+  flamethrower: { desc: 'Air + Fire: 8 fire bolts in a cone.' },
+  tempest: { desc: 'Air + Water: chain lightning to 5 foes, slows nearby.' },
+  steam: { desc: 'Fire + Water: scalding burst that slows.' },
+  sandstorm: { desc: 'Air + Earth: a grinding storm that follows the Wizard.' },
+  magma: { desc: 'Fire + Earth: big blast that leaves burning ground.' },
+  mud: { desc: 'Water + Earth: a sticky zone that nearly stops foes, behind an Earth Wall that channels them.' },
+  meteor: { desc: 'Air + Fire + Earth: 8 meteors on random foes.' },
+  thunder: { desc: 'Air + Fire + Water: chain lightning to 10 foes.' },
+  blizzard: { desc: 'Air + Water + Earth: a freezing storm around the Wizard. Freezes bog and water into ice he can run on.' },
+  geyser: { desc: 'Fire + Water + Earth: blasts under the 6 nearest foes and launches the Wizard over water and bog.' },
+  nova: { desc: 'All four: a huge radial blast.' },
 };
 const SPELL_COL = {
   gust: '#e6f8ff', fireball: '#ff7a30', spray: '#4aa8ff', boulder: '#b58a4c',
@@ -445,8 +444,7 @@ const recipeName = id => itemName(CFG.recipes[id].out);
 const recipeUse = id => {
   const r = CFG.recipes[id];
   if (r.use) return r.use;
-  const n = CFG.tree.find(t => t.id === id);
-  return n ? n.desc.replace(/^[^:]*:\s*/, '') : '';
+  return SPELL_INFO[id] ? SPELL_INFO[id].desc.replace(/^[^:]*:\s*/, '') : '';
 };
 const SPELL_KINDS = Object.keys(ITEMS).filter(k => ITEMS[k].elem || ITEMS[k].spell);   // what the Skill Portal banks
 // the elements each spell carries (for weaknesses, and its tier: how hard it lands back at the Spell Portal)
@@ -475,24 +473,24 @@ const QUESTS = {
     { from: 5,  v5: 3,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, done: g => (g.bankTotal || 0) >= 5, prog: g => [g.bankTotal || 0, 5], hint: { portal: 'skill' } },
     { from: 6,  v5: 4,  icon: 'b:air', text: 'Build a second Harnesser: press 3, click a tile, then throw Wood & Stone at it', xp: 8, done: g => FA.count('harness') >= 2, hint: { build: 'harness' } },
     { from: 7,  v5: 5,  icon: 'battery', text: 'Recharge the spare Battery: throw Air packets (or Wood or Stone) at the Charger', xp: 10, done: g => !!g.flags.recharged, hint: { make: 'charger' } },
-    { icon: 'egg_zephyr', text: 'Hatch Air creatures: send 3 Zephyr Wisp Eggs through the Spell Portal', xp: 8, stat: g => (g.stats.sent || {}).egg_zephyr || 0, n: 3, hint: { make: 'spawner1' } },
+    { icon: 'egg_zephyr', text: 'Hatch Air creatures: send 3 Zephyr Wisp Eggs through the Spell Portal', xp: 8, stat: g => (g.stats.sent || {}).egg_zephyr || 0, n: 3, hint: { make: 'spawner' } },
     { v5: 6,  icon: 'b:water', text: 'Switch a Harnesser to Water: press F beside it. The new crystal grows for 15 seconds', xp: 8, gift: { bank: { water: 4 } }, done: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
     { from: 11, v5: 8,  icon: 'potion', text: 'Unlock Alchemy (T), brew a Health Potion from Water and send it through the Spell Portal', xp: 12, done: g => g.flags.sent_potion, hint: { make: 'cauldron' } },
     { v5: 9,  icon: 'elixir', text: 'Keep the Wizard healthy: send 3 more Potions or Elixirs', xp: 10, gift: { stock: { wood: 12, stone: 9, iron: 6 } }, stat: g => sentN(g, 'potion', 'elixir'), n: 3, hint: { make: 'cauldron' } },
-    { icon: 'egg_puddle', text: 'Hatch a Puddle Slime: Water into a Spawner (E picks the recipe), then send the Egg', xp: 10, stat: g => (g.stats.sent || {}).egg_puddle || 0, n: 1, hint: { make: 'spawner1' } },
-    { icon: 'egg_cinder', text: 'Hatch a Cinder Imp: set a Harnesser to Fire, feed a Spawner, send the Egg', xp: 10, gift: { bank: { fire: 4 } }, stat: g => (g.stats.sent || {}).egg_cinder || 0, n: 1, hint: { make: 'spawner1' } },
+    { icon: 'egg_puddle', text: 'Hatch a Puddle Slime: Water into a Spawner (E picks the recipe), then send the Egg', xp: 10, stat: g => (g.stats.sent || {}).egg_puddle || 0, n: 1, hint: { make: 'spawner' } },
+    { icon: 'egg_cinder', text: 'Hatch a Cinder Imp: set a Harnesser to Fire, feed a Spawner, send the Egg', xp: 10, gift: { bank: { fire: 4 } }, stat: g => (g.stats.sent || {}).egg_cinder || 0, n: 1, hint: { make: 'spawner' } },
     { from: 12, v5: 10, icon: 'b:forge', text: 'Unlock the Forge (T) and build it: it fuses element packets into combo spells', xp: 12, done: g => FA.count('forge') >= 1, hint: { make: 'forge' } },
     { v5: 11, icon: 'battery', text: 'Craft a Battery at the Forge (press E at it to pick the recipe)', xp: 8, stat: g => (g.stats.made || {}).battery || 0, n: 1, hint: { make: 'forge' } },
     { v5: 12, icon: 'ic_bolt', text: 'Charge 3 Batteries: swap flat ones into the Charger and feed it packets', xp: 15, gift: { credit: { station: 1 } }, stat: g => g.stats.charged || 0, n: 3, hint: { make: 'charger' } },
-    { from: 13, v5: 13, icon: 'flamethrower', text: 'Unlock a combo spell and deliver it from the Forge', xp: 15, gift: { bank: { air: 3, fire: 3 } }, done: g => g.flags.combo, hint: { combo: 2 } },
+    { from: 13, v5: 13, icon: 'flamethrower', text: 'Craft a combo spell at the Forge (press E to pick Air + Fire, Air + Water...) and deliver it', xp: 15, gift: { bank: { air: 3, fire: 3 } }, done: g => g.flags.combo, hint: { combo: 2 } },
     { v5: 14, icon: 'ic_fast', text: 'Overdrive: put a charged Battery Station right beside a Forge or Cauldron', xp: 12, done: g => G.fac.bld.some(b => b.done && b.od), hint: { make: 'station' } },
     { v5: 15, icon: 'steam', text: 'Deliver 6 combo spells to the Wizard (two or more elements each)', xp: 15, gift: { stock: { shard: 1 } }, stat: g => g.stats.combos || 0, n: 6, hint: { combo: 2 } },
     { from: 15, v5: 16, icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter to route packets', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && b.type === 'splitter'), hint: { make: 'splitter' } },
     { from: 16, v5: 17, icon: 'armor', text: 'Unlock the Armory and send Armor to the Wizard (it needs Fire packets)', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'anvil' } },
     { v5: 18, icon: 'plate', text: 'Plate up the Wizard: send 4 more Armor or Heavy Plates (Heavy Plates need Earth)', xp: 12, gift: { stock: { iron: 6 } }, stat: g => sentN(g, 'armor', 'plate'), n: 4, hint: { make: 'anvil' } },
-    { icon: 'egg_pebble', text: 'Hatch a Pebble Golem: set a Harnesser to Earth, feed a Spawner, send the Egg', xp: 12, stat: g => (g.stats.sent || {}).egg_pebble || 0, n: 1, hint: { make: 'spawner1' } },
+    { icon: 'egg_pebble', text: 'Hatch a Pebble Golem: set a Harnesser to Earth, feed a Spawner, send the Egg', xp: 12, stat: g => (g.stats.sent || {}).egg_pebble || 0, n: 1, hint: { make: 'spawner' } },
     { from: 17, v5: 19, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 8) and throw 1 Wood + 1 Stone at it', xp: 15, done: g => (g.stats.tiles || 0) >= 1, hint: { make: 'expand' } },
-    { v5: 20, icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner1' } },
+    { v5: 20, icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner' } },
     { from: 19, v5: 21, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, done: g => g.flags.triple, hint: { combo: 3 } },
     { from: 20, v5: 22, icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, done: g => g.flags.sent_nova, hint: { combo: 4 } },
     { from: 23, v5: 23, icon: 'b:altar', text: 'Unlock Summoning (it costs a Warden Core) and build the Summoning Altar (it needs Aether Shards)', xp: 40, done: g => FA.count('altar') >= 1, hint: { make: 'altar' } },

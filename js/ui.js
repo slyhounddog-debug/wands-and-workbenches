@@ -425,7 +425,7 @@ UI.cycleFam = function (dir, slot) {
 };
 
 // ---------- skill tree ----------
-// Every node costs XP + banked spells. Element packets need their harnesser unlocked; combo spells need their own node.
+// Every node costs XP + banked spells. Spells and creatures are not in the tree (the Collection Book lists them; producing them is the gate).
 const ELEM_UNLOCK = {};   // every element is available from the start
 UI.nodeLevel = n => (n.tiers ? lvl(n.id) : (G.tree[n.id] ? 1 : 0));
 UI.nodeMax = n => (n.tiers ? n.tiers.length : 1);
@@ -441,7 +441,7 @@ UI.nodeCost = function (n) {
 };
 UI.nodeReqs = function (n) {   // tree ids still needed before this node (or its next tier) can be bought
   const need = (n.req || []).slice(), c = UI.nodeCost(n);
-  if (c) for (const k in c.pay) { const r = ELEM_UNLOCK[k] || (ITEMS[k] && ITEMS[k].spell ? k : null); if (r && r !== n.id && need.indexOf(r) < 0) need.push(r); }
+  if (c) for (const k in c.pay) { const r = ELEM_UNLOCK[k]; if (r && r !== n.id && need.indexOf(r) < 0) need.push(r); }   // spells need no node: producing them is the gate
   return need.filter(r => !G.tree[r]);
 };
 UI.canAfford = function (c) {
@@ -469,15 +469,15 @@ UI.openTree = function (side, open) {
 };
 UI.renderTree = function (side) {
   const el = $(side === 'L' ? 'treeL' : 'treeR');
-  const cols = [['ic_factory', 'FACTORY'], ['ic_new', 'SPELLS'], ['ic_up', 'UPGRADES'], ['egg_zephyr', 'CREATURES']];
+  const cols = [['ic_factory', 'FACTORY', 0], ['ic_up', 'UPGRADES', 2]];   // spells and creatures live in the Collection Book now
   const bank = SPELL_KINDS.filter(k => G.bank[k] > 0).map(k => '<span class="bk">' + UI.img(k, 16) + G.bank[k] + '</span>').join('') || '<span class="dim">empty: send spells into the Skill Portal</span>';
   let h = '<div class="treeHead"><h2>' + UI.img(side === 'L' ? 'ic_wrench' : 'ic_hat', 32) + 'SKILL TREE</h2><div class="xpbig">' + UI.img('ic_xp', 24) + Math.floor(G.xp) + '</div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>';
   const un = UI.undoKind();
   h += '<div class="bankRow">' + UI.img('ic_skill', 24) + '<span class="lbl">BANK</span>' + bank +
     (un ? '<span class="undo" data-undo="1"><kbd>Q</kbd><kbd>X</kbd>' + UI.img('ic_rotate', 14) + UI.img(un, 16) + '</span>' : '') + '</div><div class="cols">';
-  cols.forEach((c, ci) => {
+  cols.forEach(c => {
     h += '<div class="col"><h4>' + UI.img(c[0], 16) + c[1] + '</h4>';
-    for (const n of CFG.tree.filter(t => t.col === ci)) {
+    for (const n of CFG.tree.filter(t => t.col === c[2])) {
       const L = UI.nodeLevel(n), max = UI.nodeMax(n), cost = UI.nodeCost(n), reqs = UI.nodeReqs(n);
       const cls = !cost ? 'owned' : reqs.length ? 'reqd' : UI.canAfford(cost) ? 'can' : 'cant';
       const pips = n.tiers ? '<div class="pips">' + n.tiers.map((_, i) => '<i class="' + (i < L ? 'on' : '') + '"></i>').join('') + '</div>' : '';
@@ -545,17 +545,6 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
     }
   }
   const rows = [];
-  if (n.id.startsWith('cr_')) {
-    const id = n.id.slice(3), c = CFG.creatures[id];
-    rows.push(['Egg recipe', UI.recipeHtml('egg_' + id)], ['Hatch', (c.n || 1) + 'x, ' + c.time + 's, ' + c.power + ' power'], ['Creature', c.hp + ' HP, ' + c.dmg + ' dmg, weak to ' + UI.img(c.weak, 14)], ['Elements', c.order.map(k => UI.img(k, 16)).join('')]);
-    return rows;
-  }
-  if (ITEMS[n.id] && ITEMS[n.id].spell) {
-    const r = CFG.recipes[n.id];
-    rows.push(['Forge recipe', UI.recipeHtml(n.id)], ['Craft', r.time + 's, ' + r.power + ' power'], ['Damage', SPELL_DMG[n.id](CFG.spells[n.id])]);
-    rows.push(['Elements', SPELL_EL[n.id].map(k => UI.img(k, 16)).join('')], ['Banked now', '' + (G.bank[n.id] || 0)]);
-    return rows;
-  }
   for (const id in CFG.buildings) {
     const d = CFG.buildings[id];
     if (d.unlock !== n.id) continue;
@@ -570,8 +559,6 @@ UI.nodeTipHtml = function (n) {
   const state = n.tiers ? 'TIER ' + L + '/' + max : G.tree[n.id] ? 'OWNED' : 'LOCKED';
   let h = '<div class="tth">' + UI.img(n.icon, 32) + '<div><b>' + n.name + '</b><small>' + state + '</small></div></div>';
   h += '<p>' + (n.tiers ? 'Each tier: ' + n.per + '.' : n.desc) + '</p>';
-  const sp = SPV.spellFor(n.id);
-  if (sp) h += '<canvas class="spv" width="186" height="100" data-spell="' + sp + '"></canvas><div class="spvc">' + SPV.caption(sp) + '</div>';
   const rows = UI.nodeStats(n);
   if (rows.length) {
     if (n.tiers) h += '<div class="ttr ttc"><span></span><em>NOW</em><em>' + (cost ? 'NEXT' : '') + '</em></div>';
@@ -590,8 +577,6 @@ UI.showNodeTip = function (side, id) {
   UI.tipNode = nd ? { side, id } : null;
   if (!nd) { el.classList.add('hidden'); SPV.stop(); return; }
   el.innerHTML = UI.nodeTipHtml(CFG.tree.find(t => t.id === id));
-  const cv = el.querySelector('canvas.spv');
-  if (cv) SPV.mount(cv, cv.dataset.spell); else SPV.stop();
   el.classList.remove('hidden');
   // beside the node (in stage px), flipped to its left when it would leave this half of the screen
   const st = $('stage').getBoundingClientRect(), k = st.width / CFG.W, r = nd.getBoundingClientRect();
@@ -840,8 +825,9 @@ const HOWTO = {
     ['Building', 'Pick a slot (keys <b>1</b> to <b>8</b> or the wheel; slot 8 is Floor Tiles). Slots with a pip row are <b>families</b> (Crafters, Power, Logistics, Creature Spawners): <b>Q</b>, the wheel over the slot or <b>RT</b> on a pad cycles the member (locked ones are skipped). <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
     ['Machines', 'The <b>Harnesser</b> carries one of four element crystals: <b>F</b> (<b>LT + X</b> on a pad) switches it to the next element at any time. The old crystal bursts, the new one grows for 15 seconds, then the Harnesser shakes and starts making packets (nothing is made while it grows, and switching again restarts the 15 seconds). Every building shows what it holds as real items stacked on it: inputs, what it has made, a blueprint materials (faint copies = still missing), Charger fuel. Harnessers make packets by themselves, or stand next to one and press <b>E</b>, then <b>keep tapping E</b> to fill the meter and crank one out by hand (it never fills by itself; no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
     ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with a charged Battery in a Battery Station and a Charger beside it: a Battery drains while anything needs power, so carry it to the Charger and throw element packets at it to refill it (hand-gathered packets are free). Every packet charges 10% more than its base, and a packet you throw in by hand adds another 20%. Craft a Battery at the Forge (2 Iron Ore), charge it at a Charger by feeding it packets (more kinds = faster), then haul it to a Battery Station. A charged Station right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, <b>Heavy Batteries</b> make every Battery last 50% longer in a Station.'],
-    ['Creatures', 'The <b>Creature Spawner</b> turns element packets into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. Tier 2 and 3 Spawners (Skill Tree) hatch two- and three-element creatures; each one is its own node. At most 12 factory creatures live at once: extra Eggs wait in the portal. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
-    ['Growing', 'The floor starts small. <b>Factory Expansion</b> in the Skill Tree makes it bigger, pushing the Stockpile further from the portals.'],
+    ['Creatures', 'The <b>Creature Spawner</b> turns element packets into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. There is only one Spawner and nothing to unlock: feed it one element for a basic creature, two for a pair, three for a triple (E switches its recipe, and a small icon shows the creature it is hatching). At most 25 factory creatures live at once: extra Eggs wait beside the portal. Every creature is in the <b>Collection Book</b> (C) with a live demo. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
+    ['Growing', 'The floor starts small (12 x 8). Place <b>Floor Tiles</b> (slot 8) on empty ground beside it and throw them Wood and Stone (and Iron after the 28th) to turn them into floor. The Stockpile never moves.'],
+    ['Spells', 'Spells need no unlocking: a pair is the two element packets fused at an Elemental Forge, a triple needs its two parent pairs to have been made once, and the Nova needs all four triples. The <b>Collection Book</b> (button beside the Skill Tree, or <b>C</b>) lists every spell and creature with a live demo, its recipe and its numbers.'],
     ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> routes what comes in to up to 3 outputs: every side that has a belt, machine or portal to feed (the side items arrive from is the input). Click it (<b>A</b> on a pad) to share the outputs out by percentage with a slider, and switch element toggles on an output to make it a <b>filter</b> (Fire + Earth left, Water + Air right). The starting Splitter sends 25% to the Spell Portal and 75% to the Spawner. The <b>Storage Crate</b> holds 30 packets or spells and feeds them out of its arrow. E turns a Crate.'],
     ['Reading the floor', 'Every machine shows its state the moment it changes, with an outline, an icon, how fast it animates and a little chirp: <b>green flowing dashes</b> working (up close), <b>yellow dashes</b> + a ghost of the missing ingredient, <b>grey dots</b> + <b>?</b> starved, <b>orange long dashes</b> + <b>!</b> output jammed, <b>thick red</b> + stacked bars output full (stopped), <b>purple dash-dot</b> + bolt no power. Each portal shows how many items it took in the last minute.'],
     ['Elements', 'Each element has its own shape everywhere: <b>Air</b> is a ring, <b>Water</b> a drop, <b>Fire</b> a flame, <b>Earth</b> a block. Their particles move differently too (swirling rings, falling drops, rising sparks, tumbling chunks) and each has its own little sound.'],
@@ -880,7 +866,7 @@ UI.howPage = function (tab) {
       stone: 'Every building, Armor',
       iron: 'Forge, Anvil, Station, Charger, Altar, Batteries, Armor, Floor Tiles after the 28th',
       shard: 'Rare: only from landmarks and elites. Summoning Altar, Boss Sigil',
-      core: 'Once per Stronghold per save. Costs of Spawner III and Summoning',
+      core: 'Once per Stronghold per save. Costs of Summoning',
       sigil: 'Spell Portal: summons the Primal Chimera beside the Wizard',
       air: 'Spell Portal: Air Gust. Skill Portal: currency. Charger fuel, recipes',
       water: 'Spell Portal: Water Spray. Skill Portal: currency. Charger fuel, recipes',
@@ -896,7 +882,7 @@ UI.howPage = function (tab) {
         return '<span class="rec">' + Object.keys(R.in).map(k => UI.img(k, 24) + (R.in[k] > 1 ? 'x' + R.in[k] : '')).join(' ') + ' > ' + UI.img(R.out, 24) + ' <b>' + recipeName(id) + '</b>' + (R.power ? ' <i>' + R.power + UI.img('ic_bolt', 12) + '</i>' : '') + '</span>';
       }).join('') + '</div>';
     }
-    body += '<p class="dim">Eggs hatch into creatures when sent through the Spell Portal (never the Skill Portal). Health Potion heals 35, Greater Elixir heals 80, Armor Plate +35 armor, Heavy Plate +70 armor. Each combo spell must be unlocked in the Skill Tree before the Forge can make it.</p>';
+    body += '<p class="dim">Eggs hatch into creatures when sent through the Spell Portal (never the Skill Portal). Health Potion heals 35, Greater Elixir heals 80, Armor Plate +35 armor, Heavy Plate +70 armor. Combo spells need no unlocking: the Forge makes them as soon as you can feed it the packets (a triple needs its parent pairs made once first).</p>';
   }
   $('menuHow').innerHTML = '<h2>HOW TO PLAY</h2><div class="tabs">' + tabs.map(t => '<button class="tab' + (t === tab ? ' on' : '') + '" data-t="' + t + '">' + t + '</button>').join('') + '</div><div class="howBody">' + body + '</div><button class="big ghost back">BACK</button>';
   $('menuHow').querySelectorAll('.tab').forEach(b => { b.onclick = () => { AU.sfx('tab'); UI.howPage(b.dataset.t); }; });
@@ -957,6 +943,7 @@ const CONTROLS = [
     ['Cosmetics', 'Unlocked by achievements (see the ACHIEVEMENTS button). They never change how the game plays'],
   ]],
   ['BOTH PLAYERS', [
+    [K('C'), 'Collection Book: every spell and creature, with live demos (also on the pause menu)'],
     [K('T') + ' &nbsp;/&nbsp; ' + K('Y'), 'Builder / Wizard Skill Tree (the whole game pauses while one is open)'],
     [K('H'), 'Show or hide the controls card'],
     [K('X') + ' &nbsp;hold 1.5s', 'Swap jobs. Then: Builder arrows, ' + K('.') + ' pick up, ' + K(',') + ' throw, ' + K('/') + ' use. Wizard WASD, ' + K('SPACE') + ' roll, click the right half to walk'],

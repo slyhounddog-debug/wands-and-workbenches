@@ -17,6 +17,6 @@ window.TUNING = {
  "tree.#water.xp": 20,
  "tree.#fire.xp": 30,
  "tree.#earth.xp": 45,
- "upgrade.gems": 0.43,
+ "upgrade.gems": 0.12,
  "gemCap": 3.5
 };

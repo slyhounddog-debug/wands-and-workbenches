@@ -4,7 +4,7 @@ window.TUNING = {
  "spells.gust.push": 12,
  "world.hpPerMin": 0.03,
  "resistMul": 0.6,
- "world.spawnFloor": 3,
- "world.spawnMul": 0.98,
+ "world.spawnFloor": 2,
+ "world.spawnMul": 0.99,
  "world.spawnStart": 20
 };

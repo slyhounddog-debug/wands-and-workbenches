@@ -3,7 +3,7 @@
 // clip from the dev tool's Audio tab (overrides/audio.js + overrides/audio/<name>.js); until a clip is decoded, or
 // without one, the synth plays.
 const AU = (() => {
-  let ctx = null, sfxG = null, musG = null, musicOn = false, nextT = 0, step = 0, timer = null;
+  let ctx = null, sfxG = null, musG = null, musLP = null, musicOn = false, nextT = 0, step = 0, timer = null;
   // audio hierarchy: important cues go to hiG and duck everything on loG (hum, pickups, clicks) and the music;
   // midG is everything else. cur = where tone() / noise() send by default while a sfx is being built
   let hiG = null, midG = null, loG = null, duckG = null, cur = null;
@@ -22,16 +22,31 @@ const AU = (() => {
 
   // ----- custom clips (the dev tool's Audio tab) -----
   const custom = {};   // name -> { p: edit params, buf: decoded AudioBuffer once ready }
+  function loadScript(name, p, src, onFail) {
+    custom[name] = { p, buf: null };
+    const s = document.createElement('script');   // a script tag, not fetch, so it also works from file://
+    s.src = src;
+    s.onload = decodeCustom;
+    s.onerror = () => { custom[name].failed = true; if (onFail) onFail(); };
+    document.head.appendChild(s);
+  }
+  // the layered soundtrack: one looping file per element (built by tools/musicbuild), all the same length
+  const LAYER_EL = ['air', 'water', 'fire', 'earth'], LAYER_NAME = el => 'music_' + el;
   function loadCustom() {
     const ov = window.AUDIO_OV || {};
+    for (const el of LAYER_EL) loadScript(LAYER_NAME(el), {}, 'audio/music/' + LAYER_NAME(el) + '.js', loadLegacyMusic);
     for (const name in ov) {
       if (!/^[\w-]+\.js$/.test(ov[name].file || '')) continue;
-      custom[name] = { p: ov[name], buf: null };
-      const s = document.createElement('script');   // a script tag, not fetch, so it also works from file://
-      s.src = 'overrides/audio/' + ov[name].file;
-      s.onload = decodeCustom;
-      document.head.appendChild(s);
+      if (name === 'music') continue;   // the old single track only plays if the layers could not be loaded (loadLegacyMusic)
+      loadScript(name, ov[name], 'overrides/audio/' + ov[name].file);
     }
+  }
+  let legacyAsked = false;
+  function loadLegacyMusic() {
+    const ov = (window.AUDIO_OV || {}).music;
+    if (legacyAsked || !ov || !/^[\w-]+\.js$/.test(ov.file || '')) return;
+    legacyAsked = true;
+    loadScript('music', ov, 'overrides/audio/' + ov.file);
   }
   function decodeCustom() {
     if (!ctx) return;
@@ -43,7 +58,7 @@ const AU = (() => {
       ctx.decodeAudioData(OV.dataToBuffer(data[name])).then(b => {
         c.buf = b;
         if (name === 'hum' && hum && !hum.clip) { hum.stop(); hum = null; humLvl = -1; }   // swap the synth drone for the clip
-      }, () => { /* unreadable file: the synth keeps playing */ });
+      }, () => { c.failed = true; if (LAYER_EL.some(el => LAYER_NAME(el) === name)) loadLegacyMusic(); });   // unreadable file: the synth (or the old track) keeps playing
     }
   }
   const clip = name => (custom[name] && custom[name].buf ? custom[name] : null);
@@ -54,17 +69,20 @@ const AU = (() => {
   } catch (e) { /* ignore */ }
   function clamp01(v, d) { return typeof v === 'number' && isFinite(v) ? Math.max(0, Math.min(1, v)) : d; }
 
-  let held = false;   // the pause menu holds the music (no new notes, gain at 0)
+  let held = false;   // the pause menu holds the music (muffled, see hold())
   function applyVol() {
     if (!ctx) return;
     sfxG.gain.value = settings.sfx;
     if (loG) loG.gain.value = 0.75 * settings.sfx;
-    musG.gain.value = held ? 0 : settings.music * 0.6;
+    musG.gain.value = settings.music * 0.6;
   }
-  function hold(on) {
-    held = on;
-    if (ctx) musG.gain.setTargetAtTime(on ? 0 : settings.music * 0.6, ctx.currentTime, 0.05);
+  // the pause menu, an open skill tree and the title / player screens keep the music going but muffled (a low-pass on the music bus)
+  let muffleExt = false;
+  function applyMuffle() {
+    if (ctx) musLP.frequency.setTargetAtTime(held || muffleExt ? CFG.music.muffleHz : 20000, ctx.currentTime, CFG.music.muffleT);
   }
+  function hold(on) { held = on; applyMuffle(); }
+  function muffle(on) { if (muffleExt !== on) { muffleExt = on; applyMuffle(); } }
   // focus lost / tab hidden: suspend the whole audio clock, so music and SFX resume exactly where they were
   function sleep(on) {
     if (!ctx) return;
@@ -82,7 +100,8 @@ const AU = (() => {
     sfxG = ctx.createGain(); musG = ctx.createGain();
     sfxG.connect(ctx.destination);
     duckG = ctx.createGain(); duckG.connect(ctx.destination);   // music + low sounds pass through the ducker
-    musG.connect(duckG);
+    musLP = ctx.createBiquadFilter(); musLP.type = 'lowpass'; musLP.frequency.value = held || muffleExt ? CFG.music.muffleHz : 20000; musLP.Q.value = 0.7;
+    musG.connect(musLP); musLP.connect(duckG);
     hiG = ctx.createGain(); hiG.gain.value = 1.15; hiG.connect(sfxG);
     midG = ctx.createGain(); midG.connect(sfxG);
     loG = ctx.createGain(); loG.gain.value = 0.75; loG.connect(duckG);
@@ -261,11 +280,48 @@ const AU = (() => {
     if (track) { try { track.node.src.stop(); } catch (e) { /* already stopped */ } track = null; }
     if (name) track = { name, node: OV.playClip(ctx, clip(name), Object.assign({}, clip(name).p, { loop: true }), musG) };
   }
+  // ----- layered soundtrack: the four element loops start on the same tick, so they stay locked, and each one swells with how
+  // active its element is (the factory's weather). The Chimera brings the whole band in unless a music_boss clip takes over.
+  let layers = null, layerAct = null;   // layers = { air: { src, gain }, ... } while playing; layerAct = AU.layers() input (null = menu mix)
+  const layersReady = () => LAYER_EL.every(el => clip(LAYER_NAME(el)));
+  const layersPending = () => LAYER_EL.every(el => !custom[LAYER_NAME(el)].failed) && !layersReady();
+  function layerGoal(el, boss) {
+    const M = CFG.music;
+    if (boss === 'clip') return 0;
+    if (!layerAct) return M.menu;   // title / player screens: all four at one level
+    if (boss) return 1;
+    const v = Math.pow(Math.max(0, Math.min(1, layerAct[el] || 0)), M.curve);
+    return el === 'air' ? M.airFloor + (1 - M.airFloor) * v : v;
+  }
+  function stopLayers() {
+    if (!layers) return;
+    for (const el in layers) { try { layers[el].src.stop(); } catch (e) { /* already stopped */ } }
+    layers = null;
+  }
+  function tickLayers(boss) {
+    const t = ctx.currentTime;
+    if (!layers) {
+      layers = {};
+      for (const el of LAYER_EL) {
+        const src = ctx.createBufferSource(), gain = ctx.createGain();
+        src.buffer = clip(LAYER_NAME(el)).buf; src.loop = true;
+        gain.gain.value = layerGoal(el, boss) * CFG.music.gain;
+        src.connect(gain); gain.connect(musG);
+        layers[el] = { src, gain };
+      }
+      const t0 = t + 0.1;   // one start time for all four
+      for (const el of LAYER_EL) layers[el].src.start(t0);
+    }
+    for (const el of LAYER_EL) layers[el].gain.gain.setTargetAtTime(layerGoal(el, boss) * CFG.music.gain, t, CFG.music.fade);
+  }
   function schedule() {
     if (!ctx || !musicOn) return;
-    const want = bossOn && clip('music_boss') ? 'music_boss' : clip('music') ? 'music' : null;
+    const bossClip = bossOn && clip('music_boss');
+    if (layersReady()) { tickLayers(bossClip ? 'clip' : bossOn); } else stopLayers();
+    // until the layers are decoded the synth stays quiet (it would only be cut off a second later); if they cannot load, the old single track / synth plays
+    const want = bossClip ? 'music_boss' : !layersReady() && !layersPending() && clip('music') ? 'music' : null;
     setTrack(want);
-    if (want || held) { nextT = ctx.currentTime + 0.1; return; }
+    if (want || layersReady() || layersPending()) { nextT = ctx.currentTime + 0.1; return; }
     const STEP = bossOn ? 0.3 : 0.5 - mixC * 0.08;
     while (nextT < ctx.currentTime + 0.5) {
       const chord = (bossOn ? CH_BOSS : CH)[Math.floor(step / 8) % 4], k = step % 8, d = Math.max(0, nextT - ctx.currentTime);
@@ -294,13 +350,15 @@ const AU = (() => {
     musicOn = on;
     if (!ctx) return;
     if (on && !timer) { nextT = ctx.currentTime + 0.1; timer = setInterval(schedule, 120); }
-    if (!on && timer) { clearInterval(timer); timer = null; setTrack(null); }
+    if (!on && timer) { clearInterval(timer); timer = null; setTrack(null); stopLayers(); }
   }
   loadCustom();
   // every sfx() name, read off play()'s switch so the dev tool's list can never miss one
   const SFX_NAMES = (play + '').match(/case '\w+'/g).map(s => s.slice(6, -1));
   return {
-    settings, init, sfx, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep,
+    settings, init, sfx, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep, muffle,
+    layerMix(act) { layerAct = act; },   // { air, water, fire, earth } 0..1 (G.fac.weather), or null for the title-screen mix
+    layerInfo() { return { ready: layersReady(), playing: !!layers, lowpassHz: ctx ? Math.round(musLP.frequency.value) : null, goal: Object.fromEntries(LAYER_EL.map(el => [el, +layerGoal(el, bossOn).toFixed(3)])) }; },
     names: { sfx: SFX_NAMES, loops: ['music', 'music_boss', 'hum'] },
     setSfx(v) { settings.sfx = v; applyVol(); saveSettings(); },
     setMusic(v) { settings.music = v; applyVol(); saveSettings(); },

@@ -1,4 +1,4 @@
-// Wands & Workbenches dev tool: Layout / Variables / Audio tabs.   node tools/devtool/server.mjs   (PORT=8090 by default)
+// Wands & Workbenches dev tool: Layout / Variables / Formulas / Audio tabs + git buttons.   node tools/devtool/server.mjs   (PORT=8090 by default)
 //
 // No dependencies. It serves the tool at / and the game under /game/ from this same origin, so the tool page can
 // reach into the preview iframe (a cross-origin iframe can't be inspected). The preview is the real index.html plus an
@@ -14,6 +14,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
+import { execFile } from 'child_process';
+import { createHash } from 'crypto';
 
 const TOOL = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(TOOL, '..', '..');
@@ -122,6 +124,72 @@ function clipData(name) {   // the stored data: URL inside overrides/audio/<name
   return m ? m[1] : null;
 }
 
+// ---------- git (Commit & push / Reset buttons) ----------
+// Both actions are two-step: GET /api/git shows exactly what would happen and carries a signature (HEAD + status +
+// unpushed commits); the POST must send that signature back, and is refused if the repo changed in between.
+const sha1 = s => createHash('sha1').update(s).digest('hex');
+function git(args, input) {
+  return new Promise(resolve => {
+    const p = execFile('git', ['-c', 'core.quotepath=false'].concat(args), { cwd: ROOT, maxBuffer: 32e6, timeout: 180000, windowsHide: true, env: Object.assign({}, process.env, { LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0' }) },
+      (err, out, errOut) => resolve({ ok: !err, out: String(out || ''), err: String(errOut || (err && err.message) || '').trim() }));
+    if (input != null) p.stdin.end(input);
+  });
+}
+let gitBusy = false;
+async function gitInfo() {
+  const [branch, head, up, stat, nums] = await Promise.all([git(['rev-parse', '--abbrev-ref', 'HEAD']), git(['rev-parse', 'HEAD']), git(['rev-parse', '--abbrev-ref', '@{u}']),
+    git(['status', '--porcelain', '-z', '-uall']), git(['diff', 'HEAD', '--numstat'])]);
+  if (!branch.ok) throw new Error('not a git repository: ' + branch.err);
+  const upstream = up.ok ? up.out.trim() : null;
+  const files = [], parts = stat.out.split('\0');
+  for (let i = 0; i < parts.length; i++) {
+    const e = parts[i]; if (e.length < 4) continue;
+    const xy = e.slice(0, 2); let file = e.slice(3), from = null;
+    if (xy[0] === 'R' || xy[0] === 'C') from = parts[++i];
+    const st = xy === '??' ? '?' : (xy.includes('D') ? 'D' : xy.includes('A') ? 'A' : xy[0] === 'R' ? 'R' : 'M');
+    files.push({ path: file, from, st });
+  }
+  const counts = {};
+  for (const l of nums.out.split('\n')) { const m = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(l); if (m) counts[m[3]] = { add: m[1] === '-' ? null : +m[1], del: m[2] === '-' ? null : +m[2] }; }
+  for (const f of files) Object.assign(f, counts[f.path] || {});
+  let ahead = [], behind = 0;
+  if (upstream) {
+    const a = await git(['log', '@{u}..HEAD', '--format=%h%x09%s']);
+    ahead = a.out.split('\n').filter(Boolean).map(l => { const t = l.split('\t'); return { hash: t[0], subject: t.slice(1).join('\t') }; });
+    const b = await git(['rev-list', '--count', 'HEAD..@{u}']); behind = +b.out.trim() || 0;
+  }
+  const last = await git(['log', '-1', '--format=%h%x09%s']);
+  const info = { branch: branch.out.trim(), head: head.out.trim(), upstream, remote: (await git(['remote', 'get-url', 'origin'])).out.trim(), files, ahead, behind, last: last.out.trim() };
+  info.sig = sha1(JSON.stringify([info.head, stat.out, ahead.map(c => c.hash)]));
+  return info;
+}
+async function gitCommit(body) {
+  const info = await gitInfo();
+  if (!body || body.sig !== info.sig) throw new Error('The repository changed since the window opened. Close it and try again.');
+  const msg = String(body.message || '').trim();
+  const log = [];
+  if (info.files.length) {
+    if (!msg) throw new Error('Write a commit message.');
+    const add = await git(['add', '-A']); if (!add.ok) throw new Error('git add failed: ' + add.err);
+    const c = await git(['commit', '-F', '-'], msg + '\n');
+    if (!c.ok) throw new Error('git commit failed: ' + (c.err || c.out));
+    log.push(c.out.trim().split('\n')[0]);
+  } else if (!info.ahead.length) throw new Error('Nothing to commit or push.');
+  const push = await git(info.upstream ? ['push'] : ['push', '-u', 'origin', info.branch]);
+  if (!push.ok) return { ok: false, committed: !!info.files.length, log, error: 'Push failed (the commit is saved locally): ' + push.err };
+  log.push('Pushed to ' + (info.upstream || 'origin/' + info.branch));
+  return { ok: true, log };
+}
+async function gitReset(body) {
+  const info = await gitInfo();
+  if (!body || body.sig !== info.sig) throw new Error('The repository changed since the window opened. Close it and try again.');
+  const mode = body.mode === 'unpushed' ? 'unpushed' : 'changes';
+  if (mode === 'unpushed' && !info.upstream) throw new Error('This branch has no upstream to reset to.');
+  const r = await git(['reset', '--hard', mode === 'unpushed' ? '@{u}' : 'HEAD']); if (!r.ok) throw new Error('git reset failed: ' + r.err);
+  const c = await git(['clean', '-fd']); if (!c.ok) throw new Error('git clean failed: ' + c.err);
+  return { ok: true, log: [r.out.trim(), c.out.trim().split('\n').filter(Boolean).length + ' untracked file(s) removed'].filter(Boolean) };
+}
+
 // ---------- routes ----------
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x'), p = decodeURIComponent(url.pathname);
@@ -175,6 +243,12 @@ const server = http.createServer(async (req, res) => {
         try { fs.unlinkSync(path.join(OVR, 'audio', name + '.js')); } catch (e) { /* already gone */ }
         return send(res, 200, { ok: true, clips: writeAudio(all) });
       }
+    }
+    if (p === '/api/git' && req.method === 'GET') return send(res, 200, await gitInfo());
+    if ((p === '/api/git/commit' || p === '/api/git/reset') && req.method === 'POST') {
+      if (gitBusy) return send(res, 409, { error: 'Another git action is still running.' });
+      gitBusy = true;
+      try { const b = await readJsonBody(req); return send(res, 200, await (p.endsWith('commit') ? gitCommit(b) : gitReset(b))); } finally { gitBusy = false; }
     }
     send(res, 404, 'not found', 'text/plain');
   } catch (e) {

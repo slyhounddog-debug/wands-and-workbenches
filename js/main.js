@@ -443,6 +443,8 @@ Main.step = function (dt, ctl) {
   let near = 0;
   if (!w.dead) for (const e of w.enemies) if (Math.abs(e.x - w.x) < 10 && Math.abs(e.y - w.y) < 10) near++;
   AU.mix(Math.min(1, G.fac.working / 8), Math.min(1, near / 8), !!w.boss);
+  AU.layerMix(G.fac.weather);   // each element's layer swells with the same signal that tints the wilds
+  AU.muffle(!!(UI.treeOpen.L || UI.treeOpen.R));   // a skill tree is open: the music plays on, muffled
   AU.hum(facHalt ? 0 : Math.min(1, G.fac.working / 10));
   UI.updateHud(dt);
   if ((Players.checkT -= dt) <= 0) { Players.checkT = 1; Players.check(); }   // achievements (they unlock cosmetics)
@@ -651,7 +653,7 @@ function frame(ts) {
       }
     } catch (e) { R.defer = null; UI.err(e); }
   } else {
-    AU.hum(0); AU.mix(0, 0, false);
+    AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true);   // title / player screens: all four layers, muffled
     if (STATE === 'select') Players.tick(dt);
     if (STATE !== 'intro') drawBackdrop(ts);
   }

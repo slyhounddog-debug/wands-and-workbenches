@@ -16,6 +16,10 @@
     <button data-tab="audio">Audio</button>
   </nav>
   <span id="status"></span>
+  <span class="gitbtns">
+    <button id="gitCommit" title="Commit the changes and push them to GitHub (shows what will be sent first)">Commit to GitHub</button>
+    <button id="gitReset" class="danger" title="Throw away uncommitted changes (shows what will be lost first)">Reset</button>
+  </span>
   <a class="gamelink" href="/game/" target="_blank" title="The game as served by this tool (a seeded, muted preview copy)">open preview in a tab</a>
 </header>
 
@@ -41,6 +45,8 @@
     <aside class="panel" id="panel-vars" hidden></aside>
   </div>
 </section>
+
+<div id="gitModal" class="gmodal" hidden></div>
 
 <section id="view-formulas" hidden></section>
 <section id="view-audio" hidden></section>

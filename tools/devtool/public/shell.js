@@ -5,6 +5,7 @@ import * as layout from './layout.js';
 import * as vars from './variables.js';
 import * as audio from './audiotab.js';
 import * as formulas from './formulas.js';
+import * as gitui from './git.js';
 
 const TABS = { layout, vars, formulas, audio };
 let current = null;
@@ -32,6 +33,7 @@ for (const b of document.querySelectorAll('.tabs button')) b.addEventListener('c
     vars.init(tun);
     audio.init(aud);
     formulas.init();
+    gitui.init();
     loadPresets(lay.presets, lay.fixtures);
     show(ls.get('tab', 'layout'));
     await boot();

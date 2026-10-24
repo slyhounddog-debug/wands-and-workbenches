@@ -592,7 +592,7 @@ R.drawBuilding = function (ctx, v, b, t) {
     }
   }
   if (d.kind === 'cell') {   // a Battery: charge as a floating cell, the fuel waiting to burn stacked beside it
-    const fr = b.bat / CFG.batteryMax, heavy = b.type === 'heavybat';
+    const fr = b.bat / CFG.batteryMax;
     if (b.over > 0) {   // overcharged: a crackling white-gold rim and arcs leaping off the Battery
       ctx.strokeStyle = Math.floor(t * 16) % 2 ? '#fff07a' : '#ffffff'; ctx.lineWidth = 8;
       diamond(ctx, p[0], p[1], v.hw * (0.95 + (Math.sin(t * 20) > 0 ? 0.08 : 0)), v.hh * (0.95 + (Math.sin(t * 20) > 0 ? 0.08 : 0))); ctx.stroke();
@@ -606,12 +606,11 @@ R.drawBuilding = function (ctx, v, b, t) {
       }
       if (Math.sin(t * 10) > 0) dspr(ctx, SP.ic_bolt, p[0] + 40, base - 70, 4);
     }
-    dspr(ctx, SP.it_battery, p[0], base - (heavy ? 52 : 44), heavy ? 5 : 4, b.bat > 0 ? 1 : 0.4);   // dim while it is flat
-    if (tip) R.bar(ctx, p[0], top + 52, 64, Math.min(1, fr), b.bat > 0 ? (fr >= 1 ? '#3ad06b' : '#ffd93a') : '#8a8a8a');
-    if (tip && fr > 1) R.bar(ctx, p[0], top + 66, 64, (fr - 1) / (CFG.overcharge.max - 1), '#fff07a', 8);   // the charge past full
+    if (tip) R.bar(ctx, p[0], top + 96, 64, Math.min(1, fr), b.bat > 0 ? (fr >= 1 ? '#3ad06b' : '#ffd93a') : '#8a8a8a');
+    if (tip && fr > 1) R.bar(ctx, p[0], top + 110, 64, (fr - 1) / (CFG.overcharge.max - 1), '#fff07a', 8);   // the charge past full
     if (b.bat > 0 && Math.sin(t * 8) > 0) {
       ctx.fillStyle = '#fff07a';
-      for (let i = 0; i < 5; i++) ctx.fillRect(Math.round((p[0] - 20 + i * 10) / 4) * 4, Math.round((base - 84 + (i % 2 ? -8 : 8)) / 4) * 4, 8, 4);
+      for (let i = 0; i < 5; i++) ctx.fillRect(Math.round((p[0] - 20 + i * 10) / 4) * 4, Math.round((base - 60 + (i % 2 ? -8 : 8)) / 4) * 4, 8, 4);
     }
     if (FA.fuelTotal(b) > 0) {   // the fuel waiting to burn, one item per packet's worth
       const fuel = []; for (const k in b.fuel) for (let i = 0; i < Math.ceil(b.fuel[k] / (CFG.fuelPerPacket * (1 + CFG.chargeBonus)) - 0.01); i++) fuel.push(k);

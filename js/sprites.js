@@ -249,7 +249,7 @@ task(() => {
     poly(x, [[cx - 6, cy - 3], [cx - 3, cy - 1.5], [cx - 3, cy - 4], [cx - 6, cy - 6]], '#ffe36b');
     x.fillStyle = '#d1c7cf'; x.fillRect(cx - 2, cy - 15, 5, 1);
   });
-  bsprite('b_battery', (x, cx, cy) => {   // a Battery: a green cell housing with a terminal plate and a white cap (the charge cell floats above it, drawn per frame)
+  bsprite('b_battery', (x, cx, cy) => {   // a Battery: a green cell housing with a terminal plate and a white cap 
     isoBox(x, cx, cy, 9, 8, '#8ee0a6', '#3c9e5a', '#2e7a46');
     poly(x, [[cx + 2, cy - 1], [cx + 7, cy - 3.5], [cx + 7, cy - 7], [cx + 2, cy - 4.5]], '#1c2a20');
     poly(x, [[cx + 3, cy - 2.3], [cx + 6, cy - 3.8], [cx + 6, cy - 6], [cx + 3, cy - 4.5]], '#3ad06b');

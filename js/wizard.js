@@ -5,6 +5,9 @@ const WZ = {};
 // Terrain classes: normal speed (most), slow (T_BOG), impassable (T_POND). Paths over water act as bridges.
 const T_GRASS = 0, T_DIRT = 1, T_SAND = 2, T_FLOWER = 3, T_DARK = 4, T_POND = 5, T_PATH = 6, T_BOG = 7;
 const T_ICE = 8, T_WALL = 9;   // temporary terrain from spells (G.w.tmod): Flash Frost ice (full speed, even over water), Earth Wall blocks (impassable)
+// scorched ground hurts and slows (the Emberward Cloak walks it unharmed), a chasm can't be entered (the Gale Circlet's blink crosses it); T_VINE comes from
+// G.w.tmod too: a vine tangle blocks everyone but a Wizard in the Bogwalker Shroud. Cracked rock is a tmod 'rock' (impassable, T_WALL) until a Gust breaks it
+const T_SCORCH = 10, T_CHASM = 11, T_VINE = 12;
 // decor that leans when a body pushes through it (G.w.bend)
 const BENDY = new Set(['tuft', 'tuft2', 'tuft3', 'flower0', 'flower1', 'flower2', 'flower3', 'reeds'].concat(SHRUB_NAMES));
 // which plain shrub grows at a spot: shape, size and colour come from a hash of the position (no RNG, so nothing else in the world moves); the colours follow the ground
@@ -47,9 +50,9 @@ WZ.forage = [];      // dirt mounds, stick piles and berry bushes: { kind, x, y,
 WZ.generate = function () {
   const WW = CFG.WW, WH = CFG.WH;
   // a small flat palette per terrain (8-bit look): 8 shade slots, but only 3 distinct steps
-  const base = [[102, 52, 58], [32, 38, 52], [46, 55, 72], [108, 55, 62], [118, 40, 42], [205, 65, 56], [34, 35, 60], [70, 32, 34]];
+  const base = [[102, 52, 58], [32, 38, 52], [46, 55, 72], [108, 55, 62], [118, 40, 42], [205, 65, 56], [34, 35, 60], [70, 32, 34], [0, 0, 50], [0, 0, 50], [10, 38, 14], [262, 40, 7]];   // 8 and 9 are the virtual ice / wall types (never stored in the terrain)
   WZ.palette = [];
-  for (let t = 0; t < 8; t++) for (let s = 0; s < 8; s++) {
+  for (let t = 0; t < 12; t++) for (let s = 0; s < 8; s++) {
     const b = base[t], step = s < 5 ? 0 : s < 7 ? 1 : -1;
     WZ.palette.push('hsl(' + b[0] + ',' + b[1] + '%,' + (b[2] + step * 3) + '%)');
   }
@@ -80,22 +83,11 @@ WZ.generate = function () {
     (WZ.bucket[i] || (WZ.bucket[i] = [])).push(o);
   };
   const tyAt = (x, y) => (ter[Math.floor(y) * WW + Math.floor(x)] >> 3);
+  const hostile = t => t === T_POND || t === T_SCORCH || t === T_CHASM;   // nothing grows or is placed on these
   // landmarks first, so decor and harvestables keep clear of them
   const M = CFG.marks;
   WZ.marks = [];
-  const placeMarks = (type, n, minD) => {
-    for (let tries = 0, c = 0; c < n && tries < 5000; tries++) {
-      const x = Math.floor(6 + r() * (WW - 12)) + 0.5, y = Math.floor(6 + r() * (WH - 12)) + 0.5;
-      if (Math.hypot(x - SPAWN.x, y - SPAWN.y) < minD || WZ.marks.some(m => Math.hypot(m.x - x, m.y - y) < M.spacing)) continue;
-      let dry = true;
-      for (let dy = -2; dy <= 2 && dry; dy++) for (let dx = -2; dx <= 2; dx++) if (tyAt(x + dx, y + dy) === T_POND) { dry = false; break; }
-      if (!dry) continue;
-      const m = { id: WZ.marks.length, type, x, y };
-      if (type === 'shrine') m.el = ELEMS[c % 4];
-      WZ.marks.push(m); add({ x, y, lm: m }); c++;
-    }
-  };
-  placeMarks('camp', M.camps, 16); placeMarks('shrine', M.shrines, 22); placeMarks('crypt', M.crypts, 40);
+  // the four Strongholds go in first (their own RNG), so every other landmark can keep clear of the approach terrain carved round them
   const rk = rngMaker(77123), K = CFG.strong;
   ELEMS.forEach((el, i) => {   // one per quadrant, minDist..minDist+22 tiles from the spawn, never beside water
     for (let tries = 0; tries < 600; tries++) {
@@ -109,10 +101,84 @@ WZ.generate = function () {
       break;
     }
   });
-  const nearMark = (x, y) => WZ.marks.some(m => Math.abs(m.x - x) < 3 && Math.abs(m.y - y) < 3);
+  const placeMarks = (type, n, minD) => {
+    for (let tries = 0, c = 0; c < n && tries < 5000; tries++) {
+      const x = Math.floor(6 + r() * (WW - 12)) + 0.5, y = Math.floor(6 + r() * (WH - 12)) + 0.5;
+      if (Math.hypot(x - SPAWN.x, y - SPAWN.y) < minD || WZ.marks.some(m => Math.hypot(m.x - x, m.y - y) < (m.type === 'stronghold' ? K.gate[m.el].r1 + 5 : M.spacing))) continue;   // a keep's approach terrain stays clear
+      let dry = true;
+      for (let dy = -2; dy <= 2 && dry; dy++) for (let dx = -2; dx <= 2; dx++) if (tyAt(x + dx, y + dy) === T_POND) { dry = false; break; }
+      if (!dry) continue;
+      const m = { id: WZ.marks.length, type, x, y };
+      if (type === 'shrine') m.el = ELEMS[c % 4];
+      WZ.marks.push(m); add({ x, y, lm: m }); c++;
+    }
+  };
+  placeMarks('camp', M.camps, 16); placeMarks('shrine', M.shrines, 22); placeMarks('crypt', M.crypts, 40);
+  // ---- the approach terrain of every keep, and the free-standing hazards: carved into the terrain before any decor so nothing grows in them ----
+  // cracked rock and vine tangles are G.w.tmod entries (WZ.fresh puts them back each expedition); loose boulders are G.w.boulders
+  WZ.rockTiles = []; WZ.vineTiles = []; WZ.boulderSpots = []; WZ.gates = [];
+  const solid = new Set(), WWd = WW;
+  const setT = (tx, ty, t) => { ter[ty * WWd + tx] = t * 8 + Math.floor(hash2(tx, ty, 9) * 8); };
+  const inb = (tx, ty) => tx >= 2 && ty >= 2 && tx < WW - 2 && ty < WH - 2;
+  const each = (cx, cy, rr, fn) => { for (let ty = Math.floor(cy - rr); ty <= Math.ceil(cy + rr); ty++) for (let tx = Math.floor(cx - rr); tx <= Math.ceil(cx + rr); tx++) if (inb(tx, ty)) fn(tx, ty, Math.hypot(tx + 0.5 - cx, ty + 0.5 - cy)); };
+  const rock = (tx, ty) => { const i = ty * WWd + tx; if (!solid.has(i)) { solid.add(i); WZ.rockTiles.push(i); } };
+  for (const m of WZ.marks) {
+    if (m.type !== 'stronghold') continue;
+    const g = K.gate[m.el], ang = Math.atan2(SPAWN.y - m.y, SPAWN.x - m.x), gate = { id: m.id, el: m.el, kind: g.kind, ang };
+    each(m.x, m.y, g.r1 + 1, (tx, ty, d) => {
+      if (d < g.r0) { if ((ter[ty * WWd + tx] >> 3) === T_POND) setT(tx, ty, T_GRASS); return; }   // inside the ring: dry land (an island, for the moat)
+      if (d > g.r1) return;
+      if (g.kind === 'moat') setT(tx, ty, T_POND);
+      else if (g.kind === 'scorch') setT(tx, ty, T_SCORCH);
+      else if (g.kind === 'chasm') setT(tx, ty, T_CHASM);
+      else { if ((ter[ty * WWd + tx] >> 3) === T_POND) setT(tx, ty, T_GRASS); rock(tx, ty); }
+    });
+    if (g.kind === 'chasm') {   // a bridge came across the chasm towards the spawn: both ends stand at the lips, the middle is gone
+      each(m.x, m.y, g.r1 + 3, (tx, ty, d) => {
+        const along = (tx + 0.5 - m.x) * Math.cos(ang) + (ty + 0.5 - m.y) * Math.sin(ang), side = -(tx + 0.5 - m.x) * Math.sin(ang) + (ty + 0.5 - m.y) * Math.cos(ang);
+        if (along > 0 && Math.abs(side) < 1.4 && ((d > g.r1 && d < g.r1 + 3) || (d < g.r0 && d > g.r0 - 2))) setT(tx, ty, T_PATH);
+      });
+      gate.bridge = [{ x: m.x + Math.cos(ang) * (g.r1 + 0.5), y: m.y + Math.sin(ang) * (g.r1 + 0.5) }, { x: m.x + Math.cos(ang) * (g.r0 - 0.5), y: m.y + Math.sin(ang) * (g.r0 - 0.5) }];
+    }
+    WZ.gates.push(gate);
+  }
+  const rf = rngMaker(92929), H = CFG.aug.fields, awayFrom = (x, y, rr) => Math.hypot(x - SPAWN.x, y - SPAWN.y) > 28 && !WZ.marks.some(m => Math.hypot(m.x - x, m.y - y) < (m.type === 'stronghold' ? 34 : rr + 5));
+  const spot = rr => { for (let t = 0; t < 400; t++) { const x = 12 + rf() * (WW - 24), y = 12 + rf() * (WH - 24); if (awayFrom(x, y, rr)) return [x, y]; } return null; };
+  for (let n = 0; n < H.scorch; n++) {   // lava fields
+    const s = spot(8), rr = 4 + rf() * 3, sd = Math.floor(rf() * 99);
+    if (s) each(s[0], s[1], rr + 1.5, (tx, ty, d) => { if (d < rr * (0.78 + 0.5 * vnoise(tx * 0.5, ty * 0.5, sd))) setT(tx, ty, T_SCORCH); });
+  }
+  for (let n = 0; n < H.chasm; n++) {   // rifts: long cracks about 3 tiles wide (a blink crosses them)
+    const s = spot(16), a = rf() * Math.PI, len = 16 + rf() * 10;
+    if (s) each(s[0], s[1], len / 2 + 2, (tx, ty) => {
+      const dx = tx + 0.5 - s[0], dy = ty + 0.5 - s[1], al = dx * Math.cos(a) + dy * Math.sin(a), sd = -dx * Math.sin(a) + dy * Math.cos(a);
+      if (Math.abs(al) < len / 2 && Math.abs(sd) < 1.5 * (1 - Math.pow(Math.abs(al) / (len / 2), 3) * 0.6)) setT(tx, ty, T_CHASM);
+    });
+  }
+  for (let n = 0; n < H.rocks; n++) {   // walls of cracked rock to break through
+    const s = spot(14), a = rf() * Math.PI, len = 12 + rf() * 8;
+    if (s) each(s[0], s[1], len / 2 + 2, (tx, ty) => {
+      const dx = tx + 0.5 - s[0], dy = ty + 0.5 - s[1], al = dx * Math.cos(a) + dy * Math.sin(a), sd = -dx * Math.sin(a) + dy * Math.cos(a);
+      const t0 = ter[ty * WWd + tx] >> 3;
+      if (Math.abs(al) < len / 2 && Math.abs(sd) < 1.1 && t0 !== T_POND && t0 !== T_SCORCH && t0 !== T_CHASM) rock(tx, ty);
+    });
+  }
+  for (let n = 0, tries = 0; n < H.vines && tries < 4000; tries++) {   // vine tangles knotted over the bog
+    const x = 12 + rf() * (WW - 24), y = 12 + rf() * (WH - 24);
+    if ((ter[Math.floor(y) * WW + Math.floor(x)] >> 3) !== T_BOG || !awayFrom(x, y, 4)) continue;
+    n++;
+    each(x, y, 3, (tx, ty, d) => { if (d < 2.4 && (ter[ty * WWd + tx] >> 3) === T_BOG && !solid.has(ty * WWd + tx)) { solid.add(ty * WWd + tx); WZ.vineTiles.push(ty * WWd + tx); } });
+  }
+  const boulderOk = (x, y) => awayFrom(x, y, 3) && !solid.has(Math.floor(y) * WW + Math.floor(x)) && [T_GRASS, T_PATH, T_DIRT, T_SAND, T_FLOWER, T_DARK].indexOf(ter[Math.floor(y) * WW + Math.floor(x)] >> 3) >= 0;
+  for (let n = 0, tries = 0; n < H.boulders && tries < 4000; tries++) {   // loose boulders on the roadside
+    const x = 6 + rf() * (WW - 12), y = 6 + rf() * (WH - 12);
+    if (WZ.pathDist(x, y) < 1.4 && boulderOk(x, y)) { WZ.boulderSpots.push({ x: Math.floor(x) + 0.5, y: Math.floor(y) + 0.5 }); n++; }
+  }
+  const nearMark = (x, y) => WZ.marks.some(m => Math.abs(m.x - x) < 3 && Math.abs(m.y - y) < 3) || solid.has(Math.floor(y) * WW + Math.floor(x));
+  for (const g of WZ.gates) if (g.bridge) for (const b of g.bridge) add({ x: b.x, y: b.y, spr: 'bridge_end', deco: true });   // the stumps of the broken bridge
   for (let i = 0; i < 9000; i++) {
     const x = 1 + r() * (WW - 2), y = 1 + r() * (WH - 2), t = tyAt(x, y), roll = r();
-    if (t === T_POND || Math.hypot(x - SPAWN.x, y - SPAWN.y) < 3 || nearMark(x, y)) continue;
+    if (hostile(t) || Math.hypot(x - SPAWN.x, y - SPAWN.y) < 3 || nearMark(x, y)) continue;
     let spr = null;
     if (t === T_FLOWER) { if (roll < 0.55) spr = 'flower' + Math.floor(r() * 4); }
     else if (t === T_GRASS || t === T_DARK) {
@@ -125,20 +191,20 @@ WZ.generate = function () {
   }
   for (let i = 0; i < 90; i++) {   // fences / lanterns / signposts along the paths
     const x = 4 + r() * (WW - 8), y = 4 + r() * (WH - 8);
-    if (WZ.pathDist(x, y) > 2.6 || WZ.pathDist(x, y) < 1.8 || tyAt(x, y) === T_POND || nearMark(x, y)) continue;
+    if (WZ.pathDist(x, y) > 2.6 || WZ.pathDist(x, y) < 1.8 || hostile(tyAt(x, y)) || nearMark(x, y)) continue;
     const roll = r();
     add({ x, y, spr: roll < 0.6 ? 'fence' : roll < 0.85 ? 'lantern' : 'sign', deco: true });
   }
   for (let i = 0; i < 160; i++) {   // ruined pillars + crystal clusters far from spawn
     const x = 4 + r() * (WW - 8), y = 4 + r() * (WH - 8);
-    if (Math.hypot(x - SPAWN.x, y - SPAWN.y) < 28 || tyAt(x, y) === T_POND || nearMark(x, y)) continue;
+    if (Math.hypot(x - SPAWN.x, y - SPAWN.y) < 28 || hostile(tyAt(x, y)) || nearMark(x, y)) continue;
     add({ x, y, spr: r() < 0.5 ? 'pillar' : 'crystals', deco: true });
   }
   WZ.harv = [];
   for (const k of ['tree', 'rock', 'ore']) {
     for (let c = 0; c < CFG.harvest[k].count;) {
       const x = 2 + r() * (WW - 4), y = 2 + r() * (WH - 4);
-      if (tyAt(x, y) === T_POND || tyAt(x, y) === T_BOG || Math.hypot(x - SPAWN.x, y - SPAWN.y) < CFG.world.minSpawnDist || nearMark(x, y)) continue;
+      if (hostile(tyAt(x, y)) || tyAt(x, y) === T_BOG || Math.hypot(x - SPAWN.x, y - SPAWN.y) < CFG.world.minSpawnDist || nearMark(x, y)) continue;
       const def = CFG.harvest[k];
       const h = { x, y, kind: k, hp: def.hp, maxHp: def.hp, broken: false, respawn: 0, flash: 0, harv: true };
       WZ.harv.push(h); add(h); c++;
@@ -155,11 +221,19 @@ WZ.generate = function () {
       WZ.forage.push(o); add(o); c++;
     }
   }
+  // buried caches: invisible forage spots that only glint for a Wizard in the Kilnsight Mask (their own RNG too)
+  const rc = rngMaker(8181), CC = CFG.forage.cache;
+  for (let c = 0, tries = 0; c < CC.count && tries < 20000; tries++) {
+    const x = 2 + rc() * (WW - 4), y = 2 + rc() * (WH - 4);
+    if ([T_GRASS, T_DIRT, T_SAND, T_DARK, T_FLOWER].indexOf(tyAt(x, y)) < 0 || Math.hypot(x - SPAWN.x, y - SPAWN.y) < 6 || nearMark(x, y)) continue;
+    const o = { x, y, kind: 'cache', prog: 0, lastT: 0, broken: false, respawn: 0, shake: 0, forage: true, hidden: true };
+    WZ.forage.push(o); add(o); c++;
+  }
   // extra grass tufts all over (their own RNG, so nothing above moved): they lean as the Wizard and big foes push through them
   const rt = rngMaker(51515);
   for (let i = 0; i < CFG.bend.tufts; i++) {
     const x = 1 + rt() * (WW - 2), y = 1 + rt() * (WH - 2), t = tyAt(x, y), roll = rt();
-    if (t === T_POND || t === T_PATH || t === T_SAND || Math.hypot(x - SPAWN.x, y - SPAWN.y) < 2 || nearMark(x, y)) continue;
+    if (hostile(t) || t === T_PATH || t === T_SAND || Math.hypot(x - SPAWN.x, y - SPAWN.y) < 2 || nearMark(x, y)) continue;
     add({ x, y, spr: t === T_BOG ? (roll < 0.5 ? 'reeds' : 'tuft3') : roll < 0.45 ? 'tuft2' : roll < 0.8 ? 'tuft' : 'tuft3', deco: true });
   }
   // more plain shrubs on top of the ones above (also their own RNG)
@@ -178,10 +252,12 @@ WZ.speed = () => CFG.wizard.speed * (1 + CFG.upgrade.zoomies * lvl('zoomies'));
 WZ.tile = (x, y) => {
   if (x < 0 || y < 0 || x >= CFG.WW || y >= CFG.WH) return T_POND;
   const i = Math.floor(y) * CFG.WW + Math.floor(x), w = G && G.w;
-  if (w && w.tmodN) { const m = w.tmod[i]; if (m) return m.k === 'ice' ? T_ICE : T_WALL; }
+  if (w && w.tmodN) { const m = w.tmod[i]; if (m) return m.k === 'ice' ? T_ICE : m.k === 'vine' ? T_VINE : T_WALL; }
   return WZ.terrain[i] >> 3;
 };
-WZ.wet = (x, y) => { const t = WZ.tile(x, y); return t === T_POND || t === T_WALL; };   // can't be entered
+// what the Wizard's gear lets him step on (set only while HE moves, see WZ.slideW): Tide-Walking Boots = water, Bogwalker Shroud = vine tangles
+WZ.pass = { water: false, vine: false };
+WZ.wet = (x, y) => { const t = WZ.tile(x, y); return t === T_POND ? !WZ.pass.water : t === T_VINE ? !WZ.pass.vine : t === T_WALL || t === T_CHASM; };   // can't be entered
 // ---------- terrain spells: Earth Wall blocks and Flash Frost ice live in G.w.tmod (tile index -> { k, t, dur }) ----------
 WZ.flowDirty = () => { if (WZ.flow) WZ.flow.cx = -1; WZ.flowCd = 0; };   // monsters re-path round the new terrain
 WZ.setT = function (i, k, t) {
@@ -248,12 +324,18 @@ WZ.dryNear = function (x, y, tries, spread) {   // a random dry spot near (x,y)
   return null;
 };
 WZ.fresh = function () {
+  // cracked rock and vine tangles stand in G.w.tmod from the start of every expedition (they never expire; a Gust breaks the rock), loose boulders in G.w.boulders
+  const tmod = {};
+  let tmodN = 0;
+  for (const i of WZ.rockTiles || []) { tmod[i] = { k: 'rock', t: 1e9, dur: 1e9 }; tmodN++; }
+  for (const i of WZ.vineTiles || []) { tmod[i] = { k: 'vine', t: 1e9, dur: 1e9 }; tmodN++; }
   return {
     x: SPAWN.x, y: SPAWN.y, hp: WZ.maxHp(), armor: 0, fx: 1, fy: 1, vx: 0, vy: 0, target: null,
     roll: 0, rollCd: 0, rdx: 0, rdy: 0, hurtT: 0, moving: false, bob: 0, shake: 0, ghosts: [],
     enemies: [], proj: [], eproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
     time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
-    arcs: [], decals: [], bend: {}, tmod: {}, tmodN: 0, kick: null, jump: null,   // deliveries in flight, ground marks, leaning grass, spell terrain, recoil, geyser jump
+    arcs: [], decals: [], bend: {}, tmod, tmodN, kick: null, jump: null,   // deliveries in flight, ground marks, leaning grass, spell terrain, recoil, geyser jump
+    boulders: (WZ.boulderSpots || []).map(b => ({ x: b.x, y: b.y, vx: 0, vy: 0 })), blink: null, glowT: 0, scorchT: 0,   // loose boulders, the Circlet's blink, the glow-up timer, time spent on scorched ground
     lm: WZ.marks.map(() => ({ state: 'idle', t: 0, sp: 0, near: false })),
     run: { deliveries: 0, harvested: 0, dmg: 0, weak: 0, elites: 0, shards: 0, marks: 0, xp: 0, spells: {} },
     t: 0,
@@ -267,7 +349,8 @@ WZ.bankLooseShards = function () {
     if (dr.kind === 'shard') { G.stock.shard += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; }
     else if (dr.kind === 'core') G.stock.core += dr.val;
   }
-  w.drops = w.drops.filter(dr => dr.kind !== 'shard' && dr.kind !== 'core');
+  WZ.bankLoot(w.drops);   // augments, Offerings and Ward Keys still on the ground are his too
+  w.drops = w.drops.filter(dr => dr.kind !== 'shard' && dr.kind !== 'core' && !WZ.isLoot(dr.kind));
 };
 WZ.reenter = function () { WZ.bankLooseShards(); G.w = WZ.fresh(); };
 
@@ -314,17 +397,19 @@ WZ.epuff = function (x, y, el, n) {
     G.w.fx_.push(f);
   }
 };
-WZ.damage = function (d) {   // armor soaks damage first
+WZ.damage = function (d, soft) {   // armor soaks damage first. soft = burning ground: no hit-stun, shake or hurt sound
   const w = G.w;
   if (w.jump) return;   // airborne on a geyser: nothing reaches him
-  if (d >= CFG.pressure.hit * WZ.maxHp()) FA.pressure(Math.min(1.5, d / WZ.maxHp() * 3), '#ff5a5a');   // a heavy hit shakes the factory too
+  if (!soft && d >= CFG.pressure.hit * WZ.maxHp()) FA.pressure(Math.min(1.5, d / WZ.maxHp() * 3), '#ff5a5a');   // a heavy hit shakes the factory too
   const soak = Math.min(w.armor, d);
   w.armor -= soak; d -= soak;
   if (soak > 0) WZ.num(w.x, w.y, '-' + Math.round(soak), '#9fc4ff');
-  if (d > 0) { w.hp -= d; WZ.num(w.x, w.y, '-' + Math.round(d), '#ff6a6a'); }
-  w.hurtT = 0.35; w.shake = Math.max(w.shake, 0.35);
-  AU.sfx(soak > 0 && d <= 0 ? 'clank' : 'hurt');
-  if (w.hp <= 0) { w.hp = 0; w.dead = true; AU.sfx('die'); WZ.puff(w.x, w.y, '#b58cff', 20); }
+  if (d > 0) { w.hp -= d; WZ.num(w.x, w.y, '-' + Math.round(d), soft ? '#ff9a3a' : '#ff6a6a'); }
+  if (!soft) { w.hurtT = 0.35; w.shake = Math.max(w.shake, 0.35); AU.sfx(soak > 0 && d <= 0 ? 'clank' : 'hurt'); }
+  if (w.hp <= 0) {
+    if (WZ.phoenixSave()) return;   // the Phoenix Feather cancels death
+    w.hp = 0; w.dead = true; AU.sfx('die'); WZ.puff(w.x, w.y, '#b58cff', 20);
+  }
 };
 // a hit the roll's i-frames just swallowed: say so, so dodging feels deliberate
 WZ.dodge = function () {
@@ -339,20 +424,21 @@ WZ.dodge = function () {
 WZ.forageAt = function (x, y) {
   let best = null, bd = CFG.forage.reach;
   for (const o of WZ.forage) {
-    if (o.broken || Math.abs(o.x - x) > 2 || Math.abs(o.y - y) > 2) continue;
+    if (o.broken || Math.abs(o.x - x) > 2 || Math.abs(o.y - y) > 2 || !WZ.forageSeen(o)) continue;
     const d = Math.hypot(o.x - x, o.y - y);
     if (d < bd) { bd = d; best = o; }
   }
   return best;
 };
-WZ.forageName = k => (k === 'mound' ? 'Dirt Mound' : k === 'sticks' ? 'Stick Pile' : 'Berry Bush');
+WZ.forageName = k => (k === 'mound' ? 'Dirt Mound' : k === 'sticks' ? 'Stick Pile' : k === 'cache' ? 'Buried Cache' : 'Berry Bush');
 WZ.mash = function (o) {
   const F = CFG.forage, def = F[o.kind], w = G.w;
   o.prog += 1; o.lastT = w.t; o.shake = 0.12; w.mashT = 0.14;
-  WZ.puff(o.x, o.y, o.kind === 'mound' ? '#8a6a3c' : o.kind === 'sticks' ? '#c98a52' : '#46b452', 3);
+  WZ.puff(o.x, o.y, o.kind === 'mound' ? '#8a6a3c' : o.kind === 'sticks' ? '#c98a52' : o.kind === 'cache' ? '#ffd23a' : '#46b452', 3);
   AU.sfx(o.kind === 'bush' ? 'rustle' : 'dig');
   if (o.prog < def.taps) return;
   o.broken = true; o.prog = 0; o.respawn = o.kind === 'bush' ? F.bushRespawn : F.respawn;
+  if (o.kind === 'cache') { const s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y]; w.pickups.push({ kind: Math.random() < def.pickup ? 'elixir' : 'plate', x: s[0], y: s[1], z: 1.6, t: 0 }); }   // a pickup tumbles out of the cache as well
   if (o.kind === 'bush') {   // a pickup tumbles out of the bush: walk over it to use it
     const kind = Math.random() < def.potion ? 'potion' : 'armor', s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y];
     w.pickups.push({ kind, x: s[0], y: s[1], z: 1.6, t: 0 });
@@ -555,6 +641,7 @@ WZ.chain = function (n, dmg, col, range) {
 WZ.incoming = function (spell) {
   const w = G.w;
   if (!w || w.dead) return;
+  if (G.hold && G.hold.on && !G.hold.spell) { WZ.hold(spell); return; }   // the held-spell slot is empty: the spell waits in it for the Wizard's own button
   const combo = BASICS.indexOf(spell) < 0, dur = CFG.spells[spell].drop || 0.5;
   w.fx_.push({ type: 'drop', spell, x: w.x, y: w.y, col: SPELL_COL[spell] || '#fff', t: 0, dur, big: combo, seed: Math.random() * 6 });
   AU.sfx(combo ? 'incoming_big' : 'incoming');
@@ -588,6 +675,7 @@ WZ.cast = function (spell) {
       WZ.ring(px, py, S.r, '#e6f8ff', 0.45);
       WZ.mark(px, py, S.r);
       WZ.each(px, py, S.r, (t, d, isE) => { const m = d || 1; WZ.hit(t, isE, S.dmg, isE ? (t.x - px) / m * S.push : 0, isE ? (t.y - py) / m * S.push : 0); });
+      WZ.gustEffects(px, py, S.r);   // the Stonefist Charm: boulders shoved, cracked rock broken
       break;
     case 'fireball': {
       AU.sfx('zap_fire');
@@ -712,6 +800,7 @@ WZ.makeEnemy = function (type, x, y, elite) {
   const e = { type, x, y, hp, maxHp: hp, kx: 0, ky: 0, slow: 0, slowT: 0, cd: 0, flash: 0, dead: false, face: 1, bob: Math.random() * 6,
     weak: def.weak || null, resist: def.resist || null, rad: def.rad || 0.35, spd: def.speed, dmg: def.dmg };
   if (elite) WZ.eliteUp(e);
+  if (!def.crafted) { const met = G.stats.met || (G.stats.met = {}); met[type] = (met[type] || 0) + 1; }   // the Collection Book greys out foes you have never met (crafted ones count in makeCreature)
   w.enemies.push(e);
   return e;
 };
@@ -754,22 +843,7 @@ WZ.claim = function (m) {
   WZ.ring(m.x, m.y, 4, '#c890ff', 0.6); WZ.puff(m.x, m.y, '#c890ff', 18);
   AU.sfx('chest'); UI.changed();   // the shards themselves fly out and pop up at the factory's shard pile
 };
-// the shrine mini-game: a ring shrinks toward the crystal over shrineCycle seconds; pressing while it overlaps the
-// target ring scores a hit, a miss just restarts the ring. shrineHits hits claim it. It can't be failed.
-WZ.shrineAt = function () {
-  const w = G.w;
-  return WZ.marks.find(m => m.type === 'shrine' && w.lm[m.id].state === 'active') || null;
-};
-WZ.shrineRing = s => 1 - (s.ph || 0);   // ring size, 1 = outer edge, 0 = the crystal
-WZ.shrineTap = function (m) {
-  const w = G.w, M = CFG.marks, s = w.lm[m.id];
-  if (Math.abs(WZ.shrineRing(s) - M.shrineTarget) <= M.shrineTol) {
-    s.hits = (s.hits || 0) + 1; s.flash = 0.3; s.ph = 0;
-    WZ.ring(m.x, m.y, 1.2 + s.hits * 0.5, ELEM[m.el].color, 0.4); WZ.puff(m.x, m.y, ELEM[m.el].color, 8);
-    AU.sfx('shrine');
-    if (s.hits >= M.shrineHits) WZ.claim(m);
-  } else { s.miss = 0.25; s.ph = 0; AU.sfx('thud'); }
-};
+// (shrines are claimed by delivering an Offering: WZ.shrineAt / WZ.shrineOffer in augments.js)
 WZ.foesNear = (m, n) => {
   for (let i = 0; i < n; i++) {
     const s = WZ.dryNear(m.x, m.y, 12, [1.2, 3.5]);
@@ -814,13 +888,9 @@ WZ.updMarks = function (dt) {
       }
     } else if (m.type === 'stronghold') {
       WZ.updKeep(m, s, d, dt);
-    } else {   // shrines: claimed with the ring mini-game, then they boost their element's harnessers while he stands on them
-      const near = d < M.shrineR;
+    } else {   // shrines: claimed by delivering the element's Offering (WZ.shrineOffer), then they boost their element's harnessers while he stands on them
       if (s.flash > 0) s.flash -= dt;
-      if (s.miss > 0) s.miss -= dt;
-      if (s.state === 'done') { if (near) w.shrine = m.el; }
-      else if (near) { s.state = 'active'; s.ph = ((s.ph || 0) + dt / M.shrineCycle) % 1; }
-      else if (s.state === 'active') { s.state = 'idle'; s.ph = 0; s.hits = 0; }   // walked off: cancelled
+      if (s.state === 'done' && d < M.shrineR) w.shrine = m.el;
     }
   }
 };
@@ -977,7 +1047,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   for (let i = w.decals.length - 1; i >= 0; i--) if ((w.decals[i].t += dt) > w.decals[i].dur) w.decals.splice(i, 1);
   WZ.tmodTick(dt);
   WZ.arcTick(dt);
-  if (w.dead) { w.shrine = null; w.dig = null; w.jump = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
+  if (w.dead) { w.shrine = null; w.dig = null; w.jump = null; w.blink = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
   w.time += dt;
   if (w.hurtT > 0) w.hurtT -= dt;
   if (w.mashT > 0) w.mashT -= dt;
@@ -1015,7 +1085,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   // standing still at a forage spot, the roll button digs instead (move while pressing it to roll away)
   const sh = w.roll > 0 ? null : WZ.shrineAt();
   w.dig = w.roll > 0 || sh ? null : WZ.forageAt(w.x, w.y);
-  if (rollPressed && sh && m === 0) { WZ.shrineTap(sh); w.mashAt = w.t; rollPressed = false; }
+  if (rollPressed && sh && m === 0) { WZ.shrineOffer(sh); w.mashAt = w.t; rollPressed = false; }   // standing at a Shrine with its Offering: the roll button delivers it
   else if (rollPressed && w.dig && m === 0) { WZ.mash(w.dig); w.mashAt = w.t; rollPressed = false; }
   else if (rollPressed && m === 0 && w.t - (w.mashAt || -9) < 0.35) rollPressed = false;   // extra mashes after it's dug don't roll him off
   // a roll pressed a moment too early (still rolling / cooling down) is kept for CFG.inputBuffer seconds
@@ -1025,14 +1095,23 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     w.roll = CFG.wizard.rollTime; w.rollCd = CFG.wizard.rollCd;
     w.rdx = m > 0 ? dx : w.fx; w.rdy = m > 0 ? dy : w.fy;
     const rm = Math.hypot(w.rdx, w.rdy) || 1; w.rdx /= rm; w.rdy /= rm;
-    AU.sfx('roll');
+    AU.sfx(WZ.has('gale') && WZ.blinkStart() ? 'dodge' : 'roll');   // the Gale Circlet: the roll is a short blink instead
   }
   let sp = WZ.speed();
-  if (WZ.tile(w.x, w.y) === T_BOG) sp *= cfg.slowTerrain;
+  const tn = WZ.tile(w.x, w.y);
+  if (tn === T_BOG && !WZ.has('bog')) sp *= cfg.slowTerrain;   // the Bogwalker Shroud: bog never slows him
+  if (tn === T_SCORCH && !WZ.has('ember')) sp *= CFG.aug.scorch.slow;
   // hostile mud / steam slows (the roll ignores them)
   const slowK = (1 - Math.min(0.8, w.zSlow || 0)) * (w.slowT > 0 ? 1 - w.slowAmt : 1);
   if (w.slowT > 0) w.slowT -= dt;
-  if (w.roll > 0) {
+  if (w.blink) {   // the Circlet's blink: straight to the landing spot, over water and chasms, no collision on the way (WZ.blinkStart picked a legal one)
+    const B = w.blink, k = Math.min(1, (B.t += dt) / B.T);
+    w.roll -= dt;
+    w.x = B.sx + (B.tx - B.sx) * k; w.y = B.sy + (B.ty - B.sy) * k; w.vx = 0; w.vy = 0;
+    w.ghostT = (w.ghostT || 0) - dt;
+    if (w.ghostT <= 0) { w.ghostT = 0.025; w.ghosts.push({ x: w.x, y: w.y, t: 0 }); }
+    if (k >= 1) { w.blink = null; w.squashT = 0.12; WZ.ring(w.x, w.y, 1.2, '#e6f8ff', 0.3); WZ.puff(w.x, w.y, '#e6f8ff', 8); }
+  } else if (w.roll > 0) {
     // the roll ignores acceleration: a committed burst
     w.roll -= dt;
     w.vx = w.rdx * sp * CFG.wizard.rollSpeed; w.vy = w.rdy * sp * CFG.wizard.rollSpeed;
@@ -1046,7 +1125,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   if (w.kick) {   // an aimed spell's recoil: a short shove backwards (it slides along water like any move)
     const K = w.kick, s = K.d / CFG.wizard.kickT;
     if (w.roll > 0 || w.jump || (K.t -= dt) <= 0) w.kick = null;
-    else WZ.slide(w, w.x + K.x * s * dt, w.y + K.y * s * dt, CFG.wizard.radius);
+    else WZ.slideW(w, w.x + K.x * s * dt, w.y + K.y * s * dt, CFG.wizard.radius);
   }
   if (w.squashT > 0) w.squashT -= dt;
   for (const gh of w.ghosts) gh.t += dt;
@@ -1063,11 +1142,20 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     w.bob += dt * 11 * Math.min(1, spd / sp);
     const nx = Math.max(0.5, Math.min(CFG.WW - 0.5, w.x + w.vx * dt)), ny = Math.max(0.5, Math.min(CFG.WH - 0.5, w.y + w.vy * dt));
     const ox = w.x, oy = w.y;
-    WZ.slide(w, nx, ny, CFG.wizard.radius);
+    WZ.slideW(w, nx, ny, CFG.wizard.radius);
     if (w.x === ox) w.vx = 0;
     if (w.y === oy) w.vy = 0;
     if (w.target && w.x === ox && w.y === oy) w.target = null;
   }
+  WZ.augTick(dt);   // augment cooldowns, washing ashore, the keeps' doors, boulders
+  // scorched ground burns (the Emberward Cloak walks it unharmed and throws embers up instead)
+  if (tn === T_SCORCH && !w.jump && !w.blink) {
+    if (WZ.has('ember')) { if (Math.random() < dt * 10) w.fx_.push({ type: 'spark', x: w.x + rand(-0.4, 0.4), y: w.y + rand(-0.4, 0.4), vx: 0, vy: 0, z: 0.1, vz: rand(1.5, 3), g: -2, col: Math.random() < 0.5 ? '#ffb030' : '#ff7a30', t: 0, dur: 0.5 }); }
+    else {
+      w.scorchT = (w.scorchT || 0) + dt; w.burn = (w.burn || 0) + dt;   // burn = seconds in a row on scorched ground: the longer he stays, the worse it gets
+      if (w.scorchT >= 0.25) { w.scorchT = 0; WZ.damage(CFG.aug.scorch.dps * (1 + CFG.aug.scorch.ramp * w.burn) * 0.25, true); if (Math.random() < 0.5) AU.sfx('blip'); }
+    }
+  } else if (w.burn > 0) w.burn = Math.max(0, w.burn - dt * 2);   // off the ground: it cools quickly
   WZ.flowCd -= dt;
   if (WZ.flowCd <= 0 && (!WZ.flow || WZ.flow.cx !== Math.floor(w.x) || WZ.flow.cy !== Math.floor(w.y))) { WZ.buildFlow(); WZ.flowCd = 0.2; }
 
@@ -1161,6 +1249,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     else if (d < reach && e.cd <= 0 && w.roll <= 0 && w.hurtT <= 0) {
       e.cd = cfg.touchCd * rand(0.85, 1.3);
       WZ.damage((e.diving && e.diveDmg) || e.dmg);
+      if (WZ.has('static') && !w.dead) WZ.staticBurst();   // the Static Cloak: whatever struck him is thrown back by a burst of static
       if (!e.boss) { e.kx -= ex / d * 6; e.ky -= ey / d * 6; }   // bump the attacker back a little
     } else if (d < reach && e.cd <= 0 && w.roll > 0) { e.cd = 0.3; WZ.dodge(); }
   }
@@ -1240,7 +1329,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
       dr.vx *= 0.93; dr.vy *= 0.93;
     }
     if (dr.pulse > 0) dr.pulse -= dt;
-    const vac = dr.kind === 'shard' || dr.kind === 'core' ? WZ.vacuum() * 2.5 : WZ.vacuum();   // shards and Cores are precious: they come to you
+    const loot = WZ.isLoot(dr.kind), vac = dr.kind === 'shard' || dr.kind === 'core' || loot ? WZ.vacuum() * 2.5 : WZ.vacuum();   // shards, Cores and augment / Offering / key drops are precious: they come to you
     if (dr.t > 0.3 && d < vac) {
       const sp2 = 7 + (vac - d) * 7;
       dr.x += ex / (d || 1) * sp2 * dt; dr.y += ey / (d || 1) * sp2 * dt;
@@ -1248,6 +1337,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     }
     if (d < 0.45 && dr.t > 0.3) {
       if (dr.kind === 'xp') { G.xp += dr.val; G.stats.xpEarned += dr.val; w.run.xp += dr.val; AU.sfx(dr.val >= CFG.bigGem.tiers[1] ? 'gemBig' : 'gem'); if (dr.val >= CFG.bigGem.tiers[1]) WZ.num(w.x, w.y, '+' + dr.val, '#7be0ff'); }
+      else if (loot) WZ.collect(dr);
       else if (dr.kind === 'core') { FA.toStock('core', dr.val); AU.sfx('chest'); WZ.icon(w.x, w.y, 'core'); }
       else if (ELEM[dr.kind]) {   // a recycled packet flies out of the Spell Portal into its spell spot in the Stockpile
         FA.toStock(dr.kind, dr.val); AU.sfx('el_' + dr.kind); WZ.icon(w.x, w.y, dr.kind);
@@ -1255,6 +1345,6 @@ WZ.update = function (dt, ix, iy, rollPressed) {
       else if (dr.kind === 'shard') { FA.toStock('shard', dr.val); w.run.shards += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; AU.sfx('shard'); WZ.icon(w.x, w.y, 'shard'); }
       else { FA.toStock(dr.kind, dr.val); w.run.harvested += dr.val; G.stats.harvested += dr.val; AU.sfx('pickup'); WZ.icon(w.x, w.y, dr.kind); }
       w.drops.splice(i, 1);
-    } else if (dr.t > 120 && dr.kind !== 'shard' && dr.kind !== 'core') w.drops.splice(i, 1);
+    } else if (dr.t > 120 && dr.kind !== 'shard' && dr.kind !== 'core' && !loot) w.drops.splice(i, 1);
   }
 };

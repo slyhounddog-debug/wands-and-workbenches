@@ -77,7 +77,9 @@
         <div class="bar hp"><i data-ic="ic_heart" data-s="14"></i><div id="hpFill"></div><span id="hpTxt"></span></div>
         <div class="bar arm"><i data-ic="ic_shield" data-s="14"></i><div id="armFill"></div><span id="armTxt"></span></div>
       </div>
-      <div class="iconbtns right"><button id="btnBookR" class="px" title="Collection Book: every spell and creature"><i data-ic="ic_book" data-s="28"></i><kbd>C</kbd></button><button id="btnTreeR" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>Y</kbd></button></div>
+      <!-- the Wizard's worn augments (hat, robe, boots, charm) and, once the first Warden has fallen, the held spell; click it (or I) for the wardrobe -->
+      <div class="card px" id="gearCard" title="Wizard's wardrobe: augments, Offerings, Ward Keys (I)"></div>
+      <div class="iconbtns right"><button id="btnWard" class="px" title="Wizard's wardrobe: augments, Offerings, Ward Keys"><i data-ic="aug_tide" data-s="28"></i><kbd>I</kbd></button><button id="btnBookR" class="px" title="Collection Book: every spell and creature"><i data-ic="ic_book" data-s="28"></i><kbd>C</kbd></button><button id="btnTreeR" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>Y</kbd></button></div>
       <div class="card px pin hidden" id="pinR"></div>
     </div>
     <div id="eggQ" class="px hidden"></div>
@@ -96,7 +98,7 @@
       <div class="hcol">
         <h3><i data-ic="ic_hat" data-s="16"></i>WIZARD</h3>
         <div><kbd>ARROWS</kbd> walk &nbsp; <kbd>.</kbd> roll (invulnerable)</div>
-        <div>Spells fire by themselves when the factory delivers them.</div>
+        <div>Spells fire by themselves when the factory delivers them. <kbd>I</kbd> wardrobe (augments, Offerings, keys).</div>
         <div>Stand near trees and rocks: spells harvest them too.</div>
         <div>Water blocks you. Bog slows you. The map shows landmarks.</div>
         <div><kbd>Y</kbd> skill tree (pauses the game) &nbsp; hold <kbd>X</kbd> swap</div>
@@ -140,6 +142,8 @@
     <div id="victory" class="overlay hidden"></div>
     <!-- the Collection Book: every spell and creature, with live demos (opens over the paused game) -->
     <div id="book" class="hidden"></div>
+    <!-- the Wizard's wardrobe: worn augments, the wardrobe, Offerings and Ward Keys (opens over the paused game, like the book) -->
+    <div id="ward" class="hidden"></div>
     <div id="pause" class="overlay hidden">
       <div id="pauseMain" class="panel px">
         <h2>PAUSED</h2>
@@ -199,11 +203,13 @@
 <script src="js/factory.js"></script>
 <script src="js/wizard.js"></script>
 <script src="js/creatures.js"></script>
+<script src="js/augments.js"></script>
 <script src="js/render.js"></script>
 <script src="js/spellpreview.js"></script>
 <script src="js/creaturepreview.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/book.js"></script>
+<script src="js/wardrobe.js"></script>
 <script src="js/players.js"></script>
 <script src="js/devbot.js"></script>
 <script src="js/snapshot.js"></script>

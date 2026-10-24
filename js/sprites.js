@@ -616,6 +616,51 @@ task(() => {
   icn('magnet', ['wr...bw', 'rr...bb', 'rr...bb', 'rr...bb', 'rrr.bbb', '.rrrbb.', '..rrb..']);
 });
 
+// ---------- the Wizard's augments, Offerings and Ward Keys (js/augments.js) ----------
+// it_aug_<id> / it_off_<el> / it_key_<el> are the icons (they are drops in the wilds and rows in the wardrobe); ao_<id> are the worn overlays: 12 wide x 16 tall,
+// anchored at the Wizard's feet like his own sprite (head rows 6-8, shoulders 9, feet 14-15), drawn over him by R.drawWizard
+task(() => {
+  const P = { o: '#2b1d3e', w: '#ffffff', y: '#ffd23a', b: '#4aa8ff', B: '#2a72c8', r: '#e8501a', R: '#a82a1a', O: '#ffb030', a: '#a9b0b8', A: '#6a7280',
+    g: '#6a8a4a', G: '#46602a', s: '#dfe8f0', c: '#7be0ff', d: '#4a3438', D: '#2a1c20', p: '#ff7a30', q: '#ffe36b' };
+  const ic = (name, rows) => reg('it_' + name, mapSprite(rows, P), Math.max.apply(null, rows.map(r => r.length)) / 2, rows.length);
+  ic('aug_tide', ['..ooo....', '.owwwo...', '.obbbo...', '.obbbo...', '.obbbooo.', '.obbbbbbo', 'oobbBBBbo', 'owwwwwwwo', '.ooooooo.']);
+  ic('aug_ember', ['..oooooo..', '.ooyyyyoo.', '.orrrrrro.', 'orrrRRrrro', 'orrrRRrrro', 'orrrRRrrro', 'oOrrRRrrOo', 'oOOrrrrOOo', 'oyOOrrOOyo', '.oo.oo.oo.']);
+  ic('aug_stone', ['..ooooo..', '.oyyyyyo.', '.y.....y.', '..ooooo..', '.oaaaaao.', 'oaaAAAaao', 'oaAaaaAao', 'oaaAAAaao', '.oaaaaao.', '..ooooo..']);
+  ic('aug_gale', ['w.......w', 'ww.....ww', 'wwoooooww', '.wscccsw.', '..ocyco..', '...ooo...']);
+  ic('aug_bog', ['..oooooo..', '.oggggggo.', 'ogGggGgggo', 'ogggGgggGo', 'oGgggggggo', 'ogggGggGgo', 'ogGgggggGo', 'oggGggGggo', '.og.gG.go.', '..o....o..']);
+  ic('aug_phoenix', ['......oo.', '.....orRo', '....orROo', '...orRryo', '..orRrryo', '.orRrryyo', 'orRrryyo.', 'oyrryoo..', 'oyyoo....', 'oyo......', 'oo.......']);
+  ic('aug_static', ['..oooooo..', '.obbbbbbo.', 'obbbbqqbbo', 'obbbqqbbbo', 'obbqqbbbbo', 'obbbqqbbbo', 'obbbbqqbbo', 'obbbqqbbbo', 'obBbbbbbBo', '.oo.oo.oo.']);
+  ic('aug_kiln', ['..oooooo..', '.oddddddo.', 'oddDddDddo', 'odOOddOOdo', 'odOOddOOdo', 'oddddddddo', '.oddppddo.', '..oddddo..', '...oooo...']);
+  for (const el of ELEMS) {   // an Offering: the element's crystal in a gold dish; a Ward Key: a key with the element's gem for a bow
+    const E = { o: '#2b1d3e', c: ELEM[el].color, C: ELEM[el].dark, w: '#ffffff', y: '#ffd23a', Y: '#c8921a' };
+    reg('it_off_' + el, mapSprite(['....o....', '...ocC...', '..ocwcC..', '.occcccC.', 'ocwcccCCo', '.occccCo.', '..occCo..', '.oyyyyyo.', '..oYYYo..'], E), 4.5, 9);
+    reg('it_key_' + el, mapSprite(['.ooo........', 'occco.......', 'ocwcoyyyyyyy', 'occcoYYYYYYY', '.ooo...y.y.y', '.......Y.Y.Y'], E), 6, 6);
+  }
+  // worn overlays
+  const OV = { s: '#dfe8f0', w: '#ffffff', c: '#7be0ff', M: '#3a2a30', e: '#ffb030', b: '#3a7ad0', h: '#bfe9ff', y: '#ffd23a', a: '#a9b0b8', A: '#6a7280',
+    r: '#d83a1a', O: '#ffb030', g: '#4a6a38', l: '#8ab05a', u: '#3a4a9a', z: '#fff27a', f: '#ff7a30', F: '#e8381a' };
+  const ov = (name, rows) => reg('ao_' + name, mapSprite(rows.concat(Array(16 - rows.length).fill('............')), OV), 6, 16);
+  const at = rows => { const a = Array(16).fill('............'); rows.forEach(([i, s]) => { a[i] = s; }); return a; };   // 16 empty rows with a few filled in
+  ov('gale', at([[5, 'w..........w'], [6, 'wwsscccsswww'], [7, '.w........w.']]));
+  ov('kiln', at([[7, '...MeMMeM...'], [8, '....MMMM....']]));
+  ov('tide', at([[14, '..hbb..bbh..'], [15, '.bbbb..bbbb.']]));
+  ov('ember', at([[9, '.rr......rr.'], [10, 'r..........r'], [11, 'rr........rr'], [12, 'rrr......rrr'], [13, 'rOfOfOfOfOfr']]));
+  ov('bog', at([[9, '.gg......gg.'], [10, 'g..........g'], [11, 'gl........lg'], [12, 'ggl......lgg'], [13, 'g.l.g..g.l.g']]));
+  ov('static', at([[9, '.uu......uu.'], [10, 'u..........u'], [11, 'uz........zu'], [12, 'uuz......zuu'], [13, 'uzuzuuuuzuzu']]));
+  ov('stone', at([[12, '.........y..'], [13, '.........aA.']]));
+  ov('phoenix', at([[2, '........ry..'], [3, '........Fyr.'], [4, '.........Fy.'], [5, '..........y.']]));
+  // loose boulders (a Gust shoves them with the Stonefist Charm) and the stump of a broken bridge at the lip of a chasm
+  reg('boulder', mk(22, 18, x => {
+    circ(x, 11, 10, 7.5, '#5e646c'); circ(x, 11, 9, 7, '#767d86'); circ(x, 9, 7, 5, '#8d949c'); circ(x, 8, 6, 2.6, '#b4bcc4');
+    x.fillStyle = '#4a5058'; x.fillRect(4, 13, 5, 1); x.fillRect(12, 14, 5, 1); x.fillRect(10, 9, 1, 3);
+  }), 11, 17);
+  reg('bridge_end', mk(26, 12, x => {
+    x.fillStyle = '#5a3a1a'; x.fillRect(0, 5, 24, 6); x.fillStyle = '#9a6a38'; x.fillRect(0, 4, 24, 3); x.fillStyle = '#c08a50'; x.fillRect(0, 4, 24, 1);
+    x.fillStyle = '#4a2c12'; for (let i = 0; i < 5; i++) x.fillRect(3 + i * 5, 4, 1, 7);
+    x.fillStyle = '#2a1608'; x.fillRect(24, 5, 1, 2); x.fillRect(23, 8, 2, 1); x.fillRect(25, 6, 1, 3);
+  }), 13, 11);
+});
+
 SP.build = function (progress, done) {
   const tasks = SP.tasks.slice(); let i = 0;
   (function step() {

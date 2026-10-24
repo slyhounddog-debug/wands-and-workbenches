@@ -149,7 +149,7 @@ const DevBot = { on: null, st: null, stats: null };
       if (g && (g.o.broken || skipped(st, g.o) || st.now - g.t0 > g.max)) { if (st.now - g.t0 > g.max) st.skip.set(g.o, st.now + c.skipT); g = st.goal = null; }
       if (!g) {
         let best = null, bd = c.forageR;
-        for (const o of WZ.forage) { if (o.broken || skipped(st, o)) continue; const d = Math.hypot(o.x - w.x, o.y - w.y); if (d < bd) { bd = d; best = { o, kind: 'forage' }; } }
+        for (const o of WZ.forage) { if (o.broken || !WZ.forageSeen(o) || skipped(st, o)) continue; const d = Math.hypot(o.x - w.x, o.y - w.y); if (d < bd) { bd = d; best = { o, kind: 'forage' }; } }
         if (!best) { bd = c.harvestR; for (const o of WZ.harv) { if (o.broken || skipped(st, o)) continue; const d = Math.hypot(o.x - w.x, o.y - w.y); if (d < bd) { bd = d; best = { o, kind: 'harvest' }; } } }
         if (best) g = st.goal = { o: best.o, kind: best.kind, t0: st.now, max: bd / (CFG.wizard.speed * 0.5) + 8, dwell: 0, dug: 0 };
       }

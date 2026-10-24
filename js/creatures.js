@@ -89,6 +89,7 @@ WZ.onDeath = function (e) {
     if (Math.random() < CFG.crafted.recycle) WZ.drop(CFG.creatures[e.type].order[0], e.x, e.y, 1);   // a packet of its primary element comes back
   }
   if (e.evt) w.evKills = (w.evKills || 0) + 1;
+  WZ.lootDrops(e);   // augments, Offerings and Ward Keys (augments.js)
 };
 // the Phoenix's one rebirth: true when the death was cancelled
 WZ.rebirth = function (e) {
@@ -501,13 +502,15 @@ WZ.updKeep = function (m, s, d, dt) {
   if (s.flash > 0) s.flash -= dt;
   if (d < K.reveal && !s.seen) {
     s.seen = true; G.flags.scouted = true;
-    const msg = ELEM_WORD[m.el] + ' Stronghold scouted: Warden weak to ' + ELEM_WORD[WZ.WARDEN_WEAK(m.el)];
+    const gate = AUGS[AUG_ORDER.find(id => AUGS[id].gate === m.el)];
+    const msg = ELEM_WORD[m.el] + ' Stronghold scouted: the way in needs the ' + gate.name + ' and the ' + KEY_NAME(m.el) + '. Warden weak to ' + ELEM_WORD[WZ.WARDEN_WEAK(m.el)];
     UI.toast(msg, 'L', WZ.WARDEN_WEAK(m.el)); UI.toast(msg, 'R', 'ic_keep');
     AU.sfx('alert'); UI.changed();
   }
   if (s.state === 'idle') {
-    // standing inside the wake radius runs a countdown (warnT); the guards only spawn when it reaches warnT, and leaving (or dying) resets it
-    if (d >= K.wake || w.dead) { s.warnT = 0; return; }
+    // standing inside the wake radius runs a countdown (warnT); the guards only spawn when it reaches warnT, and leaving (or dying) resets it.
+    // The arena only wakes for a Wizard who is allowed in: without the keep's Ward Key the door (WZ.doorTick) keeps him out, so no countdown starts
+    if (d >= K.wake || w.dead || !G.aug.key[m.el]) { s.warnT = 0; return; }
     if (!(s.warnT > 0)) {
       s.warnT = 0;
       if (!(w.t - (s.toastAt || -99) < 8)) { s.toastAt = w.t; UI.toast('Stronghold area! The guards wake in ' + K.warnT + 's: leave to reset it', 'R', 'ic_warn'); UI.toast('The Wizard is in a Stronghold area', 'L', 'ic_warn'); }
@@ -544,5 +547,6 @@ WZ.claimKeep = function (m) {
   AU.sfx('chest');
   const msg = ELEM_WORD[m.el] + ' Stronghold claimed!' + (core ? ' A Warden Core!' : '');
   UI.toast(msg, 'L', core ? 'core' : 'shard'); UI.toast(msg, 'R', core ? 'core' : 'shard');
+  if (!G.flags.glow) WZ.glowUp(m);   // the first Warden to fall (per save): the Wizard glows for good and gains the held-spell slot
   UI.changed();
 };

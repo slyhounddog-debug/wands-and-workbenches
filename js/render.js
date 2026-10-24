@@ -1130,7 +1130,9 @@ R.drawWorld = function (main, dt) {
       if (tm && tm.k === 'ice') R.drawIce(ctx, v, sx, sy, tm, x, y, wt);
       else if (ty === T_POND && ((x * 7 + y * 3 + Math.floor(wt * 2)) % 9) === 0) { ctx.fillStyle = '#bfe6ff'; ctx.fillRect(Math.round(sx / 3) * 3 - 9, Math.round(sy / 3) * 3, 18, 3); }
       else if (ty === T_BOG && ((x * 5 + y * 11) % 4) === 0) { ctx.fillStyle = '#4a5a2a'; ctx.fillRect(Math.round(sx / 3) * 3 - 6, Math.round(sy / 3) * 3 - 3, 12, 6); }
-      if (tm && tm.k === 'wall') objs.push({ d: x + y + 1, t: 'wall', o: tm, x, y });
+      if (ty === T_SCORCH) R.drawScorch(ctx, sx, sy, x, y, wt);
+      else if (ty === T_CHASM) R.drawChasm(ctx, v, sx, sy, x, y, wt, ter, WW);
+      if (tm && (tm.k === 'wall' || tm.k === 'rock' || tm.k === 'vine')) objs.push({ d: x + y + 1, t: 'wall', o: tm, x, y });
       const b = bk[i];
       if (b) for (let j = 0; j < b.length; j++) {
         const o = b[j];
@@ -1140,9 +1142,10 @@ R.drawWorld = function (main, dt) {
   }
   for (const dc of w.decals) R.drawDecal(ctx, v, dc);
   for (const z of w.zones) R.drawZone(ctx, v, z);
-  for (const m of WZ.marks) if (m.type === 'stronghold') R.drawKeepArea(ctx, v, m);
+  for (const m of WZ.marks) if (m.type === 'stronghold') { R.drawKeepArea(ctx, v, m); R.drawKeepDoor(ctx, v, m); }
   for (const f of w.fx_) if (f.type === 'ring' || f.type === 'warn') R.drawFx(ctx, v, f); else if (f.type === 'drop') R.drawDrop(ctx, v, f, true);
 
+  for (const b of w.boulders) objs.push({ d: b.x + b.y, t: 'boulder', o: b });
   for (const dr of w.drops) objs.push({ d: dr.x + dr.y, t: 'drop', o: dr });
   for (const pk of w.pickups) objs.push({ d: pk.x + pk.y, t: 'pick', o: pk });
   for (const e of w.enemies) objs.push({ d: e.x + e.y, t: 'enemy', o: e });
@@ -1161,7 +1164,8 @@ R.drawWorld = function (main, dt) {
         sk = Math.round(sk * 10) / 10;   // in chunky steps
       }
       if (sk) dsprSkew(ctx, SP[o.spr], p[0], p[1], S, sk); else dspr(ctx, SP[o.spr], p[0], p[1], S);
-    } else if (it.t === 'wall') R.drawWall(ctx, v, it.x, it.y, o, wt);
+    } else if (it.t === 'boulder') R.drawBoulder(ctx, v, o);
+    else if (it.t === 'wall') R.drawWall(ctx, v, it.x, it.y, o, wt);
     else if (it.t === 'harv') {
       const p = R.toScreen(v, o.x, o.y), spr = SP[o.kind];
       ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(snap(p[0] - 18), Math.round(p[1] / 3) * 3 - 3, 36, 9);
@@ -1187,6 +1191,7 @@ R.drawWorld = function (main, dt) {
   for (const f of w.fx_) if (f.type !== 'ring' && f.type !== 'warn') R.drawFx(ctx, v, f);
   for (const a of w.arcs) R.drawArc(ctx, v, a);
   R.drawKeepCount(ctx, v, wt);
+  R.drawMaskHints(ctx, v, wt);
   R.drawWeather(ctx, wt);
 
   for (const pk of w.pickups) {   // off-screen pointers to pickups
@@ -1280,6 +1285,7 @@ R.wkey = () => (Main.padW() ? 'A' : !Main.kbShared() || G.swapped ? 'SPACE' : '.
 R.drawForage = function (ctx, v, o) {
   const w = G.w, p = R.toScreen(v, o.x, o.y), S = CFG.WT.S, t = w.t;
   if (p[0] < CFG.HALF - 60 || p[0] > CFG.W + 60) return;
+  if (o.kind === 'cache') { if (!o.broken) R.drawCache(ctx, v, o, p); return; }
   if (o.broken) { dspr(ctx, SP.fbush_bare, p[0], p[1], S); return; }
   const spr = SP[o.kind === 'bush' ? 'fbush' : o.kind], shake = o.shake > 0 ? (Math.random() < 0.5 ? -3 : 3) : 0, h = spr.c.height * S;
   ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(snap(p[0] - 21), Math.round(p[1] / 3) * 3 - 3, 42, 9);
@@ -1312,28 +1318,14 @@ R.drawMark = function (ctx, v, m) {
     }
     if (s.state === 'active') ic = [['ic_skull', w.enemies.filter(e => e.mark === m.id).length]];   // foes left
   } else if (m.type === 'shrine') {
-    const col = ELEM[m.el].color, R0 = M.shrineR * 1.4, on = done && w.shrine === m.el;
-    if (s.state === 'active') {
-      // the claim mini-game: the ring shrinks onto the crystal; it lights up while it lines up with the target ring
-      const k = WZ.shrineRing(s), hit = Math.abs(k - M.shrineTarget) <= M.shrineTol;
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6; ctx.globalAlpha = 0.7;
-      diamond(ctx, p[0], p[1], M.shrineTarget * R0 * v.hw, M.shrineTarget * R0 * v.hh); ctx.stroke();
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = s.miss > 0 ? '#ff5a5a' : s.flash > 0 ? '#ffffff' : hit ? col : shade(col, 0.6); ctx.lineWidth = hit ? 9 : 6;
-      const kk = Math.round(k * 12) / 12;   // shrinks in chunky steps
-      diamond(ctx, p[0], p[1], kk * R0 * v.hw, kk * R0 * v.hh); ctx.stroke();
-      for (let i = 0; i < M.shrineHits; i++) {   // progress pips under the shrine
-        const x = p[0] + (i - (M.shrineHits - 1) / 2) * 24, y = p[1] + 27;
-        ctx.fillStyle = '#1a0f28'; diamond(ctx, x, y, 12, 9); ctx.fill();
-        ctx.fillStyle = i < (s.hits || 0) ? col : '#4a3a5a'; diamond(ctx, x, y, 7.5, 6); ctx.fill();
-      }
-      R.iprompt(ctx, p[0], p[1] - 150, R.wkey(), null, CFG.W, CFG.HALF, hit);
-    } else {
-      ctx.strokeStyle = col; ctx.lineWidth = on ? 6 : 3; ctx.globalAlpha = on ? (Math.sin(t * 8) > 0 ? 1 : 0.6) : 0.35;
-      diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4, M.shrineR * v.hh * 1.4); ctx.stroke(); ctx.globalAlpha = 1;
-    }
+    const col = ELEM[m.el].color, on = done && w.shrine === m.el, has = G.aug.off[m.el] > 0, near = d < M.shrineR;
+    ctx.strokeStyle = col; ctx.lineWidth = on || (near && !done) ? 6 : 3; ctx.globalAlpha = on ? (Math.sin(t * 8) > 0 ? 1 : 0.6) : near && !done ? 0.9 : 0.35;
+    diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4, M.shrineR * v.hh * 1.4); ctx.stroke(); ctx.globalAlpha = 1;
+    if (s.flash > 0) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 9; ctx.globalAlpha = s.flash / 0.5; diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4 * (1.6 - s.flash), M.shrineR * v.hh * 1.4 * (1.6 - s.flash)); ctx.stroke(); ctx.globalAlpha = 1; }   // just claimed
+    if (!done && near && !w.dead) R.iprompt(ctx, p[0], p[1] - 150, has ? R.wkey() : null, has ? ['off_' + m.el] : ['off_' + m.el, 'ic_x'], CFG.W, CFG.HALF, has);   // the Offering it wants, and the button that delivers it
     dspr(ctx, SP.lm_shrine, p[0], p[1], S);
     dspr(ctx, SP['cr_' + m.el], p[0], p[1] - 39 - (Math.sin(t * (on ? 8 : 3)) > 0 ? 3 : 0), S, done && !on ? 0.6 : 1);
+    if (!done && !near) ic = [['off_' + m.el]];   // what it wants
     if (on) {   // boosting: the shrine's power streams up into a little portal (and out of the factory's Spell Portal)
       const top = p[1] - 168, rw = 27 + (Math.sin(t * 6) > 0 ? 3 : 0);
       ctx.fillStyle = '#2a1050'; diamond(ctx, p[0], top, rw, rw / 2.5); ctx.fill();
@@ -1352,7 +1344,7 @@ R.drawMark = function (ctx, v, m) {
     ctx.fillStyle = '#1a0f28'; ctx.fillRect(snap(p[0] + 3), Math.round((p[1] - 84) / 3) * 3, 12, 6);
     if (done) { if (d < 10) ic = [['ic_check']]; }
     else if (s.state === 'active') ic = [['ic_skull', w.enemies.filter(e => e.mark === m.id).length], ['wk_' + WZ.WARDEN_WEAK(m.el)]];
-    else if (s.seen && d < K.reveal + 6) { const g = K.guards[m.el]; ic = Object.keys(g).map(k => ['egg_' + k, g[k]]).concat([['ic_crown'], ['wk_' + WZ.WARDEN_WEAK(m.el)]]); }   // scouted: guards, Warden, its weakness
+    else if (s.seen && d < K.reveal + 6) { const g = K.guards[m.el]; ic = Object.keys(g).map(k => ['egg_' + k, g[k]]).concat([['ic_crown'], ['wk_' + WZ.WARDEN_WEAK(m.el)], ['aug_' + AUG_ORDER.find(id => AUGS[id].gate === m.el)], ['key_' + m.el]]); }   // scouted: guards, Warden, its weakness, the augment and key it wants
     else if (d < K.reveal + 6 && Math.sin(t * 3) > 0) ic = [['ic_keep']];
   } else {
     dspr(ctx, SP.lm_crypt, p[0], p[1], S, done ? 0.6 : 1);
@@ -1403,7 +1395,7 @@ R.drawWHint = function (ctx, v, h, t) {
 R.buildMap = function () {
   const c = document.createElement('canvas'); c.width = CFG.WW; c.height = CFG.WH;
   const x = c.getContext('2d'), img = x.createImageData(CFG.WW, CFG.WH);
-  const cols = [[74, 138, 58], [122, 90, 58], [200, 176, 112], [106, 154, 74], [46, 90, 42], [58, 122, 200], [184, 154, 106], [74, 90, 42]];
+  const cols = [[74, 138, 58], [122, 90, 58], [200, 176, 112], [106, 154, 74], [46, 90, 42], [58, 122, 200], [184, 154, 106], [74, 90, 42], [200, 224, 255], [150, 150, 160], [216, 84, 30], [20, 10, 36]];   // 8 / 9 (ice, wall) never appear in the stored terrain; 10 scorched ground, 11 chasm
   for (let i = 0; i < CFG.WW * CFG.WH; i++) { const k = cols[WZ.terrain[i] >> 3]; img.data[i * 4] = k[0]; img.data[i * 4 + 1] = k[1]; img.data[i * 4 + 2] = k[2]; img.data[i * 4 + 3] = 255; }
   x.putImageData(img, 0, 0);
   R.mapC = c;
@@ -1438,11 +1430,31 @@ R.drawMinimap = function (c) {
 };
 R.drawWizard = function (ctx, v, w) {
   const p = R.toScreenLocked(v, w.x, w.y), S = CFG.WT.S, spr = SP.wizard;
+  // the worn augments are drawn over him (boots, robe, charm, hat); the Phoenix Feather greys out while it recharges
+  const Wn = G.aug.worn, cool = G.aug.cd.phoenix > 0, layers = ['boots', 'robe', 'charm', 'hat'].filter(k => Wn[k]).map(k => ({ s: SP['ao_' + Wn[k]], a: Wn[k] === 'phoenix' && cool ? 0.4 : 1 }));
+  const wearAll = (alpha, flip, x, y) => { for (const l of layers) dspr(ctx, l.s, x, y, S, alpha * l.a, flip); };
+  const wearRot = ghost => { for (const l of layers) ctx.drawImage(ghost ? l.s.c : l.s.white, -l.s.ax * S, -l.s.ay * S + 24, l.s.c.width * S, l.s.c.height * S); };
   for (const gh of w.ghosts) {
     const q = R.toScreen(v, gh.x, gh.y);
     dspr(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, q[0], q[1], S, 0.35 * (1 - gh.t / 0.25));
   }
   ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(snap(p[0] - 15), Math.round(p[1] / 3) * 3 - 3, 30, 9);
+  const tt = G.w.t, wading = Wn.boots === 'tide' && !w.dead && !w.jump && WZ.tile(w.x, w.y) === T_POND;
+  if (wading) {   // Tide-Walking Boots: rings spread over the water under his feet
+    for (let i = 0; i < 2; i++) { const k = (tt * 1.3 + i * 0.5) % 1; ctx.globalAlpha = (1 - k) * 0.8; ctx.strokeStyle = '#e6f8ff'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1] + 3, (12 + k * 30) * 1, (6 + k * 15) * 1); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+  }
+  if (G.flags.glow && !w.dead) {   // the glow-up left a permanent, subtle aura: a soft halo, a ring at his feet and a few motes circling him
+    ctx.globalAlpha = 0.09 + 0.04 * Math.sin(tt * 3); ctx.fillStyle = '#fff2a8'; ctx.fillRect(snap(p[0] - 27), Math.round((p[1] - 84) / 3) * 3, 54, 90);
+    ctx.globalAlpha = 0.5 + 0.2 * Math.sin(tt * 3); ctx.strokeStyle = '#ffe36b'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1] + 3, 27, 13); ctx.stroke();
+    ctx.globalAlpha = 0.85; ctx.fillStyle = '#fff6c0';
+    for (let i = 0; i < 4; i++) { const a = tt * 1.6 + i * 1.571; ctx.fillRect(snap(p[0] + Math.cos(a) * 24 - 2), Math.round((p[1] - 30 + Math.sin(a) * 33) / 3) * 3, 3, 3); }
+    ctx.globalAlpha = 1;
+  }
+  if (w.blink) {   // the Gale Circlet's blink: a pale streak for the few frames it lasts (the afterimages above trail behind it)
+    ctx.globalAlpha = 0.55; dspr(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, p[0], p[1] - 12, S, 0.8, (w.fx - w.fy) < -0.05); ctx.globalAlpha = 1;
+    return;
+  }
   if (w.armor > 0) { ctx.strokeStyle = Math.sin(w.t * 4) > 0 ? '#9fc4ff' : '#6a90e0'; ctx.lineWidth = 3; ctx.strokeRect(snap(p[0] - 27), Math.round((p[1] - 60) / 3) * 3, 54, 63); }
   const bob = w.moving ? (Math.abs(Math.sin(w.bob)) > 0.5 ? 3 : 0) : 0;
   const flip = (w.fx - w.fy) < -0.05;
@@ -1453,7 +1465,7 @@ R.drawWizard = function (ctx, v, w) {
     const ghost = Math.floor(w.roll * 30) % 2 === 0;
     ctx.save(); ctx.translate(snap(p[0]), p[1] - 24); ctx.rotate(step * 6.283 * (flip ? -1 : 1));
     ctx.globalAlpha = ghost ? 0.4 : 0.9;
-    ctx.drawImage(ghost ? spr.c : spr.white, -spr.ax * S, -spr.ay * S + 24, spr.c.width * S, spr.c.height * S); ctx.restore();
+    ctx.drawImage(ghost ? spr.c : spr.white, -spr.ax * S, -spr.ay * S + 24, spr.c.width * S, spr.c.height * S); wearRot(ghost); ctx.restore();
     ctx.globalAlpha = 1;
     return;
   }
@@ -1461,7 +1473,7 @@ R.drawWizard = function (ctx, v, w) {
     const J = w.jump, k = Math.min(1, J.t / J.T), lift = Math.sin(k * Math.PI) * J.h * 30;
     ctx.fillStyle = 'rgba(0,0,0,0.25)'; const sw = Math.round((30 - lift * 0.06) / 3) * 3; ctx.fillRect(snap(p[0] - sw / 2), Math.round(p[1] / 3) * 3 - 3, sw, 9);
     ctx.save(); ctx.translate(snap(p[0]), Math.round((p[1] - lift - 24) / 3) * 3); ctx.rotate(Math.floor(k * 8) / 8 * 6.283 * (flip ? -1 : 1));
-    ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S + 24, spr.c.width * S, spr.c.height * S); ctx.restore();
+    ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S + 24, spr.c.width * S, spr.c.height * S); wearRot(true); ctx.restore();
     return;
   }
   const blink = w.hurtT > 0 && Math.floor(w.hurtT * 20) % 2;
@@ -1472,9 +1484,9 @@ R.drawWizard = function (ctx, v, w) {
     const sx = 1 + 0.12 * kk * heavy + 0.2 * sl, sy = 1 - 0.1 * kk * heavy - 0.2 * sl;
     ctx.save(); ctx.translate(snap(p[0] + (sdx > 0 ? 1 : -1) * Math.round(6 * kk * heavy / 3) * 3), Math.round((p[1] - bob) / 3) * 3);
     ctx.rotate(Math.round(lean * 20) / 20); ctx.scale(sx * (flip ? -1 : 1), sy); ctx.globalAlpha = blink ? 0.4 : 1;
-    ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S, spr.c.width * S, spr.c.height * S); ctx.restore(); ctx.globalAlpha = 1;
-  } else if (w.mashT > 0) dsprSq(ctx, spr, p[0], p[1] - bob, S, 1.15, 0.85, blink ? 0.4 : 1, flip);   // squashed while digging
-  else dspr(ctx, spr, p[0], p[1] - bob, S, blink ? 0.4 : 1, flip);
+    ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S, spr.c.width * S, spr.c.height * S); for (const l of layers) ctx.drawImage(l.s.c, -l.s.ax * S, -l.s.ay * S, l.s.c.width * S, l.s.c.height * S); ctx.restore(); ctx.globalAlpha = 1;
+  } else if (w.mashT > 0) { dsprSq(ctx, spr, p[0], p[1] - bob, S, 1.15, 0.85, blink ? 0.4 : 1, flip); for (const l of layers) dsprSq(ctx, l.s, p[0], p[1] - bob, S, 1.15, 0.85, (blink ? 0.4 : 1) * l.a, flip); }   // squashed while digging
+  else { dspr(ctx, spr, p[0], p[1] - bob, S, blink ? 0.4 : 1, flip); wearAll(blink ? 0.4 : 1, flip, p[0], p[1] - bob); }
   if (Math.sin(G.w.t * 6) > 0) { ctx.fillStyle = '#fff07a'; ctx.fillRect(snap(p[0] + (flip ? -27 : 21)), Math.round((p[1] - 48 - bob) / 3) * 3, 6, 6); }
   if (w.rollCd > 0) R.hpBar(ctx, p[0], p[1] + 9, 27, 1 - w.rollCd / CFG.wizard.rollCd, '#ffffff');
 };
@@ -1510,7 +1522,93 @@ R.drawIce = function (ctx, v, sx, sy, m, x, y, t) {
   if (end) { ctx.fillStyle = '#7aa8c8'; ctx.fillRect(snap(sx - 15), Y(sy), 12, 3); ctx.fillRect(snap(sx - 6), Y(sy + 3), 9, 3); ctx.fillRect(snap(sx + 3), Y(sy - 3), 9, 3); }   // cracking up
 };
 // an Earth Wall block: rises out of the ground, crumbles back into it at the end
+// scorched ground: charred, with cracks of lava that flicker
+R.drawScorch = function (ctx, sx, sy, x, y, t) {
+  const h = (x * 7 + y * 13) % 5, Y = q => Math.round(q / 3) * 3;
+  if (h < 3) {
+    ctx.fillStyle = (Math.floor(t * 3 + x + y) % 3 === 0) ? '#ffd23a' : '#ff6a1a';
+    ctx.fillRect(snap(sx - 12 + h * 6), Y(sy - 3 + h * 3), 12, 3); ctx.fillRect(snap(sx + 3 - h * 3), Y(sy + 3 - h * 3), 9, 3);
+    ctx.fillStyle = '#7a2a10'; ctx.fillRect(snap(sx - 12 + h * 6), Y(sy), 6, 3);
+  }
+  if ((x * 3 + y * 5 + Math.floor(t * 2)) % 11 === 0) { ctx.fillStyle = '#ffb030'; ctx.fillRect(snap(sx - 3), Y(sy - 9 - (t * 20) % 12), 3, 3); }   // an ember lifting off
+};
+// a chasm: bottomless dark, with a rocky lip wherever it meets solid ground
+R.drawChasm = function (ctx, v, sx, sy, x, y, t, ter, WW) {
+  const hw = v.hw + 1.5, hh = v.hh + 1.5, Y = q => Math.round(q / 3) * 3;
+  ctx.fillStyle = '#0a0612'; diamond(ctx, sx, sy, hw * 0.82, hh * 0.82); ctx.fill();
+  if ((x * 5 + y * 3) % 7 === 0) { ctx.fillStyle = '#3a2a5a'; ctx.fillRect(snap(sx - 6 + Math.sin(t + x) * 6), Y(sy - 3 + Math.cos(t * 0.7 + y) * 3), 6, 3); }   // faint motes far below
+  ctx.strokeStyle = '#8a6a48'; ctx.lineWidth = 6;
+  ctx.beginPath();
+  if ((ter[y * WW + x - 1] >> 3) !== T_CHASM) { ctx.moveTo(sx - hw, sy); ctx.lineTo(sx, sy - hh); }   // up-left edge
+  if ((ter[(y - 1) * WW + x] >> 3) !== T_CHASM) { ctx.moveTo(sx, sy - hh); ctx.lineTo(sx + hw, sy); }   // up-right edge
+  ctx.stroke();
+  ctx.strokeStyle = '#4a3622'; ctx.lineWidth = 6; ctx.beginPath();
+  if ((ter[y * WW + x + 1] >> 3) !== T_CHASM) { ctx.moveTo(sx, sy + hh); ctx.lineTo(sx + hw, sy); }   // down-right edge
+  if ((ter[(y + 1) * WW + x] >> 3) !== T_CHASM) { ctx.moveTo(sx - hw, sy); ctx.lineTo(sx, sy + hh); }   // down-left edge
+  ctx.stroke();
+};
+// a loose boulder (the Stonefist Charm's Gust shoves it)
+R.drawBoulder = function (ctx, v, b) {
+  const p = R.toScreen(v, b.x, b.y), S = CFG.WT.S;
+  if (p[0] < CFG.HALF - 60 || p[0] > CFG.W + 60) return;
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(snap(p[0] - 24), Math.round(p[1] / 3) * 3 - 3, 48, 9);
+  dspr(ctx, SP.boulder, p[0], p[1], S);
+  if (G.aug.worn.charm === 'stone' && Math.sin(G.w.t * 3 + b.x) > 0.7) { ctx.fillStyle = '#ffffff'; const gx = snap(p[0] + 15), gy = Math.round((p[1] - 48) / 3) * 3; ctx.fillRect(gx - 3, gy, 9, 3); ctx.fillRect(gx, gy - 3, 3, 9); }   // it glints for a Wizard who can move it
+};
+// the door of a Stronghold's arena (CFG.strong.arenaR): a ring on the ground, an arch where the way in is, and the Ward Key it wants. Shown once the keep is scouted or close
+R.drawKeepDoor = function (ctx, v, m) {
+  const w = G.w, s = w.lm[m.id], K = CFG.strong, d = Math.hypot(w.x - m.x, w.y - m.y);
+  if (w.dead || (!s.seen && d > K.reveal)) return;
+  const open = s.state === 'done' || G.aug.key[m.el], col = open ? '#6aff8a' : '#ff5a6e', t = w.t;
+  const p = R.toScreen(v, m.x, m.y);
+  if (s.lockT > 0 && Math.floor(t * 16) % 2) { ctx.globalAlpha = 0.35; ctx.fillStyle = '#ff3a3a'; ctx.beginPath(); ctx.ellipse(p[0], p[1], K.arenaR * v.hw * 1.414, K.arenaR * v.hh * 1.414, 0, 0, 6.283); ctx.fill(); ctx.globalAlpha = 1; }
+  ctx.beginPath(); ctx.ellipse(p[0], p[1], K.arenaR * v.hw * 1.414, K.arenaR * v.hh * 1.414, 0, 0, 6.283);
+  ctx.globalAlpha = s.state === 'done' ? 0.18 : 0.6; ctx.strokeStyle = col; ctx.lineWidth = 6;
+  ctx.setLineDash(open ? [6, 18] : [24, 8]); ctx.lineDashOffset = -Math.floor(t * 6) * 6; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  if (s.state === 'done') return;
+  const a = Math.atan2(SPAWN.y - m.y, SPAWN.x - m.x), dp = R.toScreen(v, m.x + Math.cos(a) * K.arenaR, m.y + Math.sin(a) * K.arenaR);   // the door faces the spawn
+  ctx.fillStyle = '#6e6a7c'; ctx.fillRect(snap(dp[0] - 30), Math.round((dp[1] - 54) / 3) * 3, 12, 54); ctx.fillRect(snap(dp[0] + 21), Math.round((dp[1] - 54) / 3) * 3, 12, 54);
+  ctx.fillStyle = '#9a96ac'; ctx.fillRect(snap(dp[0] - 36), Math.round((dp[1] - 63) / 3) * 3, 78, 12);
+  ctx.fillStyle = col; ctx.globalAlpha = open ? 0.35 : 0.6 + 0.25 * Math.sin(t * 6); ctx.fillRect(snap(dp[0] - 18), Math.round((dp[1] - 51) / 3) * 3, 36, 51); ctx.globalAlpha = 1;
+  if (d < K.reveal + 6) R.defer.push(c => R.iconRow(c, dp[0], dp[1] - 72 - (Math.sin(t * 3) > 0 ? 3 : 0), [['key_' + m.el], [open ? 'ic_check' : 'ic_lock']]));
+};
+// a buried cache: only a Wizard in the Kilnsight Mask can see it glinting; the roll button digs it like a mound
+R.drawCache = function (ctx, v, o, p) {
+  const w = G.w, t = w.t;
+  if (G.aug.worn[AUGS.kiln.slot] !== 'kiln') return;
+  const d = Math.hypot(w.x - o.x, w.y - o.y);
+  if (d > CFG.aug.mask.glintR) return;
+  const Y = q => Math.round(q / 3) * 3, shake = o.shake > 0 ? (Math.random() < 0.5 ? -3 : 3) : 0;
+  ctx.fillStyle = 'rgba(255,210,58,0.22)'; diamond(ctx, p[0], p[1], 21, 10); ctx.fill();
+  ctx.fillStyle = '#4a3418'; ctx.fillRect(snap(p[0] - 12 + shake), Y(p[1] - 6), 24, 9);   // loose earth
+  ctx.fillStyle = '#6a4a28'; ctx.fillRect(snap(p[0] - 9 + shake), Y(p[1] - 9), 18, 6);
+  if (Math.sin(t * 5 + o.x * 2.7) > 0) { ctx.fillStyle = '#fff6c0'; const gx = snap(p[0] + 3), gy = Y(p[1] - 21 - Math.sin(t * 3) * 3); ctx.fillRect(gx - 6, gy, 15, 3); ctx.fillRect(gx, gy - 6, 3, 15); }
+  if (o.prog > 0) R.hpBar(ctx, p[0], p[1] - 36, 42, o.prog / CFG.forage.cache.taps, '#ffe36b');
+  if (w.dig === o && !w.dead) {
+    ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffec8c' : '#ffd23a'; ctx.lineWidth = 6; diamond(ctx, p[0], p[1], 33, 15); ctx.stroke();
+    R.iprompt(ctx, p[0], p[1] - 66, R.wkey(), ['iron', 'stone', 'elixir'], CFG.W, CFG.HALF, true);
+  }
+};
+// with the Kilnsight Mask: glints at the edge of the screen point at landmarks nobody has claimed yet (within CFG.aug.mask.hintR)
+R.drawMaskHints = function (ctx, v, t) {
+  const w = G.w, left = CFG.HALF, right = CFG.W, Y = q => Math.round(q / 3) * 3;
+  if (w.dead || G.aug.worn[AUGS.kiln.slot] !== 'kiln') return;
+  for (const m of WZ.marks) {
+    if (w.lm[m.id].state === 'done') continue;
+    const d = Math.hypot(m.x - w.x, m.y - w.y);
+    if (d > CFG.aug.mask.hintR) continue;
+    const p = R.toScreen(v, m.x, m.y);
+    if (p[0] > left + 40 && p[0] < right - 40 && p[1] > 60 && p[1] < CFG.H - 60) continue;   // already on screen
+    const cx = Math.max(left + 30, Math.min(right - 30, p[0])), cy = Math.max(60, Math.min(CFG.H - 60, p[1]));
+    if (Math.sin(t * 4 + m.id) < -0.2) continue;
+    const col = m.type === 'camp' ? '#ff5a4a' : m.type === 'crypt' ? '#b07aff' : ELEM[m.el].color;
+    ctx.fillStyle = '#fff6c0'; ctx.fillRect(snap(cx - 9), Y(cy), 21, 3); ctx.fillRect(snap(cx), Y(cy - 9), 3, 21);
+    ctx.fillStyle = col; ctx.fillRect(snap(cx - 3), Y(cy - 3), 9, 9);
+  }
+};
 R.drawWall = function (ctx, v, x, y, m, t) {
+  if (m.k === 'rock') return R.drawRock(ctx, v, x, y, t);
+  if (m.k === 'vine') return R.drawVine(ctx, v, x, y, t);
   const p = R.toScreen(v, x + 0.5, y + 0.5), hw = v.hw, hh = v.hh;
   const H = Math.round(36 * Math.min(1, (m.dur - m.t) / 0.25) * Math.min(1, m.t / 0.6) / 3) * 3;
   if (H <= 0) return;
@@ -1522,6 +1620,30 @@ R.drawWall = function (ctx, v, x, y, m, t) {
   ctx.fillStyle = '#c89a5c'; diamond(ctx, cx, cy - H - 3, hw * 0.55, hh * 0.55); ctx.fill();
   ctx.fillStyle = '#3e2a14';   // stones in the faces
   ctx.fillRect(snap(cx - hw * 0.6), Math.round((cy - H * 0.4) / 3) * 3, 9, 6); ctx.fillRect(snap(cx + hw * 0.35), Math.round((cy - H * 0.55 + 6) / 3) * 3, 9, 6);
+};
+// cracked rock: a solid grey block with a dark crack down its face; a Gust from a Wizard in the Stonefist Charm breaks it open
+R.drawRock = function (ctx, v, x, y, t) {
+  const p = R.toScreen(v, x + 0.5, y + 0.5), hw = v.hw, hh = v.hh, h = (x * 7 + y * 11) % 4, H = 33 + h * 3, cx = p[0], cy = p[1];
+  const face = (pts, col) => { ctx.fillStyle = col; ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.closePath(); ctx.fill(); };
+  face([[cx - hw, cy], [cx, cy + hh], [cx, cy + hh - H], [cx - hw, cy - H]], '#6e747c');
+  face([[cx, cy + hh], [cx + hw, cy], [cx + hw, cy - H], [cx, cy + hh - H]], '#4e545c');
+  ctx.fillStyle = '#8d949c'; diamond(ctx, cx, cy - H, hw, hh); ctx.fill();
+  ctx.fillStyle = '#a6aeb6'; diamond(ctx, cx - 3, cy - H - 3, hw * 0.5, hh * 0.5); ctx.fill();
+  ctx.fillStyle = '#2a2e34';   // the crack
+  ctx.fillRect(snap(cx - hw * 0.5), Math.round((cy - H * 0.7) / 3) * 3, 3, 12); ctx.fillRect(snap(cx - hw * 0.5 + 3), Math.round((cy - H * 0.7 + 12) / 3) * 3, 3, 9); ctx.fillRect(snap(cx - hw * 0.5), Math.round((cy - H * 0.7 + 21) / 3) * 3, 3, 9);
+  ctx.fillRect(snap(cx + hw * 0.45), Math.round((cy - H * 0.45) / 3) * 3, 9, 3); ctx.fillRect(snap(cx + hw * 0.45 + 6), Math.round((cy - H * 0.45 + 3) / 3) * 3, 3, 9);
+};
+// a vine tangle over the bog: dark knotted stems (only a Wizard in the Bogwalker Shroud can push through)
+R.drawVine = function (ctx, v, x, y, t) {
+  const p = R.toScreen(v, x + 0.5, y + 0.5), hw = v.hw, h = (x * 7 + y * 11) % 5, cx = p[0], cy = p[1], sw = Math.sin(t * 1.5 + x + y) > 0.6 ? 3 : 0;
+  ctx.fillStyle = 'rgba(30,50,24,0.7)'; diamond(ctx, cx, cy, hw * 0.9, v.hh * 0.9); ctx.fill();
+  ctx.strokeStyle = '#2f5a2a'; ctx.lineWidth = 9; ctx.lineJoin = 'miter';
+  ctx.beginPath(); ctx.moveTo(cx - hw * 0.55, cy + 3); ctx.lineTo(cx - 9, cy - 27 - h * 3); ctx.lineTo(cx + 12 + sw, cy - 12); ctx.lineTo(cx + hw * 0.5, cy - 36 + h * 2); ctx.stroke();
+  ctx.strokeStyle = '#4a7a38'; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(cx + hw * 0.5, cy + 3); ctx.lineTo(cx + 6, cy - 30 - h * 2); ctx.lineTo(cx - 12 - sw, cy - 15); ctx.lineTo(cx - hw * 0.45, cy - 30); ctx.stroke();
+  ctx.fillStyle = '#8ac45a';
+  ctx.fillRect(snap(cx - 12), Math.round((cy - 30 - h * 3) / 3) * 3, 9, 6); ctx.fillRect(snap(cx + 9), Math.round((cy - 33 - h * 2) / 3) * 3, 9, 6); ctx.fillRect(snap(cx - 3), Math.round((cy - 15) / 3) * 3, 9, 6);
+  ctx.fillStyle = '#c8e87a'; ctx.fillRect(snap(cx + 3), Math.round((cy - 24 - h * 2) / 3) * 3, 3, 3);
 };
 // a spell's mark on the ground (G.w.decals). Every shape comes from the decal's own seed, so it holds still while it fades
 R.drawDecal = function (ctx, v, dc) {
@@ -1691,6 +1813,22 @@ R.drawFx = function (ctx, v, f) {
   } else if (f.type === 'icon') {   // a collected resource floating up off the Wizard
     const a = 1 - Math.max(0, fr - 0.5) * 2, y = s[1] - 60 - Math.floor(fr * 6) * 6;
     R.defer.push(c => R.iconRow(c, s[0], y, [[f.k]], a));
+  } else if (f.type === 'glowup') {   // the first Warden fell: a pillar of light, rings climbing off his feet, sparkles rising, a flash of white
+    const q = R.toScreenLocked(v, G.w.x, G.w.y), wd = Math.round((84 * (1 - fr) + 12) / 3) * 3, L = CFG.HALF, Y = n => Math.round(n / 3) * 3;
+    ctx.globalAlpha = Math.min(1, (1 - fr) * 1.4) * 0.5; ctx.fillStyle = '#fff2a8'; ctx.fillRect(snap(q[0] - wd / 2), q[1] - 700, wd, 700);
+    ctx.globalAlpha = Math.min(1, (1 - fr) * 1.4); ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(q[0] - 6), q[1] - 700, 12, 700);
+    for (let i = 0; i < 3; i++) {
+      const k = (fr * 1.8 + i / 3) % 1;
+      ctx.globalAlpha = (1 - k) * (1 - fr * 0.6); ctx.strokeStyle = i % 2 ? '#ffe36b' : '#ffffff'; ctx.lineWidth = 6;
+      diamond(ctx, q[0], q[1] - k * 66, (0.5 + k * 3) * v.hw, (0.5 + k * 3) * v.hh); ctx.stroke();
+    }
+    ctx.fillStyle = '#fff6c0';
+    for (let i = 0; i < 16; i++) {
+      const k = (fr * 2.4 + i * 0.37) % 1;
+      ctx.globalAlpha = (1 - k) * (1 - fr * 0.5); ctx.fillRect(snap(q[0] + Math.sin(i * 12.9) * 42), Y(q[1] - k * 180), i % 3 ? 3 : 6, i % 3 ? 3 : 6);
+    }
+    if (fr < 0.14) { ctx.globalAlpha = (0.14 - fr) / 0.14 * 0.55; ctx.fillStyle = '#ffffff'; ctx.fillRect(L, 0, L, CFG.H); }
+    ctx.globalAlpha = 1;
   } else if (f.type === 'title') {
     const q = R.toScreen(v, G.w.x, G.w.y);
     ctx.globalAlpha = 1 - Math.max(0, fr - 0.6) / 0.4;

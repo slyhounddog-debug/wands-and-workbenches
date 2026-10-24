@@ -99,8 +99,9 @@ const CFG = {
     camps: 9, shrines: 8, crypts: 4, spacing: 16,
     campWake: 8, campFoes: 6, campShards: 3,
     shrineR: 2.6, shrineBoost: 0.25,   // standing at a claimed shrine speeds up that element's harnessers
-    // claiming a shrine: a ring shrinks onto the crystal; press when it lines up. A miss just restarts the ring
-    shrineHits: 3, shrineCycle: 1.3, shrineTarget: 0.35, shrineTol: 0.11, shrineShards: 1,
+    // claiming a shrine: stand at it and press the roll button to deliver its element's Offering (CFG.aug.offering: dropped by that element's creatures). No mini-game.
+    // shrineShards = Aether Shards paid out when it is claimed (unchanged from the mini-game days)
+    shrineShards: 1,
     cryptHold: 1.5, cryptShards: 5, cryptMinions: 7, xpBonus: 6,
   },
   // forage spots in the wilds: the Wizard stands still at one and mashes the roll button to dig / search it.
@@ -109,6 +110,8 @@ const CFG = {
     mound:  { count: 50, taps: 10, drop: { stone: 2 }, bonus: { iron: 0.35 } },
     sticks: { count: 55, taps: 8,  drop: { wood: 3 },  bonus: { wood: 0.5 } },
     bush:   { count: 40, taps: 4,  potion: 0.6 },   // otherwise Armor Plate
+    // buried caches are invisible until the Wizard wears the Kilnsight Mask (they glint through the grass); dug like a mound
+    cache:  { count: 28, taps: 10, drop: { iron: 2, stone: 2 }, bonus: { iron: 0.5 }, pickup: 0.5 },   // pickup = chance of an Elixir (else a Heavy Plate) on top
     reach: 1.15, decay: 2.5, respawn: 150, bushRespawn: 240,
   },
   // DEV ONLY: the solo-testing Wizard bot (js/devbot.js, toggled with F4 on the F3 overlay or __wands.bot('wizard')). Distances are tiles.
@@ -157,8 +160,8 @@ const CFG = {
                 desc: 'Routes what comes in to up to 3 outputs: every side that has something to feed (the side items arrive from is the input). Share them out by %, or give an output element filters (Fire + Earth left, Water + Air right). Click it to set it up.' },
     crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 8, stone: 4 }, unlock: 'logistics',
                 desc: 'Holds up to 30 packets, spells or pickups (never raw resources) and feeds them out of its arrow side, one at a time.' },
-    spawner:  { name: 'Creature Spawner', kind: 'crafter', cost: { wood: 10, stone: 8, iron: 3 }, unlock: null,
-                desc: 'Hatches a creature Egg from the element packets fed into it: one element = a basic creature, two = a pair, three = a triple. E switches recipe. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP.' },
+    spawner:  { name: 'Creature Spawner', kind: 'crafter', cost: { wood: 10, stone: 8, iron: 3, shard: 1 }, unlock: null,
+                desc: 'Hatches a creature Egg from the element packets fed into it: one element = a basic creature, two = a pair, three = a triple. E switches recipe. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. Costs an Aether Shard to build (the starting one is free).' },
     altar:    { name: 'Summoning Altar', kind: 'crafter', cost: { stone: 14, iron: 7, shard: 6 }, unlock: 'summon',
                 desc: 'Binds an Elemental Nova and Aether Shards into a Boss Sigil. Send the Sigil through the Spell Portal to summon the Primal Chimera.' },
   },
@@ -321,6 +324,15 @@ const CFG = {
   // ---- Strongholds: four far-off keeps, one per element, each guarded by crafted creatures and a Warden ----
   strong: {
     minDist: 70, reveal: 30, wake: 9, warnT: 10, shards: 8, gems: 12,   // warnT: seconds the Wizard must stand inside the wake radius before the guards and the Warden spawn (leaving resets it)
+    arenaR: 6.5,              // the door: the arena inside this radius only opens to a Wizard who holds the keep's Ward Key (the key is shown at the door, never used up)
+    // the approach terrain around each keep (tiles from its centre), world-gen carves it: water = a lake moat (an island keep), fire = a scorched field,
+    // earth = a ring of cracked rock, air = a chasm ring with a broken bridge. Each needs the augment of the element this keep's element is weak to
+    gate: {
+      water: { kind: 'moat',   r0: 8.5, r1: 17 },
+      fire:  { kind: 'scorch', r0: 8,   r1: 19 },
+      earth: { kind: 'rocks',  r0: 9,   r1: 11.5 },
+      air:   { kind: 'chasm',  r0: 9,   r1: 12.5 },
+    },
     guards: {   // creature types per element (crafted-creature types of that element, plus the Warden)
       air:   { zephyr: 4, thunderhead: 2 },
       water: { puddle: 4, shambler: 2 },
@@ -328,6 +340,19 @@ const CFG = {
       earth: { pebble: 4, lavagolem: 1, shambler: 1 },
     },
     warden: { name: 'Warden', hp: 700, speed: 1.5, dmg: 18, rad: 0.85, slamEvery: 5, slamR: 2.2, slamDmg: 20, volleyEvery: 6.5, volleyN: 8, volleyDmg: 9 },
+  },
+  // ---- Wizard augments, Offerings and Ward Keys (js/augments.js; the table of augments is AUGS below). Augments change what he can DO, never his numbers ----
+  aug: {
+    offering: { chance: 0.12 },   // a normal kill by a creature of an element drops that element's Offering this often (an elite of it always does)
+    phoenix: { cd: 900, hp: 0.5 },   // Phoenix Feather: seconds to recharge after it saves him (15 minutes of play), the share of max HP he comes back with
+    blink: { dist: 5.5, min: 2, T: 0.16 },   // Gale Circlet: how far the roll jumps (tiles), the shortest jump it will make, seconds it takes
+    stat: { r: 2.8, push: 12, cd: 0.9 },   // Static Cloak: radius of the burst, knockback, seconds between bursts
+    scorch: { dps: 45, ramp: 1.2, slow: 0.6 },   // scorched ground hurts and slows anyone who is not wearing the Emberward Cloak; the burn grows by ramp x its base every second he stays on it, so the keep's field is lethal to cross without the Cloak
+    boulder: { r: 0.7, push: 9, friction: 3.2 },   // loose boulders: body radius, how hard a Gust shoves one, how fast it slows down
+    mask: { glintR: 16, hintR: 60 },   // Kilnsight Mask: how far buried caches glint, how far landmark hints reach
+    glow: { dur: 3.2 },   // seconds of the one-time glow-up when the first Warden falls
+    // free-standing hazards sown over the wilds (their own RNG), so the verbs have uses beyond the Strongholds: counts
+    fields: { scorch: 5, chasm: 5, rocks: 8, vines: 12, boulders: 36 },
   },
 };
 // the dev tool's Variables tab (overrides/tuning.js) lands here, before anything below derives from CFG
@@ -383,6 +408,22 @@ const ELEM = {
   earth: { name: 'Earth Chunk', color: '#b58a4c', dark: '#7a5a2c' },
 };
 const ELEM_WORD = { air: 'Air', water: 'Water', fire: 'Fire', earth: 'Earth' };
+// ---- the Wizard's augments: garments that give him a new VERB (never a stat). slot = where it is worn; src = the first kill that drops it, once per save:
+// { line: 'earth' } = any wild or crafted creature of that element's line (the basic one and its pairs), { id: 'phoenix' } = that one creature type.
+// gate = the Stronghold element whose approach it opens: the terrain augment of a keep comes from the line of the element that keep is weak to ----
+const AUG_SLOTS = [['hat', 'Hat'], ['robe', 'Robe'], ['boots', 'Boots'], ['charm', 'Charm']];
+const AUGS = {
+  tide:    { name: 'Tide-Walking Boots', slot: 'boots', col: '#4aa8ff', src: { line: 'earth' }, gate: 'water', verb: 'Walk on water' },
+  ember:   { name: 'Emberward Cloak',    slot: 'robe',  col: '#ff7a30', src: { line: 'water' }, gate: 'fire',  verb: 'Cross scorched and lava ground unharmed' },
+  stone:   { name: 'Stonefist Charm',    slot: 'charm', col: '#a9b0b8', src: { line: 'air' },   gate: 'earth', verb: 'Gust shoves boulders and cracks cracked rocks open' },
+  gale:    { name: 'Gale Circlet',       slot: 'hat',   col: '#e6f8ff', src: { line: 'fire' },  gate: 'air',   verb: 'Roll becomes a short blink: crosses gaps and chasms, passes through foes' },
+  bog:     { name: 'Bogwalker Shroud',   slot: 'robe',  col: '#6a8a4a', src: { id: 'shambler' },    verb: 'Bog no longer slows you; pass through vine tangles' },
+  phoenix: { name: 'Phoenix Feather',    slot: 'charm', col: '#ff9a3a', src: { id: 'phoenix' },     verb: 'Cheat death: revive on the spot at half HP (recharges over 15 minutes)' },
+  static:  { name: 'Static Cloak',       slot: 'robe',  col: '#fff27a', src: { id: 'thunderhead' }, verb: 'Foes that strike you are knocked back by a static burst (it does no damage)' },
+  kiln:    { name: 'Kilnsight Mask',     slot: 'hat',   col: '#ffb030', src: { id: 'titan' },       verb: 'Hidden glints show through the wilds: buried caches and landmark hints' },
+};
+const AUG_ORDER = Object.keys(AUGS);
+const OFFER_NAME = el => ELEM_WORD[el] + ' Offering', KEY_NAME = el => ELEM_WORD[el] + ' Ward Key';
 const RES = {
   wood:  { name: 'Wood',     color: '#a8683a' },
   stone: { name: 'Stone',    color: '#a9b0b8' },
@@ -505,8 +546,8 @@ const QUESTS = {
     { icon: 'ic_shield', text: 'Dodge 3 hits: roll into an attack (you can\'t be hurt mid-roll)', xp: 8, stat: g => g.stats.dodges || 0, n: 3 },
     { icon: 'ic_tree', text: 'Open your Skill Tree (Y) and buy a Wizard upgrade: Hearty Hat or Wizard Zoomies', xp: 8, gift: { bank: { air: 3 } }, done: g => lvl('hearty') >= 1 || lvl('zoomies') >= 1, hint: { tree: 1 } },
     { icon: 'potion', text: 'Walk over 2 Potions or Armor Plates the Builder sends you', xp: 8, stat: g => g.stats.used || 0, n: 2 },
-    { icon: 'ic_bolt', text: 'Hit weaknesses: finish off 10 monsters with a yellow ! hit (match the element)', xp: 12, gift: { pickup: ['potion'] }, stat: g => g.stats.weakKills || 0, n: 10 },
-    { icon: 'ic_flag', text: 'Claim a Shrine: stand in its ring and press roll when the shrinking ring meets the target', xp: 12, gift: { pickup: ['plate'] }, stat: g => g.stats.shrines || 0, n: 1, hint: { mark: 'shrine' } },
+    { icon: 'ic_bolt', text: 'Hit weaknesses: finish off 10 monsters with a yellow ! hit (match the element)', xp: 12, gift: { pickup: ['potion'], offer: { air: 1, water: 1, fire: 1, earth: 1 } }, stat: g => g.stats.weakKills || 0, n: 10 },   // the Offerings are for the next goal: any Shrine will take its own element's
+    { icon: 'ic_flag', text: 'Claim a Shrine: bring it its element\'s Offering and press roll beside it', xp: 12, gift: { pickup: ['plate'] }, stat: g => g.stats.shrines || 0, n: 1, hint: { mark: 'shrine' } },
     { icon: 'ic_fast', text: 'Stand on a claimed Shrine for 20 seconds: that element\'s Harnessers run faster', xp: 10, stat: g => g.stats.shrineT || 0, n: 20, hint: { mark: 'myshrine' } },
     { from: 14, icon: 'ic_flag', text: 'Clear a Monster Camp or an Ancient Crypt (see the map) for Aether Shards', xp: 15, gift: { pickup: ['potion', 'plate'] }, stat: g => g.stats.clears || 0, n: 1, hint: { mark: 'camp' } },
     { icon: 'ic_skull', text: 'Defeat 60 monsters', xp: 12, done: g => g.stats.kills >= 60, prog: g => [g.stats.kills, 60] },
@@ -516,7 +557,7 @@ const QUESTS = {
     { icon: 'ic_trophy', text: 'Survive a Wilds Event: check the card under the goals, then clear it', xp: 30, gift: { stock: { shard: 1 } }, stat: g => g.stats.events || 0, n: 1 },
     { icon: 'meteor', text: 'Wipe out 15 monsters with Triple spells (three elements)', xp: 30, gift: { pickup: ['elixir', 'plate'] }, stat: g => g.stats.k3 || 0, n: 15 },
     { from: 21, icon: 'ic_keep', text: 'Scout a Stronghold, far out in the wilds (see the map): get near to reveal its guards', xp: 20, done: g => !!g.flags.scouted, hint: { keep: 'scout' } },
-    { from: 22, icon: 'core', text: 'Defeat a Stronghold\'s Warden and guards to claim it: Aether Shards and a Warden Core', xp: 40, done: g => (g.stats.keeps || 0) >= 1, hint: { keep: 'claim' } },
+    { from: 22, icon: 'core', text: 'Open a Stronghold: wear its terrain augment, hold its Ward Key, then beat its Warden', xp: 40, done: g => (g.stats.keeps || 0) >= 1, hint: { keep: 'claim' } },
     { icon: 'nova', text: 'Blast 10 monsters with the Elemental Nova', xp: 40, gift: { pickup: ['elixir', 'plate'] }, stat: g => g.stats.k4 || 0, n: 10 },
     { from: 24, icon: 'ic_crown', text: 'Defeat the Primal Chimera! The Builder\'s Boss Sigil calls it out', xp: 150, done: g => g.flags.won, hint: { boss: 1 } },
   ],

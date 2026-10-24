@@ -6,7 +6,17 @@
 const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 'zephyr' }, from: 'play', navT: 0 };
 (function () {
   const SPELL_ORDER = ['gust', 'fireball', 'spray', 'boulder', 'flamethrower', 'tempest', 'steam', 'sandstorm', 'magma', 'mud', 'meteor', 'thunder', 'blizzard', 'geyser', 'nova'];
-  const CREATURE_ORDER = Object.keys(CFG.creatures);
+  // the Creatures page lists every enemy type: the crafted creatures, then the wild foes, the Warden and the Chimera (each with its drop table)
+  const WILD_ORDER = ['slime', 'shroom', 'sprite', 'imp', 'lurker', 'wisp', 'golem'];
+  const CREATURE_ORDER = Object.keys(CFG.creatures).concat(WILD_ORDER, ['warden', 'boss']);
+  const kindOf = id => (CFG.creatures[id] ? 'crafted' : id === 'warden' || id === 'boss' ? 'boss' : 'wild');
+  const WILD_NOTE = {
+    slime: 'Wanders in from anywhere. Slow and weak: a gem now and then.', shroom: 'Anywhere in the wilds. Slow, but tougher than a slime.', sprite: 'Anywhere in the wilds. Fast and fragile.',
+    imp: 'Lives on sand and dirt. Weak to Water, resists Fire. Its element is Fire.', lurker: 'Lives in the bogs. Weak to Fire, resists Water. Its element is Water.',
+    wisp: 'Drifts over the far meadows and flower fields. Weak to Earth, resists Air. Its element is Air.', golem: 'Walks the dark woods far from the start. Weak to Air, resists Earth. Its element is Earth.',
+    warden: 'Guards a Stronghold: an elite with slams and orb volleys. It wakes only for a Wizard who holds the keep\'s Ward Key.',
+    boss: 'The Primal Chimera, called out by the Boss Sigil. Only its current weakness hurts it, and the weakness changes every quarter of its health.',
+  };
   const BASIC_EL = { gust: 'air', fireball: 'fire', spray: 'water', boulder: 'earth' };
   const spellIcon = id => BASIC_EL[id] || id;
   const spellEls = id => SPELL_EL[id] || [];
@@ -41,6 +51,48 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     rows.push(row('Banked now', '' + (G.bank[id] || 0)));
     return rows.join('');
   }
+  function wildRows(id) {   // wild foes, the Warden and the Chimera: no Egg recipe, just the numbers
+    const c = CFG.enemies[id], rows = [];
+    if (c.weak) rows.push(row('Weak to / resists', UI.img(c.weak, 16) + (c.resist ? ' / ' + UI.img(c.resist, 16) : '')));
+    rows.push(row('Health', '' + c.hp + (kindOf(id) === 'wild' ? ' (wild ones carry ' + pct(CFG.world.wildHp) + ' of it, and grow tougher the longer a run lasts)' : '')));
+    rows.push(row('Touch damage', '' + c.dmg), row('Speed', c.speed + ' tiles/s'));
+    rows.push(row('Gems', c.gem[0] ? c.gem[0] + (c.gem[1] ? ' guaranteed + ' + pct(c.gem[1]) + ' chance of one more' : ' guaranteed') : pct(c.gem[1]) + ' chance of one (wild foes pay ' + pct(CFG.world.wildGem) + ' of that)'));
+    if (id === 'warden') rows.push(row('Slams / orbs', 'a telegraphed slam every ' + CFG.strong.warden.slamEvery + 's, a ring of ' + CFG.strong.warden.volleyN + ' orbs every ' + CFG.strong.warden.volleyEvery + 's'));
+    if (id === 'boss') rows.push(row('Phases', 'four, one weakness each; it summons its brood, slams and fires orb rings'));
+    return rows.join('');
+  }
+  // the Drops block: normal drops, elite drops and the augments this enemy is the source of, all read off the same tables the kills use (WZ.dropInfo, CFG)
+  function dropsHtml(id) {
+    const I = WZ.dropInfo(id), D = CFG.enemies[id], A = G.aug, E = CFG.elite, kind = kindOf(id);
+    const line = (ic, text, state) => '<div class="bkd">' + ic + '<span>' + text + '</span>' + (state || '') + '</div>';
+    const have = (ok, yes, no) => '<b class="' + (ok ? 'yes' : 'no') + '">' + (ok ? UI.img('ic_check', 12) + yes : no) + '</b>';
+    const eliteShard = ' + a Shard (a bonus one ' + pct(E.shardBonus) + ' of the time)';
+    let s = '<div class="bkdc"><h4>NORMAL DROPS</h4>';
+    if (id === 'boss') s += line(UI.img('ic_xp', 16), D.gem[0] + ' XP gems') + line(UI.img('shard', 16), CFG.boss.shards + ' Aether Shards');
+    else if (id === 'warden') s += line(UI.img('shard', 16), 'keep claimed: ' + CFG.strong.shards + ' Shards, ' + CFG.strong.gems + ' gems, a Warden Core (once per keep)') + line(UI.img('ic_crown', 16), 'first Warden ever: the glow-up and the held-spell slot');
+    else {
+      s += line(UI.img('ic_xp', 16), (D.gem[0] ? D.gem[0] + ' XP gem' + (D.gem[0] > 1 ? 's' : '') + (D.gem[1] ? ' + ' + pct(D.gem[1]) + ' for one more' : '') : pct(D.gem[1]) + ' chance of an XP gem'));
+      if (I.els.length) s += line(I.els.map(e => UI.img('off_' + e, 16)).join(''), pct(I.off) + ' chance of an Offering' + (I.els.length > 1 ? ' (one of its elements)' : ''));
+      else s += line(UI.img('ic_x', 16), 'no element: no Offerings');
+      if (kind === 'crafted') s += line(UI.img(CFG.creatures[id].order[0], 16), pct(CFG.crafted.recycle) + ' chance of a ' + ELEM_WORD[CFG.creatures[id].order[0]] + ' packet (rides home)');
+    }
+    s += '</div>';
+    if (id !== 'boss') {
+      s += '<div class="bkdc"><h4>ELITE DROPS</h4>';
+      if (id === 'warden') s += line(UI.img('ic_crown', 16), 'an elite: ' + E.gems + ' gems' + eliteShard);
+      else {
+        s += line(UI.img('ic_xp', 16), E.gems + ' XP gems' + (kind === 'crafted' && !CFG.crafted.eliteShards ? '' : eliteShard));
+        if (I.els.length) {
+          s += line(I.els.map(e => UI.img('off_' + e, 16)).join(''), 'always an Offering' + (I.els.length > 1 ? ' of each element' : ''));
+          s += I.els.map(e => line(UI.img('key_' + e, 16), KEY_NAME(e) + ' if it is your first ' + ELEM_WORD[e] + ' elite', have(A.key[e] || A.got['key_' + e], 'GOT IT', 'NOT YET'))).join('');
+        } else s += line(UI.img('ic_x', 16), 'no element: no Offering, no Ward Key');
+      }
+      s += '</div>';
+    }
+    s += '<div class="bkdc"><h4>AUGMENT DROPS</h4>';
+    s += I.aug.length ? I.aug.map(a => line(UI.img('aug_' + a, 16), AUGS[a].name + ': first kill drops it, once', have(A.own[a], 'OWNED', 'NOT YET'))).join('') : line(UI.img('ic_x', 16), 'none: it is the source of no augment');
+    return s + '</div>';
+  }
   function creatureRows(id) {
     const c = CFG.creatures[id], n = c.order.length, rec = 'egg_' + id, rows = [];
     rows.push(row('Class', klass(n) + ' ' + els(c.order)));
@@ -49,7 +101,6 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     rows.push(row('Health', '' + c.hp), row('Touch damage', '' + c.dmg), row('Speed', c.speed + ' tiles/s' + (c.fly ? ', flies' : '')));
     rows.push(row('Gems', (c.gem[0] ? c.gem[0] + ' guaranteed + ' : '') + pct(c.gem[1]) + ' chance of ' + (c.gem[0] ? 'one more' : 'one')));
     rows.push(row('Variants', pct(CFG.crafted.eliteChance) + ' elite (x' + CFG.crafted.eliteHp + ' HP, x' + CFG.crafted.eliteDmg + ' damage), ' + pct(CFG.crafted.mutChance) + ' one mutation, HP / speed / damage +-' + pct(CFG.crafted.jitter)));
-    rows.push(row('Drops', pct(CFG.crafted.recycle) + ' chance of a ' + UI.img(c.order[0], 16) + ' packet that rides home to the Stockpile'));
     return rows.join('');
   }
 
@@ -67,10 +118,10 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     el.innerHTML = '<div class="bookPanel px"><div class="treeHead"><h2>' + UI.img('ic_book', 32) + 'COLLECTION BOOK</h2><div class="tabs bkTabs">' +
       '<button class="tab" data-p="spells">SPELLS</button><button class="tab" data-p="creatures">CREATURES</button></div><div class="bkCount"></div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>' +
       '<div class="bookBody"><div class="bookList"></div><div class="bookDetail"><div class="tth bkh"></div>' +
-      '<div class="bkLeft"><p class="bkDesc"></p><div class="bkDemoBox"><canvas class="bkDemo"></canvas></div><div class="spvc"></div></div><div class="bkRows"></div></div></div>' +
+      '<div class="bkLeft"><p class="bkDesc"></p><div class="bkDemoBox"><canvas class="bkDemo"></canvas></div><div class="spvc"></div></div><div class="bkRows"></div><div class="bkDrops"></div></div></div>' +
       '<p class="hint"><kbd>C</kbd> / Esc closes. <kbd>W</kbd><kbd>S</kbd> or <kbd>UP</kbd><kbd>DOWN</kbd> pick an entry, <kbd>A</kbd><kbd>D</kbd> flip the page' + (IN.padList.length ? ' <kbd>STICK</kbd> pick <kbd>LB</kbd><kbd>RB</kbd> page <kbd>B</kbd> close' : '') + '. Greyed entries are ones you have not made or met yet: you can still read everything. The game waits while the book is open.</p></div>';
     const q = c => el.querySelector(c);
-    ref = { el, list: q('.bookList'), head: q('.bkh'), desc: q('.bkDesc'), cv: q('canvas.bkDemo'), cap: q('.spvc'), rows: q('.bkRows'), detail: q('.bookDetail'), count: q('.bkCount'), page: null };
+    ref = { el, list: q('.bookList'), head: q('.bkh'), desc: q('.bkDesc'), cv: q('canvas.bkDemo'), cap: q('.spvc'), drops: q('.bkDrops'), rows: q('.bkRows'), detail: q('.bookDetail'), count: q('.bkCount'), page: null };
     q('[data-close]').onclick = () => Book.close();
     el.querySelectorAll('.tab').forEach(bt => { bt.onclick = () => Book.setPage(bt.dataset.p); });
     el.onmousedown = e => { if (e.target === el) Book.close(); };
@@ -78,7 +129,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   Book.fillList = function () {   // the tiles of the current page (once per page flip)
     const pg = Book.page, sp = pg === 'spells', ids = sp ? SPELL_ORDER : CREATURE_ORDER;
     ref.list.innerHTML = ids.map(i => {
-      const nm = sp ? SPELLS[i] : CFG.creatures[i].name, icon = sp ? spellIcon(i) : i;
+      const nm = sp ? SPELLS[i] : CFG.enemies[i].name, icon = sp ? spellIcon(i) : i;
       return '<div class="bkItem" data-id="' + i + '">' + UI.img(icon, 32) + '<b>' + nm + '</b><u></u></div>';
     }).join('');
     ref.list.querySelectorAll('.bkItem').forEach(b => { b.onclick = () => Book.pick(b.dataset.id); });
@@ -90,18 +141,31 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   Book.fillDetail = function () {   // the selected entry: text, stats and demo, swapped in place
     const pg = Book.page, sp = pg === 'spells', id = Book.sel[pg], ok = seen(pg, id);
     ref.list.querySelectorAll('.bkItem').forEach(b => b.classList.toggle('on', b.dataset.id === id));
-    const nm = sp ? SPELLS[id] : CFG.creatures[id].name, desc = sp ? SPELL_INFO[id].desc : CFG.creatures[id].note;
-    const n = sp ? spellEls(id).length : CFG.creatures[id].order.length;
-    ref.head.innerHTML = UI.img(sp ? spellIcon(id) : id, 48) + '<div><b>' + nm + '</b><small>' + klass(n) + (sp ? ' SPELL' : ' CREATURE') + '</small></div>' +
+    const crafted = !sp && kindOf(id) === 'crafted';
+    const nm = sp ? SPELLS[id] : CFG.enemies[id].name, desc = sp ? SPELL_INFO[id].desc : crafted ? CFG.creatures[id].note : WILD_NOTE[id];
+    const tag = sp ? klass(spellEls(id).length) + ' SPELL' : crafted ? klass(CFG.creatures[id].order.length) + ' CREATURE' : kindOf(id) === 'wild' ? 'WILD FOE' : id === 'warden' ? 'STRONGHOLD BOSS' : 'FINAL BOSS';
+    ref.head.innerHTML = UI.img(sp ? spellIcon(id) : id, 48) + '<div><b>' + nm + '</b><small>' + tag + '</small></div>' +
       '<span class="bkSt' + (ok ? ' on' : '') + '">' + (ok ? UI.img('ic_check', 12) + (sp ? 'MADE' : 'MET') : UI.img('ic_lock', 12) + (sp ? 'NOT MADE YET' : 'NOT MET YET')) + '</span>';
     ref.desc.textContent = desc;
-    ref.cap.textContent = sp ? SPV.caption(id) : CPV.caption(id);
-    ref.rows.innerHTML = sp ? spellRows(id) : creatureRows(id);
+    ref.cap.textContent = sp ? SPV.caption(id) : crafted ? CPV.caption(id) : '';
+    ref.rows.innerHTML = sp ? spellRows(id) : crafted ? creatureRows(id) : wildRows(id);
+    ref.drops.innerHTML = sp ? '' : dropsHtml(id);
     ref.detail.classList.toggle('unseen', !ok);
     if (ref.page !== pg) { ref.page = pg; ref.cv.width = sp ? 186 : CPV.W; ref.cv.height = sp ? 100 : CPV.H; }   // both fill the same box on screen
     SPV.stop(); CPV.stop();
-    (sp ? SPV : CPV).mount(ref.cv, id);
+    if (sp || crafted) (sp ? SPV : CPV).mount(ref.cv, id); else Book.stillLife(ref.cv, id);
     ref.list.querySelector('.bkItem.on').scrollIntoView({ block: 'nearest' });
+  };
+  // wild foes, the Warden and the Chimera have no scripted demo: just the sprite, large, on the meadow
+  Book.stillLife = function (cv, id) {
+    const c = cv.getContext('2d'), s = SP[id];
+    c.imageSmoothingEnabled = false;
+    c.fillStyle = '#2e6a3a'; c.fillRect(0, 0, cv.width, cv.height);
+    c.fillStyle = '#3a7e46'; for (let i = 0; i < 40; i++) c.fillRect((i * 53) % cv.width, (i * 37) % cv.height, 6, 3);
+    if (!s) return;
+    const k = Math.max(1, Math.floor(Math.min(cv.width * 0.7 / s.c.width, cv.height * 0.8 / s.c.height)));
+    c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(Math.round(cv.width / 2 - s.c.width * k / 2), Math.round(cv.height * 0.9 - 4), s.c.width * k, 8);
+    c.drawImage(s.c, Math.round(cv.width / 2 - s.ax * k), Math.round(cv.height * 0.9 - s.ay * k), s.c.width * k, s.c.height * k);
   };
   Book.render = function () { Book.build(); Book.fillList(); Book.fillDetail(); };
   Book.setPage = function (p) { if (p === Book.page) return; Book.page = p; AU.sfx('tab'); Book.fillList(); Book.fillDetail(); };

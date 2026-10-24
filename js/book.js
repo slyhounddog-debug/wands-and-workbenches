@@ -3,6 +3,7 @@
 // Two pages. Each entry shows what the tree's hover card used to (name, icon, description, recipe / production, stats) with a looping demo:
 // SPV for spells (spellpreview.js), CPV for creatures (creaturepreview.js). It opens over the paused game from the button beside the
 // skill-tree button (or C), or from the pause menu, and nothing runs while it is closed.
+const PAGES = ['spells', 'creatures', 'wardrobe'];
 const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 'zephyr' }, from: 'play', navT: 0 };
 (function () {
   const SPELL_ORDER = ['gust', 'fireball', 'spray', 'boulder', 'flamethrower', 'tempest', 'steam', 'sandstorm', 'magma', 'mud', 'meteor', 'thunder', 'blizzard', 'geyser', 'nova'];
@@ -116,18 +117,30 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   Book.build = function () {
     const el = $('book');
     el.innerHTML = '<div class="bookPanel px"><div class="treeHead"><h2>' + UI.img('ic_book', 32) + 'COLLECTION BOOK</h2><div class="tabs bkTabs">' +
-      '<button class="tab" data-p="spells">SPELLS</button><button class="tab" data-p="creatures">CREATURES</button></div><div class="bkCount"></div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>' +
+      '<button class="tab" data-p="spells">SPELLS</button><button class="tab" data-p="creatures">CREATURES</button><button class="tab" data-p="wardrobe">WARDROBE</button></div><div class="bkCount"></div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>' +
       '<div class="bookBody"><div class="bookList"></div><div class="bookDetail"><div class="tth bkh"></div>' +
-      '<div class="bkLeft"><p class="bkDesc"></p><div class="bkDemoBox"><canvas class="bkDemo"></canvas></div><div class="spvc"></div></div><div class="bkRows"></div><div class="bkDrops"></div></div></div>' +
-      '<p class="hint"><kbd>C</kbd> / Esc closes. <kbd>W</kbd><kbd>S</kbd> or <kbd>UP</kbd><kbd>DOWN</kbd> pick an entry, <kbd>A</kbd><kbd>D</kbd> flip the page' + (IN.padList.length ? ' <kbd>STICK</kbd> pick <kbd>LB</kbd><kbd>RB</kbd> page <kbd>B</kbd> close' : '') + '. Greyed entries are ones you have not made or met yet: you can still read everything. The game waits while the book is open.</p></div>';
+      '<div class="bkLeft"><p class="bkDesc"></p><div class="bkDemoBox"><canvas class="bkDemo"></canvas></div><div class="spvc"></div></div><div class="bkRows"></div><div class="bkDrops"></div></div></div><div class="wardBody hidden"></div>' +
+      '<p class="hint"></p></div>';
     const q = c => el.querySelector(c);
-    ref = { el, list: q('.bookList'), head: q('.bkh'), desc: q('.bkDesc'), cv: q('canvas.bkDemo'), cap: q('.spvc'), drops: q('.bkDrops'), rows: q('.bkRows'), detail: q('.bookDetail'), count: q('.bkCount'), page: null };
+    ref = { el, body: q('.bookBody'), wbody: q('.wardBody'), hint: q('.hint'), list: q('.bookList'), head: q('.bkh'), desc: q('.bkDesc'), cv: q('canvas.bkDemo'), cap: q('.spvc'), drops: q('.bkDrops'), rows: q('.bkRows'), detail: q('.bookDetail'), count: q('.bkCount'), page: null };
     q('[data-close]').onclick = () => Book.close();
     el.querySelectorAll('.tab').forEach(bt => { bt.onclick = () => Book.setPage(bt.dataset.p); });
     el.onmousedown = e => { if (e.target === el) Book.close(); };
   };
+  const hintHtml = pg => (pg === 'wardrobe'
+    ? '<kbd>C</kbd> / Esc closes. <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or the <kbd>ARROWS</kbd> pick an augment, <kbd>ENTER</kbd> / <kbd>E</kbd> wears or takes it off (<kbd>A</kbd> from the left column goes back a page, <kbd>TAB</kbd> flips pages)' + (IN.padList.length ? ' <kbd>STICK</kbd> pick <kbd>A</kbd> wear <kbd>LB</kbd><kbd>RB</kbd> page <kbd>B</kbd> close' : '') + '. In the wilds <kbd>I</kbd> opens a small quick-swap drawer that never pauses the game. Augments change what the Wizard can do, never his numbers. The game waits while the book is open.'
+    : '<kbd>C</kbd> / Esc closes. <kbd>W</kbd><kbd>S</kbd> or <kbd>UP</kbd><kbd>DOWN</kbd> pick an entry, <kbd>A</kbd><kbd>D</kbd> or <kbd>TAB</kbd> flip the page' + (IN.padList.length ? ' <kbd>STICK</kbd> pick <kbd>LB</kbd><kbd>RB</kbd> page <kbd>B</kbd> close' : '') + '. Greyed entries are ones you have not made or met yet: you can still read everything. The game waits while the book is open.');
   Book.fillList = function () {   // the tiles of the current page (once per page flip)
     const pg = Book.page, sp = pg === 'spells', ids = sp ? SPELL_ORDER : CREATURE_ORDER;
+    ref.hint.innerHTML = hintHtml(pg);
+    ref.body.classList.toggle('hidden', pg === 'wardrobe'); ref.wbody.classList.toggle('hidden', pg !== 'wardrobe');
+    ref.el.querySelectorAll('.tab').forEach(bt => bt.classList.toggle('on', bt.dataset.p === pg));
+    if (pg === 'wardrobe') {   // the full wardrobe (wardrobe.js fills and drives it)
+      Ward.full = ref.wbody; Ward.renderFull();
+      ref.count.textContent = 'AUGMENTS ' + AUG_ORDER.filter(id => G.aug.own[id]).length + ' / ' + AUG_ORDER.length;
+      return;
+    }
+    Ward.full = null;
     ref.list.innerHTML = ids.map(i => {
       const nm = sp ? SPELLS[i] : CFG.enemies[i].name, icon = sp ? spellIcon(i) : i;
       return '<div class="bkItem" data-id="' + i + '">' + UI.img(icon, 32) + '<b>' + nm + '</b><u></u></div>';
@@ -139,6 +152,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     ref.count.textContent = (sp ? 'MADE ' : 'MET ') + n + ' / ' + ids.length;
   };
   Book.fillDetail = function () {   // the selected entry: text, stats and demo, swapped in place
+    if (Book.page === 'wardrobe') { SPV.stop(); CPV.stop(); return; }
     const pg = Book.page, sp = pg === 'spells', id = Book.sel[pg], ok = seen(pg, id);
     ref.list.querySelectorAll('.bkItem').forEach(b => b.classList.toggle('on', b.dataset.id === id));
     const crafted = !sp && kindOf(id) === 'crafted';
@@ -184,7 +198,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   };
   Book.close = function (quiet) {
     if (!Book.isOpen) return;
-    SPV.stop(); CPV.stop();
+    SPV.stop(); CPV.stop(); Ward.full = null;
     Book.isOpen = false; UI.show('book', false);
     if (quiet) return;
     AU.sfx('menu_close');
@@ -200,8 +214,13 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
       for (const q of [p0, p1]) if (q) { q.b = false; q.back = false; }
       return;
     }
-    if (IN.hit('ArrowLeft') || IN.hit('KeyA') || pad('lb')) Book.setPage('spells');
-    if (IN.hit('ArrowRight') || IN.hit('KeyD') || pad('rb')) Book.setPage('creatures');
+    const flip = d => Book.setPage(PAGES[(PAGES.indexOf(Book.page) + d + PAGES.length) % PAGES.length]);
+    if (pad('lb')) flip(-1);
+    if (pad('rb')) flip(1);
+    if (IN.hit('Tab')) flip(IN.shift() ? -1 : 1);
+    if (Book.page === 'wardrobe') { if (Ward.keys(dt, p0, p1)) flip(-1); return; }   // the wardrobe page has its own cursor
+    if (IN.hit('ArrowLeft') || IN.hit('KeyA')) Book.setPage(PAGES[Math.max(0, PAGES.indexOf(Book.page) - 1)]);
+    if (IN.hit('ArrowRight') || IN.hit('KeyD')) Book.setPage(PAGES[Math.min(PAGES.length - 1, PAGES.indexOf(Book.page) + 1)]);
     if (IN.hit('ArrowUp') || IN.hit('KeyW')) Book.step(-1);
     if (IN.hit('ArrowDown') || IN.hit('KeyS')) Book.step(1);
     const iy = (p0 && p0.iy) || (p1 && p1.iy) || 0;   // the stick: one step per push, then a repeat

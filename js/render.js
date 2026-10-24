@@ -330,7 +330,7 @@ R.drawFactory = function (main, dt) {
     const g = bd.gather, p = R.toScreen(v, g.b.x + 0.5, g.b.y + 0.5), fr = Math.min(1, g.t / g.total);
     const y = p[1] - 60;   // on the machine itself: the prompt bubbles stack above it and would cover anything higher
     pbox(ctx, p[0] - 56, y - 16, 112, 32, '#2b1d48');
-    ctx.fillStyle = ELEM[g.el].color; ctx.fillRect(Math.round((p[0] - 48) / P) * P, y - 8, Math.round(96 * fr / P) * P, 16);
+    ctx.fillStyle = (ELEM[g.el] || ITEMS[g.el]).color; ctx.fillRect(Math.round((p[0] - 48) / P) * P, y - 8, Math.round(96 * fr / P) * P, 16);
     dspr(ctx, itemSprite(g.el), p[0] - 76, y + 12, 4);
   }
   if (R.hint && !UI.treeOpen.L) R.drawHint(ctx, v, R.hint, t);
@@ -561,6 +561,12 @@ R.drawBuilding = function (ctx, v, b, t) {
       ctx.fillStyle = '#5a5a66'; ctx.fillRect(p[0] + 4, base - 68 + hy, 24, 12); ctx.fillStyle = '#8a5a30'; ctx.fillRect(p[0] + 12, base - 56 + hy, 8, 28);
       if (hit > 0.45 && hit < 0.6) for (let i = 0; i < 6; i++) { ctx.fillStyle = '#ffd23a'; ctx.fillRect(Math.round((p[0] + 8 + Math.cos(i) * 28) / 4) * 4, Math.round((base - 52 - Math.abs(Math.sin(i * 2)) * 24) / 4) * 4, 4, 4); }
     }
+    if (b.type === 'bench' && (b.hand > 0 || (G.bd.gather && G.bd.gather.b === b))) {   // the hammer comes down each time the Builder taps, and what was hammered so far stays on the bench
+      const hit = G.bd.gather && G.bd.gather.b === b && b.pop > 0.1 ? 1 : 0, hy = hit ? 8 : -12;
+      ctx.fillStyle = '#5a5a66'; ctx.fillRect(p[0] + 4, base - 68 + hy, 24, 12); ctx.fillStyle = '#8a5a30'; ctx.fillRect(p[0] + 12, base - 56 + hy, 8, 28);
+      if (hit) for (let i = 0; i < 4; i++) { ctx.fillStyle = '#ffd23a'; ctx.fillRect(Math.round((p[0] + 8 + Math.cos(i * 2 + t * 9) * 24) / 4) * 4, Math.round((base - 46 - Math.abs(Math.sin(i * 2 + t * 7)) * 20) / 4) * 4, 4, 4); }
+      if (!(G.bd.gather && G.bd.gather.b === b)) R.bar(ctx, p[0], base + 22, 48, b.hand, ITEMS[CFG.recipes[b.recipe].out].color, 8);   // a half-hammered one waits for the Builder to come back
+    }
     if (b.recipe) {
       const R2 = CFG.recipes[b.recipe], keys = Object.keys(R2.in);
       // a faded ghost of the product waits in the empty output slot
@@ -571,7 +577,7 @@ R.drawBuilding = function (ctx, v, b, t) {
         R.pile(ctx, R.rep(k, have), x, base - 70, t, i + b.id);
         R.pile(ctx, R.rep(k, R2.in[k] - have), x, base - 70 - have * 8, t, 0, 0.35);
       });
-      if (b.prog > 0) R.bar(ctx, p[0], top + 52, 84, b.prog / R2.time, ITEMS[R2.out].color);
+      if (b.prog > 0 && !R2.hand) R.bar(ctx, p[0], top + 52, 84, b.prog / R2.time, ITEMS[R2.out].color);
       if (b.type === 'spawner' && b.prog > 0) {   // the creature being hatched, as a small icon in a state box (nothing while it idles: the faint Egg ghost beside it says what it will make)
         const cs = SP[ITEMS[R2.out].creature], k = Math.max(1, Math.floor(36 / Math.max(cs.c.width, cs.c.height)));
         pbox(ctx, p[0] - 28, top - 6, 56, 52, '#2b1d48');

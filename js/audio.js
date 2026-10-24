@@ -277,8 +277,38 @@ const AU = (() => {
   let track = null;
   function setTrack(name) {
     if ((track && track.name) === name) return;
-    if (track) { try { track.node.src.stop(); } catch (e) { /* already stopped */ } track = null; }
-    if (name) track = { name, node: OV.playClip(ctx, clip(name), Object.assign({}, clip(name).p, { loop: true }), musG) };
+    if (track) { try { track.node.src.stop(); } catch (e) { /* already stopped */ } dropEnv(track.env); track = null; }
+    if (name) {
+      const node = OV.playClip(ctx, clip(name), Object.assign({}, clip(name).p, { loop: true }), musG);
+      node.gain.disconnect();   // its level now goes through the loop envelope on the way to the music bus
+      track = { name, node, env: loopEnv(node.t0, node.len, node.gain, musG) };
+    }
+  }
+  // Every looping music file fades in over CFG.music.fadeIn and out over CFG.music.fadeOut on each pass (and when it first starts), so the seam
+  // of a loop never spikes. The envelope is a gain node in front of the music bus, ramped a pass at a time, a little ahead of the clock (schedule()).
+  const envs = [];
+  function loopEnv(t0, D, from, dest) {
+    const e = ctx.createGain(); e.gain.value = 0;
+    from.connect(e); e.connect(dest);
+    const en = { e, t0, D, n: 0 };
+    envs.push(en); tickEnv(en);
+    return en;
+  }
+  function tickEnv(en) {
+    const M = CFG.music, fi = Math.min(M.fadeIn, en.D / 2), fo = Math.min(M.fadeOut, en.D / 2);
+    while (en.t0 + en.n * en.D < ctx.currentTime + 40) {
+      const s = en.t0 + en.n * en.D, g = en.e.gain;
+      g.setValueAtTime(0, s);
+      g.linearRampToValueAtTime(1, s + fi);
+      g.setValueAtTime(1, s + en.D - fo);
+      g.linearRampToValueAtTime(0, s + en.D);
+      en.n++;
+    }
+  }
+  function dropEnv(en) {
+    const i = envs.indexOf(en);
+    if (i >= 0) envs.splice(i, 1);
+    if (en) setTimeout(() => { try { en.e.disconnect(); } catch (e) { /* already gone */ } }, 100);
   }
   // ----- layered soundtrack: the four element loops start on the same tick, so they stay locked, and each one swells with how
   // active its element is (the factory's weather). The Chimera brings the whole band in unless a music_boss clip takes over.
@@ -295,7 +325,7 @@ const AU = (() => {
   }
   function stopLayers() {
     if (!layers) return;
-    for (const el in layers) { try { layers[el].src.stop(); } catch (e) { /* already stopped */ } }
+    for (const el in layers) { try { layers[el].src.stop(); } catch (e) { /* already stopped */ } dropEnv(layers[el].env); }
     layers = null;
   }
   function tickLayers(boss) {
@@ -306,16 +336,17 @@ const AU = (() => {
         const src = ctx.createBufferSource(), gain = ctx.createGain();
         src.buffer = clip(LAYER_NAME(el)).buf; src.loop = true;
         gain.gain.value = layerGoal(el, boss) * CFG.music.gain;
-        src.connect(gain); gain.connect(musG);
+        src.connect(gain);
         layers[el] = { src, gain };
       }
       const t0 = t + 0.1;   // one start time for all four
-      for (const el of LAYER_EL) layers[el].src.start(t0);
+      for (const el of LAYER_EL) { layers[el].env = loopEnv(t0, layers[el].src.buffer.duration, layers[el].gain, musG); layers[el].src.start(t0); }
     }
     for (const el of LAYER_EL) layers[el].gain.gain.setTargetAtTime(layerGoal(el, boss) * CFG.music.gain, t, CFG.music.fade);
   }
   function schedule() {
     if (!ctx || !musicOn) return;
+    for (const en of envs) tickEnv(en);
     const bossClip = bossOn && clip('music_boss');
     if (layersReady()) { tickLayers(bossClip ? 'clip' : bossOn); } else stopLayers();
     // until the layers are decoded the synth stays quiet (it would only be cut off a second later); if they cannot load, the old single track / synth plays

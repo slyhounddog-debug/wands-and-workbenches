@@ -67,6 +67,9 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 .bar > div { position: absolute; left: 0; top: 0; bottom: 0; transition: width .2s steps(4); }
 .bar span { position: absolute; inset: 0; text-align: center; line-height: 25px; font: 10px var(--display); text-shadow: 2px 2px 0 var(--ink); z-index: 2; }
 #powFill { background: var(--gold); box-shadow: inset 0 -6px 0 0 var(--gold-2); }
+#powCard .bar.bat { margin-top: 4px; height: 20px; }
+#powCard .bar.bat span { line-height: 21px; font-size: 9px; }
+#batFill { background: var(--sky); box-shadow: inset 0 -5px 0 0 #2a6ab0; }
 #powCard.low { animation: blinkRed .5s steps(2) infinite; }
 #powCard.low #powFill { background: var(--rose); box-shadow: inset 0 -6px 0 0 #b81c2c; }
 @keyframes blinkRed { 50% { background: #5a1a2a; } }
@@ -582,13 +585,32 @@ button.big.slot em { grid-column: 2; grid-row: 1 / 4; align-self: center; font-s
 #gearCard .gs.hold.full { animation: hintBlink .6s steps(2) infinite; }
 #gearCard .gs.hold kbd { position: absolute; right: -6px; bottom: -8px; font-size: 7px; min-width: 14px; padding: 2px 3px 1px; }
 #gearCard .gs.lockd { margin-left: auto; opacity: .45; }
-#ward { position: absolute; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; background: rgba(13,7,24,0.82); }
-#ward.hidden { display: none; }
-.wardPanel { width: 1320px; height: 780px; background: #1c1230; padding: 16px 22px 12px; display: flex; flex-direction: column; animation: tin .2s steps(3); }
-.wardPanel .treeHead { flex: none; }
-.wardPanel h3 { margin: 14px 0 8px; font: 10px var(--display); color: var(--sky); }
-.wardPanel .hint { flex: none; margin: 8px 0 0; }
-.wardBody { flex: 1; min-height: 0; display: grid; grid-template-columns: 560px 1fr 330px; gap: 22px; margin-top: 4px; }
+/* the quick drawer: flies in from the right edge of the wilds, the game keeps running */
+#ward { position: absolute; right: 0; top: 258px; z-index: 60; width: 392px; transform: translateX(110%); transition: transform .3s steps(6); pointer-events: none; }
+#ward.open { transform: none; pointer-events: auto; }
+.wdr { background: #1c1230; padding: 8px 10px 10px; }
+.wdrHead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.wdrHead h4 { margin: 0; font: 9px var(--display); color: var(--gold); display: flex; align-items: center; gap: 6px; flex: 1; }
+.wdrHead .x { width: 22px; height: 22px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.dSlots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
+.dSlot { position: relative; height: 46px; display: flex; align-items: center; justify-content: center; background: var(--panel-lo); box-shadow: inset 0 0 0 2px #3a3550; }
+.dSlot small { position: absolute; left: 3px; top: 2px; font: 6px var(--display); color: var(--muted); }
+.dSlot.full { background: #33235a; box-shadow: inset 0 0 0 2px var(--gold); }
+.dGrid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 92px; gap: 6px; }
+.dTile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px 2px; background: var(--panel-2); cursor: pointer; box-shadow: 0 3px 0 0 var(--ink); text-align: center; overflow: hidden; }
+.dTile:hover { background: var(--panel-hi); }
+.dTile b { font: 700 13px var(--body); line-height: 1; }
+.dTile i { position: absolute; top: 2px; right: 3px; }
+.dTile.worn { box-shadow: inset 0 -3px 0 0 var(--mint), 0 3px 0 0 var(--ink); }
+.dTile.on { background: #6a4a20; box-shadow: 0 0 0 3px var(--gold); z-index: 1; }
+.dTile.on u { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--gold); animation: dwell linear forwards; }
+@keyframes dwell { from { width: 0; } to { width: 100%; } }
+.dTile.no { background: #2a2338; box-shadow: inset 0 0 0 2px #3a3550, 0 3px 0 0 var(--ink); }
+.dTile.no img { filter: grayscale(1) brightness(.5); }
+.dTile.no b { color: #8a84a0; }
+/* the full wardrobe: the Collection Book's third page */
+.bookPanel h3 { margin: 14px 0 8px; font: 10px var(--display); color: var(--sky); }
+.wardBody { flex: 1; min-height: 0; display: grid; grid-template-columns: 560px 1fr 330px; gap: 22px; margin-top: 12px; }
 .wSlots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .wSlot { position: relative; height: 112px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 14px 4px 6px; background: var(--panel-lo); box-shadow: inset 0 0 0 3px #3a3550; text-align: center; }
 .wSlot small { position: absolute; left: 6px; top: 5px; font: 8px var(--display); color: var(--muted); }

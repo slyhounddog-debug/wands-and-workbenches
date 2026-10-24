@@ -82,7 +82,7 @@ OV.playClip = function (ctx, clip, p, dest) {
     if (fo) { g.gain.setValueAtTime(vol, t0 + len - fo); g.gain.linearRampToValueAtTime(0, t0 + len); }
     src.start(t0, src0, src1 - src0);
   }
-  return { src, gain: g };
+  return { src, gain: g, t0, len };
 };
 
 // ---------- boot (config.js calls OV.tune(CFG, window.TUNING) right after CFG exists) ----------

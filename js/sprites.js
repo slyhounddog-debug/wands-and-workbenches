@@ -242,6 +242,13 @@ task(() => {
     poly(x, [[cx - 9, cy - 12], [cx + 8, cy - 13], [cx + 7, cy - 14], [cx - 6, cy - 14]], '#b8b8c8');
     x.fillStyle = '#ff9a3a'; x.fillRect(cx + 4, cy - 4, 2, 2);
   });
+  bsprite('b_bench', (x, cx, cy) => {   // the Battery Bench: a plank workbench with a vise and a green cell clamped in it
+    isoBox(x, cx, cy, 9, 5, '#c28a52', '#98683a', '#7a5128');
+    isoBox(x, cx, cy - 5, 9, 2, '#d8a468', '#a87440', '#8a5c30');
+    isoBox(x, cx + 3, cy - 7, 3, 4, '#3c9e5a', '#2e7a46', '#245f38');
+    x.fillStyle = '#8ee0a6'; x.fillRect(cx + 2, cy - 12, 3, 1); x.fillStyle = '#ffe36b'; x.fillRect(cx + 3, cy - 14, 1, 2);
+    x.fillStyle = '#5a5a66'; x.fillRect(cx - 7, cy - 10, 4, 1); x.fillStyle = '#7a4a22'; x.fillRect(cx - 6, cy - 9, 1, 4);
+  });
   bsprite('b_forge', (x, cx, cy) => {
     isoBox(x, cx, cy, 9, 12, '#6a5a63', '#4a3d46', '#3a2f38');
     isoBox(x, cx + 3, cy - 6, 3, 8, '#585058', '#3c353c', '#2e282e');

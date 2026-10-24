@@ -49,6 +49,7 @@
         <div class="card px" id="powCard">
           <div class="clabel"><i data-ic="ic_bolt" data-s="16"></i>POWER</div>
           <div class="bar"><div id="powFill"></div><span id="powTxt"></span></div>
+          <div class="bar bat" title="Charge left in the Batteries sitting in Stations"><i data-ic="battery" data-s="16"></i><div id="batFill"></div><span id="batTxt"></span></div>
         </div>
         <div class="card px" id="handCard" title="Hands: first in, first out">
           <div class="clabel"><i data-ic="ic_hand" data-s="16"></i></div>
@@ -142,8 +143,8 @@
     <div id="victory" class="overlay hidden"></div>
     <!-- the Collection Book: every spell and creature, with live demos (opens over the paused game) -->
     <div id="book" class="hidden"></div>
-    <!-- the Wizard's wardrobe: worn augments, the wardrobe, Offerings and Ward Keys (opens over the paused game, like the book) -->
-    <div id="ward" class="hidden"></div>
+    <!-- the Wizard's quick wardrobe: a small drawer that flies in from the right edge and never pauses the game (the full wardrobe is the Collection Book's third page) -->
+    <div id="ward"></div>
     <div id="pause" class="overlay hidden">
       <div id="pauseMain" class="panel px">
         <h2>PAUSED</h2>

@@ -123,7 +123,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   const f = G.fac, d = CFG.buildings[type];
   const b = { id: f.nextId++, type, x, y, dir: dir || 0, done: !!done, free: !!free, got: {}, out: [], timer: 0,
     powered: true, draw: 0, pop: 0, anim: Math.random() * 6 };
-  if (d.kind === 'crafter') { b.recipe = null; b.inv = {}; b.prog = 0; }
+  if (d.kind === 'crafter') { b.recipe = null; b.inv = {}; b.prog = 0; b.hand = 0; }   // hand: how far the Builder has hammered a hand recipe (the Battery Bench)
   if (d.kind === 'station') b.bat = null;
   if (d.kind === 'charger') { b.bat = null; b.fuel = { air: 0, water: 0, fire: 0, earth: 0, wood: 0, stone: 0 }; b.types = []; }
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
@@ -293,7 +293,7 @@ FA.demolish = function (x, y, force) {
 // ---------- recipes ----------
 // Production is the only gate for spells and creatures: a recipe needs its tree node only when it has a tier (potions, armor, the Sigil, the Battery),
 // and a Triple / the Nova needs its parent spells to have been MADE at least once (G.stats.made, counted from crafter output)
-FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (r.out !== 'battery' || !!G.tree.forge) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
+FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
 FA.recipesFor = type => Object.keys(CFG.recipes).filter(id => CFG.recipes[id].machine === type && FA.recipeOk(id));
 FA.refreshRecipes = function () {
   for (const b of G.fac.bld) if (b.done && FA.def(b).kind === 'crafter' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
@@ -617,7 +617,7 @@ FA.state = function (b) {
     if (b.out.length && b.blocked) return 'jam';
     if (!b.recipe) return 'starve';
     if (b.draw > 0 && !b.powered) return 'off';
-    if (FA.crafterReady(b) !== 0) return 'work';
+    if (FA.crafterReady(b) !== 0) return CFG.recipes[b.recipe].hand && !(b.hand > 0) && !(G.bd.gather && G.bd.gather.b === b) ? null : 'work';   // a hand recipe that is ready waits quietly for the Builder
     return Object.keys(CFG.recipes[b.recipe].in).some(i => (b.inv[i] || 0) > 0) ? 'missing' : 'starve';
   }
   if (k === 'splitter') return b.out.length >= 2 ? 'full' : b.out.length ? (b.blocked ? 'jam' : 'work') : null;
@@ -710,7 +710,9 @@ FA.update = function (dt) {
       b.blocked = b.out.length > 0 && !FA.tryOut(b);
       b.od = FA.overdrive(b);
       const w = FA.crafterReady(b);
-      if (w !== 0) {
+      if (w !== 0 && CFG.recipes[b.recipe].hand) {   // a hand recipe only moves when the Builder cranks it (FA.updGather finishes it): no power, no timer
+        b.prog = b.hand * CFG.recipes[b.recipe].time;
+      } else if (w !== 0) {
         if (b.powered) {
           const R = CFG.recipes[b.recipe];
           b.prog += dt * (b.od ? 1 + CFG.overdrive : 1); f.working++;
@@ -726,7 +728,7 @@ FA.update = function (dt) {
             AU.sfx('craft');
           }
         }
-      } else b.prog = 0;
+      } else { b.prog = 0; b.hand = 0; }
     } else if (d.kind === 'station') {
       if (b.over > 0) b.over = b.bat == null ? 0 : Math.max(0, b.over - dt);
       if (b.bat != null && f.perBat > 0 && b.bat > 0) {
@@ -1047,7 +1049,7 @@ FA.distTo = function (t) {
 };
 
 FA.startGather = function (b) {
-  const el = b.el;
+  const el = b.recipe && CFG.recipes[b.recipe].hand ? CFG.recipes[b.recipe].out : b.el;   // a hand recipe cranks its product, a Harnesser its element
   G.bd.gather = { b, t: b.hand || 0, total: 1, el };   // the meter only moves when E is tapped (FA.crank); it starts from what is already cranked
   G.bd.target = null;
   AU.sfx('blip');
@@ -1058,14 +1060,29 @@ FA.crank = function () {
   if (!g) return;
   g.t += FA.tapGain(); g.b.hand = Math.min(g.t, 0.999);
   G.bd.squash = 0.15;
-  FA.eburst(g.b.x + 0.5, g.b.y + 0.5, g.el, 4);
+  if (ELEM[g.el]) FA.eburst(g.b.x + 0.5, g.b.y + 0.5, g.el, 4); else { FA.burst(g.b.x + 0.5, g.b.y + 0.5, '#ffd23a', 5); g.b.pop = 0.2; }
   AU.sfx('crank');
 };
 FA.updGather = function (dt) {
   const bd = G.bd, g = bd.gather;
   if (!g) return;
   if (G.fac.grid[g.b.y * G.fac.w + g.b.x] !== g.b) { bd.gather = null; return; }
+  const hr = g.b.recipe && CFG.recipes[g.b.recipe].hand ? CFG.recipes[g.b.recipe] : null;
+  if (hr && FA.crafterReady(g.b) === 0) { bd.gather = null; return; }   // its Iron is gone or the output is full
   bd.bob += dt * 9;
+  if (hr && g.t >= g.total) {   // the hand recipe is done: the Battery comes out flat
+    const b = g.b;
+    bd.gather = null; b.hand = 0; b.prog = 0;
+    for (const k in hr.in) b.inv[k] -= hr.in[k];
+    b.out.push(hr.out === 'battery' ? { kind: 'battery', charge: 0 } : { kind: hr.out });
+    G.stats.made[hr.out] = (G.stats.made[hr.out] || 0) + 1;
+    b.pop = 0.35; b.thump = CFG.thump;
+    FA.burst(b.x + 0.5, b.y + 0.5, ITEMS[hr.out].color, 12);
+    FA.ipop(b.x + 0.5, b.y + 0.5, [[hr.out]]);
+    AU.sfx('craft');
+    UI.changed();
+    return;
+  }
   if (g.t >= g.total) {
     bd.gather = null; g.b.hand = 0;
     if (FA.canHold(g.el)) FA.addHands(g.el, 1); else FA.dropAt(g.el, bd.x, bd.y);
@@ -1183,6 +1200,7 @@ FA.bldAction = function (b, pick) {
   }
   if (d.kind === 'crafter') {
     const list = FA.recipesFor(b.type);
+    if (b.recipe && CFG.recipes[b.recipe].hand && FA.crafterReady(b) !== 0) return A('Hammer out a ' + recipeName(b.recipe) + ' (tap to fill the meter)', () => FA.startGather(b), false, [CFG.recipes[b.recipe].out]);
     if (list.length > 1) {
       const nx = list[(list.indexOf(b.recipe) + 1) % list.length];
       return A('Switch recipe to ' + recipeName(nx), () => { FA.setRecipe(b, nx); AU.sfx('blip'); }, false, ['ic_swap', CFG.recipes[nx].out]);
@@ -1358,7 +1376,10 @@ FA.fromJSON = function (j) {
     if (o.cost && typeof o.cost === 'object') b.cost = o.cost;
     if (b.el !== undefined) { if (ELEM[o.el]) b.el = o.el; b.grow = o.grow >= 0 ? Math.min(CFG.harness.growT, +o.grow) : CFG.harness.growT; }
     b.done = !!o.done; b.got = o.got || {}; b.out = Array.isArray(o.out) ? o.out.filter(x => x && ITEMS[x.kind]) : []; b.timer = o.timer || 0;
-    if (b.inv) { b.recipe = o.recipe && CFG.recipes[o.recipe] ? o.recipe : null; b.inv = o.inv || {}; b.prog = o.prog || 0; }
+    if (b.inv) {
+      b.recipe = o.recipe && CFG.recipes[o.recipe] && CFG.recipes[o.recipe].machine === b.type ? o.recipe : null; b.inv = o.inv || {}; b.prog = o.prog || 0;   // (the Battery recipe moved from the Forge to the Bench)
+      if (o.recipe && !b.recipe) for (const k in b.inv) { for (let i = 0; i < b.inv[k]; i++) if (ITEMS[k]) b.out.push({ kind: k }); b.inv[k] = 0; }   // what it was holding is set out for the Builder to take
+    }
     if (b.bat !== undefined) b.bat = o.bat == null ? null : o.bat;
     if (b.fuel) { b.fuel = Object.assign(b.fuel, o.fuel || {}); b.types = o.types || []; }
     if (b.hand !== undefined && o.hand > 0) b.hand = Math.min(0.999, +o.hand);

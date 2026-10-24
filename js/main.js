@@ -346,7 +346,7 @@ Main.controls = function (dt) {
   if (IN.hit('KeyY') || (p1 && p1.y)) UI.openTree('R');
   if (IN.hit('KeyH')) { UI.help(); G.helpT = 0; }
   if (IN.hit('KeyC') && !frozenNow() && !UI.splitB && !UI.askB) Book.open();   // the Collection Book: every spell and creature
-  if (wardrobe && !frozenNow() && !UI.splitB && !UI.askB) { Ward.open(); hold = false; }   // the Wizard's wardrobe: augments, Offerings, Ward Keys
+  if (wardrobe && !frozenNow() && !UI.splitB && !UI.askB) { Ward.press(); hold = false; }   // the Wizard's quick wardrobe (a drawer, the game keeps running): open, then step along his augments
   if ((IN.hit('KeyP') || (p0 && p0.l3)) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
   if (IN.hit('F3') || IN.hit('Backquote')) { UI.debugOn = !UI.debugOn; AU.sfx('blip'); }
   if (IN.hit('F4') && UI.debugOn) DevBot.toggle();   // dev-only: only while the F3 overlay is open
@@ -758,7 +758,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btnTreeR').onclick = () => UI.openTree('R');
   $('btnBook').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB) Book.open(); };
   $('btnBookR').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB) Book.open(); };
-  $('btnWard').onclick = $('gearCard').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB && !UI.askB && !G.paused) Ward.open(); };
+  $('btnWard').onclick = $('gearCard').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB && !UI.askB && !G.paused) Ward.toggle(); };
   $('pBook').onclick = () => Book.open(true);
   $('btnDemo').onclick = () => { G.demolish = !G.demolish; AU.sfx('blip'); };
   $('btnSwap').onclick = () => UI.toast('Hold X (or Start on a pad) for 1.5 seconds to swap jobs.', 'L', 'ic_swap');

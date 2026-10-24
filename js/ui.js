@@ -86,19 +86,6 @@ function setHtml(id, s) { if (cache[id] !== s) { cache[id] = s; $(id).innerHTML 
 function fmtTime(t) { t = Math.floor(t); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); }
 UI.resetCache = () => { for (const k in cache) delete cache[k]; };
 
-UI.batteryStatus = function () {
-  let charged = 0, flat = 0, charging = 0;
-  const ct = c => { if (c == null) return; if (c > 0) charged++; else flat++; };
-  for (const b of G.fac.bld) {
-    if (b.type === 'station') ct(b.bat);
-    if (b.type === 'charger' && b.bat != null) { if (b.bat >= CFG.batteryMax) charged++; else if (FA.fuelTotal(b) > 0) charging++; else flat++; }
-    for (const o of b.out) if (o.kind === 'battery') ct(o.charge);
-  }
-  for (const o of G.fac.floor) if (o.kind === 'battery') ct(o.charge);
-  for (const h of G.hands) if (h.kind === 'battery') ct(h.charge);
-  if (!charged && !flat && !charging) return null;
-  return [charged, flat, charging];
-};
 // the hands as small slots in pile order (the first grabbed on the left, the top of the pile, thrown next, lit); empty slots stay as outlines. Never numbers.
 UI.handsHtml = function () {
   const l = G.hands, cap = FA.cap();
@@ -122,14 +109,12 @@ UI.updateHud = function (dt) {
   const combos = SPELL_KINDS.filter(k => ITEMS[k].spell).reduce((a, k) => a + (G.bank[k] || 0), 0);
   setHtml('tBank', UI.img('ic_skill', 24) + ['air', 'water', 'fire', 'earth'].map(k => UI.img(k, 16) + '<b>' + (G.bank[k] || 0) + '</b>').join('') + (combos ? UI.img('flamethrower', 16) + '<b>' + combos + '</b>' : ''));
   pulse('tBank', G.bankTotal || 0);
-  const bs = UI.batteryStatus();
-  setHtml('tBat', UI.img('battery', 24) + (bs ? '<b>' + bs[0] + '</b><span class="lbl">ok ' + (bs[1] + bs[2]) + ' flat</span>' : '<span class="lbl">none</span>'));
   const gen = f.gen, dem = f.demand, low = dem > gen;
   setTxt('powTxt', gen + ' / ' + dem);
   $('powFill').style.width = (dem === 0 ? (gen > 0 ? 100 : 0) : Math.min(100, gen / dem * 100)).toFixed(0) + '%';
-  // the charge left in every Battery sitting in a Station, added up (an overcharged one counts past full), against what the Stations could hold
+  // the charge left in every Battery building, added up (an overcharged one counts past full), against what they could hold
   let bc = 0, bcap = 0;
-  for (const b of f.bld) if (b.type === 'station' && b.done) { bcap += CFG.batteryMax; if (b.bat != null) bc += b.bat; }
+  for (const b of f.bld) if (FA.isCell(b) && b.done) { bcap += CFG.batteryMax; bc += b.bat; }
   setTxt('batTxt', Math.round(bc) + (bcap ? ' / ' + bcap : ''));
   $('batFill').style.width = (bcap ? Math.min(100, bc / bcap * 100) : 0).toFixed(0) + '%';
   $('powCard').classList.toggle('low', low);
@@ -568,7 +553,7 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
     case 'magnet': return [row('Pickup range', l => (CFG.world.vacuum + up * l).toFixed(2) + ' tiles'), row('Shard / Core range', l => ((CFG.world.vacuum + up * l) * 2.5).toFixed(2) + ' tiles')];
     case 'heavy': {
       const life = k => Math.round(CFG.batteryLife * k) + 's';
-      return [['Battery at full load lasts', G.tree.heavy ? life(1 + CFG.heavyBattery) : life(1) + ' > ' + life(1 + CFG.heavyBattery)]];
+      return [['Battery at full load lasts', life(1)], ['Heavy Battery at full load lasts', life(1 + CFG.heavyBattery)]];
     }
   }
   const rows = [];
@@ -844,14 +829,14 @@ const HOWTO = {
     ['Two jobs, one team', 'The <b>Builder</b> (left) runs an elemental factory. The <b>Wizard</b> (right) explores the wilds but has <b>no attack of his own</b>: every spell he casts is made in the factory and sent through the <b>Spell Portal</b>.'],
     ['The loop', 'The Wizard stands near trees, rocks and ore so delivered spells smash them. Drops vacuum into him and land in the factory <b>Stockpile</b>. The Builder carries them to blueprints to grow the factory, which makes stronger spells, potions and armor.'],
     ['Two portals', 'The <b>Spell Portal</b> sends things to the Wizard. The <b>Skill Portal</b> banks element packets and spells as currency for the <b>Skill Tree</b>, together with XP from kills.'],
-    ['Follow the goals', 'Each player has their own goal card (Builder on the left, Wizard on the right) and the two run at the same time. Every goal pays XP, and the bigger ones add a gift: spells for the skill tree, building materials, a free Station, potions and armor. A gold arrow points at where to go, and the right hotbar slot or skill-tree button blinks.'],
+    ['Follow the goals', 'Each player has their own goal card (Builder on the left, Wizard on the right) and the two run at the same time. Every goal pays XP, and the bigger ones add a gift: spells for the skill tree, building materials, a free Battery, potions and armor. A gold arrow points at where to go, and the right hotbar slot or skill-tree button blinks.'],
     ['Winning', 'Late on, claim a <b>Stronghold</b> for a <b>Warden Core</b> (Summoning costs one), build the <b>Summoning Altar</b>, bind an Elemental Nova and Aether Shards into a <b>Boss Sigil</b> and send it through the Spell Portal. Beat the <b>Primal Chimera</b> to win. You can keep playing afterwards.'],
   ],
   'FACTORY': [
     ['Hands', 'The Builder carries one stack (5 at first). <b>Left-click</b> (pad <b>A</b>) picks up <b>one item at a time</b>: hold it to keep grabbing. <b>Right-click</b> (pad <b>B</b>) throws one item along the dotted lead line: it aims at machines, blueprints, belts, portals or the Stockpile. Throwing is the only way to put things in. Nothing ever vanishes.'],
     ['Building', 'Pick a slot (keys <b>1</b> to <b>8</b> or the wheel; slot 8 is Floor Tiles). Slots with a pip row are <b>families</b> (Crafters, Power, Logistics, Creature Spawners): <b>Q</b>, the wheel over the slot or <b>RT</b> on a pad cycles the member (locked ones are skipped). <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
-    ['Machines', 'The <b>Harnesser</b> carries one of four element crystals: <b>F</b> (<b>LT + X</b> on a pad) switches it to the next element at any time. The old crystal bursts, the new one grows for 15 seconds, then the Harnesser shakes and starts making packets (nothing is made while it grows, and switching again restarts the 15 seconds). Every building shows what it holds as real items stacked on it: inputs, what it has made, a blueprint materials (faint copies = still missing), Charger fuel. Harnessers make packets by themselves, or stand next to one and press <b>E</b>, then <b>keep tapping E</b> to fill the meter and crank one out by hand (it never fills by itself; no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
-    ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with a charged Battery in a Battery Station and a Charger beside it: a Battery drains while anything needs power, so carry it to the Charger and throw element packets at it to refill it (hand-gathered packets are free). Every packet charges 10% more than its base, and a packet you throw in by hand adds another 20%. Build a Battery at the <b>Battery Bench</b> (throw in 2 Iron Ore, then stand beside it and tap <kbd>E</kbd> to hammer it together: no power needed), charge it at a Charger by feeding it packets (more kinds = faster), then haul it to a Battery Station. A charged Station right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, <b>Heavy Batteries</b> make every Battery last 50% longer in a Station.'],
+    ['Machines', 'The <b>Harnesser</b> carries one of four element crystals: <b>F</b> (<b>LT + X</b> on a pad) switches it to the next element at any time. The old crystal bursts, the new one grows for 15 seconds, then the Harnesser shakes and starts making packets (nothing is made while it grows, and switching again restarts the 15 seconds). Every building shows what it holds as real items stacked on it: inputs, what it has made, a blueprint materials (faint copies = still missing), Battery fuel. Harnessers make packets by themselves, or stand next to one and press <b>E</b>, then <b>keep tapping E</b> to fill the meter and crank one out by hand (it never fills by itself; no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
+    ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with one charged <b>Battery</b> just south of the Stockpile. A Battery is a building: it gives +10 power while it has charge and drains by itself while anything needs power. To refill it, throw element packets, Wood or Stone at it (or belt them in): it burns them into charge, more kinds at once = faster (hand-gathered packets are free). Every packet charges 10% more than its base, and a packet you throw in by hand adds another 20%. Build more Batteries like any building (place the blueprint, throw its materials at it). A charged Battery right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, the <b>Heavy Batteries</b> node unlocks the <b>Heavy Battery</b>, which drains slower so its charge lasts 50% longer.'],
     ['Creatures', 'The <b>Creature Spawner</b> turns element packets into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. There is only one Spawner and nothing to unlock: feed it one element for a basic creature, two for a pair, three for a triple (E switches its recipe, and a small icon shows the creature it is hatching). At most 25 factory creatures live at once: extra Eggs wait beside the portal. Every creature is in the <b>Collection Book</b> (C) with a live demo. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
     ['Growing', 'The floor starts small (12 x 8). Place <b>Floor Tiles</b> (slot 8) on empty ground beside it and throw them Wood and Stone (and Iron after the 28th) to turn them into floor. The Stockpile never moves.'],
     ['Spells', 'Spells need no unlocking: a pair is the two element packets fused at an Elemental Forge, a triple needs its two parent pairs to have been made once, and the Nova needs all four triples. The <b>Collection Book</b> (button beside the Skill Tree, or <b>C</b>) lists every spell and creature with a live demo, its recipe and its numbers.'],
@@ -892,14 +877,14 @@ UI.howPage = function (tab) {
     const uses = {
       wood: 'Every building, belts (1 each), Cauldron brews',
       stone: 'Every building, Armor',
-      iron: 'Forge, Anvil, Station, Charger, Battery Bench, Altar, Batteries, Armor, Floor Tiles after the 28th',
+      iron: 'Forge, Anvil, Battery, Heavy Battery, Altar, Armor, Floor Tiles after the 28th',
       shard: 'Rare: only from landmarks and elites. Summoning Altar, Boss Sigil',
       core: 'Once per Stronghold per save. Costs of Summoning',
       sigil: 'Spell Portal: summons the Primal Chimera beside the Wizard',
-      air: 'Spell Portal: Air Gust. Skill Portal: currency. Charger fuel, recipes',
-      water: 'Spell Portal: Water Spray. Skill Portal: currency. Charger fuel, recipes',
-      fire: 'Spell Portal: Fireball. Skill Portal: currency. Charger fuel, recipes',
-      earth: 'Spell Portal: Boulder. Skill Portal: currency. Charger fuel, recipes',
+      air: 'Spell Portal: Air Gust. Skill Portal: currency. Battery fuel, recipes',
+      water: 'Spell Portal: Water Spray. Skill Portal: currency. Battery fuel, recipes',
+      fire: 'Spell Portal: Fireball. Skill Portal: currency. Battery fuel, recipes',
+      earth: 'Spell Portal: Boulder. Skill Portal: currency. Battery fuel, recipes',
     };
     body = '<div class="uses">' + Object.keys(uses).map(k => '<div>' + UI.img(k, 32) + '<b>' + itemName(k) + '</b><span>' + uses[k] + '</span></div>').join('') + '</div>';
     const byM = {};

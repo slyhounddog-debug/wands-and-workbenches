@@ -17,18 +17,18 @@ const CFG = {
   buffer: 3,
   fuelPerPacket: 15, fuelCap: 120,
   starterSplit: 25,           // the starting Splitter: % of the Air packets that go straight to the Spell Portal (the rest, 75%, feed the Spawner)
-  chargeBonus: 0.10,          // every packet burns this much longer in a Charger (+10% charge)
+  chargeBonus: 0.10,          // every packet burns this much longer in a Battery (+10% charge)
   chargeThrowBonus: 0.20,     // ...and a packet thrown in by hand adds this much on top (+20%)
-  batteryMax: 90, stationGen: 10,
+  batteryMax: 90, stationGen: 10,   // a Battery building holds batteryMax charge and gives stationGen power while it has any
   batteryLife: 60,            // seconds a Battery lasts at a full 10 power of draw; it drains in proportion to the load it carries
-  chargeTipAt: 0.5,           // the first time a Battery falls below this fraction, hint at the Charger
+  chargeTipAt: 0.5,           // the first time a Battery falls below this fraction, hint that it can be fed packets, Wood or Stone
   chargeBase: 60, chargeBoost: 1.33,
   swapHold: 1.5, swapCooldown: 5,
   builder: { speed: 5.5, accel: 42, friction: 34, radius: 0.24 },
   reach: 1.75, pickRepeat: 0.2,
   autoPick: { r: 1.0, delay: 0.7, gap: 0.12 },   // a slight pickup range: loose items that have settled within r tiles hop into the hands, one every gap seconds (r 0 = off); delay = seconds after landing
   tipRadius: 3.5,            // building info panels only show within this many tiles of the Builder (or when hovered)
-  portalAlpha: 0.425,        // how solid the Spell / Skill Portals are drawn (they are see-through; 15% more than the old 0.5)
+  portalAlpha: 0.25,         // how solid the Spell / Skill Portals are drawn (they are see-through)
   stockFlight: { gap: 0.12, baseT: 0.6, perTile: 0.05, maxT: 1.6 },   // what the Wizard sends to the Stockpile flies out of the Spell Portal: seconds between items, flight time = baseT + perTile x distance (capped)
   inputBuffer: 0.1,         // pick / use / place / roll presses that can't happen yet keep trying this long
   sweepRepeat: 0.07,         // holding pick sweeps up identical nearby items this fast
@@ -39,11 +39,12 @@ const CFG = {
   throwRange: 6.5, throwRepeat: 0.15,
   portalGap: 0.22,
   portalCatch: 1.35,         // a throw that lands within this many tiles of a portal that takes it is pulled in, so nothing piles up on the floor beside it
+  catchR: 0.7,               // the same grace for every building and blueprint that is taking the item: a throw that lands within this many tiles of its tile goes in instead of onto the floor
   suck: { baseT: 0.3 },       // Spell Portal intake animation: seconds the item spends being slurped in (then it arcs out of the factory: arc.outT)
   arc: { outT: 0.24, inT: 0.42, h: 90 },   // deliveries cross the split: seconds rising out of the factory's top-right corner, seconds sailing in from the wilds' top-left onto the Wizard, extra arc height (px)
   thump: 0.36,                // a Forge / Cauldron that finishes a craft thumps (squash and stretch) this long and puffs exhaust in its elements' colours
   boing: { T: 0.55, h: 2.6, back: 0.55, min: 1.2, max: 2.8 },   // a rejected throw springs back toward the Builder: flight time, arc height, share of the way back (clamped to min..max tiles)
-  // throwing a combo spell (2 / 3 / 4 elements) or an Elixir into a Battery Station that holds a Battery overcharges it: it fills by this share of a
+  // throwing a combo spell (2 / 3 / 4 elements) or an Elixir into a Battery overcharges it: it fills by this share of a full
   // Battery (up to max x a full one) and gives +power for that many seconds
   overcharge: { fill: [0, 0, 0.35, 0.6, 1], time: [0, 0, 12, 20, 30], elixir: 0.45, elixirT: 15, max: 1.5, power: 5 },
   pressure: { hit: 0.18, speed: 10, life: 1.4, range: 11, amp: 6 },   // Spell Portal shockwaves: the Wizard losing this share of max HP in one hit (also events, Wardens, the Chimera), front speed (tiles/s), seconds, reach (tiles), most jitter (px)
@@ -134,8 +135,8 @@ const CFG = {
     steerProbe: 1.6,           // look-ahead for water when steering
   },
   ward: { dwell: 0.7, hold: 4 },   // the quick wardrobe drawer: a cursor resting this long on an augment wears it; the drawer tucks itself away after this many idle seconds
-  overdrive: 0.15,           // a charged Battery Station right beside a Forge or Cauldron: +15% crafting speed
-  heavyBattery: 0.5,          // Heavy Batteries node: a Station's Battery lasts 50% longer
+  overdrive: 0.15,           // a charged Battery right beside a Forge or Cauldron: +15% crafting speed
+  heavyBattery: 0.5,          // a Heavy Battery drains this much slower than a Battery, so it lasts 50% longer
   crateCap: 30,
   pickups: {
     potion: { heal: 35 }, elixir: { heal: 80 },
@@ -151,10 +152,10 @@ const CFG = {
                 desc: 'Fuses element packets into combo spells (each spell is unlocked separately). Press E at it to switch recipe.' },
     anvil:    { name: 'Armor Anvil', kind: 'crafter', cost: { wood: 6, stone: 8, iron: 4 }, unlock: 'armory',
                 desc: 'Hammers Iron Ore + Stone, heated by a Fire Ember, into Armor for the Wizard.' },
-    station:  { name: 'Battery Station', kind: 'station', cost: { wood: 8, stone: 6, iron: 4 }, unlock: null,
-                desc: 'A charged Battery here generates +10 power for the whole factory. Drains while anything needs power. Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed. Throw a combo spell or an Elixir in to overcharge it (extra charge, +5 power for a while).' },
-    charger:  { name: 'Battery Charger', kind: 'charger', cost: { wood: 8, stone: 4, iron: 4 }, unlock: null,
-                desc: 'Recharges a Battery by burning element packets, Wood or Stone as fuel (16.5s each, 19.5s when thrown in by hand). More kinds = faster. Uses no electricity.' },
+    battery:  { name: 'Battery', kind: 'cell', cost: { wood: 8, stone: 6, iron: 4 }, unlock: null,
+                desc: 'Gives +10 power to the whole factory while it has charge, and drains while anything needs power. Feed it element packets, Wood or Stone (belt or throw) and it burns them to charge itself (16.5s each, 19.5s when thrown in by hand; more kinds at once = faster). Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed. Throw a combo spell or an Elixir in to overcharge it (extra charge, +5 power for a while).' },
+    heavybat: { name: 'Heavy Battery', kind: 'cell', cost: { wood: 14, stone: 10, iron: 8 }, unlock: 'heavy',
+                desc: 'A Battery with a heavy core: the same power and the same charging, but it drains 33% slower, so a charge lasts 50% longer. Unlocked by Heavy Batteries in the Skill Tree.' },
     expand:   { name: 'Floor Tile', kind: 'expand', cost: { wood: 1, stone: 1 }, unlock: null,
                 desc: 'Place it on the edge of the floor and throw its Wood and Stone at it (from the 29th tile on, 1 Iron too): when it is finished the tile becomes factory floor. The Stockpile never moves.' },
     splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 2, stone: 1 }, unlock: 'logistics',
@@ -163,8 +164,6 @@ const CFG = {
                 desc: 'Holds up to 30 packets, spells or pickups (never raw resources) and feeds them out of its arrow side, one at a time.' },
     spawner:  { name: 'Creature Spawner', kind: 'crafter', cost: { wood: 10, stone: 8, iron: 3, shard: 1 }, unlock: null,
                 desc: 'Hatches a creature Egg from the element packets fed into it: one element = a basic creature, two = a pair, three = a triple. E switches recipe. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. Costs an Aether Shard to build (the starting one is free).' },
-    bench:    { name: 'Battery Bench', kind: 'crafter', cost: { wood: 6, stone: 4, iron: 2 }, unlock: null,
-                desc: 'Builds Batteries by hand, no power needed: throw 2 Iron Ore in, then stand beside it and tap E to hammer the Battery together. The Builder does the work, so the factory can always get its first power back. The new Battery is flat: charge it at a Charger.' },
     altar:    { name: 'Summoning Altar', kind: 'crafter', cost: { stone: 14, iron: 7, shard: 6 }, unlock: 'summon',
                 desc: 'Binds an Elemental Nova and Aether Shards into a Boss Sigil. Send the Sigil through the Spell Portal to summon the Primal Chimera.' },
   },
@@ -173,7 +172,7 @@ const CFG = {
   // hotbar slots: 'hand', 'belt' or a family (members cycle with Q / the wheel over the slot / pad right-trigger)
   families: {
     craft:   { name: 'Crafters',   members: ['cauldron', 'forge', 'anvil', 'altar'] },
-    power:   { name: 'Power',      members: ['station', 'charger', 'bench'] },
+    power:   { name: 'Power',      members: ['battery', 'heavybat'] },
     logi:    { name: 'Logistics',  members: ['splitter', 'crate'] },
     spawn:   { name: 'Creature Spawner', members: ['spawner'] },
   },
@@ -186,7 +185,6 @@ const CFG = {
     armor:        { machine: 'anvil',    in: { iron: 2, stone: 1, fire: 1 },   out: 'armor',   time: 7,  power: 0, tier: 'armory', use: '+35 armor for the Wizard' },
     plate:        { machine: 'anvil',    in: { iron: 3, stone: 2, fire: 1, earth: 1 }, out: 'plate', time: 11, power: 2, tier: 'armory', use: '+70 armor for the Wizard' },
     sigil:        { machine: 'altar',    in: { nova: 1, shard: 5 },             out: 'sigil',   time: 12, power: 6, tier: 'summon', use: 'Summons the Primal Chimera beside the Wizard' },
-    battery:      { machine: 'bench', in: { iron: 2 },               out: 'battery',      time: 8,  power: 0, hand: true, use: 'Hammered together by hand at the Bench. Charge it, then slot it into a Station for power' },
     flamethrower: { machine: 'forge', in: { air: 1, fire: 1 },       out: 'flamethrower', time: 8,  power: 5 },
     steam:        { machine: 'forge', in: { fire: 1, water: 1 },     out: 'steam',        time: 8,  power: 5 },
     sandstorm:    { machine: 'forge', in: { air: 1, earth: 1 },      out: 'sandstorm',    time: 8,  power: 5 },
@@ -209,7 +207,7 @@ const CFG = {
     { id: 'forge',     col: 0, icon: 'b:forge',    name: 'Elemental Forge', xp: 90, req: [], pay: { air: 15, water: 15, fire: 15 }, desc: 'Unlock the Elemental Forge. Each combo spell is then unlocked on its own.' },
     { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 68, req: [], pay: { air: 18, fire: 30, earth: 20 }, desc: 'Unlock the Armor Anvil: armor pickups for the Wizard.' },
     { id: 'logistics', col: 0, icon: 'b:splitter', name: 'Logistics',       xp: 60, req: [], pay: { air: 20, water: 20, fire: 20 }, desc: 'Unlock the Splitter and the Storage Crate.' },
-    { id: 'heavy',     col: 0, icon: 'battery',    name: 'Heavy Batteries', xp: 120, req: [], pay: { air: 25, water: 25, fire: 30, earth: 30, magma: 2 }, desc: 'Batteries in a Station last 50% longer before they run flat. You still haul them by hand.' },
+    { id: 'heavy',     col: 0, icon: 'battery',    name: 'Heavy Batteries', xp: 120, req: [], pay: { air: 25, water: 25, fire: 30, earth: 30, magma: 2 }, desc: 'Unlock the Heavy Battery: a Battery building that drains 33% slower, so each charge lasts 50% longer.' },
     { id: 'summon',   col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: [], pay: { air: 40, water: 40, fire: 40, earth: 40 }, core: 1, desc: 'Unlock the Summoning Altar: craft a Boss Sigil and face the Primal Chimera. Needs a Warden Core from a Stronghold. Beat it to win.' },
     // col 2: Upgrades — many small tiers, cheap first, steep last
     { id: 'swift',   col: 2, icon: 'ic_fast', name: 'Swift Harnessing', per: '+12.5% harnesser speed',
@@ -470,7 +468,6 @@ const ITEMS = {};
 (function () {
   for (const k in RES) ITEMS[k] = { name: RES[k].name, res: true, color: RES[k].color };
   for (const k in ELEM) ITEMS[k] = { name: ELEM[k].name, elem: true, color: ELEM[k].color };
-  ITEMS.battery = { name: 'Battery', color: '#3ad06b', stack: 1 };
   ITEMS.potion = { name: 'Health Potion', pickup: true, color: '#ff4a6a' };
   ITEMS.elixir = { name: 'Greater Elixir', pickup: true, color: '#ff8ad8' };
   ITEMS.armor = { name: 'Armor Plate', pickup: true, color: '#b8c8e0' };
@@ -479,7 +476,7 @@ const ITEMS = {};
   for (const id in CFG.creatures) ITEMS['egg_' + id] = { name: CFG.creatures[id].name + ' Egg', egg: true, creature: id, color: CFG.creatures[id].col };
   for (const k in CFG.recipes) {
     const r = CFG.recipes[k];
-    if (r.machine === 'forge' && r.out !== 'battery') ITEMS[r.out] = { name: SPELLS[r.out], spell: true, color: SPELL_COL[r.out] };
+    if (r.machine === 'forge') ITEMS[r.out] = { name: SPELLS[r.out], spell: true, color: SPELL_COL[r.out] };
   }
 })();
 const itemName = k => (ITEMS[k] ? ITEMS[k].name : k);
@@ -500,7 +497,7 @@ for (const k in CFG.recipes) { const r = CFG.recipes[k]; if (ITEMS[r.out] && ITE
 // credit: {building: n} free placements, pickup: [kinds] potions / armor that drop beside the Wizard }). `icon` is a sprite key.
 //  - `done(g)` is a plain check; `prog(g)` -> [have, need] draws the bar.
 //  - `stat(g)` + `n`: a lifetime counter that must grow by n SINCE the goal started (the baseline is stored in G.qbase), so
-//    practice goals ("charge 3 Batteries") really ask for fresh work. The bar is automatic.
+//    practice goals ("top a Battery up 3 times") really ask for fresh work. The bar is automatic.
 //  - `hint` tells main.js what to point at: a pile, a portal, a building to use or build (`make`), the skill tree, the nearest
 //    tree / landmark / forage spot in the wilds, or the boss.
 //  - `from` = the index of the goal in the old single chain (v4) this one continues, so older saves land in the right place
@@ -516,7 +513,7 @@ const QUESTS = {
     { from: 3,  v5: 2,  icon: 'ic_portal', text: 'Throw (right-click / pad B) a packet into the Spell Portal', xp: 3, done: g => g.flags.portalHand, hint: { portal: 'spell' } },
     { from: 5,  v5: 3,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, done: g => (g.bankTotal || 0) >= 5, prog: g => [g.bankTotal || 0, 5], hint: { portal: 'skill' } },
     { from: 6,  v5: 4,  icon: 'b:air', text: 'Build a second Harnesser: press 3, click a tile, then throw Wood & Stone at it', xp: 8, done: g => FA.count('harness') >= 2, hint: { build: 'harness' } },
-    { from: 7,  v5: 5,  icon: 'battery', text: 'Recharge the spare Battery: throw Air packets (or Wood or Stone) at the Charger', xp: 10, done: g => !!g.flags.recharged, hint: { make: 'charger' } },
+    { from: 7,  v5: 5,  icon: 'battery', text: 'Feed the Battery: throw Air packets (or Wood or Stone) at it so it never runs flat', xp: 10, done: g => !!g.flags.fed, hint: { make: 'battery' } },
     { icon: 'egg_zephyr', text: 'Hatch Air creatures: send 3 Zephyr Wisp Eggs through the Spell Portal', xp: 8, stat: g => (g.stats.sent || {}).egg_zephyr || 0, n: 3, hint: { make: 'spawner' } },
     { v5: 6,  icon: 'b:water', text: 'Switch a Harnesser to Water: press F beside it. The new crystal grows for 15 seconds', xp: 8, gift: { bank: { water: 4 } }, done: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
     { from: 11, v5: 8,  icon: 'potion', text: 'Unlock Alchemy (T), brew a Health Potion from Water and send it through the Spell Portal', xp: 12, done: g => g.flags.sent_potion, hint: { make: 'cauldron' } },
@@ -524,10 +521,10 @@ const QUESTS = {
     { icon: 'egg_puddle', text: 'Hatch a Puddle Slime: Water into a Spawner (E picks the recipe), then send the Egg', xp: 10, stat: g => (g.stats.sent || {}).egg_puddle || 0, n: 1, hint: { make: 'spawner' } },
     { icon: 'egg_cinder', text: 'Hatch a Cinder Imp: set a Harnesser to Fire, feed a Spawner, send the Egg', xp: 10, gift: { bank: { fire: 4 } }, stat: g => (g.stats.sent || {}).egg_cinder || 0, n: 1, hint: { make: 'spawner' } },
     { from: 12, v5: 10, icon: 'b:forge', text: 'Unlock the Forge (T) and build it: it fuses element packets into combo spells', xp: 12, done: g => FA.count('forge') >= 1, hint: { make: 'forge' } },
-    { v5: 11, icon: 'battery', text: 'Build a Battery Bench, throw 2 Iron in and tap E to hammer out a Battery', xp: 8, stat: g => (g.stats.made || {}).battery || 0, n: 1, hint: { make: 'bench' } },
-    { v5: 12, icon: 'ic_bolt', text: 'Charge 3 Batteries: swap flat ones into the Charger and feed it packets', xp: 15, gift: { credit: { station: 1 } }, stat: g => g.stats.charged || 0, n: 3, hint: { make: 'charger' } },
+    { v5: 11, icon: 'battery', text: 'Build a second Battery: press 5, click a tile, then throw Wood, Stone & Iron at it', xp: 8, done: g => FA.count('battery') + FA.count('heavybat') >= 2, hint: { build: 'battery' } },
+    { v5: 12, icon: 'ic_bolt', text: 'Keep the power on: top a Battery up to full 3 times with packets, Wood or Stone', xp: 15, gift: { credit: { battery: 1 } }, stat: g => g.stats.charged || 0, n: 3, hint: { make: 'battery' } },
     { from: 13, v5: 13, icon: 'flamethrower', text: 'Craft a combo spell at the Forge (press E to pick Air + Fire, Air + Water...) and deliver it', xp: 15, gift: { bank: { air: 3, fire: 3 } }, done: g => g.flags.combo, hint: { combo: 2 } },
-    { v5: 14, icon: 'ic_fast', text: 'Overdrive: put a charged Battery Station right beside a Forge or Cauldron', xp: 12, done: g => G.fac.bld.some(b => b.done && b.od), hint: { make: 'station' } },
+    { v5: 14, icon: 'ic_fast', text: 'Overdrive: put a charged Battery right beside a Forge or Cauldron', xp: 12, done: g => G.fac.bld.some(b => b.done && b.od), hint: { make: 'battery' } },
     { v5: 15, icon: 'steam', text: 'Deliver 6 combo spells to the Wizard (two or more elements each)', xp: 15, gift: { stock: { shard: 1 } }, stat: g => g.stats.combos || 0, n: 6, hint: { combo: 2 } },
     { from: 15, v5: 16, icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter to route packets', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && b.type === 'splitter'), hint: { make: 'splitter' } },
     { from: 16, v5: 17, icon: 'armor', text: 'Unlock the Armory and send Armor to the Wizard (it needs Fire packets)', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'anvil' } },

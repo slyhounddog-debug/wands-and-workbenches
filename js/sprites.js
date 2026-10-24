@@ -242,13 +242,6 @@ task(() => {
     poly(x, [[cx - 9, cy - 12], [cx + 8, cy - 13], [cx + 7, cy - 14], [cx - 6, cy - 14]], '#b8b8c8');
     x.fillStyle = '#ff9a3a'; x.fillRect(cx + 4, cy - 4, 2, 2);
   });
-  bsprite('b_bench', (x, cx, cy) => {   // the Battery Bench: a plank workbench with a vise and a green cell clamped in it
-    isoBox(x, cx, cy, 9, 5, '#c28a52', '#98683a', '#7a5128');
-    isoBox(x, cx, cy - 5, 9, 2, '#d8a468', '#a87440', '#8a5c30');
-    isoBox(x, cx + 3, cy - 7, 3, 4, '#3c9e5a', '#2e7a46', '#245f38');
-    x.fillStyle = '#8ee0a6'; x.fillRect(cx + 2, cy - 12, 3, 1); x.fillStyle = '#ffe36b'; x.fillRect(cx + 3, cy - 14, 1, 2);
-    x.fillStyle = '#5a5a66'; x.fillRect(cx - 7, cy - 10, 4, 1); x.fillStyle = '#7a4a22'; x.fillRect(cx - 6, cy - 9, 1, 4);
-  });
   bsprite('b_forge', (x, cx, cy) => {
     isoBox(x, cx, cy, 9, 12, '#6a5a63', '#4a3d46', '#3a2f38');
     isoBox(x, cx + 3, cy - 6, 3, 8, '#585058', '#3c353c', '#2e282e');
@@ -256,16 +249,19 @@ task(() => {
     poly(x, [[cx - 6, cy - 3], [cx - 3, cy - 1.5], [cx - 3, cy - 4], [cx - 6, cy - 6]], '#ffe36b');
     x.fillStyle = '#d1c7cf'; x.fillRect(cx - 2, cy - 15, 5, 1);
   });
-  bsprite('b_station', (x, cx, cy) => {
+  bsprite('b_battery', (x, cx, cy) => {   // a Battery: a green cell housing with a terminal plate and a white cap (the charge cell floats above it, drawn per frame)
     isoBox(x, cx, cy, 9, 8, '#8ee0a6', '#3c9e5a', '#2e7a46');
     poly(x, [[cx + 2, cy - 1], [cx + 7, cy - 3.5], [cx + 7, cy - 7], [cx + 2, cy - 4.5]], '#1c2a20');
     poly(x, [[cx + 3, cy - 2.3], [cx + 6, cy - 3.8], [cx + 6, cy - 6], [cx + 3, cy - 4.5]], '#3ad06b');
     isoBox(x, cx, cy - 8, 3, 3, '#e8e8e8', '#b0b0b0', '#909090');
   });
-  bsprite('b_charger', (x, cx, cy) => {
-    isoBox(x, cx, cy, 9, 7, '#ffe7a0', '#c79b2a', '#a07a1c');
-    isoBox(x, cx, cy - 7, 5, 3, '#5a5a66', '#3c3c46', '#2e2e38');
-    poly(x, [[cx - 1, cy - 20], [cx + 3, cy - 14], [cx, cy - 14], [cx + 2, cy - 9], [cx - 3, cy - 15], [cx, cy - 15]], '#ffe83a');
+  bsprite('b_heavybat', (x, cx, cy) => {   // a Heavy Battery: a steel housing with a thick bolted band, taller, a gold terminal
+    isoBox(x, cx, cy, 9, 11, '#9aa4b8', '#5e6a84', '#485470');
+    poly(x, [[cx - 8, cy - 3], [cx, cy + 1], [cx, cy - 1], [cx - 8, cy - 5]], '#2e3648');
+    poly(x, [[cx, cy + 1], [cx + 8, cy - 3], [cx + 8, cy - 5], [cx, cy - 1]], '#232a3a');
+    poly(x, [[cx + 2, cy - 4], [cx + 7, cy - 6.5], [cx + 7, cy - 9.5], [cx + 2, cy - 7]], '#1c2a20');
+    poly(x, [[cx + 3, cy - 5.3], [cx + 6, cy - 6.8], [cx + 6, cy - 8.5], [cx + 3, cy - 7]], '#ffd23a');
+    isoBox(x, cx, cy - 11, 4, 3, '#f0f0f0', '#b0b0b0', '#909090');
   });
   bsprite('b_splitter', (x, cx, cy) => {
     isoBox(x, cx, cy, 9, 4, '#8a8fb0', '#5e6280', '#4a4e68');

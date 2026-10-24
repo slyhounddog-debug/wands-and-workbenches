@@ -41,14 +41,15 @@ FA.shrineBoost = b => {
 FA.cycle = b => CFG.harness[b.el].cycle / (1 + CFG.upgrade.swift * lvl('swift')) / FA.shrineBoost(b);
 // a Harnesser makes nothing while its crystal grows (CFG.harness.growT s after every switch) or shakes (shakeT s once it is grown)
 FA.growing = b => b.grow < CFG.harness.growT || b.shake > 0;
-// a Battery holds batteryLife seconds at stationGen power; Heavy Batteries hold 50% more. pw = the power this one battery carries
-FA.drain = pw => pw * CFG.batteryMax / (CFG.batteryLife * CFG.stationGen) / (G.tree.heavy ? 1 + CFG.heavyBattery : 1);
-// seconds left in a Station's Battery at its current load (or at full load while nothing draws)
-FA.life = b => b.bat / FA.drain(G.fac.perBat > 0 ? G.fac.perBat : CFG.stationGen);
-// Adjacency Overdrive: a Forge or Cauldron with a charged Battery Station on one of its four sides crafts faster
+// a Battery holds batteryLife seconds at stationGen power; a Heavy Battery drains slower and lasts 50% longer. pw = the power this one battery carries
+FA.drain = (pw, b) => pw * CFG.batteryMax / (CFG.batteryLife * CFG.stationGen) / (b && b.type === 'heavybat' ? 1 + CFG.heavyBattery : 1);
+// seconds left in a Battery at its current load (or at full load while nothing draws)
+FA.life = b => b.bat / FA.drain(G.fac.perBat > 0 ? G.fac.perBat : CFG.stationGen, b);
+FA.isCell = b => !!b && typeof b === 'object' && !!b.type && !!CFG.buildings[b.type] && CFG.buildings[b.type].kind === 'cell';
+// Adjacency Overdrive: a Forge or Cauldron with a charged Battery on one of its four sides crafts faster
 FA.overdrive = function (b) {
   if (b.type !== 'forge' && b.type !== 'cauldron') return false;
-  return DIRS.some(d => { const c = FA.cell(b.x + d[0], b.y + d[1]); return !!c && c.type === 'station' && c.done && c.bat > 0; });
+  return DIRS.some(d => { const c = FA.cell(b.x + d[0], b.y + d[1]); return !!c && FA.isCell(c) && c.done && c.bat > 0; });
 };
 FA.def = b => CFG.buildings[b.type];
 FA.count = type => G.fac.bld.filter(b => b.type === type && b.done).length;
@@ -86,8 +87,7 @@ FA.initial = function () {
   FA.setLand(B.x0, B.y0, B.w, B.h);
   FA.setPortals(B.x0 + B.w - 1, B.y0 + 1);
   const ox = B.x0, oy = B.y0, sy = oy + 1;   // the base rectangle's own coordinates (the Stockpile fills its south-west 5x5, rows 3-7)
-  const st = FA.makeBuilding('station', ox + 1, oy + 1, true, false, 0); st.bat = CFG.batteryMax;   // a full Battery already inside
-  FA.makeBuilding('charger', ox + 3, oy + 1, true, false, 0).bat = 0;   // a spare, flat Battery waits in the Charger
+  FA.makeBuilding('battery', ox + 5, oy + 7, true, false, 0).bat = CFG.batteryMax;   // the one Battery: just south of the Stockpile, full
   // one Air Harnesser, 2 belts, then a free Splitter beside the portals, turned north at 90 degrees: pink side A = east (2 belts straight
   // into the Spell Portal's top cell), cyan side B = south (a Creature Spawner, Zephyr Wisps, then 2 belts into the lower cell)
   const sx = ox + B.w - 4;
@@ -123,9 +123,8 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   const f = G.fac, d = CFG.buildings[type];
   const b = { id: f.nextId++, type, x, y, dir: dir || 0, done: !!done, free: !!free, got: {}, out: [], timer: 0,
     powered: true, draw: 0, pop: 0, anim: Math.random() * 6 };
-  if (d.kind === 'crafter') { b.recipe = null; b.inv = {}; b.prog = 0; b.hand = 0; }   // hand: how far the Builder has hammered a hand recipe (the Battery Bench)
-  if (d.kind === 'station') b.bat = null;
-  if (d.kind === 'charger') { b.bat = null; b.fuel = { air: 0, water: 0, fire: 0, earth: 0, wood: 0, stone: 0 }; b.types = []; }
+  if (d.kind === 'crafter') { b.recipe = null; b.inv = {}; b.prog = 0; }
+  if (d.kind === 'cell') { b.bat = 0; b.over = 0; b.top = false; b.fuel = { air: 0, water: 0, fire: 0, earth: 0, wood: 0, stone: 0 }; b.types = []; }   // bat = charge, fuel = what is waiting to burn, top = it was topped up lately (counts once per charge)
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
   if (d.kind === 'harness') { b.hand = 0; b.el = 'air'; b.grow = CFG.harness.growT; b.shake = 0; }   // hand: how far the Builder has cranked the next packet (it stays when he walks away); el / grow: the element crystal and how far it has grown
   if (d.kind === 'splitter') { b.pct = {}; b.filt = {}; b.outs = []; b.ins = []; b.sig = null; b.acc = {}; b.src = {}; }
@@ -203,19 +202,19 @@ FA.say = a => { if (a.ic) FA.ipop(G.bd.x, G.bd.y - 0.3, a.ic.map(k => [k])); els
 FA.top = () => (G.hands.length ? G.hands[G.hands.length - 1] : null);
 FA.topKind = () => { const t = FA.top(); return t ? t.kind : null; };
 FA.canHold = () => G.hands.length < FA.cap();
-FA.addHands = function (k, n, charge) {
-  for (let i = 0; i < n; i++) G.hands.push(k === 'battery' ? { kind: k, charge: charge || 0 } : { kind: k });
+FA.addHands = function (k, n) {
+  for (let i = 0; i < n; i++) G.hands.push({ kind: k });
 };
 FA.takeOne = function () {
   const it = G.hands.pop();
-  return it ? { kind: it.kind, charge: it.charge } : null;
+  return it ? { kind: it.kind } : null;
 };
-FA.dropAt = function (kind, x, y, charge) {
+FA.dropAt = function (kind, x, y) {
   const a = Math.random() * 6.283, r = Math.random() * 0.25;
-  G.fac.floor.push({ kind, charge, x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, z: 0.4, vz: 2.5, t: 0 });
+  G.fac.floor.push({ kind, x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, z: 0.4, vz: 2.5, t: 0 });
 };
 FA.dropHands = function () {   // never deletes: everything lands on the floor at the Builder's feet
-  while (G.hands.length) { const it = FA.takeOne(); FA.dropAt(it.kind, G.bd.x, G.bd.y, it.charge); }
+  while (G.hands.length) { const it = FA.takeOne(); FA.dropAt(it.kind, G.bd.x, G.bd.y); }
 };
 FA.stash = function () {       // resources back to the Stockpile; anything else lands on the floor
   if (!G.hands.length) return;
@@ -225,7 +224,7 @@ FA.stash = function () {       // resources back to the Stockpile; anything else
 FA.pickFloor = function (it) {   // one item per press (hold to keep grabbing)
   const f = G.fac, i = f.floor.indexOf(it);
   if (i < 0 || !FA.canHold(it.kind)) return;
-  FA.addHands(it.kind, 1, it.charge);
+  FA.addHands(it.kind, 1);
   f.floor.splice(i, 1);
   AU.sfx('pickup'); G.bd.squash = 0.2;
 };
@@ -276,9 +275,9 @@ FA.demolish = function (x, y, force) {
       if (c.free) G.credits[c.type] = (G.credits[c.type] || 0) + 1;
       else { const cost = FA.def(c).cost; for (const k in cost) G.stock[k] += cost[k]; }
     } else for (const k in c.got) G.stock[k] += c.got[k];
-    for (const o of c.out) FA.dropAt(o.kind, cx, cy, o.charge);
+    for (const o of c.out) FA.dropAt(o.kind, cx, cy);
     if (c.inv) for (const k in c.inv) { if (RES[k]) G.stock[k] += c.inv[k]; else for (let i = 0; i < c.inv[k]; i++) FA.dropAt(k, cx, cy); }
-    if (c.bat != null) FA.dropAt('battery', cx, cy, c.bat);
+    if (c.fuel) for (const k in c.fuel) { const n = Math.floor(c.fuel[k] / CFG.fuelPerPacket); if (RES[k]) G.stock[k] += n; else for (let i = 0; i < n; i++) FA.dropAt(k, cx, cy); }   // what was waiting to burn comes back
     f.bld.splice(f.bld.indexOf(c), 1);
     if (c.type === 'expand') f.added = Math.max(0, f.added - 1);   // an unfinished Floor Tile never counted
   }
@@ -291,7 +290,7 @@ FA.demolish = function (x, y, force) {
 };
 
 // ---------- recipes ----------
-// Production is the only gate for spells and creatures: a recipe needs its tree node only when it has a tier (potions, armor, the Sigil, the Battery),
+// Production is the only gate for spells and creatures: a recipe needs its tree node only when it has a tier (potions, armor, the Sigil),
 // and a Triple / the Nova needs its parent spells to have been MADE at least once (G.stats.made, counted from crafter output)
 FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
 FA.recipesFor = type => Object.keys(CFG.recipes).filter(id => CFG.recipes[id].machine === type && FA.recipeOk(id));
@@ -326,16 +325,12 @@ FA.canInsert = function (b, kind) {
     const need = CFG.recipes[b.recipe].in[kind];
     return !!need && (b.inv[kind] || 0) < Math.max(6, need * 3);
   }
-  if (d.kind === 'charger') {
-    if (kind === 'battery') return b.bat == null;
-    return FA.isFuel(kind) && FA.fuelTotal(b) + CFG.fuelPerPacket <= CFG.fuelCap;
-  }
-  if (d.kind === 'station') return kind === 'battery' && b.bat == null;
-  if (d.kind === 'splitter') return kind !== 'battery' && b.out.length < 2;
-  if (d.kind === 'crate') return !RES[kind] && kind !== 'battery' && b.out.length < CFG.crateCap;
+  if (d.kind === 'cell') return FA.isFuel(kind) && FA.fuelTotal(b) + CFG.fuelPerPacket <= CFG.fuelCap;
+  if (d.kind === 'splitter') return b.out.length < 2;
+  if (d.kind === 'crate') return !RES[kind] && b.out.length < CFG.crateCap;
   return false;
 };
-FA.insert = function (b, kind, charge, thrown) {
+FA.insert = function (b, kind, thrown) {
   b.pop = 0.22;
   if (!b.done) {
     b.got[kind] = (b.got[kind] || 0) + 1;
@@ -345,26 +340,17 @@ FA.insert = function (b, kind, charge, thrown) {
   const d = FA.def(b);
   if (d.kind === 'crafter') b.inv[kind] = (b.inv[kind] || 0) + 1;
   else if (FA.isLogi(b)) b.out.push({ kind });
-  if (d.kind === 'charger' && ELEM[kind]) FA.elTick(kind);   // the weather feels it, and the packet below still fuels the Charger
-  if (d.kind === 'station') {
-    b.bat = charge || 0;
-    if (b.bat <= 0) FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_x']]);
-  } else if (d.kind === 'charger') {
-    if (kind === 'battery') { b.bat = charge || 0; b.types = Object.keys(b.fuel).filter(k => b.fuel[k] > 0); }
-    else { b.fuel[kind] += CFG.fuelPerPacket * (1 + CFG.chargeBonus + (thrown ? CFG.chargeThrowBonus : 0)); if (b.bat != null && b.types.indexOf(kind) < 0) b.types.push(kind); }
+  if (d.kind === 'cell') {   // fuel waits in the Battery and burns into charge (FA.updCell)
+    if (ELEM[kind]) FA.elTick(kind);   // the weather feels it, and the packet below still fuels the Battery
+    b.fuel[kind] += CFG.fuelPerPacket * (1 + CFG.chargeBonus + (thrown ? CFG.chargeThrowBonus : 0));
+    if (b.types.indexOf(kind) < 0) b.types.push(kind);
+    G.flags.fed = true;
   }
 };
-// a Battery in hand and one in a Station / Charger trade places (nothing ever has to hit the floor)
-FA.canSwap = (b, k) => k === 'battery' && !!b && typeof b === 'object' && !!b.done && (b.type === 'station' || b.type === 'charger') && b.bat != null;
-FA.takeBat = function (b) {
-  const old = b.bat;
-  b.bat = null; b.over = 0; if (b.types) b.types = [];
-  return old;
-};
-// Overclocking: a combo spell (tier = its element count) or an Elixir thrown into a Station that holds a Battery overcharges it:
+// Overclocking: a combo spell (tier = its element count) or an Elixir thrown into a Battery overcharges it:
 // extra charge past full (up to overcharge.max) and +power for a while (b.over seconds)
 FA.overTier = k => (k === 'elixir' ? 1 : ITEMS[k] && ITEMS[k].spell && (SPELL_EL[k] || []).length >= 2 ? SPELL_EL[k].length : 0);
-FA.canOver = (b, k) => !!b && typeof b === 'object' && b.type === 'station' && !!b.done && b.bat != null && FA.overTier(k) > 0 && b.bat < CFG.batteryMax * CFG.overcharge.max;
+FA.canOver = (b, k) => FA.isCell(b) && !!b.done && FA.overTier(k) > 0 && b.bat < CFG.batteryMax * CFG.overcharge.max;
 FA.overcharge = function (b, k) {
   const O = CFG.overcharge, n = FA.overTier(k), elx = k === 'elixir';
   b.bat = Math.min(CFG.batteryMax * O.max, b.bat + CFG.batteryMax * (elx ? O.elixir : O.fill[n]));
@@ -379,10 +365,10 @@ FA.overcharge = function (b, k) {
 FA.takeOut = function (b) {   // one item per press
   if (!b.out.length || !FA.canHold(b.out[0].kind)) return;
   const o = b.out.shift();
-  FA.addHands(o.kind, 1, o.charge);
+  FA.addHands(o.kind, 1);
   AU.sfx('pickup'); G.bd.squash = 0.2;
 };
-// a Charger burns element packets, Wood and Stone alike (the same seconds per item)
+// a Battery burns element packets, Wood and Stone alike (the same seconds per item)
 FA.isFuel = k => !!ELEM[k] || k === 'wood' || k === 'stone';
 FA.fuelTotal = c => { let n = 0; for (const k in c.fuel) n += c.fuel[k]; return n; };
 
@@ -531,8 +517,8 @@ FA.pushSide = function (b, di) {
   const dd = DIRS[di], c = FA.cell(b.x + dd[0], b.y + dd[1]);
   if (!c) return false;
   if (c.type === 'portal') { if (!FA.enterPortal(c, o.kind, b.x + 0.5, b.y + 0.5)) return false; }
-  else if (c.type === 'belt') { if (c.item || o.kind === 'battery' || (c.dir + 2) % 4 === di) return false; c.item = { kind: o.kind, prog: 0, moved: true }; }
-  else if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind, o.charge); if (c.src) c.src[(di + 2) % 4] = b.id; }   // a Splitter remembers who feeds it
+  else if (c.type === 'belt') { if (c.item || (c.dir + 2) % 4 === di) return false; c.item = { kind: o.kind, prog: 0, moved: true }; }
+  else if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind); if (c.src) c.src[(di + 2) % 4] = b.id; }   // a Splitter remembers who feeds it
   else return false;
   b.out.shift();
   return true;
@@ -552,8 +538,8 @@ FA.splitConn = function (b) {
     if (c.type === 'belt') { (c.dir === back ? ins : outs).push(di); continue; }
     const k = FA.def(c).kind;
     if (k === 'splitter') (b.src[di] === c.id ? ins : outs).push(di);          // whichever splitter pushed first is upstream
-    else if (c.done && c.dir === back && k !== 'station' && k !== 'charger') ins.push(di);   // it points its output at us
-    else if (k !== 'station') outs.push(di);                                   // a Station takes nothing a Splitter carries
+    else if (c.done && c.dir === back && k !== 'cell') ins.push(di);   // it points its output at us (a Battery has no output)
+    else outs.push(di);
   }
   b.ins = ins; b.outs = outs.slice(0, 3);
   const sig = b.outs.join(',');
@@ -617,16 +603,14 @@ FA.state = function (b) {
     if (b.out.length && b.blocked) return 'jam';
     if (!b.recipe) return 'starve';
     if (b.draw > 0 && !b.powered) return 'off';
-    if (FA.crafterReady(b) !== 0) return CFG.recipes[b.recipe].hand && !(b.hand > 0) && !(G.bd.gather && G.bd.gather.b === b) ? null : 'work';   // a hand recipe that is ready waits quietly for the Builder
+    if (FA.crafterReady(b) !== 0) return 'work';
     return Object.keys(CFG.recipes[b.recipe].in).some(i => (b.inv[i] || 0) > 0) ? 'missing' : 'starve';
   }
   if (k === 'splitter') return b.out.length >= 2 ? 'full' : b.out.length ? (b.blocked ? 'jam' : 'work') : null;
   if (k === 'crate') return b.out.length >= CFG.crateCap ? 'full' : b.out.length && b.blocked ? 'jam' : null;
-  if (k === 'station') return b.bat == null ? 'starve' : b.bat <= 0 ? 'missing' : G.fac.demand > 0 ? 'work' : null;
-  if (k === 'charger') {
-    if (b.bat == null) return null;
-    if (b.bat >= CFG.batteryMax) return 'full';
-    return FA.fuelTotal(b) > 0 ? 'work' : 'starve';
+  if (k === 'cell') {   // flat with nothing to burn = starved; burning fuel into charge = working
+    if (b.bat < CFG.batteryMax && FA.fuelTotal(b) > 0) return 'work';
+    return b.bat <= 0 ? 'starve' : null;
   }
   return null;
 };
@@ -652,7 +636,7 @@ FA.wants = function (b) {
 FA.power = function () {
   const f = G.fac;
   let gen = 0;
-  for (const b of f.bld) if (b.done && b.type === 'station' && b.bat != null && b.bat > 0) gen += CFG.stationGen + (b.over > 0 ? CFG.overcharge.power : 0);
+  for (const b of f.bld) if (b.done && FA.isCell(b) && b.bat > 0) gen += CFG.stationGen + (b.over > 0 ? CFG.overcharge.power : 0);
   let budget = gen, demand = 0;
   for (const b of f.bld) {   // placement order decides who stalls first
     const w = FA.wants(b);
@@ -662,7 +646,7 @@ FA.power = function () {
   }
   // what actually gets drawn is shared evenly by every charged battery
   let used = 0, nb = 0;
-  for (const b of f.bld) { if (b.draw > 0 && b.powered) used += b.draw; if (b.done && b.type === 'station' && b.bat > 0) nb++; }
+  for (const b of f.bld) { if (b.draw > 0 && b.powered) used += b.draw; if (b.done && FA.isCell(b) && b.bat > 0) nb++; }
   f.gen = gen; f.demand = demand; f.perBat = nb ? used / nb : 0;
 };
 
@@ -682,7 +666,7 @@ FA.update = function (dt) {
   FA.power();
   if (f.demand > f.gen) {
     f.lowT -= dt;
-    if (f.lowT <= 0) { f.lowT = 16; UI.toast('Not enough power: machines are stalling! Charge a Battery.', 'L', 'ic_bolt'); }
+    if (f.lowT <= 0) { f.lowT = 16; UI.toast('Not enough power: machines are stalling! Feed a Battery, or build another.', 'L', 'ic_bolt'); }
   } else f.lowT = 0;
   for (const k in f.log) while (f.log[k].length && f.t - f.log[k][0] > 60) f.log[k].shift();
 
@@ -710,16 +694,14 @@ FA.update = function (dt) {
       b.blocked = b.out.length > 0 && !FA.tryOut(b);
       b.od = FA.overdrive(b);
       const w = FA.crafterReady(b);
-      if (w !== 0 && CFG.recipes[b.recipe].hand) {   // a hand recipe only moves when the Builder cranks it (FA.updGather finishes it): no power, no timer
-        b.prog = b.hand * CFG.recipes[b.recipe].time;
-      } else if (w !== 0) {
+      if (w !== 0) {
         if (b.powered) {
           const R = CFG.recipes[b.recipe];
           b.prog += dt * (b.od ? 1 + CFG.overdrive : 1); f.working++;
           if (b.prog >= R.time) {
             b.prog = 0;
             for (const k in R.in) b.inv[k] -= R.in[k];
-            b.out.push(R.out === 'battery' ? { kind: 'battery', charge: 0 } : { kind: R.out });
+            b.out.push({ kind: R.out });
             G.stats.made[R.out] = (G.stats.made[R.out] || 0) + 1;
             b.pop = 0.35;
             FA.burst(b.x + 0.5, b.y + 0.5, ITEMS[R.out].color, 10);
@@ -728,21 +710,8 @@ FA.update = function (dt) {
             AU.sfx('craft');
           }
         }
-      } else { b.prog = 0; b.hand = 0; }
-    } else if (d.kind === 'station') {
-      if (b.over > 0) b.over = b.bat == null ? 0 : Math.max(0, b.over - dt);
-      if (b.bat != null && f.perBat > 0 && b.bat > 0) {
-        b.bat = Math.max(0, b.bat - FA.drain(f.perBat) * dt);
-        if (b.bat === 0) FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_x']]);
-      }
-      if (b.bat != null && b.bat < CFG.batteryMax * CFG.chargeTipAt && !G.flags.chargeTip) {   // first time a Battery runs half down
-        G.flags.chargeTip = true;
-        if (!G.flags.recharged) {
-          UI.toast('Battery below half: throw element packets at the Charger to charge the next one', 'L', 'ic_bolt');
-          for (const c of f.bld) if (c.type === 'charger') FA.ipop(c.x + 0.5, c.y + 0.5, [['battery'], ['ic_bolt']]);
-        }
-      }
-    } else if (d.kind === 'charger') FA.updCharger(b, dt);
+      } else b.prog = 0;
+    } else if (d.kind === 'cell') FA.updCell(b, dt);
     else if (FA.isLogi(b)) FA.updLogi(b, dt);
     const st = FA.state(b);
     if (st === b.st) {
@@ -833,31 +802,50 @@ FA.gatherFloor = function (dt) {
     if (best && bd > 0.18) { const k = Math.min(1, 0.7 * dt / bd); o.x += (best.x - o.x) * k; o.y += (best.y - o.y) * k; }
   }
 };
-FA.updCharger = function (c, dt) {
-  if (c.bat == null || c.bat >= CFG.batteryMax) return;
-  const act = Object.keys(c.fuel).filter(k => c.fuel[k] > 0);
-  if (!act.length) return;
-  const nt = Math.max(c.types.length, act.length);
-  const dur = CFG.chargeBase / Math.pow(CFG.chargeBoost, nt - 1);
-  c.bat = Math.min(CFG.batteryMax, c.bat + CFG.batteryMax / dur * dt);
-  for (const k of act) c.fuel[k] = Math.max(0, c.fuel[k] - dt / act.length);
-  if (c.bat >= CFG.batteryMax) { G.flags.recharged = true; G.stats.charged = (G.stats.charged || 0) + 1; FA.ipop(c.x + 0.5, c.y + 0.5, [['battery'], ['ic_check']]); AU.sfx('charge'); c.pop = 0.4; }
+// a Battery: it burns the fuel waiting inside it into charge, then gives power and drains with the factory's load, all by itself
+FA.updCell = function (b, dt) {
+  const M = CFG.batteryMax;
+  if (b.over > 0) b.over = Math.max(0, b.over - dt);
+  if (b.bat < M) {
+    const act = Object.keys(b.fuel).filter(k => b.fuel[k] > 0);
+    if (act.length) {
+      const nt = Math.max(b.types.length, act.length), dur = CFG.chargeBase / Math.pow(CFG.chargeBoost, nt - 1);
+      b.bat = Math.min(M, b.bat + M / dur * dt);
+      for (const k of act) b.fuel[k] = Math.max(0, b.fuel[k] - dt / act.length);
+    }
+  }
+  if (!FA.fuelTotal(b) || FA.fuelTotal(b) < 0.01) b.types = [];
+  if (b.bat >= M && !b.top) {   // topped up (it counts once, and again only after it has run down a good way)
+    b.top = true; G.stats.charged = (G.stats.charged || 0) + 1;
+    FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_check']]); AU.sfx('charge'); b.pop = 0.4;
+  } else if (b.top && b.bat < M * 0.8) b.top = false;
+  if (G.fac.perBat > 0 && b.bat > 0) {
+    b.bat = Math.max(0, b.bat - FA.drain(G.fac.perBat, b) * dt);
+    if (b.bat === 0) FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_x']]);
+  }
+  if (b.bat < M * CFG.chargeTipAt && !G.flags.chargeTip) {   // the first time a Battery runs half down
+    G.flags.chargeTip = true;
+    if (!G.flags.fed) {
+      UI.toast('Battery below half: throw element packets, Wood or Stone at it to charge it', 'L', 'ic_bolt');
+      FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_bolt']]);
+    }
+  }
 };
 
 // ---------- throwing ----------
 // will this receiver take a thrown item of kind k? (portal / belt / building / blueprint / the Stockpile Zone)
-FA.accepts = (o, k) => (o === 'zone' ? !!(RES[k] || ELEM[k]) : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item && k !== 'battery' : FA.canInsert(o, k) || FA.canSwap(o, k) || FA.canOver(o, k));
+FA.accepts = (o, k) => (o === 'zone' ? !!(RES[k] || ELEM[k]) : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item : FA.canInsert(o, k) || FA.canOver(o, k));
 // every receiver in throwing range that would take kind k, with a priority (lower = preferred)
 FA.throwList = function (k) {
   const bd = G.bd, out = [];
   const add = (x, y, obj, prio) => { const d = Math.hypot(x - bd.x, y - bd.y); if (d >= 0.4 && d <= CFG.throwRange) out.push({ x, y, obj, prio, d }); };
   for (const p of FA.portalCells(G.fac.w, G.fac.h)) { const c = FA.cell(p.x, p.y); if (FA.portalTakes(c, k)) add(p.x + 0.5, p.y + 0.5, c, 0.8); }
   for (const b of G.fac.bld) {
-    if (FA.canInsert(b, k) || FA.canSwap(b, k)) add(b.x + 0.5, b.y + 0.5, b, b.done && FA.isLogi(b) ? 1.4 : 1);
+    if (FA.canInsert(b, k)) add(b.x + 0.5, b.y + 0.5, b, b.done && FA.isLogi(b) ? 1.4 : 1);
     else if (FA.canOver(b, k)) add(b.x + 0.5, b.y + 0.5, b, 2.6);   // overcharging is on purpose: the portal stays the first choice for spells
   }
   if (RES[k] || ELEM[k]) { const z = FA.zone(); add((z.x0 + z.x1 + 1) / 2, (z.y0 + z.y1 + 1) / 2, 'zone', 1.1); }
-  if (k !== 'battery') for (const bl of G.fac.belts) if (!bl.item) add(bl.x + 0.5, bl.y + 0.5, bl, 2.2);
+  for (const bl of G.fac.belts) if (!bl.item) add(bl.x + 0.5, bl.y + 0.5, bl, 2.2);
   return out;
 };
 // ---------- deliberate target selection (pad right stick / Tab): G.lock pins one target until it stops being valid ----------
@@ -927,9 +915,8 @@ FA.throwOne = function (aimX, aimY, cd) {
   if (!G.hands.length || bd.throwCd > 0) return false;
   const tg = FA.throwTarget(aimX, aimY);
   const it = FA.takeOne();
-  if (FA.canSwap(tg.obj, it.kind)) FA.addHands('battery', 1, FA.takeBat(tg.obj));   // the old one comes back to the hands
   const d = Math.hypot(tg.x - bd.x, tg.y - bd.y);
-  G.fac.flying.push({ kind: it.kind, charge: it.charge, sx: bd.x, sy: bd.y, x: bd.x, y: bd.y, z: 0.8, tx: tg.x, ty: tg.y, t: 0, T: 0.28 + d * 0.045, h: 0.9 + d * 0.22, fromBuilder: true });
+  G.fac.flying.push({ kind: it.kind, sx: bd.x, sy: bd.y, x: bd.x, y: bd.y, z: 0.8, tx: tg.x, ty: tg.y, t: 0, T: 0.28 + d * 0.045, h: 0.9 + d * 0.22, fromBuilder: true });
   bd.throwCd = cd || CFG.throwRepeat; bd.squash = 0.18;
   bd.fx = tg.x - bd.x || bd.fx; bd.fy = tg.y - bd.y || bd.fy;
   AU.sfx('throw');
@@ -946,11 +933,22 @@ FA.portalNear = function (x, y, kind) {
   }
   return best;
 };
+// the building or blueprint nearest to (x, y) that is taking this kind and is within CFG.catchR tiles of its tile, else null: the same small grace the
+// portals give, so a throw that comes down just beside something that wants it goes in instead of lying on the floor
+FA.catchNear = function (x, y, kind) {
+  let best = null, bd = CFG.catchR;
+  for (const b of G.fac.bld) {
+    if (!FA.canInsert(b, kind) && !FA.canOver(b, kind)) continue;
+    const d = Math.hypot(Math.max(b.x - x, 0, x - b.x - 1), Math.max(b.y - y, 0, y - b.y - 1));
+    if (d <= bd) { bd = d; best = b; }
+  }
+  return best;
+};
 // a tiny ring where a throw hits, leaning the way it was flying
 FA.impact = (o, bad) => G.fac.rings.push({ x: o.x, y: o.y, dx: o.x - o.sx, dy: o.y - o.sy, t: 0, col: bad ? '#ff6a6a' : ITEMS[o.kind].color || '#ffffff' });
 FA.land = function (o) {
   if (o.stock) { G.stock[o.kind] = (G.stock[o.kind] || 0) + (o.n || 1); FA.pileIn(o.kind); AU.sfx('drop'); UI.changed(); return; }
-  if (o.boing) { FA.dropAt(o.kind, o.x, o.y, o.charge); AU.sfx('thud'); return; }   // the end of a bounce-back: it just lands
+  if (o.boing) { FA.dropAt(o.kind, o.x, o.y); AU.sfx('thud'); return; }   // the end of a bounce-back: it just lands
   const tx = Math.floor(o.x), ty = Math.floor(o.y), c = FA.cell(tx, ty);
   const toPortal = c => {
     if (!FA.enterPortal(c, o.kind, o.x, o.y)) return false;
@@ -958,14 +956,21 @@ FA.land = function (o) {
     FA.impact(o);
     return true;
   };
-  // a throw that comes down close to a portal that takes it is pulled in, so it never lies beside the portal looking blocked
-  const fell = () => { const pc = FA.portalNear(o.x, o.y, o.kind); if (pc && toPortal(pc)) return true; FA.dropAt(o.kind, o.x, o.y, o.charge); return false; };
+  // a throw into a building / blueprint that is taking it (a Battery overcharges on a combo spell, anything else is inserted)
+  const into = b => {
+    if (FA.canOver(b, o.kind)) { FA.overcharge(b, o.kind); FA.impact(o); return true; }
+    if (FA.canInsert(b, o.kind)) { FA.insert(b, o.kind, true); FA.impact(o); AU.sfx('drop'); FA.ipop(o.x, o.y, [[o.kind]]); return true; }
+    return false;
+  };
+  // a throw that comes down close to a portal that takes it, or to a building or blueprint that wants it, is pulled in: nothing lies on the floor looking blocked
+  const near = () => { const pc = FA.portalNear(o.x, o.y, o.kind); if (pc && toPortal(pc)) return true; const nb = FA.catchNear(o.x, o.y, o.kind); return !!nb && into(nb); };
+  const fell = () => { if (near()) return true; FA.dropAt(o.kind, o.x, o.y); return false; };
   const bounce = () => {   // couldn't go in: a cartoon boing back up and over toward the Builder (never into a building)
     const B = CFG.boing, bd = G.bd, dx = bd.x - o.x, dy = bd.y - o.y, d = Math.hypot(dx, dy) || 1;
     let k = Math.max(B.min, Math.min(B.max, d * B.back)), x = o.x + dx / d * k, y = o.y + dy / d * k;
     while (k > 0.4 && FA.solid(Math.floor(x), Math.floor(y))) { k -= 0.3; x = o.x + dx / d * k; y = o.y + dy / d * k; }
     if (FA.solid(Math.floor(x), Math.floor(y))) { x = bd.x; y = bd.y; }
-    G.fac.flying.push({ kind: o.kind, charge: o.charge, sx: o.x, sy: o.y, x: o.x, y: o.y, z: 0.8, tx: x, ty: y, t: 0, T: B.T, h: B.h, boing: true });
+    G.fac.flying.push({ kind: o.kind, sx: o.x, sy: o.y, x: o.x, y: o.y, z: 0.8, tx: x, ty: y, t: 0, T: B.T, h: B.h, boing: true });
     FA.impact(o, true);
     AU.sfx('boing');
   };
@@ -974,14 +979,13 @@ FA.land = function (o) {
     return;
   }
   if (c && c.type === 'belt') {
-    if (!c.item && o.kind !== 'battery') { c.item = { kind: o.kind, prog: 0.5, moved: true }; FA.impact(o); AU.sfx('drop'); return; }
-    const pc = FA.portalNear(o.x, o.y, o.kind);
-    if (pc && toPortal(pc)) return;
-    return bounce();   // the belt is full (or it's a Battery, which belts never carry)
+    if (!c.item) { c.item = { kind: o.kind, prog: 0.5, moved: true }; FA.impact(o); AU.sfx('drop'); return; }
+    if (near()) return;
+    return bounce();   // the belt is full
   }
   if (c) {
-    if (FA.canOver(c, o.kind)) { FA.overcharge(c, o.kind); FA.impact(o); return; }
-    if (FA.canInsert(c, o.kind)) { FA.insert(c, o.kind, o.charge, true); FA.impact(o); AU.sfx('drop'); FA.ipop(o.x, o.y, [[o.kind]]); return; }
+    if (into(c)) return;
+    if (near()) return;   // it hit something that does not want it, but a neighbour that does is right there
     return bounce();
   }
   if (!FA.owned(tx, ty)) { bounce(); FA.ipop(o.x, o.y, [[o.kind], ['ic_x']]); return; }   // it came down off the edge of the floor
@@ -1049,7 +1053,7 @@ FA.distTo = function (t) {
 };
 
 FA.startGather = function (b) {
-  const el = b.recipe && CFG.recipes[b.recipe].hand ? CFG.recipes[b.recipe].out : b.el;   // a hand recipe cranks its product, a Harnesser its element
+  const el = b.el;
   G.bd.gather = { b, t: b.hand || 0, total: 1, el };   // the meter only moves when E is tapped (FA.crank); it starts from what is already cranked
   G.bd.target = null;
   AU.sfx('blip');
@@ -1060,29 +1064,14 @@ FA.crank = function () {
   if (!g) return;
   g.t += FA.tapGain(); g.b.hand = Math.min(g.t, 0.999);
   G.bd.squash = 0.15;
-  if (ELEM[g.el]) FA.eburst(g.b.x + 0.5, g.b.y + 0.5, g.el, 4); else { FA.burst(g.b.x + 0.5, g.b.y + 0.5, '#ffd23a', 5); g.b.pop = 0.2; }
+  FA.eburst(g.b.x + 0.5, g.b.y + 0.5, g.el, 4);
   AU.sfx('crank');
 };
 FA.updGather = function (dt) {
   const bd = G.bd, g = bd.gather;
   if (!g) return;
   if (G.fac.grid[g.b.y * G.fac.w + g.b.x] !== g.b) { bd.gather = null; return; }
-  const hr = g.b.recipe && CFG.recipes[g.b.recipe].hand ? CFG.recipes[g.b.recipe] : null;
-  if (hr && FA.crafterReady(g.b) === 0) { bd.gather = null; return; }   // its Iron is gone or the output is full
   bd.bob += dt * 9;
-  if (hr && g.t >= g.total) {   // the hand recipe is done: the Battery comes out flat
-    const b = g.b;
-    bd.gather = null; b.hand = 0; b.prog = 0;
-    for (const k in hr.in) b.inv[k] -= hr.in[k];
-    b.out.push(hr.out === 'battery' ? { kind: 'battery', charge: 0 } : { kind: hr.out });
-    G.stats.made[hr.out] = (G.stats.made[hr.out] || 0) + 1;
-    b.pop = 0.35; b.thump = CFG.thump;
-    FA.burst(b.x + 0.5, b.y + 0.5, ITEMS[hr.out].color, 12);
-    FA.ipop(b.x + 0.5, b.y + 0.5, [[hr.out]]);
-    AU.sfx('craft');
-    UI.changed();
-    return;
-  }
   if (g.t >= g.total) {
     bd.gather = null; g.b.hand = 0;
     if (FA.canHold(g.el)) FA.addHands(g.el, 1); else FA.dropAt(g.el, bd.x, bd.y);
@@ -1181,14 +1170,6 @@ FA.bldAction = function (b, pick) {
   if (pick) {
     if (d.kind === 'splitter') return h ? NONE : A('Set the split', () => UI.openSplit(b), false, ['ic_gear']);
     if (b.out.length) return FA.canHold(b.out[0].kind) ? A('Take ' + itemName(b.out[0].kind), () => FA.takeOut(b), true, [b.out[0].kind]) : FULL;
-    if ((d.kind === 'station' || d.kind === 'charger') && b.bat != null) {
-      if (k === 'battery') return A('Swap Battery (' + Math.round(b.bat / CFG.batteryMax * 100) + '%)', () => {
-        const it = FA.takeOne(); FA.addHands('battery', 1, FA.takeBat(b)); FA.insert(b, 'battery', it.charge);
-        AU.sfx('pickup'); G.bd.squash = 0.2; UI.changed();
-      }, false, ['battery', 'ic_swap']);
-      if (!FA.canHold('battery')) return FULL;
-      return A('Take Battery (' + Math.round(b.bat / CFG.batteryMax * 100) + '%)', () => { FA.addHands('battery', 1, FA.takeBat(b)); AU.sfx('pickup'); }, false, ['battery']);
-    }
     return NONE;
   }
   if (G.bd.gather && G.bd.gather.b === b) return A('Crank!', () => FA.crank(), false, [G.bd.gather.el]);
@@ -1200,7 +1181,6 @@ FA.bldAction = function (b, pick) {
   }
   if (d.kind === 'crafter') {
     const list = FA.recipesFor(b.type);
-    if (b.recipe && CFG.recipes[b.recipe].hand && FA.crafterReady(b) !== 0) return A('Hammer out a ' + recipeName(b.recipe) + ' (tap to fill the meter)', () => FA.startGather(b), false, [CFG.recipes[b.recipe].out]);
     if (list.length > 1) {
       const nx = list[(list.indexOf(b.recipe) + 1) % list.length];
       return A('Switch recipe to ' + recipeName(nx), () => { FA.setRecipe(b, nx); AU.sfx('blip'); }, false, ['ic_swap', CFG.recipes[nx].out]);
@@ -1237,11 +1217,11 @@ FA.harnessNear = function () {
   }
   return best;
 };
-// R on something already placed: turn the belt / building on this tile a quarter turn. Stations and Chargers have no output side.
+// R on something already placed: turn the belt / building on this tile a quarter turn. Batteries have no output side.
 FA.rotateAt = function (tx, ty) {
   const c = FA.cell(tx, ty);
   if (!c || c.type === 'portal') return false;
-  if (c.type !== 'belt') { const k = FA.def(c).kind; if (k === 'station' || k === 'charger' || k === 'splitter') return false; c.pop = 0.2; }   // a Splitter routes itself
+  if (c.type !== 'belt') { const k = FA.def(c).kind; if (k === 'cell' || k === 'splitter') return false; c.pop = 0.2; }   // a Splitter routes itself
   c.dir = (c.dir + 1) % 4;
   AU.sfx('blip'); FA.ipop(tx + 0.5, ty + 0.5, [['ic_rotate']]); UI.changed();
   return true;
@@ -1297,7 +1277,7 @@ FA.status = function (b) {
     else if (b.out.length >= CFG.buffer) s += '. BLOCKED: output full';
     else s += '. STARVED: waiting for inputs';
     if (b.out.length) s += '. ' + b.out.length + ' ready (click to take)';
-    if (b.od) s += '. OVERDRIVE +' + Math.round(CFG.overdrive * 100) + '% (Battery Station beside it)';
+    if (b.od) s += '. OVERDRIVE +' + Math.round(CFG.overdrive * 100) + '% (a charged Battery beside it)';
     return s;
   }
   if (d.kind === 'splitter') {
@@ -1306,16 +1286,14 @@ FA.status = function (b) {
     return n + ': ' + b.outs.map(o => (b.pct[o] || 0) + '% ' + dn[o] + (FA.splitHas(b, o) ? ' (' + b.filt[o].map(itemName).join(' + ') + ')' : '')).join(', ') + (b.blocked && b.out.length ? '. BLOCKED' : '') + ' (click to set)';
   }
   if (d.kind === 'crate') return n + ': ' + b.out.length + '/' + CFG.crateCap + (b.out.length ? ', next out: ' + itemName(b.out[0].kind) : ', empty') + '. Feeds its arrow side; point it at nothing to just store';
-  if (d.kind === 'station') return n + ': ' + (b.bat == null ? 'empty, insert a charged Battery' : 'Battery ' + Math.round(b.bat) + '/' + CFG.batteryMax + (b.bat > 0 ? ', +' + (CFG.stationGen + (b.over > 0 ? CFG.overcharge.power : 0)) + ' power, ' + Math.ceil(FA.life(b)) + 's left at this load' : ' (flat)') + (b.over > 0 ? '. OVERCHARGED ' + Math.ceil(b.over) + 's' : ''));
-  if (d.kind === 'charger') {
+  if (d.kind === 'cell') {
     const act = Object.keys(b.fuel).filter(k => b.fuel[k] > 0);
-    let s = n + ': ' + (b.bat == null ? 'no Battery' : 'Battery ' + Math.round(b.bat) + '/' + CFG.batteryMax);
-    s += ', fuel ' + Math.round(FA.fuelTotal(b)) + 's' + (act.length ? ' (' + act.join(', ') + ')' : '');
-    if (b.bat != null && b.bat < CFG.batteryMax && act.length) {
+    let s = n + ': charge ' + Math.round(b.bat) + '/' + CFG.batteryMax + (b.bat > 0 ? ', +' + (CFG.stationGen + (b.over > 0 ? CFG.overcharge.power : 0)) + ' power, ' + Math.ceil(FA.life(b)) + 's left at this load' : ' (flat)') + (b.over > 0 ? '. OVERCHARGED ' + Math.ceil(b.over) + 's' : '');
+    s += '. Fuel ' + Math.round(FA.fuelTotal(b)) + 's' + (act.length ? ' (' + act.join(', ') + ')' : '');
+    if (b.bat < CFG.batteryMax && act.length) {
       const nt = Math.max(b.types.length, act.length), rate = CFG.batteryMax / (CFG.chargeBase / Math.pow(CFG.chargeBoost, nt - 1));
-      s += ', ready in ' + Math.ceil((CFG.batteryMax - b.bat) / rate) + 's';
-    } else if (b.bat != null && b.bat < CFG.batteryMax) s += ', feed it element packets';
-    else if (b.bat != null) s += ', FULL';
+      s += ', full in ' + Math.ceil((CFG.batteryMax - b.bat) / rate) + 's';
+    } else if (b.bat < CFG.batteryMax) s += ': throw it element packets, Wood or Stone';
     return s;
   }
   return n;
@@ -1331,7 +1309,7 @@ FA.toJSON = function () {
       if (b.inv) { o.recipe = b.recipe; o.inv = b.inv; o.prog = b.prog; }
       if (b.bat !== undefined) o.bat = b.bat;
       if (b.fuel) { o.fuel = b.fuel; o.types = b.types; }
-      if (b.hand > 0) o.hand = Math.round(b.hand * 1000) / 1000;
+      if (b.hand > 0 && b.el) o.hand = Math.round(b.hand * 1000) / 1000;
       if (b.el) { o.el = b.el; o.grow = Math.round(b.grow * 10) / 10; }
       if (b.cost) o.cost = b.cost;
       if (b.pct) { o.pct = b.pct; o.filt = b.filt; o.sig = b.sig; }
@@ -1339,7 +1317,7 @@ FA.toJSON = function () {
       return o;
     }),
     belts: f.belts.map(b => ({ x: b.x, y: b.y, dir: b.dir, item: b.item ? b.item.kind : null })),
-    floor: f.floor.concat(f.flying.filter(o => !o.stock).map(o => ({ kind: o.kind, charge: o.charge, x: o.tx, y: o.ty }))).map(o => ({ kind: o.kind, charge: o.charge, x: o.x, y: o.y })),
+    floor: f.floor.concat(f.flying.filter(o => !o.stock).map(o => ({ kind: o.kind, x: o.tx, y: o.ty }))).map(o => ({ kind: o.kind, x: o.x, y: o.y })),
     portalQ: f.portalQ, eggQ: f.eggQ,
   };
 };
@@ -1347,9 +1325,14 @@ const LEGACY_SORTER = { wood: 2, stone: 1, shard: 1 };
 // an old (v1) save was one rectangle with its own origin: it moves onto the fixed grid with its south-west corner on the base rectangle's, so the Stockpile stays where it was.
 // FA.lastShift is how far everything moved (the Builder's position is moved by Main.applySave).
 FA.lastShift = { dx: 0, dy: 0 };
+// Batteries used to be items (and Stations / Chargers the buildings that held them). Each Station or Charger loads as a Battery building (it keeps its charge and
+// fuel); every loose Battery item found in a save is counted here and Main.applySave turns it into a free Battery placement.
+FA.lostBat = 0;
 FA.fromJSON = function (j) {
   const F = CFG.factory, B = F.base;
   G.fac = FA.fresh(F.w, F.h);
+  FA.lostBat = 0;
+  const known = k => { if (k === 'battery') FA.lostBat++; return !!ITEMS[k]; };
   FA.lastShift = { dx: 0, dy: 0 };
   if (j.v >= 2 && typeof j.land === 'string' && j.land.length === F.w * F.h && j.pp) {
     for (let i = 0; i < j.land.length; i++) G.fac.land[i] = j.land[i] === '1' ? 1 : 0;
@@ -1366,23 +1349,24 @@ FA.fromJSON = function (j) {
   (j.bld || []).forEach(o => {
     if (o.type === 'sorter') {   // the Sorter was dropped (a Splitter's element toggles do its job): refund it and set its contents down
       for (const k in LEGACY_SORTER) G.stock[k] = (G.stock[k] || 0) + LEGACY_SORTER[k];
-      (o.out || []).forEach(x => { if (x && ITEMS[x.kind]) FA.dropAt(x.kind, o.x + 0.5, o.y + 0.5, x.charge); });
+      (o.out || []).forEach(x => { if (x && known(x.kind)) FA.dropAt(x.kind, o.x + 0.5, o.y + 0.5); });
       return;
     }
+    if (o.type === 'station' || o.type === 'charger') o = Object.assign({}, o, { type: 'battery', bat: o.bat > 0 ? o.bat : 0 });   // both became the one Battery building
     if (/^spawner[123]$/.test(o.type)) o = Object.assign({}, o, { type: 'spawner' });   // the three Spawner tiers became one
     if (ELEM[o.type]) o = Object.assign({}, o, { type: 'harness', el: o.type, grow: CFG.harness.growT });   // the four Harnessers became one that switches element
     if (!CFG.buildings[o.type] || !FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;
     const b = FA.makeBuilding(o.type, o.x, o.y, false, o.free, o.dir || 0);
     if (o.cost && typeof o.cost === 'object') b.cost = o.cost;
     if (b.el !== undefined) { if (ELEM[o.el]) b.el = o.el; b.grow = o.grow >= 0 ? Math.min(CFG.harness.growT, +o.grow) : CFG.harness.growT; }
-    b.done = !!o.done; b.got = o.got || {}; b.out = Array.isArray(o.out) ? o.out.filter(x => x && ITEMS[x.kind]) : []; b.timer = o.timer || 0;
+    b.done = !!o.done; b.got = o.got || {}; b.out = Array.isArray(o.out) ? o.out.filter(x => x && known(x.kind)) : []; b.timer = o.timer || 0;
     if (b.inv) {
-      b.recipe = o.recipe && CFG.recipes[o.recipe] && CFG.recipes[o.recipe].machine === b.type ? o.recipe : null; b.inv = o.inv || {}; b.prog = o.prog || 0;   // (the Battery recipe moved from the Forge to the Bench)
+      b.recipe = o.recipe && CFG.recipes[o.recipe] && CFG.recipes[o.recipe].machine === b.type ? o.recipe : null; b.inv = o.inv || {}; b.prog = o.prog || 0;   // (the Battery recipe was dropped: an old Forge / Bench on it falls back)
       if (o.recipe && !b.recipe) for (const k in b.inv) { for (let i = 0; i < b.inv[k]; i++) if (ITEMS[k]) b.out.push({ kind: k }); b.inv[k] = 0; }   // what it was holding is set out for the Builder to take
     }
-    if (b.bat !== undefined) b.bat = o.bat == null ? null : o.bat;
+    if (b.bat !== undefined) { b.bat = o.bat > 0 ? Math.min(+o.bat, CFG.batteryMax * CFG.overcharge.max) : 0; b.top = b.bat >= CFG.batteryMax; }
     if (b.fuel) { b.fuel = Object.assign(b.fuel, o.fuel || {}); b.types = o.types || []; }
-    if (b.hand !== undefined && o.hand > 0) b.hand = Math.min(0.999, +o.hand);
+    if (b.hand !== undefined && o.hand > 0) b.hand = Math.min(0.999, +o.hand);   // a Harnesser's half-cranked packet
     if (b.pct && o.pct && typeof o.pct === 'object') {
       for (const k in o.pct) if (+k >= 0 && +k < 4) b.pct[k] = Math.max(0, Math.min(100, Math.round(+o.pct[k] || 0)));
       for (const k in o.filt || {}) if (Array.isArray(o.filt[k])) b.filt[k] = o.filt[k].filter(x => ITEMS[x]);
@@ -1391,14 +1375,14 @@ FA.fromJSON = function (j) {
       const A2 = (b.dir + 1) % 4, B2 = (b.dir + (o.ang === 90 ? 2 : 3)) % 4, s = Math.max(0, Math.min(100, Math.round(o.split)));
       b.pct[A2] = s; b.pct[B2] = 100 - s; b.sig = [A2, B2].sort().join(',');   // kept if those are still its outputs (FA.splitConn)
     }
-    if (b.type === 'station' && o.over > 0) b.over = o.over;
+    if (b.over !== undefined && o.over > 0) b.over = +o.over;
   });
   (j.belts || []).forEach(o => {
     if (!FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;
     const b = FA.addBelt(o.x, o.y, o.dir);
-    if (o.item && ITEMS[o.item]) b.item = { kind: o.item, prog: 0.5, moved: false };
+    if (o.item && known(o.item)) b.item = { kind: o.item, prog: 0.5, moved: false };
   });
-  (j.floor || []).forEach(o => { if (ITEMS[o.kind]) G.fac.floor.push({ kind: o.kind, charge: o.charge, x: o.x, y: o.y, z: 0, vz: 0, t: 1 }); });
+  (j.floor || []).forEach(o => { if (known(o.kind)) G.fac.floor.push({ kind: o.kind, x: o.x, y: o.y, z: 0, vz: 0, t: 1 }); });
   G.fac.portalQ = (j.portalQ || []).filter(q => q && ITEMS[q.kind]);
   G.fac.eggQ = (j.eggQ || []).filter(k => ITEMS[k] && ITEMS[k].egg);
   FA.refreshRecipes();

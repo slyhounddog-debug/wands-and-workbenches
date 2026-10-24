@@ -155,7 +155,7 @@ add({
       { head: 'Belts' }, { cfg: 'beltTime', label: 'Seconds per tile' }, { cfg: 'upgrade.belts', label: 'Swift Belts per tier' },
       { head: 'Test' }, { key: 'tier', label: 'Swift Harnessing tier', min: 0, max: 8, step: 1, def: 0 }, { key: 'boost', type: 'select', label: 'Boost', options: [['0', 'none'], ['1', 'Shrine'], ['2', 'Portal Storm'], ['3', 'Shrine + Storm']], def: '0' },
       { key: 'belt', label: 'Belt tier', min: 0, max: 6, step: 1, def: 0 }, { key: 'len', label: 'Belt length (tiles)', min: 1, max: 40, step: 1, def: 12 },
-      { head: 'Machine planner' }, { key: 'rec', type: 'select', label: 'Recipe', options: rec, def: 'flamethrower' }, { key: 'od', type: 'check', label: 'Station beside it (Overdrive)', def: false }];
+      { head: 'Machine planner' }, { key: 'rec', type: 'select', label: 'Recipe', options: rec, def: 'flamethrower' }, { key: 'od', type: 'check', label: 'Battery beside it (Overdrive)', def: false }];
   },
   draw(out) {
     const tier = num('tier', 0), b = +(S.boost || 0), boost = (b & 1 ? 1 + V('marks.shrineBoost') : 1) * (b & 2 ? 1 + V('events.storm.boost') : 1);
@@ -174,24 +174,24 @@ add({
 
 // 4 ---- power
 add({
-  id: 'power', title: 'Factory: power, batteries & chargers', blurb: 'FA.drain / FA.life / FA.updCharger: a Battery lasts batteryLife seconds at a full 10 power; the load is split over every charged Battery; a Charger fills faster with more element types and each packet is worth fuelPerPacket seconds of charging.',
+  id: 'power', title: 'Factory: power & batteries', blurb: 'FA.drain / FA.life / FA.updCell: a Battery lasts batteryLife seconds at a full 10 power; the load is split over every charged Battery; a Battery charges faster with more element types and each packet is worth fuelPerPacket seconds of charging.',
   params: () => [
-    { head: 'Batteries' }, { cfg: 'batteryMax', label: 'Battery capacity' }, { cfg: 'batteryLife', label: 'Life at full 10 power (s)' }, { cfg: 'stationGen', label: 'Power per Station' }, { cfg: 'heavyBattery', label: 'Heavy Batteries bonus' },
-    { head: 'Chargers' }, { cfg: 'chargeBase', label: 'Charge time, 1 element (s)' }, { cfg: 'chargeBoost', label: 'Faster per extra element' }, { cfg: 'fuelPerPacket', label: 'Charging seconds per packet' },
-    { head: 'Test' }, { key: 'load', label: 'Total power drawn', min: 0, max: 40, step: 0.5, def: 8 }, { key: 'stations', label: 'Charged Stations', min: 1, max: 6, step: 1, def: 2 }, { key: 'heavy', type: 'check', label: 'Heavy Batteries unlocked', def: false },
-    { key: 'types', label: 'Element types in the Charger', min: 1, max: 4, step: 1, def: 2 }],
+    { head: 'Batteries' }, { cfg: 'batteryMax', label: 'Battery capacity' }, { cfg: 'batteryLife', label: 'Life at full 10 power (s)' }, { cfg: 'stationGen', label: 'Power per Battery' }, { cfg: 'heavyBattery', label: 'Heavy Batteries bonus' },
+    { head: 'Charging' }, { cfg: 'chargeBase', label: 'Charge time, 1 element (s)' }, { cfg: 'chargeBoost', label: 'Faster per extra element' }, { cfg: 'fuelPerPacket', label: 'Charging seconds per packet' },
+    { head: 'Test' }, { key: 'load', label: 'Total power drawn', min: 0, max: 40, step: 0.5, def: 8 }, { key: 'stations', label: 'Charged Batteries', min: 1, max: 6, step: 1, def: 2 }, { key: 'heavy', type: 'check', label: 'Heavy Batteries unlocked', def: false },
+    { key: 'types', label: 'Element types in the Battery', min: 1, max: 4, step: 1, def: 2 }],
   draw(out) {
     const L = num('load', 8), St = num('stations', 2), heavy = !!S.heavy, types = num('types', 2), k = F.drainK(heavy);
     const supply = V('stationGen') * St, life = L > 0 ? V('batteryMax') / (L / St * k) : Infinity, dur = F.chargeDur(types);
     const drainAll = L * k, fill = V('batteryMax') / dur, chargers = drainAll / fill, ppc = dur / V('fuelPerPacket');
     const pktMin = drainAll / V('batteryMax') * ppc * 60;
     const lifeAt = (Ld, s) => (Ld > 0 ? V('batteryMax') / (Math.min(Ld, V('stationGen') * s) / s * F.drainK(heavy)) : 0);
-    out.append(stats([['Supply', supply, 'power from ' + St + ' Station(s)' + (L > supply ? ' (BROWNOUT)' : '')], ['One Battery lasts', life, 'seconds at this load'], ['Charge time', dur, 'seconds with ' + types + ' type(s)'], ['Packets per full charge', ppc],
+    out.append(stats([['Supply', supply, 'power from ' + St + ' Battery(ies)' + (L > supply ? ' (BROWNOUT)' : '')], ['One Battery lasts', life, 'seconds at this load'], ['Charge time', dur, 'seconds with ' + types + ' type(s)'], ['Packets per full charge', ppc],
       ['Chargers to keep up', chargers, 'running non-stop'], ['Packets to sustain', pktMin, 'per minute']]),
-      grid(chart({ title: 'Battery life vs total load', yl: 'seconds', xl: 'power drawn', series: [1, 2, 3, 4].map((s, i) => ({ name: s + ' Station' + (s > 1 ? 's' : ''), color: PAL[i], pts: range(2, 40, 1).map(x => [x, lifeAt(x, s)]).filter(p => p[0] <= V('stationGen') * s) })) }),
+      grid(chart({ title: 'Battery life vs total load', yl: 'seconds', xl: 'power drawn', series: [1, 2, 3, 4].map((s, i) => ({ name: s + ' Batter' + (s > 1 ? 'ies' : 'y'), color: PAL[i], pts: range(2, 40, 1).map(x => [x, lifeAt(x, s)]).filter(p => p[0] <= V('stationGen') * s) })) }),
         chart({ title: 'Charge time by element types', yl: 'seconds', bars: true, labels: ['1 type', '2 types', '3 types', '4 types'], series: [{ name: 'full charge', color: COL.acc, vals: [1, 2, 3, 4].map(F.chargeDur) }] }),
         chart({ title: 'Packets / min to sustain a load', yl: 'per min', xl: 'power drawn', series: [1, 2, 3, 4].map((t, i) => ({ name: t + ' type' + (t > 1 ? 's' : ''), color: PAL[i + 1], pts: range(0, 40, 2).map(x => [x, x * k / V('batteryMax') * (F.chargeDur(t) / V('fuelPerPacket')) * 60]) })) })),
-      note('Lines stop where the Stations can no longer supply the load. "Chargers to keep up" assumes every Charger is fed the whole time.'));
+      note('Lines stop where the Batteries can no longer supply the load. "Chargers to keep up" assumes every Battery is fed the whole time.'));
   },
 });
 

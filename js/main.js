@@ -19,7 +19,7 @@ function blankState(slot) {
   return {
     slot, xp: 0, tree: {}, stock: { wood: CFG.start.wood, stone: CFG.start.stone, iron: CFG.start.iron, shard: 0, core: 0, air: 0, water: 0, fire: 0, earth: 0 }, fam: {}, pinBp: false,
     bank: {}, bankTotal: 0,
-    credits: { station: 0, charger: 0 },
+    credits: { battery: 0, heavybat: 0 },
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
     flags: {}, quest: { B: 0, W: 0 }, qbase: { B: null, W: null }, bankLog: [], pins: { L: null, R: null }, lock: null,
     aug: WZ.augFresh(), hold: { on: false, spell: null },   // the Wizard's augments / Offerings / Ward Keys (his own inventory), and the held-spell slot (unlocked by the first Warden)
@@ -53,7 +53,9 @@ Main.applySave = function (slot, s) {
   // XP is whole gems now: old fractional saves round down
   G.xp = Math.floor(s.xp || 0); G.tree = s.tree || {}; G.stock = Object.assign(G.stock, s.stock || {});
   G.bank = s.bank || {}; G.bankTotal = s.bankTotal || 0;
-  G.credits = Object.assign(G.credits, s.credits || {}); G.stats = Object.assign(G.stats, s.stats || {});
+  G.credits = Object.assign(G.credits, s.credits || {});
+  G.credits.battery = (G.credits.battery || 0) + (G.credits.station || 0) + (G.credits.charger || 0); delete G.credits.station; delete G.credits.charger;
+ G.stats = Object.assign(G.stats, s.stats || {});
   G.flags = s.flags || {}; G.quest = Main.questOf(s); G.placeDir = s.placeDir || 0;
   // the Wizard's gear: an old save has none (everything defaults to empty). A save that already captured a Stronghold gets the glow-up and the spell slot silently (no animation)
   G.aug = WZ.augFix(s.aug);
@@ -69,13 +71,17 @@ Main.applySave = function (slot, s) {
   G.pins = Object.assign({ L: null, R: null }, s.pins || {}); G.pinBp = !!s.pinBp;
   for (const side of ['L', 'R']) if (G.pins[side] && !CFG.tree.some(n => n.id === G.pins[side])) G.pins[side] = null;   // a pin on a node that no longer exists
   // the hands: one pile of single items, bottom first. Older saves held one stack { kind, n } (and for a moment a queue of them): expand them in order.
-  G.hands = [].concat(s.hands || [], Array.isArray(s.handQ) ? s.handQ : []).filter(h => h && ITEMS[h.kind]).reduce((a, h) => { for (let i = 0; i < (h.n || 1); i++) a.push(h.kind === 'battery' ? { kind: 'battery', charge: h.charge || 0 } : { kind: h.kind }); return a; }, []);
+  let looseBat = 0;   // Battery items were dropped (the Battery is a building now): each one a save still has comes back as a free Battery placement
+  G.hands = [].concat(s.hands || [], Array.isArray(s.handQ) ? s.handQ : []).filter(h => { if (h && h.kind === 'battery') looseBat += h.n || 1; return h && ITEMS[h.kind]; }).reduce((a, h) => { for (let i = 0; i < (h.n || 1); i++) a.push({ kind: h.kind }); return a; }, []);
   G.w = WZ.fresh();
   G.ev = WZ.evFresh(s.ev && s.ev.n || 0);
   FA.fromJSON(s.fac || {});
+  if (G.flags.recharged) G.flags.fed = true;   // the old "recharge the spare Battery" goal is the new "feed the Battery" one
+  looseBat += FA.lostBat;
+  if (looseBat) G.credits.battery += looseBat;
   G.bd = FA.freshBuilder();
   if (s.bd && FA.owned(Math.floor(s.bd.x + FA.lastShift.dx), Math.floor(s.bd.y + FA.lastShift.dy))) { G.bd.x = s.bd.x + FA.lastShift.dx; G.bd.y = s.bd.y + FA.lastShift.dy; }
-  while (G.hands.length > FA.cap()) { const it = G.hands.shift(); FA.dropAt(it.kind, G.bd.x, G.bd.y, it.charge); }   // an old save held more than the pile allows: the extras go on the floor
+  while (G.hands.length > FA.cap()) { const it = G.hands.shift(); FA.dropAt(it.kind, G.bd.x, G.bd.y); }   // an old save held more than the pile allows: the extras go on the floor
   Main.enter();
 };
 // older saves had ONE goal chain (an index): bring it up to the v4 numbering, then hand each track the first of its goals

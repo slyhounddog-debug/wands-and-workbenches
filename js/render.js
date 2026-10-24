@@ -283,7 +283,7 @@ R.drawFactory = function (main, dt) {
   if (R.ghost) R.drawGhostGround(ctx, v, R.ghost, t);
   for (const b of f.bld) {
     const k = b.done && FA.def(b).kind;
-    if (!k || k === 'station' || k === 'charger') continue;
+    if (!k || k === 'cell') continue;
     if (k === 'splitter') b.outs.forEach((d, i) => R.splitArrow(ctx, v, b, t, d, FA.splitCol[i], b.pct[d] || 0, b.filt[d]));
     else R.outArrow(ctx, v, b, t);
   }
@@ -561,12 +561,6 @@ R.drawBuilding = function (ctx, v, b, t) {
       ctx.fillStyle = '#5a5a66'; ctx.fillRect(p[0] + 4, base - 68 + hy, 24, 12); ctx.fillStyle = '#8a5a30'; ctx.fillRect(p[0] + 12, base - 56 + hy, 8, 28);
       if (hit > 0.45 && hit < 0.6) for (let i = 0; i < 6; i++) { ctx.fillStyle = '#ffd23a'; ctx.fillRect(Math.round((p[0] + 8 + Math.cos(i) * 28) / 4) * 4, Math.round((base - 52 - Math.abs(Math.sin(i * 2)) * 24) / 4) * 4, 4, 4); }
     }
-    if (b.type === 'bench' && (b.hand > 0 || (G.bd.gather && G.bd.gather.b === b))) {   // the hammer comes down each time the Builder taps, and what was hammered so far stays on the bench
-      const hit = G.bd.gather && G.bd.gather.b === b && b.pop > 0.1 ? 1 : 0, hy = hit ? 8 : -12;
-      ctx.fillStyle = '#5a5a66'; ctx.fillRect(p[0] + 4, base - 68 + hy, 24, 12); ctx.fillStyle = '#8a5a30'; ctx.fillRect(p[0] + 12, base - 56 + hy, 8, 28);
-      if (hit) for (let i = 0; i < 4; i++) { ctx.fillStyle = '#ffd23a'; ctx.fillRect(Math.round((p[0] + 8 + Math.cos(i * 2 + t * 9) * 24) / 4) * 4, Math.round((base - 46 - Math.abs(Math.sin(i * 2 + t * 7)) * 20) / 4) * 4, 4, 4); }
-      if (!(G.bd.gather && G.bd.gather.b === b)) R.bar(ctx, p[0], base + 22, 48, b.hand, ITEMS[CFG.recipes[b.recipe].out].color, 8);   // a half-hammered one waits for the Builder to come back
-    }
     if (b.recipe) {
       const R2 = CFG.recipes[b.recipe], keys = Object.keys(R2.in);
       // a faded ghost of the product waits in the empty output slot
@@ -577,7 +571,7 @@ R.drawBuilding = function (ctx, v, b, t) {
         R.pile(ctx, R.rep(k, have), x, base - 70, t, i + b.id);
         R.pile(ctx, R.rep(k, R2.in[k] - have), x, base - 70 - have * 8, t, 0, 0.35);
       });
-      if (b.prog > 0 && !R2.hand) R.bar(ctx, p[0], top + 52, 84, b.prog / R2.time, ITEMS[R2.out].color);
+      if (b.prog > 0) R.bar(ctx, p[0], top + 52, 84, b.prog / R2.time, ITEMS[R2.out].color);
       if (b.type === 'spawner' && b.prog > 0) {   // the creature being hatched, as a small icon in a state box (nothing while it idles: the faint Egg ghost beside it says what it will make)
         const cs = SP[ITEMS[R2.out].creature], k = Math.max(1, Math.floor(36 / Math.max(cs.c.width, cs.c.height)));
         pbox(ctx, p[0] - 28, top - 6, 56, 52, '#2b1d48');
@@ -586,10 +580,10 @@ R.drawBuilding = function (ctx, v, b, t) {
       if (b.draw > 0 && !b.powered) R.noPower(ctx, p[0], top - 16, t);
     } else dspr(ctx, SP.ic_lock, p[0], top + 44, 4);
     R.pile(ctx, b.out.map(o => o.kind), p[0] + 44, base - 24, t, b.id + 3);   // what it has made, waiting to be taken
-    if (b.od) {   // Adjacency Overdrive: sparks jump across from the charged Station beside it
+    if (b.od) {   // Adjacency Overdrive: sparks jump across from the charged Battery beside it
       for (const dd of DIRS) {
         const c = FA.cell(b.x + dd[0], b.y + dd[1]);
-        if (!c || c.type !== 'station' || !c.done || !(c.bat > 0)) continue;
+        if (!c || !FA.isCell(c) || !c.done || !(c.bat > 0)) continue;
         const q = R.toScreen(v, b.x + 0.5 + dd[0] * 0.5, b.y + 0.5 + dd[1] * 0.5);
         ctx.fillStyle = Math.sin(t * 17) > 0 ? '#fff07a' : '#ffffff';
         for (let i = 0; i < 3; i++) ctx.fillRect(Math.round((q[0] - 8 + Math.sin(t * 23 + i * 2) * 10) / 4) * 4, Math.round((q[1] - 40 - i * 12) / 4) * 4, 8, 4);
@@ -597,8 +591,8 @@ R.drawBuilding = function (ctx, v, b, t) {
       if (Math.sin(t * 8) > -0.4) dspr(ctx, SP.ic_bolt, p[0] - 44, base - 12, 4);
     }
   }
-  if (b.type === 'station') {
-    const fr = b.bat == null ? 0 : b.bat / CFG.batteryMax;
+  if (d.kind === 'cell') {   // a Battery: charge as a floating cell, the fuel waiting to burn stacked beside it
+    const fr = b.bat / CFG.batteryMax, heavy = b.type === 'heavybat';
     if (b.over > 0) {   // overcharged: a crackling white-gold rim and arcs leaping off the Battery
       ctx.strokeStyle = Math.floor(t * 16) % 2 ? '#fff07a' : '#ffffff'; ctx.lineWidth = 8;
       diamond(ctx, p[0], p[1], v.hw * (0.95 + (Math.sin(t * 20) > 0 ? 0.08 : 0)), v.hh * (0.95 + (Math.sin(t * 20) > 0 ? 0.08 : 0))); ctx.stroke();
@@ -612,22 +606,14 @@ R.drawBuilding = function (ctx, v, b, t) {
       }
       if (Math.sin(t * 10) > 0) dspr(ctx, SP.ic_bolt, p[0] + 40, base - 70, 4);
     }
-    if (b.bat != null) dspr(ctx, SP.it_battery, p[0], base - 44, 4);
-    if (tip) R.bar(ctx, p[0], top + 52, 64, Math.min(1, fr), b.bat > 0 ? '#3ad06b' : '#8a8a8a');
+    dspr(ctx, SP.it_battery, p[0], base - (heavy ? 52 : 44), heavy ? 5 : 4, b.bat > 0 ? 1 : 0.4);   // dim while it is flat
+    if (tip) R.bar(ctx, p[0], top + 52, 64, Math.min(1, fr), b.bat > 0 ? (fr >= 1 ? '#3ad06b' : '#ffd93a') : '#8a8a8a');
     if (tip && fr > 1) R.bar(ctx, p[0], top + 66, 64, (fr - 1) / (CFG.overcharge.max - 1), '#fff07a', 8);   // the charge past full
-    if (b.bat != null && b.bat > 0 && Math.sin(t * 8) > 0) {
+    if (b.bat > 0 && Math.sin(t * 8) > 0) {
       ctx.fillStyle = '#fff07a';
       for (let i = 0; i < 5; i++) ctx.fillRect(Math.round((p[0] - 20 + i * 10) / 4) * 4, Math.round((base - 84 + (i % 2 ? -8 : 8)) / 4) * 4, 8, 4);
     }
-    if (b.bat == null && Math.sin(t * 4) > 0) dspr(ctx, SP.it_battery, p[0], base - 44, 4, 0.4);   // a ghost Battery says what goes in
-  }
-  if (b.type === 'charger') {
-    if (b.bat != null) dspr(ctx, SP.it_battery, p[0], base - 40, 4);
-    if (b.bat != null && b.bat >= CFG.batteryMax && Math.sin(t * 6) > 0) { ctx.strokeStyle = '#3ad06b'; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw * 0.9, v.hh * 0.9); ctx.stroke(); }   // full: come get it
-    if (b.bat == null && Math.sin(t * 4) > 0) dspr(ctx, SP.it_battery, p[0], base - 40, 4, 0.4);
-    const ft = FA.fuelTotal(b);
-    if (tip && b.bat != null) R.bar(ctx, p[0], top + 52, 64, b.bat / CFG.batteryMax, b.bat >= CFG.batteryMax ? '#3ad06b' : '#ffd93a');
-    if (ft > 0) {   // the fuel waiting to burn is stacked beside the Battery, one item per packet's worth
+    if (FA.fuelTotal(b) > 0) {   // the fuel waiting to burn, one item per packet's worth
       const fuel = []; for (const k in b.fuel) for (let i = 0; i < Math.ceil(b.fuel[k] / (CFG.fuelPerPacket * (1 + CFG.chargeBonus)) - 0.01); i++) fuel.push(k);
       R.pile(ctx, fuel, p[0] + 40, base - 20, t, b.id);
     }
@@ -961,13 +947,13 @@ R.drawGhostGround = function (ctx, v, g, t) {
 R.ghostLinks = function (g) {
   const dk = g.type === 'belt' ? 'belt' : CFG.buildings[g.type].kind, out = [];
   const gives = dk === 'belt' || dk === 'harness' || dk === 'crafter' || dk === 'crate', routes = dk === 'splitter';
-  const takes = dk === 'belt' || dk === 'crafter' || dk === 'charger' || dk === 'splitter' || dk === 'crate';
+  const takes = dk === 'belt' || dk === 'crafter' || dk === 'cell' || dk === 'splitter' || dk === 'crate';
   for (let d = 0; d < 4; d++) {
     const nx = g.x + DIRS[d][0], ny = g.y + DIRS[d][1], c = FA.cell(nx, ny), back = (d + 2) % 4;
     if (!c) continue;
     const ck = c.type === 'belt' ? 'belt' : c.type === 'portal' ? 'portal' : FA.def(c).kind, done = c.type === 'belt' || c.type === 'portal' || c.done;
     const feeds = c.type === 'belt' ? c.dir === back : done && (ck === 'harness' || ck === 'crafter' || ck === 'crate') ? c.dir === back : done && ck === 'splitter' && dk === 'belt' && g.dir !== d;
-    const accepts = ck === 'belt' ? c.dir !== back : ck === 'portal' || !done || ck === 'crafter' || ck === 'charger' || ck === 'splitter' || ck === 'crate';
+    const accepts = ck === 'belt' ? c.dir !== back : ck === 'portal' || !done || ck === 'crafter' || ck === 'cell' || ck === 'splitter' || ck === 'crate';
     if (dk === 'belt' && ck === 'belt') continue;   // belt to belt joins on its own: links only mark a building's input or output
     if (feeds && takes) out.push({ x: nx, y: ny, into: true });
     else if ((gives ? g.dir === d : routes) && accepts && !feeds) out.push({ x: nx, y: ny, into: false });
@@ -1007,8 +993,9 @@ R.drawGhost = function (ctx, v, g, t) {
     ctx.beginPath(); ctx.moveTo(ex + nx * 8, ey + ny * 8); ctx.lineTo(ex - nx * 12 - ny * 14, ey - ny * 12 + nx * 14); ctx.lineTo(ex - nx * 12 + ny * 14, ey - ny * 12 - nx * 14); ctx.fill();
   }
   if (g.type !== 'belt' && g.type !== 'hand' && G.credits[g.type] > 0) dspr(ctx, SP.ic_gift, p[0], p[1] - 100 + (Math.sin(t * 6) > 0 ? 0 : 4), 4);
-  // a Station beside a Forge / Cauldron (or the other way round) will overdrive it
-  const pair = g.type === 'station' ? ['forge', 'cauldron'] : g.type === 'forge' || g.type === 'cauldron' ? ['station'] : null;
+  // a Battery beside a Forge / Cauldron (or the other way round) will overdrive it
+  const gk = g.type !== 'belt' && g.type !== 'hand' && CFG.buildings[g.type] ? CFG.buildings[g.type].kind : '';
+  const pair = gk === 'cell' ? ['forge', 'cauldron'] : g.type === 'forge' || g.type === 'cauldron' ? ['battery', 'heavybat'] : null;
   if (g.ok && pair && DIRS.some(dd => { const c = FA.cell(g.x + dd[0], g.y + dd[1]); return c && pair.indexOf(c.type) >= 0; })) {
     if (Math.sin(t * 10) > 0) dspr(ctx, SP.ic_bolt, p[0], p[1] - 120, 4);   // it will overdrive its neighbour
   }

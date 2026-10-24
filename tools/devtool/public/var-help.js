@@ -160,7 +160,10 @@ const RULES = [
   [/^pickups\.(\w+)\.armor$/, m => `Armor the ${m[1]} gives when the Wizard walks over it.`],
   // ---------- buildings ----------
   [/^buildings\.(\w+)\.cost\.(\w+)$/, m => `${m[2]} needed to build the ${m[1]} (thrown at its blueprint).`],
-  [/^buildings\.(\w+)\.cycle$/, m => `Seconds the ${m[1]} Harnesser takes to make one packet (before upgrades).`],
+  [/^harness\.(air|water|fire|earth)\.cycle$/, m => `Seconds the Harnesser takes to make one ${m[1]} packet (before upgrades).`],
+  [/^harness\.(air|water|fire|earth)\.power$/, m => `Power a Harnesser draws while it makes ${m[1]}.`],
+  [/^harness\.growT$/, 'Seconds the new element crystal grows after a Harnesser is built or switched (nothing is made meanwhile; switching again restarts it).'],
+  [/^harness\.shakeT$/, 'Seconds a grown Harnesser shakes and sparkles before it starts making packets.'],
   [/^buildings\.(\w+)\.power$/, m => `Power the ${m[1]} draws while it works.`],
   [/^buildings\.(\w+)\.tier$/, m => `Creature tier of the ${m[1]} (1 = single-element, 2 = pairs, 3 = triples).`],
   // ---------- recipes ----------

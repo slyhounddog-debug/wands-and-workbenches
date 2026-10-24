@@ -25,7 +25,7 @@ const F = {
   hpMul: m => 1 + V('world.hpPerMin') * m,
   pElite: (m, d) => (m * 60 < V('elite.minTime') ? 0 : Math.min(V('elite.max'), V('elite.base') + V('elite.perMin') * m + V('elite.perDist') * d / 100)),
   swift: t => 1 + V('upgrade.swift') * t,
-  rate: (el, tier, boost) => 60 / (V('buildings.' + el + '.cycle') / F.swift(tier) / boost),   // packets / min of one Harnesser
+  rate: (el, tier, boost) => 60 / (V('harness.' + el + '.cycle') / F.swift(tier) / boost),   // packets / min of one Harnesser
   gemMul: t => Math.pow(1 + V('upgrade.gems'), t),
   gemExp: (sure, chance, t) => sure + Math.min(V('gemCap'), chance * F.gemMul(t)),
   drainK: heavy => V('batteryMax') / (V('batteryLife') * V('stationGen')) / (heavy ? 1 + V('heavyBattery') : 1),
@@ -150,7 +150,7 @@ add({
   id: 'harness', title: 'Factory: harnessers, belts & machine planning', blurb: 'FA.cycle (cycle / Swift Harnessing / Shrine + Portal Storm boost), FA.beltTime, Adjacency Overdrive. Includes a planner: how many Harnessers does one machine need to run flat out?',
   params: () => {
     const rec = Object.keys(CFG.recipes).filter(k => Object.keys(CFG.recipes[k].in).some(i => ELEMS.includes(i))).map(k => [k, CFG.recipes[k].out + ' (' + CFG.recipes[k].machine + ')']);
-    return [{ head: 'Harnessers' }, ...ELEMS.map(e => ({ cfg: 'buildings.' + e + '.cycle', label: cap1(e) + ' cycle (s)' })), { cfg: 'upgrade.swift', label: 'Swift Harnessing per tier' },
+    return [{ head: 'Harnessers' }, ...ELEMS.map(e => ({ cfg: 'harness.' + e + '.cycle', label: cap1(e) + ' cycle (s)' })), { cfg: 'upgrade.swift', label: 'Swift Harnessing per tier' },
       { cfg: 'marks.shrineBoost', label: 'Shrine boost' }, { cfg: 'events.storm.boost', label: 'Portal Storm boost' }, { cfg: 'overdrive', label: 'Adjacency Overdrive' },
       { head: 'Belts' }, { cfg: 'beltTime', label: 'Seconds per tile' }, { cfg: 'upgrade.belts', label: 'Swift Belts per tier' },
       { head: 'Test' }, { key: 'tier', label: 'Swift Harnessing tier', min: 0, max: 8, step: 1, def: 0 }, { key: 'boost', type: 'select', label: 'Boost', options: [['0', 'none'], ['1', 'Shrine'], ['2', 'Portal Storm'], ['3', 'Shrine + Storm']], def: '0' },

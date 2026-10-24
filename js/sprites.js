@@ -219,6 +219,11 @@ task(() => {
       if (k === 'earth') { x.fillStyle = '#e8d0a0'; x.fillRect(3, 8, 2, 2); x.fillRect(6, 10, 2, 1); }
     }), 5, 17);
   });
+  bsprite('b_harness', (x, cx, cy) => {   // the one Harnesser: a stone base with a neutral steel plate (the crystal on top is drawn per element)
+    isoBox(x, cx, cy, 9, 5, stoneT, stoneL, stoneR);
+    isoBox(x, cx, cy - 5, 5, 2, '#a8b0c0', '#7a8294', '#626a7c');
+    x.fillStyle = '#626a7c'; x.fillRect(cx - 8, cy - 3, 1, 2); x.fillRect(cx + 7, cy - 3, 1, 2);
+  });
   bsprite('b_cauldron', (x, cx, cy) => {
     isoBox(x, cx, cy, 9, 3, '#b0a89a', '#8a8274', '#6e675b');
     // fire under the pot

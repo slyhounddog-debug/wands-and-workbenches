@@ -33,12 +33,14 @@ FA.reserved = (x, y) => { const z = FA.zone(); return x >= z.x0 && x <= z.x1 && 
 FA.cap = () => CFG.satchel + lvl('satchel') * CFG.upgrade.satchel;
 FA.beltTime = () => CFG.beltTime / (1 + CFG.upgrade.belts * lvl('belts'));
 // the Wizard standing at a shrine speeds up that element's harnessers (G.w.shrine, set by WZ.updMarks)
-FA.shrineBoost = type => {
-  const el = CFG.buildings[type].elem, w = G.w;
-  if (!w) return 1;
+FA.shrineBoost = b => {
+  const el = b.el, w = G.w;
+  if (!w || !el) return 1;
   return (w.shrine && w.shrine === el ? 1 + CFG.marks.shrineBoost : 1) * (w.surge && w.surge === el ? 1 + CFG.events.storm.boost : 1);   // a claimed shrine, and the Portal Storm's surging element
 };
-FA.cycle = type => CFG.buildings[type].cycle / (1 + CFG.upgrade.swift * lvl('swift')) / FA.shrineBoost(type);
+FA.cycle = b => CFG.harness[b.el].cycle / (1 + CFG.upgrade.swift * lvl('swift')) / FA.shrineBoost(b);
+// a Harnesser makes nothing while its crystal grows (CFG.harness.growT s after every switch) or shakes (shakeT s once it is grown)
+FA.growing = b => b.grow < CFG.harness.growT || b.shake > 0;
 // a Battery holds batteryLife seconds at stationGen power; Heavy Batteries hold 50% more. pw = the power this one battery carries
 FA.drain = pw => pw * CFG.batteryMax / (CFG.batteryLife * CFG.stationGen) / (G.tree.heavy ? 1 + CFG.heavyBattery : 1);
 // seconds left in a Station's Battery at its current load (or at full load while nothing draws)
@@ -89,7 +91,7 @@ FA.initial = function () {
   // one Air Harnesser, 2 belts, then a free Splitter beside the portals, turned north at 90 degrees: pink side A = east (2 belts straight
   // into the Spell Portal's top cell), cyan side B = south (a Creature Spawner, Zephyr Wisps, then 2 belts into the lower cell)
   const sx = ox + B.w - 4;
-  FA.makeBuilding('air', sx - 3, sy, true, false, 0);
+  FA.makeBuilding('harness', sx - 3, sy, true, false, 0);
   FA.addBelt(sx - 2, sy, 0); FA.addBelt(sx - 1, sy, 0);
   const sp = FA.makeBuilding('splitter', sx, sy, true, true, 3);
   FA.addBelt(sx + 1, sy, 0); FA.addBelt(sx + 2, sy, 0);
@@ -125,7 +127,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   if (d.kind === 'station') b.bat = null;
   if (d.kind === 'charger') { b.bat = null; b.fuel = { air: 0, water: 0, fire: 0, earth: 0, wood: 0, stone: 0 }; b.types = []; }
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
-  if (d.kind === 'harness') b.hand = 0;   // how far the Builder has hand-cranked the next packet: it stays when he walks away
+  if (d.kind === 'harness') { b.hand = 0; b.el = 'air'; b.grow = CFG.harness.growT; b.shake = 0; }   // hand: how far the Builder has cranked the next packet (it stays when he walks away); el / grow: the element crystal and how far it has grown
   if (d.kind === 'splitter') { b.pct = {}; b.filt = {}; b.outs = []; b.ins = []; b.sig = null; b.acc = {}; b.src = {}; }
   f.bld.push(b);
   FA.setCell(x, y, b);
@@ -134,6 +136,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
 };
 FA.onComplete = function (b, quiet) {
   b.done = true;
+  if (FA.def(b).kind === 'harness' && !quiet) { b.grow = 0; b.shake = 0; }   // a new Harnesser grows its crystal first
   if (FA.def(b).kind === 'expand') { FA.finishTile(b); return; }
   if (FA.def(b).kind === 'crafter' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
   if (!quiet) {
@@ -602,6 +605,7 @@ FA.state = function (b) {
   if (!b.done) return null;
   const d = FA.def(b), k = d.kind;
   if (k === 'harness') {
+    if (FA.growing(b)) return null;
     if (b.out.length >= CFG.buffer) return 'full';
     if (!b.powered) return 'off';
     return b.out.length && b.blocked ? 'jam' : 'work';
@@ -640,7 +644,7 @@ FA.wants = function (b) {
   if (!b.done) return 0;
   const d = FA.def(b);
   if (d.kind === 'crafter') return Math.max(0, FA.crafterReady(b));
-  if (d.kind === 'harness' && d.power > 0) return b.out.length < CFG.buffer ? d.power : 0;
+  if (d.kind === 'harness') return !FA.growing(b) && b.out.length < CFG.buffer ? CFG.harness[b.el].power : 0;
   return 0;
 };
 FA.power = function () {
@@ -688,9 +692,16 @@ FA.update = function (dt) {
     const d = FA.def(b);
     b.anim += dt * (b.st === undefined || b.st === null ? 1 : FA.stateSpeed[b.st]);
     if (d.kind === 'harness') {
-      if (b.out.length < CFG.buffer && b.powered) {
+      const H = CFG.harness;
+      if (b.grow < H.growT) {   // the crystal is growing: nothing is made; when it is full the Harnesser shakes and sparkles for a moment
+        b.grow = Math.min(H.growT, b.grow + dt);
+        if (b.grow >= H.growT) { b.shake = H.shakeT; b.timer = 0; b.pop = 0.5; FA.eburst(b.x + 0.5, b.y + 0.5, b.el, 18); AU.sfx('el_' + b.el); AU.sfx('complete'); }
+      } else if (b.shake > 0) {
+        b.shake -= dt; b.sparkT = (b.sparkT || 0) - dt;
+        if (b.sparkT <= 0) { b.sparkT = 0.15; FA.eburst(b.x + 0.5, b.y + 0.5, b.el, 3); }
+      } else if (b.out.length < CFG.buffer && b.powered) {
         b.timer += dt; f.working++;
-        if (b.timer >= FA.cycle(b.type)) { b.timer = 0; b.out.push({ kind: d.elem }); b.pop = 0.25; G.stats.packets++; FA.eburst(b.x + 0.5, b.y + 0.5, d.elem, 4); FA.elTick(d.elem); }
+        if (b.timer >= FA.cycle(b)) { b.timer = 0; b.out.push({ kind: b.el }); b.pop = 0.25; G.stats.packets++; FA.eburst(b.x + 0.5, b.y + 0.5, b.el, 4); FA.elTick(b.el); }
       }
       b.blocked = b.out.length > 0 && !FA.tryOut(b);
     } else if (d.kind === 'crafter') {
@@ -1034,7 +1045,7 @@ FA.distTo = function (t) {
 };
 
 FA.startGather = function (b) {
-  const el = FA.def(b).elem;
+  const el = b.el;
   G.bd.gather = { b, t: b.hand || 0, total: 1, el };   // the meter only moves when E is tapped (FA.crank); it starts from what is already cranked
   G.bd.target = null;
   AU.sfx('blip');
@@ -1164,7 +1175,10 @@ FA.bldAction = function (b, pick) {
   if (G.bd.gather && G.bd.gather.b === b) return A('Crank!', () => FA.crank(), false, [G.bd.gather.el]);
   if (d.kind === 'splitter') return A('Set up the routes', () => UI.openSplit(b), false, ['ic_gear']);   // it has no front to turn
   const turn = A('Turn output', () => { b.dir = (b.dir + 1) % 4; b.pop = 0.2; AU.sfx('blip'); }, false, ['ic_rotate']);
-  if (d.kind === 'harness') return FA.canHold(d.elem) ? A('Hand-gather ' + ELEM[d.elem].name + ' (tap to fill the meter)', () => FA.startGather(b), false, [d.elem]) : FULL;
+  if (d.kind === 'harness') {
+    if (FA.growing(b)) return A('The crystal is still growing', null, false, ['ic_clock', b.el]);
+    return FA.canHold(b.el) ? A('Hand-gather ' + ELEM[b.el].name + ' (tap to fill the meter)', () => FA.startGather(b), false, [b.el]) : FULL;
+  }
   if (d.kind === 'crafter') {
     const list = FA.recipesFor(b.type);
     if (list.length > 1) {
@@ -1175,6 +1189,33 @@ FA.bldAction = function (b, pick) {
   }
   if (FA.isLogi(b)) return turn;
   return NONE;
+};
+// Switching a Harnesser's element (F / LT + X): the old crystal bursts into particles, the new one grows from nothing for CFG.harness.growT seconds
+// (switching again while it grows starts the 15 seconds over), and nothing is harnessed until it has grown and shaken.
+FA.setElem = function (b, el) {
+  if (!ELEM[el] || b.el === el) return false;
+  const cx = b.x + 0.5, cy = b.y + 0.5;
+  if (b.done) { FA.eburst(cx, cy, b.el, 22); FA.burst(cx, cy, '#ffffff', 8); AU.sfx('el_' + el); b.pop = 0.4; }
+  b.el = el; b.timer = 0; b.hand = 0; b.shake = 0;
+  if (b.done) b.grow = 0;
+  if (G.bd.gather && G.bd.gather.b === b) G.bd.gather = null;
+  UI.changed();
+  return true;
+};
+FA.cycleElem = function (b, dir) {
+  const o = CFG.harness.order;
+  return FA.setElem(b, o[(o.indexOf(b.el) + (dir || 1) + o.length) % o.length]);
+};
+// the Harnesser the cycle key acts on: the one the use button is aimed at, else the nearest in reach
+FA.harnessNear = function () {
+  const bd = G.bd;
+  let best = null, bs = 1e9;
+  for (const b of G.fac.bld) {
+    if (FA.def(b).kind !== 'harness') continue;
+    const d = Math.hypot(b.x + 0.5 - bd.x, b.y + 0.5 - bd.y);
+    if (d <= CFG.reach && d < bs) { bs = d; best = b; }
+  }
+  return best;
 };
 // R on something already placed: turn the belt / building on this tile a quarter turn. Stations and Chargers have no output side.
 FA.rotateAt = function (tx, ty) {
@@ -1222,9 +1263,10 @@ FA.status = function (b) {
   if (!b.done) return n + ': blueprint, needs ' + (FA.needText(FA.needOf(b)) || 'nothing');
   if (d.kind === 'harness') {
     let st = 'producing';
+    if (FA.growing(b)) return n + ' (' + ELEM_WORD[b.el] + '): the crystal is growing, ' + Math.ceil(CFG.harness.growT - b.grow) + 's until it makes packets. F switches the element';
     if (b.out.length >= CFG.buffer) st = 'BLOCKED: nothing takes its output. Belt it away or take it (click)'; else if (!b.powered) st = 'NO POWER';
-    else if (FA.shrineBoost(b.type) > 1) st = 'producing, SHRINE BOOST +' + Math.round(CFG.marks.shrineBoost * 100) + '% (the Wizard is at a ' + ELEM_WORD[d.elem] + ' Shrine)';
-    return n + ': ' + b.out.length + '/' + CFG.buffer + ' ready, ' + st;
+    else if (FA.shrineBoost(b) > 1) st = 'producing, SHRINE BOOST +' + Math.round(CFG.marks.shrineBoost * 100) + '% (the Wizard is at a ' + ELEM_WORD[b.el] + ' Shrine)';
+    return n + ' (' + ELEM_WORD[b.el] + '): ' + b.out.length + '/' + CFG.buffer + ' ready, ' + st;
   }
   if (d.kind === 'crafter') {
     if (!b.recipe) return n + ': no recipe unlocked yet';
@@ -1270,6 +1312,7 @@ FA.toJSON = function () {
       if (b.bat !== undefined) o.bat = b.bat;
       if (b.fuel) { o.fuel = b.fuel; o.types = b.types; }
       if (b.hand > 0) o.hand = Math.round(b.hand * 1000) / 1000;
+      if (b.el) { o.el = b.el; o.grow = Math.round(b.grow * 10) / 10; }
       if (b.cost) o.cost = b.cost;
       if (b.pct) { o.pct = b.pct; o.filt = b.filt; o.sig = b.sig; }
       if (b.over > 0) o.over = b.over;
@@ -1306,9 +1349,11 @@ FA.fromJSON = function (j) {
       (o.out || []).forEach(x => { if (x && ITEMS[x.kind]) FA.dropAt(x.kind, o.x + 0.5, o.y + 0.5, x.charge); });
       return;
     }
+    if (ELEM[o.type]) o = Object.assign({}, o, { type: 'harness', el: o.type, grow: CFG.harness.growT });   // the four Harnessers became one that switches element
     if (!CFG.buildings[o.type] || !FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;
     const b = FA.makeBuilding(o.type, o.x, o.y, false, o.free, o.dir || 0);
     if (o.cost && typeof o.cost === 'object') b.cost = o.cost;
+    if (b.el !== undefined) { if (ELEM[o.el]) b.el = o.el; b.grow = o.grow >= 0 ? Math.min(CFG.harness.growT, +o.grow) : CFG.harness.growT; }
     b.done = !!o.done; b.got = o.got || {}; b.out = Array.isArray(o.out) ? o.out.filter(x => x && ITEMS[x.kind]) : []; b.timer = o.timer || 0;
     if (b.inv) { b.recipe = o.recipe && CFG.recipes[o.recipe] ? o.recipe : null; b.inv = o.inv || {}; b.prog = o.prog || 0; }
     if (b.bat !== undefined) b.bat = o.bat == null ? null : o.bat;

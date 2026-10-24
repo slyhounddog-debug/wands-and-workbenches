@@ -139,14 +139,8 @@ const CFG = {
   },
   // costs were 50% up on the original, then cut ~30% (belts stay 1 Wood; the Splitter is 2 Wood + 1 Stone)
   buildings: {
-    air:      { name: 'Air Harnesser',   kind: 'harness', elem: 'air',   cost: { wood: 6, stone: 4 },            cycle: 3.41, power: 2, unlock: null,
-                desc: 'Makes Air Pockets every 3.4s. Draws 2 power (hand-gathering is free, so the factory can always restart). Stand beside it and press E to hand-gather.' },
-    water:    { name: 'Water Harnesser', kind: 'harness', elem: 'water', cost: { wood: 8, stone: 6 },           cycle: 5.11, power: 2, unlock: 'water',
-                desc: 'Makes Water Drops every 5.1s. Draws 2 power (hand-gathering is free).' },
-    fire:     { name: 'Fire Harnesser',  kind: 'harness', elem: 'fire',  cost: { wood: 8, stone: 4, iron: 2 },  cycle: 5.11, power: 2, unlock: 'fire',
-                desc: 'Makes Fire Embers every 5.1s. Draws 2 power.' },
-    earth:    { name: 'Earth Harnesser', kind: 'harness', elem: 'earth', cost: { wood: 10, stone: 8 },          cycle: 6.25, power: 2, unlock: 'earth',
-                desc: 'Makes Earth Chunks every 6.25s. Draws 2 power.' },
+    harness:  { name: 'Harnesser', kind: 'harness', cost: { wood: 6, stone: 4 }, unlock: null,
+                desc: 'Makes element packets: Air, Water, Fire or Earth, whichever crystal it carries. F (LT + X on a pad) switches the element at any time: the old crystal bursts and the new one takes 15 seconds to grow, and nothing is made meanwhile. Draws 2 power (hand-gathering is free, so the factory can always restart). Stand beside it and press E to hand-gather.' },
     cauldron: { name: 'Alchemy Cauldron', kind: 'crafter', cost: { wood: 6, stone: 6 }, unlock: 'alchemy',
                 desc: 'Brews Health Potions (2 Water + 1 Wood). Wood-fired, no power. Send potions through the Spell Portal: they land beside the Wizard.' },
     forge:    { name: 'Elemental Forge', kind: 'crafter', cost: { wood: 13, stone: 10, iron: 4 }, unlock: 'forge',
@@ -172,9 +166,10 @@ const CFG = {
     altar:    { name: 'Summoning Altar', kind: 'crafter', cost: { stone: 14, iron: 7, shard: 6 }, unlock: 'summon',
                 desc: 'Binds an Elemental Nova and Aether Shards into a Boss Sigil. Send the Sigil through the Spell Portal to summon the Primal Chimera.' },
   },
+  // the one Harnesser carries any of the four elements (a crystal grows growT seconds after every switch, then shakes shakeT seconds before it starts making packets)
+  harness: { growT: 15, shakeT: 1.2, order: ['air', 'water', 'fire', 'earth'], air: { cycle: 3.41, power: 2 }, water: { cycle: 5.11, power: 2 }, fire: { cycle: 5.11, power: 2 }, earth: { cycle: 6.25, power: 2 } },
   // hotbar slots: 'hand', 'belt' or a family (members cycle with Q / the wheel over the slot / pad right-trigger)
   families: {
-    harness: { name: 'Harnessers', members: ['air', 'water', 'fire', 'earth'] },
     craft:   { name: 'Crafters',   members: ['cauldron', 'forge', 'anvil', 'altar'] },
     power:   { name: 'Power',      members: ['station', 'charger'] },
     logi:    { name: 'Logistics',  members: ['splitter', 'crate'] },
@@ -185,9 +180,9 @@ const CFG = {
   recipes: {
     // machine, inputs (any mix of belt / hand / thrown), output, craft time, power draw, skill-tree node(s) that unlock it
     potion:       { machine: 'cauldron', in: { water: 2, wood: 1 },            out: 'potion',  time: 6,  power: 0, tier: 'alchemy', use: 'Heals the Wizard 35 HP' },
-    elixir:       { machine: 'cauldron', in: { water: 2, earth: 1, wood: 1 },  out: 'elixir',  time: 9,  power: 0, tier: 'alchemy', req: 'earth', use: 'Heals the Wizard 80 HP' },
+    elixir:       { machine: 'cauldron', in: { water: 2, earth: 1, wood: 1 },  out: 'elixir',  time: 9,  power: 0, tier: 'alchemy', use: 'Heals the Wizard 80 HP' },
     armor:        { machine: 'anvil',    in: { iron: 2, stone: 1, fire: 1 },   out: 'armor',   time: 7,  power: 0, tier: 'armory', use: '+35 armor for the Wizard' },
-    plate:        { machine: 'anvil',    in: { iron: 3, stone: 2, fire: 1, earth: 1 }, out: 'plate', time: 11, power: 2, tier: 'armory', req: 'earth', use: '+70 armor for the Wizard' },
+    plate:        { machine: 'anvil',    in: { iron: 3, stone: 2, fire: 1, earth: 1 }, out: 'plate', time: 11, power: 2, tier: 'armory', use: '+70 armor for the Wizard' },
     sigil:        { machine: 'altar',    in: { nova: 1, shard: 5 },             out: 'sigil',   time: 12, power: 6, tier: 'summon', use: 'Summons the Primal Chimera beside the Wizard' },
     battery:      { machine: 'forge', in: { iron: 2 },               out: 'battery',      time: 8,  power: 3, tier: 'forge', use: 'Charge it, then slot it into a Station for power' },
     flamethrower: { machine: 'forge', in: { air: 1, fire: 1 },       out: 'flamethrower', time: 8,  power: 5, tier: 'flamethrower' },
@@ -208,22 +203,19 @@ const CFG = {
   // — an upgrade tier asks for about as many element packets as XP, split across that tier's kinds.
   tree: [
     // col 0: Factory unlocks
-    { id: 'water',     col: 0, icon: 'b:water',    name: 'Water Harnesser', xp: 38, pay: { air: 19 }, desc: 'Unlock the Water Harnesser.' },
-    { id: 'alchemy',   col: 0, icon: 'b:cauldron', name: 'Alchemy',         xp: 45, req: ['water'], pay: { air: 10, water: 13 }, desc: 'Unlock the Alchemy Cauldron: Health Potions for the Wizard.' },
-    { id: 'fire',      col: 0, icon: 'b:fire',     name: 'Fire Harnesser',  xp: 60, req: ['water'], pay: { air: 15, water: 15 }, desc: 'Unlock the Fire Harnesser.' },
-    { id: 'earth',     col: 0, icon: 'b:earth',    name: 'Earth Harnesser', xp: 60, req: ['fire'], pay: { air: 10, water: 10, fire: 10 }, desc: 'Unlock the Earth Harnesser (and the Elixir / Heavy Plate recipes).' },
-    { id: 'forge',     col: 0, icon: 'b:forge',    name: 'Elemental Forge', xp: 90, req: ['fire'], pay: { air: 15, water: 15, fire: 15 }, desc: 'Unlock the Elemental Forge. Each combo spell is then unlocked on its own.' },
-    { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 68, req: ['earth'], pay: { air: 18, fire: 30, earth: 20 }, desc: 'Unlock the Armor Anvil: armor pickups for the Wizard.' },
-    { id: 'logistics', col: 0, icon: 'b:splitter', name: 'Logistics',       xp: 60, req: ['fire'], pay: { air: 20, water: 20, fire: 20 }, desc: 'Unlock the Splitter and the Storage Crate.' },
+    { id: 'alchemy',   col: 0, icon: 'b:cauldron', name: 'Alchemy',         xp: 45, req: [], pay: { air: 10, water: 13 }, desc: 'Unlock the Alchemy Cauldron: Health Potions for the Wizard.' },
+    { id: 'forge',     col: 0, icon: 'b:forge',    name: 'Elemental Forge', xp: 90, req: ['alchemy'], pay: { air: 15, water: 15, fire: 15 }, desc: 'Unlock the Elemental Forge. Each combo spell is then unlocked on its own.' },
+    { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 68, req: ['alchemy'], pay: { air: 18, fire: 30, earth: 20 }, desc: 'Unlock the Armor Anvil: armor pickups for the Wizard.' },
+    { id: 'logistics', col: 0, icon: 'b:splitter', name: 'Logistics',       xp: 60, req: ['alchemy'], pay: { air: 20, water: 20, fire: 20 }, desc: 'Unlock the Splitter and the Storage Crate.' },
     { id: 'heavy',     col: 0, icon: 'battery',    name: 'Heavy Batteries', xp: 120, req: ['armory'], pay: { air: 25, water: 25, fire: 30, earth: 30, magma: 2 }, desc: 'Batteries in a Station last 50% longer before they run flat. You still haul them by hand.' },
     { id: 'summon',   col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: ['nova'], pay: { air: 40, water: 40, fire: 40, earth: 40 }, core: 1, desc: 'Unlock the Summoning Altar: craft a Boss Sigil and face the Primal Chimera. Needs a Warden Core from a Stronghold. Beat it to win.' },
     // col 1: Spells (each Forge recipe on its own).
     { id: 'flamethrower', col: 1, icon: 'flamethrower', name: 'Flamethrower',  xp: 45, req: ['forge'], pay: { air: 22, fire: 23 }, desc: 'Air + Fire: 8 fire bolts in a cone.' },
     { id: 'tempest',      col: 1, icon: 'tempest',      name: 'Tempest Chain', xp: 45, req: ['forge'], pay: { air: 22, water: 23 }, desc: 'Air + Water: chain lightning to 5 foes, slows nearby.' },
     { id: 'steam',        col: 1, icon: 'steam',        name: 'Steam Burst',   xp: 45, req: ['forge'], pay: { fire: 22, water: 23 }, desc: 'Fire + Water: scalding burst that slows.' },
-    { id: 'sandstorm',    col: 1, icon: 'sandstorm',    name: 'Sandstorm',     xp: 45, req: ['forge', 'earth'], pay: { air: 22, earth: 23 }, desc: 'Air + Earth: a grinding storm that follows the Wizard.' },
-    { id: 'magma',        col: 1, icon: 'magma',        name: 'Magma Bomb',    xp: 45, req: ['forge', 'earth'], pay: { fire: 22, earth: 23 }, desc: 'Fire + Earth: big blast that leaves burning ground.' },
-    { id: 'mud',          col: 1, icon: 'mud',          name: 'Mud Snare',     xp: 45, req: ['forge', 'earth'], pay: { water: 22, earth: 23 }, desc: 'Water + Earth: a sticky zone that nearly stops foes, behind an Earth Wall that channels them.' },
+    { id: 'sandstorm',    col: 1, icon: 'sandstorm',    name: 'Sandstorm',     xp: 45, req: ['forge'], pay: { air: 22, earth: 23 }, desc: 'Air + Earth: a grinding storm that follows the Wizard.' },
+    { id: 'magma',        col: 1, icon: 'magma',        name: 'Magma Bomb',    xp: 45, req: ['forge'], pay: { fire: 22, earth: 23 }, desc: 'Fire + Earth: big blast that leaves burning ground.' },
+    { id: 'mud',          col: 1, icon: 'mud',          name: 'Mud Snare',     xp: 45, req: ['forge'], pay: { water: 22, earth: 23 }, desc: 'Water + Earth: a sticky zone that nearly stops foes, behind an Earth Wall that channels them.' },
     { id: 'meteor',       col: 1, icon: 'meteor',       name: 'Meteor Shower', xp: 90, req: ['flamethrower', 'magma'], pay: { air: 20, fire: 20, earth: 20, flamethrower: 2, magma: 1 }, desc: 'Air + Fire + Earth: 8 meteors on random foes.' },
     { id: 'thunder',      col: 1, icon: 'thunder',      name: 'Thunderstorm',  xp: 90, req: ['flamethrower', 'tempest'], pay: { air: 20, fire: 20, water: 20, tempest: 2, flamethrower: 1 }, desc: 'Air + Fire + Water: chain lightning to 10 foes.' },
     { id: 'blizzard',     col: 1, icon: 'blizzard',     name: 'Blizzard',      xp: 90, req: ['tempest', 'mud'], pay: { air: 20, water: 20, earth: 20, mud: 2, tempest: 1 }, desc: 'Air + Water + Earth: a freezing storm around the Wizard. Freezes bog and water into ice he can run on.' },
@@ -382,7 +374,7 @@ const WEAK_TO = { fire: 'water', water: 'earth', earth: 'air', air: 'fire' };
     if (c.weak === c.resist) console.warn('creature ' + id + ' resists what it is weak to');
     CFG.enemies[id] = { name: c.name, hp: c.hp, speed: c.speed, dmg: c.dmg, gem: c.gem, w: 0, col: c.col, weak: c.weak, resist: c.resist, rad: c.rad, crafted: true, creature: id };
     CFG.recipes['egg_' + id] = { machine: 'spawner' + c.tier, in: c.cost, out: 'egg_' + id, time: c.time, power: c.power,
-      tier: c.tier === 1 ? (c.order[0] === 'air' ? null : c.order[0]) : 'cr_' + id, use: 'Hatches a ' + c.name + ' beside the Wizard' };
+      tier: c.tier === 1 ? null : 'cr_' + id, use: 'Hatches a ' + c.name + ' beside the Wizard' };
   }
   const W = CFG.strong.warden;
   CFG.enemies.warden = { name: W.name, hp: W.hp, speed: W.speed, dmg: W.dmg, gem: [3, 0], w: 0, col: '#ffd23a', rad: W.rad };
@@ -476,31 +468,35 @@ const QUEST_NAME = { B: 'BUILDER', W: 'WIZARD' };
 const sentN = (g, ...ks) => ks.reduce((a, k) => a + ((g.stats.sent || {})[k] || 0), 0);
 const QUESTS = {
   B: [
-    { from: 0,  icon: 'wood',  text: 'Walk to the Stockpile and left-click (pad A) to grab some Wood', xp: 2, done: g => g.flags.tookPile, hint: { pile: 'wood' } },
-    { from: 2,  icon: 'air',   text: 'Stand by the Air Harnesser: press E to hand-gather, then keep tapping E to fill the meter', xp: 3, done: g => g.flags.gathered, hint: { use: 'air' } },
-    { from: 3,  icon: 'ic_portal', text: 'Throw (right-click / pad B) a packet into the Spell Portal', xp: 3, done: g => g.flags.portalHand, hint: { portal: 'spell' } },
-    { from: 5,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, done: g => (g.bankTotal || 0) >= 5, prog: g => [g.bankTotal || 0, 5], hint: { portal: 'skill' } },
-    { from: 6,  icon: 'b:air', text: 'Build a second Air Harnesser: press 3, click a tile, then throw Wood & Stone at it', xp: 8, done: g => FA.count('air') >= 2, hint: { build: 'air' } },
-    { from: 7,  icon: 'battery', text: 'Recharge the spare Battery: throw element packets at the Charger', xp: 10, done: g => !!g.flags.recharged, hint: { make: 'charger' } },
-    { from: 9,  icon: 'ic_tree', text: 'Unlock the Water Harnesser in the Skill Tree (T). It costs XP + Air Pockets', xp: 5, done: g => !!g.tree.water, hint: { tree: 1 } },
-    { from: 10, icon: 'b:water', text: 'Build a Water Harnesser', xp: 8, gift: { bank: { water: 4 } }, done: g => FA.count('water') >= 1, hint: { make: 'water' } },
-    { from: 11, icon: 'potion', text: 'Unlock Alchemy, brew a Health Potion and send it through the Spell Portal', xp: 12, done: g => g.flags.sent_potion, hint: { make: 'cauldron' } },
-    { icon: 'elixir', text: 'Keep the Wizard healthy: send 3 more Potions or Elixirs', xp: 10, gift: { stock: { wood: 12, stone: 9, iron: 6 } }, stat: g => sentN(g, 'potion', 'elixir'), n: 3, hint: { make: 'cauldron' } },
-    { from: 12, icon: 'b:forge', text: 'Build the Elemental Forge', xp: 12, done: g => FA.count('forge') >= 1, hint: { make: 'forge' } },
-    { icon: 'battery', text: 'Craft a Battery at the Forge (press E at it to pick the recipe)', xp: 8, stat: g => (g.stats.made || {}).battery || 0, n: 1, hint: { make: 'forge' } },
-    { icon: 'ic_bolt', text: 'Charge 3 Batteries: swap flat ones into the Charger and feed it packets', xp: 15, gift: { credit: { station: 1 } }, stat: g => g.stats.charged || 0, n: 3, hint: { make: 'charger' } },
-    { from: 13, icon: 'flamethrower', text: 'Unlock a combo spell and deliver it from the Forge', xp: 15, gift: { bank: { air: 3, fire: 3 } }, done: g => g.flags.combo, hint: { combo: 2 } },
-    { icon: 'ic_fast', text: 'Overdrive: put a charged Battery Station right beside a Forge or Cauldron', xp: 12, done: g => G.fac.bld.some(b => b.done && b.od), hint: { make: 'station' } },
-    { icon: 'steam', text: 'Deliver 6 combo spells to the Wizard (two or more elements each)', xp: 15, gift: { stock: { shard: 1 } }, stat: g => g.stats.combos || 0, n: 6, hint: { combo: 2 } },
-    { from: 15, icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter to route packets', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && b.type === 'splitter'), hint: { make: 'splitter' } },
-    { from: 16, icon: 'armor', text: 'Unlock the Armory and send Armor to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'anvil' } },
-    { icon: 'plate', text: 'Plate up the Wizard: send 4 more Armor or Heavy Plates', xp: 12, gift: { stock: { iron: 6 } }, stat: g => sentN(g, 'armor', 'plate'), n: 4, hint: { make: 'anvil' } },
-    { from: 17, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 8) and throw 1 Wood + 1 Stone at it', xp: 15, done: g => (g.stats.tiles || 0) >= 1, hint: { make: 'expand' } },
-    { icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner1' } },
-    { from: 19, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, done: g => g.flags.triple, hint: { combo: 3 } },
-    { from: 20, icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, done: g => g.flags.sent_nova, hint: { combo: 4 } },
-    { from: 23, icon: 'b:altar', text: 'Unlock Summoning (it costs a Warden Core) and build the Summoning Altar (it needs Aether Shards)', xp: 40, done: g => FA.count('altar') >= 1, hint: { make: 'altar' } },
-    { from: 24, icon: 'ic_crown', text: 'Craft a Boss Sigil and send it through the Spell Portal. Then keep the right element flowing!', xp: 60, done: g => g.flags.sent_sigil, hint: { make: 'altar' } },
+    // v5: the goal's index in the previous list (saves from before QUEST_VERSION 6 resume at the first goal with v5 >= their old index)
+    { from: 0,  v5: 0,  icon: 'wood',  text: 'Walk to the Stockpile and left-click (pad A) to grab some Wood', xp: 2, done: g => g.flags.tookPile, hint: { pile: 'wood' } },
+    { from: 2,  v5: 1,  icon: 'air',   text: 'Stand by the Harnesser: press E to hand-gather Air, then keep tapping E to fill the meter', xp: 3, done: g => g.flags.gathered, hint: { use: 'harness' } },
+    { from: 3,  v5: 2,  icon: 'ic_portal', text: 'Throw (right-click / pad B) a packet into the Spell Portal', xp: 3, done: g => g.flags.portalHand, hint: { portal: 'spell' } },
+    { from: 5,  v5: 3,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, done: g => (g.bankTotal || 0) >= 5, prog: g => [g.bankTotal || 0, 5], hint: { portal: 'skill' } },
+    { from: 6,  v5: 4,  icon: 'b:air', text: 'Build a second Harnesser: press 3, click a tile, then throw Wood & Stone at it', xp: 8, done: g => FA.count('harness') >= 2, hint: { build: 'harness' } },
+    { from: 7,  v5: 5,  icon: 'battery', text: 'Recharge the spare Battery: throw Air packets (or Wood or Stone) at the Charger', xp: 10, done: g => !!g.flags.recharged, hint: { make: 'charger' } },
+    { icon: 'egg_zephyr', text: 'Hatch Air creatures: send 3 Zephyr Wisp Eggs through the Spell Portal', xp: 8, stat: g => (g.stats.sent || {}).egg_zephyr || 0, n: 3, hint: { make: 'spawner1' } },
+    { v5: 6,  icon: 'b:water', text: 'Switch a Harnesser to Water: press F beside it. The new crystal grows for 15 seconds', xp: 8, gift: { bank: { water: 4 } }, done: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
+    { from: 11, v5: 8,  icon: 'potion', text: 'Unlock Alchemy (T), brew a Health Potion from Water and send it through the Spell Portal', xp: 12, done: g => g.flags.sent_potion, hint: { make: 'cauldron' } },
+    { v5: 9,  icon: 'elixir', text: 'Keep the Wizard healthy: send 3 more Potions or Elixirs', xp: 10, gift: { stock: { wood: 12, stone: 9, iron: 6 } }, stat: g => sentN(g, 'potion', 'elixir'), n: 3, hint: { make: 'cauldron' } },
+    { icon: 'egg_puddle', text: 'Hatch a Puddle Slime: Water into a Spawner (E picks the recipe), then send the Egg', xp: 10, stat: g => (g.stats.sent || {}).egg_puddle || 0, n: 1, hint: { make: 'spawner1' } },
+    { icon: 'egg_cinder', text: 'Hatch a Cinder Imp: set a Harnesser to Fire, feed a Spawner, send the Egg', xp: 10, gift: { bank: { fire: 4 } }, stat: g => (g.stats.sent || {}).egg_cinder || 0, n: 1, hint: { make: 'spawner1' } },
+    { from: 12, v5: 10, icon: 'b:forge', text: 'Unlock the Forge (T) and build it: it fuses element packets into combo spells', xp: 12, done: g => FA.count('forge') >= 1, hint: { make: 'forge' } },
+    { v5: 11, icon: 'battery', text: 'Craft a Battery at the Forge (press E at it to pick the recipe)', xp: 8, stat: g => (g.stats.made || {}).battery || 0, n: 1, hint: { make: 'forge' } },
+    { v5: 12, icon: 'ic_bolt', text: 'Charge 3 Batteries: swap flat ones into the Charger and feed it packets', xp: 15, gift: { credit: { station: 1 } }, stat: g => g.stats.charged || 0, n: 3, hint: { make: 'charger' } },
+    { from: 13, v5: 13, icon: 'flamethrower', text: 'Unlock a combo spell and deliver it from the Forge', xp: 15, gift: { bank: { air: 3, fire: 3 } }, done: g => g.flags.combo, hint: { combo: 2 } },
+    { v5: 14, icon: 'ic_fast', text: 'Overdrive: put a charged Battery Station right beside a Forge or Cauldron', xp: 12, done: g => G.fac.bld.some(b => b.done && b.od), hint: { make: 'station' } },
+    { v5: 15, icon: 'steam', text: 'Deliver 6 combo spells to the Wizard (two or more elements each)', xp: 15, gift: { stock: { shard: 1 } }, stat: g => g.stats.combos || 0, n: 6, hint: { combo: 2 } },
+    { from: 15, v5: 16, icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter to route packets', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && b.type === 'splitter'), hint: { make: 'splitter' } },
+    { from: 16, v5: 17, icon: 'armor', text: 'Unlock the Armory and send Armor to the Wizard (it needs Fire packets)', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'anvil' } },
+    { v5: 18, icon: 'plate', text: 'Plate up the Wizard: send 4 more Armor or Heavy Plates (Heavy Plates need Earth)', xp: 12, gift: { stock: { iron: 6 } }, stat: g => sentN(g, 'armor', 'plate'), n: 4, hint: { make: 'anvil' } },
+    { icon: 'egg_pebble', text: 'Hatch a Pebble Golem: set a Harnesser to Earth, feed a Spawner, send the Egg', xp: 12, stat: g => (g.stats.sent || {}).egg_pebble || 0, n: 1, hint: { make: 'spawner1' } },
+    { from: 17, v5: 19, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 8) and throw 1 Wood + 1 Stone at it', xp: 15, done: g => (g.stats.tiles || 0) >= 1, hint: { make: 'expand' } },
+    { v5: 20, icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner1' } },
+    { from: 19, v5: 21, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, done: g => g.flags.triple, hint: { combo: 3 } },
+    { from: 20, v5: 22, icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, done: g => g.flags.sent_nova, hint: { combo: 4 } },
+    { from: 23, v5: 23, icon: 'b:altar', text: 'Unlock Summoning (it costs a Warden Core) and build the Summoning Altar (it needs Aether Shards)', xp: 40, done: g => FA.count('altar') >= 1, hint: { make: 'altar' } },
+    { from: 24, v5: 24, icon: 'ic_crown', text: 'Craft a Boss Sigil and send it through the Spell Portal. Then keep the right element flowing!', xp: 60, done: g => g.flags.sent_sigil, hint: { make: 'altar' } },
   ],
   W: [
     { from: 1,  icon: 'ic_hat', text: 'Stand right next to a tree. The factory\'s Air Gusts will chop it down', xp: 4, done: g => g.stats.harvested >= 1, hint: { harv: 1 } },

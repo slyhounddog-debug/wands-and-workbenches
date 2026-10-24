@@ -9,11 +9,11 @@ UI.iconCanvas = function (key) {
   if (iconCache[key]) return iconCache[key];
   let c;
   if (key.startsWith('b:')) {   // building: base + floating crystal for harnessers (ids like 'air' also name items, hence the prefix)
-    const d = CFG.buildings[key.slice(2)], s = d.elem ? SP['b_' + d.elem] : SP['b_' + key.slice(2)];
+    const id = key.slice(2), el = ELEM[id] ? id : id === 'harness' ? 'air' : null, s = SP['b_' + (el ? 'harness' : id)];   // 'b:water' = the Harnesser carrying a Water crystal
     c = document.createElement('canvas'); c.width = 20; c.height = 32;
     const x = c.getContext('2d');
     x.drawImage(s.c, 0, -2);
-    if (d.elem) { const cr = SP['cr_' + d.elem]; x.drawImage(cr.c, 10 - cr.ax, 26 - 2 - 7 - cr.ay); }
+    if (el) { const cr = SP['cr_' + el]; x.drawImage(cr.c, 10 - cr.ax, 26 - 2 - 7 - cr.ay); }
   } else {
     const s = SP[key] || itemSprite(key);
     c = s ? s.c : null;
@@ -426,7 +426,7 @@ UI.cycleFam = function (dir, slot) {
 
 // ---------- skill tree ----------
 // Every node costs XP + banked spells. Element packets need their harnesser unlocked; combo spells need their own node.
-const ELEM_UNLOCK = { water: 'water', fire: 'fire', earth: 'earth' };
+const ELEM_UNLOCK = {};   // every element is available from the start
 UI.nodeLevel = n => (n.tiers ? lvl(n.id) : (G.tree[n.id] ? 1 : 0));
 UI.nodeMax = n => (n.tiers ? n.tiers.length : 1);
 UI.nodeCost = function (n) {
@@ -531,7 +531,7 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
   const L = UI.nodeLevel(n), up = CFG.upgrade[n.id], nx = L < UI.nodeMax(n) ? L + 1 : null;
   const row = (label, f) => [label, f(L), nx === null ? null : f(nx)];
   switch (n.id) {
-    case 'swift': return [row('Harnesser speed', l => fPct(up * l)), row('Air Pocket every', l => fSec(CFG.buildings.air.cycle / (1 + up * l))), row('Water Drop every', l => fSec(CFG.buildings.water.cycle / (1 + up * l)))];
+    case 'swift': return [row('Harnesser speed', l => fPct(up * l)), row('Air Pocket every', l => fSec(CFG.harness.air.cycle / (1 + up * l))), row('Water Drop every', l => fSec(CFG.harness.water.cycle / (1 + up * l)))];
     case 'manual': return [row('Hand-harnessing speed', l => fPct(up * l)), row('Taps to fill the meter', l => (CFG.manual.taps / (1 + up * l)).toFixed(1))];
     case 'belts': return [row('Belt speed', l => fPct(up * l)), row('Time per tile', l => fSec(CFG.beltTime / (1 + up * l)))];
     case 'satchel': return [row('Items carried (any mix)', l => '' + (CFG.satchel + up * l))];
@@ -559,7 +559,7 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
   for (const id in CFG.buildings) {
     const d = CFG.buildings[id];
     if (d.unlock !== n.id) continue;
-    const info = d.kind === 'harness' ? '1 per ' + fSec(FA.cycle(id)) + (d.power ? ', ' + d.power + ' power' : ', no power') : Object.keys(d.cost).map(k => UI.img(k, 14) + d.cost[k]).join(' ');
+    const info = Object.keys(d.cost).map(k => UI.img(k, 14) + d.cost[k]).join(' ');
     rows.push([d.name, info]);
   }
   for (const id in CFG.recipes) if (CFG.recipes[id].tier === n.id) rows.push([recipeName(id), UI.recipeHtml(id)]);
@@ -706,7 +706,7 @@ UI.pinHtml = function (side, id) {
     const worst = short.reduce((a, x) => (x.t > a.t ? x : a));
     if (worst.k === 'ic_xp') act = [UI.img('ic_hat', 16), UI.img('ic_skull', 16)];   // the Wizard fights for XP
     else if (worst.k === 'core') act = [UI.img('ic_hat', 16), UI.img('ic_keep', 16)];   // the Wizard claims a Stronghold
-    else if (ELEM[worst.k] && !FA.count(worst.k)) act = [UI.img('b:' + worst.k, 16)];   // build that harnesser first
+    else if (ELEM[worst.k] && !G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === worst.k)) act = [UI.img('b:' + worst.k, 16)];   // set a Harnesser to that element first
     else if (ITEMS[worst.k].spell && !(G.fac.bld.some(b => b.type === 'forge' && b.recipe === worst.k))) act = [UI.img('b:forge', 16), UI.img('ic_swap', 14), UI.img(worst.k, 16)];   // set a Forge to it
     else act = [UI.img(worst.k, 16), '<em>&gt;</em>', UI.img('ic_skill', 16)];   // send it into the Skill Portal
   }
@@ -837,8 +837,8 @@ const HOWTO = {
   ],
   'FACTORY': [
     ['Hands', 'The Builder carries one stack (5 at first). <b>Left-click</b> (pad <b>A</b>) picks up <b>one item at a time</b>: hold it to keep grabbing. <b>Right-click</b> (pad <b>B</b>) throws one item along the dotted lead line: it aims at machines, blueprints, belts, portals or the Stockpile. Throwing is the only way to put things in. Nothing ever vanishes.'],
-    ['Building', 'Pick a slot (keys <b>1</b> to <b>7</b> or the wheel). Slots with a pip row are <b>families</b> (Harnessers, Crafters, Power, Logistics, Creature Spawners): <b>Q</b>, the wheel over the slot or <b>RT</b> on a pad cycles the member (locked ones are skipped). <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
-    ['Machines', 'Harnessers make element packets by themselves, or stand next to one and press <b>E</b>, then <b>keep tapping E</b> to fill the meter and crank one out by hand (it never fills by itself; no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
+    ['Building', 'Pick a slot (keys <b>1</b> to <b>8</b> or the wheel; slot 8 is Floor Tiles). Slots with a pip row are <b>families</b> (Crafters, Power, Logistics, Creature Spawners): <b>Q</b>, the wheel over the slot or <b>RT</b> on a pad cycles the member (locked ones are skipped). <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
+    ['Machines', 'The <b>Harnesser</b> carries one of four element crystals: <b>F</b> (<b>LT + X</b> on a pad) switches it to the next element at any time. The old crystal bursts, the new one grows for 15 seconds, then the Harnesser shakes and starts making packets (nothing is made while it grows, and switching again restarts the 15 seconds). Every building shows what it holds as real items stacked on it: inputs, what it has made, a blueprint materials (faint copies = still missing), Charger fuel. Harnessers make packets by themselves, or stand next to one and press <b>E</b>, then <b>keep tapping E</b> to fill the meter and crank one out by hand (it never fills by itself; no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
     ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with a charged Battery in a Battery Station and a Charger beside it: a Battery drains while anything needs power, so carry it to the Charger and throw element packets at it to refill it (hand-gathered packets are free). Every packet charges 10% more than its base, and a packet you throw in by hand adds another 20%. Craft a Battery at the Forge (2 Iron Ore), charge it at a Charger by feeding it packets (more kinds = faster), then haul it to a Battery Station. A charged Station right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, <b>Heavy Batteries</b> make every Battery last 50% longer in a Station.'],
     ['Creatures', 'The <b>Creature Spawner</b> turns element packets into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. Tier 2 and 3 Spawners (Skill Tree) hatch two- and three-element creatures; each one is its own node. At most 12 factory creatures live at once: extra Eggs wait in the portal. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
     ['Growing', 'The floor starts small. <b>Factory Expansion</b> in the Skill Tree makes it bigger, pushing the Stockpile further from the portals.'],
@@ -878,7 +878,7 @@ UI.howPage = function (tab) {
     const uses = {
       wood: 'Every building, belts (1 each), Cauldron brews',
       stone: 'Every building, Armor',
-      iron: 'Fire Harnesser, Forge, Anvil, Station, Charger, Altar, Batteries, Armor',
+      iron: 'Forge, Anvil, Station, Charger, Altar, Batteries, Armor, Floor Tiles after the 28th',
       shard: 'Rare: only from landmarks and elites. Summoning Altar, Boss Sigil',
       core: 'Once per Stronghold per save. Costs of Spawner III and Summoning',
       sigil: 'Spell Portal: summons the Primal Chimera beside the Wizard',
@@ -934,6 +934,7 @@ const CONTROLS = [
     [K('RIGHT-CLICK'), 'Throw one item along the dotted line (hold = rapid). While hand-gathering: cancel the gather'],
     [K('SHIFT') + ' + ' + K('RIGHT-CLICK'), 'Throw the whole stack'],
     [K('E'), 'Use: hand-gather a Harnesser (tap again and again to fill the meter), turn a belt or machine, switch recipe'],
+    [K('F') + ' &nbsp;(' + K('SHIFT') + ' + ' + K('F') + ' = back)', 'Switch the element of the Harnesser in reach (the new crystal grows for 15 seconds)'],
     [K('1') + ' - ' + K('8') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, the building families, then Floor Tiles)'],
     [K('[') + ' ' + K(']'), 'Previous / next hotbar slot'],
     [K('Q') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot)'],
@@ -979,6 +980,7 @@ const CONTROLS = [
     [K('A'), 'Pick up (hold to sweep). With a building selected: place in front (hold with Belt to lay belts)'],
     [K('B') + ' &nbsp;/&nbsp; ' + K('LT') + ' + ' + K('B'), 'Throw (hold = rapid) / throw the whole stack. Cancels hand-gathering'],
     [K('X'), 'Use'],
+    [K('LT') + ' + ' + K('X'), 'Switch the element of the Harnesser in reach'],
     [K('RIGHT STICK') + ' &nbsp;or ' + K('R3'), 'Flick to cycle targets'],
     [K('LB') + ' ' + K('RB'), 'Previous / next hotbar slot'],
     [K('RT'), 'Next member of a family slot'],

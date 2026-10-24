@@ -13,7 +13,7 @@ window.addEventListener('resize', fit);
 
 // ---------- new / load / save ----------
 const SAVE_VERSION = 4;
-const QUEST_VERSION = 5;   // v5 split the single goal chain into two tracks, Builder and Wizard (Main.splitQuest); v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1; v4 inserted the first-creature-kill goal at 5 and the two Stronghold goals before Summoning: goals from the old 5 shift by 1, from the old 21 (Summoning) by 3
+const QUEST_VERSION = 6;   // v6 re-sequenced the Builder goals around building things with elements (each carried-over goal has v5 = its old index: Main.questOf); v5 split the single goal chain into two tracks, Builder and Wizard (Main.splitQuest); v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1; v4 inserted the first-creature-kill goal at 5 and the two Stronghold goals before Summoning: goals from the old 5 shift by 1, from the old 21 (Summoning) by 3
 function blankState(slot) {
   return {
     slot, xp: 0, tree: {}, stock: { wood: CFG.start.wood, stone: CFG.start.stone, iron: CFG.start.iron, shard: 0, core: 0, air: 0, water: 0, fire: 0, earth: 0 }, fam: {}, pinBp: false,
@@ -54,6 +54,7 @@ Main.applySave = function (slot, s) {
   G.credits = Object.assign(G.credits, s.credits || {}); G.stats = Object.assign(G.stats, s.stats || {});
   G.flags = s.flags || {}; G.quest = Main.questOf(s); G.placeDir = s.placeDir || 0;
   if (s.qbase && typeof s.quest === 'object') G.qbase = Object.assign(G.qbase, s.qbase);   // null = measured from when the goal first shows
+  if ((s.qv || 1) < 6) G.qbase.B = null;   // the Builder's goals moved: its old baseline belonged to another goal
   G.bankLog = Array.isArray(s.bankLog) ? s.bankLog.filter(k => ITEMS[k]) : [];
   G.pins = Object.assign({ L: null, R: null }, s.pins || {}); G.pinBp = !!s.pinBp;
   // the hands: one pile of single items, bottom first. Older saves held one stack { kind, n } (and for a moment a queue of them): expand them in order.
@@ -73,7 +74,11 @@ Main.splitQuest = function (old) {
   return { B: at('B'), W: at('W') };
 };
 Main.questOf = function (s) {
-  if (s.quest && typeof s.quest === 'object') return { B: s.quest.B | 0, W: s.quest.W | 0 };
+  if (s.quest && typeof s.quest === 'object') {
+    let B = s.quest.B | 0;
+    if ((s.qv || 1) < 6) { const i = QUESTS.B.findIndex(q => q.v5 != null && q.v5 >= B); B = i < 0 ? QUESTS.B.length : i; }   // resume at the first goal that continues the old one
+    return { B, W: s.quest.W | 0 };
+  }
   let q = s.quest || 0;
   const v = s.qv || 1;
   if (v < 2 && q >= 13) q += 2;
@@ -259,7 +264,9 @@ Main.controls = function (dt) {
   R.padMode = G.lastInput === 'pad';
 
   // Builder: left-click / A picks up, right-click / B throws, E / X uses (swapped keyboard: . pick, , throw, / use)
-  let use = (c.kbB && !(sh && G.swapped) && IN.hit('KeyE')) || (altB && IN.hit('Slash')) || (p0 && p0.x);
+  // F (Shift + F = backwards) / LT + X on a pad switches the element of the Harnesser in reach
+  const swapEl = (c.kbB && IN.hit('KeyF')) || (p0 && p0.x && p0.ltHeld);
+  let use = (c.kbB && !(sh && G.swapped) && IN.hit('KeyE')) || (altB && IN.hit('Slash')) || (p0 && p0.x && !p0.ltHeld);
   let pick = (altB && IN.hit('Period')) || (p0 && p0.a);
   const pickHeld = (altB && IN.down('Period')) || (p0 && p0.aHeld);
   const throwHeld = (altB && IN.down('Comma')) || (p0 && p0.bHeld);
@@ -392,6 +399,7 @@ Main.controls = function (dt) {
       }
     }
     if (use) press('use');
+    if (swapEl) { const hb = FA.harnessNear(); if (hb) FA.cycleElem(hb, IN.shift() ? -1 : 1); else AU.sfx('error'); }
     // A / . picks up one item (holding keeps grabbing); with a building selected it places in front instead
     if (pick) {
       if (building) { if (!placeInFront(true)) G.ibuf = { mode: 'place', t: CFG.inputBuffer }; }
@@ -566,6 +574,8 @@ Main.updateFocus = function () {
   if (ap && ap.fn) list.push({ t: tp, a: ap, key: 'pick' });
   if (au && au.fn) list.push({ t, a: au, key: 'use' });
   if (!list.length) { if (ap && ap.label) list.push({ t: tp, a: ap }); else if (au && au.label) list.push({ t, a: au }); }
+  const hn = G.selected === 'hand' && !G.demolish ? FA.harnessNear() : null;   // a third prompt: switch the Harnesser's element
+  if (hn) { const o = CFG.harness.order; list.push({ t: { kind: 'bld', o: hn, x: hn.x + 0.5, y: hn.y + 0.5 }, a: { label: 'Change element', fn: null, ic: [hn.el, 'ic_swap', o[(o.indexOf(hn.el) + 1) % o.length]] }, key: 'cycle' }); }
   R.focus = list.length ? { list } : null;
   let b = null;
   if (mouseInFactory() && G.lastInput === 'mouse') {

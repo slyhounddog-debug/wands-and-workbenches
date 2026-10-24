@@ -21,7 +21,7 @@ function blankState(slot) {
     credits: { station: 0, charger: 0 },
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
     flags: {}, quest: { B: 0, W: 0 }, qbase: { B: null, W: null }, bankLog: [], pins: { L: null, R: null }, lock: null,
-    hands: null, swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
+    hands: null, handQ: [], swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
 }
@@ -56,7 +56,9 @@ Main.applySave = function (slot, s) {
   if (s.qbase && typeof s.quest === 'object') G.qbase = Object.assign(G.qbase, s.qbase);   // null = measured from when the goal first shows
   G.bankLog = Array.isArray(s.bankLog) ? s.bankLog.filter(k => ITEMS[k]) : [];
   G.pins = Object.assign({ L: null, R: null }, s.pins || {}); G.pinBp = !!s.pinBp;
-  G.hands = s.hands && ITEMS[s.hands.kind] ? s.hands : null;
+  // the hands: a first-in-first-out line of stacks (G.hands is the front); older saves have just the one
+  const stacks = [s.hands].concat(Array.isArray(s.handQ) ? s.handQ : []).filter(h => h && ITEMS[h.kind] && h.n > 0).slice(0, CFG.handSlots);
+  G.hands = stacks.shift() || null; G.handQ = stacks;
   G.w = WZ.fresh();
   G.ev = WZ.evFresh(s.ev && s.ev.n || 0);
   FA.fromJSON(s.fac || {});
@@ -90,7 +92,7 @@ Main.save = function () {
     const looseCores = G.w ? G.w.drops.filter(d => d.kind === 'core').reduce((a, d) => a + d.val, 0) : 0;
     const data = JSON.stringify({
       v: SAVE_VERSION, qv: QUEST_VERSION, xp: G.xp, tree: G.tree, stock: Object.assign({}, G.stock, { shard: G.stock.shard + loose, core: G.stock.core + looseCores }, ...Object.entries(FA.inFlight()).map(([k, n]) => ({ [k]: G.stock[k] + n + (k === 'shard' ? loose : k === 'core' ? looseCores : 0) }))), ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
-      flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: FA.toJSON(), at: Date.now(),
+      flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, handQ: G.handQ, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: FA.toJSON(), at: Date.now(),
       bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp,
     });
     if (!Main.saveOk(JSON.parse(data))) throw new Error('the new save failed its own check');
@@ -103,7 +105,7 @@ Main.save = function () {
   }
 };
 Main.enter = function () {
-  STATE = 'play';
+  STATE = 'play'; Main.still = 0; Main.drawSig = null;
   UI.splitB = null; UI.show('splitModal', false); UI.askB = null; UI.show('askModal', false);
   UI.resetCache();
   UI.show('menu', false); UI.show('game', true);
@@ -193,7 +195,7 @@ function handleMouseFactory(dt) {
   } else if (m.l && sel === 'hand' && !G.demolish && !bd.target) {   // hold to keep taking
     G.mRepeat -= dt;
     // with something in hand, holding sweeps up the same kind nearby; empty-handed it repeats on the hovered thing
-    const thing = G.mRepeat <= 0 && (G.hands ? FA.sweepTarget(G.hands.kind) : FA.thingAt(tx, ty, px, py));
+    const thing = G.mRepeat <= 0 && (G.hands ? FA.sweepTarget(FA.tailKind()) : FA.thingAt(tx, ty, px, py));
     if (thing && FA.distTo(thing) < CFG.reach + 0.5) {
       const a = FA.actionFor(thing, 'pick');
       if (a.fn && a.rep) a.fn();
@@ -397,7 +399,7 @@ Main.controls = function (dt) {
     } else if (pickHeld && !building && G.pRepeat > 0) {
       G.pRepeat -= dt;
       if (G.pRepeat <= 0) {
-        const t = G.hands ? FA.sweepTarget(G.hands.kind) : FA.findTarget('pick'), a = t && FA.actionFor(t, 'pick');
+        const t = G.hands ? FA.sweepTarget(FA.tailKind()) : FA.findTarget('pick'), a = t && FA.actionFor(t, 'pick');
         if (a && a.rep && a.fn) { a.fn(); G.pRepeat = G.hands ? CFG.sweepRepeat : CFG.pickRepeat; }
       }
     } else if (!pickHeld) G.pRepeat = 0;
@@ -527,11 +529,12 @@ Main.hintFor = function (q) {
       if (h.mark === 'myshrine' ? !(m.type === 'shrine' && done) : done || (h.mark === 'shrine' ? m.type !== 'shrine' : h.mark === 'camp' && m.type !== 'camp' && m.type !== 'crypt')) continue;
       near(m);
     }
-    if (best) out.w = { x: best.x, y: best.y, lift: h.mark ? 120 : 90 };
+    // the arrow's tip sits above the sprite AND the health / progress bar drawn over it (a tree's bar, a forage spot's taps)
+    if (best) out.w = { x: best.x, y: best.y, lift: h.mark ? 120 : (best.kind === 'bush' ? SP.fbush : SP[best.kind]).c.height * CFG.WT.S + 28 };
   } else if (h.crafted) {   // the nearest factory creature, else the Spell Portal the Egg goes through
     let best = null, bd = 1e9;
     for (const e of G.w.enemies) { if (!e.crafted || e.dead) continue; const d = Math.hypot(e.x - G.w.x, e.y - G.w.y); if (d < bd) { bd = d; best = e; } }
-    if (best) out.w = { x: best.x, y: best.y, lift: 110 }; else { const p = FA.portal('spell'); out.f = { x: p.x + 0.5, y: p.y + 1, lift: 240 }; }
+    if (best) { const spr = (best.var && SP[best.type + '_' + best.var]) || SP[best.type]; out.w = { x: best.x, y: best.y, lift: Math.round(spr.c.height * CFG.WT.S * (best.sz || 1) * (best.elite ? 1.4 : 1)) + (best.fly ? 12 : 0) + 46 }; } else { const p = FA.portal('spell'); out.f = { x: p.x + 0.5, y: p.y + 1, lift: 240 }; }
   } else if (h.keep) {   // scout: the nearest unscouted Stronghold; claim: the nearest unclaimed one
     const w = G.w;
     let best = null, bd = 1e9;
@@ -641,14 +644,20 @@ function frame(ts) {
   if (STATE === 'play' && G) {
     try {
       Snap.tick();   // dev-only: the snapshot bar and its keys (inert unless the F3 overlay is open)
-      if (Snap.mode !== 'off') { AU.hum(0); Snap.draw(ctx, ts); }   // a snapshot view is up: the simulation is frozen and the cached frame shows
+      if (Snap.mode !== 'off') { AU.hum(0); Snap.draw(ctx, ts); Main.still = 0; }   // a snapshot view is up: the simulation is frozen and the cached frame shows
       else {
       if (!G.paused) Main.step(dt);
       else AU.hum(0);
       if (G) {
-        ctx.clearRect(0, 0, CFG.W, CFG.H);
-        R.drawFactory(ctx, G.paused ? 0 : dt);
-        R.drawWorld(ctx, G.paused ? 0 : dt);
+        // A frozen game (pause menu, a skill tree, the "And..." beat) is the same picture every frame: once it has settled for a few frames the canvas is left alone,
+        // and a half hidden under its own opaque tree panel is not drawn at all. Main.still counts the frames since anything changed (UI.changed resets it).
+        const frozen = G.paused || UI.treeOpen.L || UI.treeOpen.R || Main.graceT > 0;
+        const sig = frozen ? [G.paused, UI.treeOpen.L, UI.treeOpen.R, Main.graceT > 0].join() : '';
+        if (sig !== Main.drawSig) { Main.drawSig = sig; Main.still = 0; }
+        if (!frozen || Main.still++ < 3) {
+          if (!UI.treeOpen.L) { ctx.clearRect(0, 0, CFG.HALF, CFG.H); R.drawFactory(ctx, G.paused ? 0 : dt); }
+          if (!UI.treeOpen.R) { ctx.clearRect(CFG.HALF, 0, CFG.HALF, CFG.H); R.drawWorld(ctx, G.paused ? 0 : dt); }
+        }
       }
       }
     } catch (e) { R.defer = null; UI.err(e); }

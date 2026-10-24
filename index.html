@@ -45,13 +45,15 @@
 
     <!-- builder side -->
     <div id="hudL" class="hud">
-      <div class="card px" id="powCard">
-        <div class="clabel"><i data-ic="ic_bolt" data-s="16"></i>POWER</div>
-        <div class="bar"><div id="powFill"></div><span id="powTxt"></span></div>
-      </div>
-      <div class="card px" id="handCard">
-        <div class="clabel"><i data-ic="ic_hand" data-s="16"></i>HANDS</div>
-        <div id="handTxt"></div>
+      <div class="hrow">
+        <div class="card px" id="powCard">
+          <div class="clabel"><i data-ic="ic_bolt" data-s="16"></i>POWER</div>
+          <div class="bar"><div id="powFill"></div><span id="powTxt"></span></div>
+        </div>
+        <div class="card px" id="handCard" title="Hands: first in, first out">
+          <div class="clabel"><i data-ic="ic_hand" data-s="16"></i></div>
+          <div id="handTxt"></div>
+        </div>
       </div>
       <div class="card px pin hidden" id="pinL"></div>
       <div class="card px pin hidden" id="bpCard"></div>

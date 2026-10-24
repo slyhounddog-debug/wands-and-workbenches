@@ -504,8 +504,18 @@ WZ.updKeep = function (m, s, d, dt) {
     UI.toast(msg, 'L', WZ.WARDEN_WEAK(m.el)); UI.toast(msg, 'R', 'ic_keep');
     AU.sfx('alert'); UI.changed();
   }
-  if (s.state === 'idle' && d < K.wake) {
-    s.state = 'active';
+  if (s.state === 'idle') {
+    // standing inside the wake radius runs a countdown (warnT); the guards only spawn when it reaches warnT, and leaving (or dying) resets it
+    if (d >= K.wake || w.dead) { s.warnT = 0; return; }
+    if (!(s.warnT > 0)) {
+      s.warnT = 0;
+      if (!(w.t - (s.toastAt || -99) < 8)) { s.toastAt = w.t; UI.toast('Stronghold area! The guards wake in ' + K.warnT + 's: leave to reset it', 'R', 'ic_warn'); UI.toast('The Wizard is in a Stronghold area', 'L', 'ic_warn'); }
+      AU.sfx('warn');
+    }
+    const was = Math.ceil(K.warnT - s.warnT);
+    s.warnT += dt;
+    if (s.warnT < K.warnT) { if (Math.ceil(K.warnT - s.warnT) !== was) AU.sfx('blip'); return; }
+    s.state = 'active'; s.warnT = 0;
     const g = K.guards[m.el];
     for (const id in g) for (let i = 0; i < g[id]; i++) {
       const sp = WZ.dryNear(m.x, m.y, 14, [2, 5]) || [m.x + 2, m.y];

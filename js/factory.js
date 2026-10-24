@@ -63,7 +63,7 @@ FA.isBankable = k => SPELL_KINDS.indexOf(k) >= 0;                               
 // an Egg is taken while the crafted-creature cap has room, then it waits in the portal queue; a full queue stops the portal taking more
 FA.eggRoom = () => G.fac.eggQ.length < CFG.crafted.queue || (!G.w.dead && WZ.craftedAlive() < CFG.crafted.cap);
 FA.portalTakes = (c, k) => (c.which === 'skill' ? FA.isBankable(k) : FA.isDeliverable(k) && (k !== 'sigil' || (!G.w.dead && !G.w.boss)) && (!ITEMS[k].egg || FA.eggRoom()));
-FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 'sorter' || k === 'crate'; };
+FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 'crate'; };
 
 FA.fresh = function (w, h) {
   const f = { w, h, grid: new Array(w * h).fill(null), bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
@@ -92,7 +92,7 @@ FA.initial = function () {
   FA.splitConn(sp); sp.pct = { 0: CFG.starterSplit, 1: 100 - CFG.starterSplit };   // its outputs are east (the portal belts) and south (the Spawner)
   G.bd = FA.freshBuilder();
 };
-FA.freshBuilder = () => ({ x: 5.5, y: G.fac.h - 6.5, vx: 0, vy: 0, fx: 1, fy: 0, target: null, then: null, stuckT: 0, gather: null,
+FA.freshBuilder = () => ({ x: 5.5, y: G.fac.h - 6.5, vx: 0, vy: 0, fx: 1, fy: 0, target: null, then: null, stuckT: 0, gather: null, apT: 0,
   bob: 0, moving: false, squash: 0, throwCd: 0, dustT: 0 });
 
 // Factory Expansion: grow the floor west/north-south. Everything shifts so the portals stay on the east edge;
@@ -136,7 +136,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   if (d.kind === 'station') b.bat = null;
   if (d.kind === 'charger') { b.bat = null; b.fuel = { air: 0, water: 0, fire: 0, earth: 0 }; b.types = []; }
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
-  if (d.kind === 'sorter') b.filter = null;
+  if (d.kind === 'harness') b.hand = 0;   // how far the Builder has hand-cranked the next packet: it stays when he walks away
   if (d.kind === 'splitter') { b.pct = {}; b.filt = {}; b.outs = []; b.ins = []; b.sig = null; b.acc = {}; b.src = {}; }
   f.bld.push(b);
   FA.setCell(x, y, b);
@@ -205,18 +205,25 @@ FA.inFlight = function () {   // what the saved stock must add: stock-bound item
 FA.say = a => { if (a.ic) FA.ipop(G.bd.x, G.bd.y - 0.3, a.ic.map(k => [k])); else if (a.label) FA.pop(G.bd.x, G.bd.y - 0.3, a.label, '#ffd0a0'); };   // why an action can't happen
 
 // ---------- hands & floor items ----------
-FA.canHold = k => !G.hands || (G.hands.kind === k && G.hands.n < FA.stackMax(k));
+// The hands are a first-in-first-out line of stacks: G.hands is the front (the oldest, what a throw sends first), G.handQ the stacks behind it.
+// A pick adds to the last stack when it is the same kind (and has room), otherwise starts a new one, up to CFG.handSlots stacks.
+FA.hlist = () => (G.hands ? [G.hands].concat(G.handQ) : []);
+FA.tail = () => (G.handQ.length ? G.handQ[G.handQ.length - 1] : G.hands);
+FA.tailKind = () => { const t = FA.tail(); return t ? t.kind : null; };
+FA.canHold = k => { const t = FA.tail(); return !t || (t.kind === k && t.n < FA.stackMax(k)) || 1 + G.handQ.length < CFG.handSlots; };
 FA.addHands = function (k, n, charge) {
-  if (!G.hands) G.hands = { kind: k, n: 0 };
-  G.hands.n += n;
-  if (k === 'battery') G.hands.charge = charge || 0;
+  const t = FA.tail();
+  if (t && t.kind === k && t.n + n <= FA.stackMax(k)) { t.n += n; return; }
+  const s = { kind: k, n };
+  if (k === 'battery') s.charge = charge || 0;
+  if (!G.hands) G.hands = s; else G.handQ.push(s);
 };
 FA.takeOne = function () {
   const h = G.hands;
   if (!h) return null;
   const it = { kind: h.kind, charge: h.charge };
   h.n--;
-  if (h.n <= 0) G.hands = null;
+  if (h.n <= 0) G.hands = G.handQ.shift() || null;
   return it;
 };
 FA.dropAt = function (kind, x, y, charge) {
@@ -227,10 +234,10 @@ FA.dropHands = function () {   // never deletes: everything lands on the floor a
   while (G.hands) { const it = FA.takeOne(); FA.dropAt(it.kind, G.bd.x, G.bd.y, it.charge); }
 };
 FA.stash = function () {       // resources back to the Stockpile; anything else lands on the floor
-  const h = G.hands;
-  if (!h) return;
-  if (RES[h.kind]) { G.stock[h.kind] += h.n; G.hands = null; AU.sfx('drop'); return; }
-  FA.dropHands();
+  if (!G.hands) return;
+  const keep = FA.hlist().filter(h => { if (RES[h.kind]) G.stock[h.kind] += h.n; return !RES[h.kind]; });
+  G.hands = keep.shift() || null; G.handQ = keep;
+  FA.dropHands(); AU.sfx('drop');
 };
 FA.pickFloor = function (it) {   // one item per press (hold to keep grabbing)
   const f = G.fac, i = f.floor.indexOf(it);
@@ -337,7 +344,7 @@ FA.canInsert = function (b, kind) {
     return !!ELEM[kind] && FA.fuelTotal(b) + CFG.fuelPerPacket <= CFG.fuelCap;
   }
   if (d.kind === 'station') return kind === 'battery' && b.bat == null;
-  if (d.kind === 'splitter' || d.kind === 'sorter') return kind !== 'battery' && b.out.length < 2;
+  if (d.kind === 'splitter') return kind !== 'battery' && b.out.length < 2;
   if (d.kind === 'crate') return !RES[kind] && kind !== 'battery' && b.out.length < CFG.crateCap;
   return false;
 };
@@ -581,12 +588,8 @@ FA.splitTook = function (b, ways, d) {   // every way earns its weight, the one 
   const tot = ways.reduce((a, o) => a + o.w, 0);
   for (const o of ways) b.acc[o.d] = Math.max(-2 * tot, Math.min(2 * tot, (b.acc[o.d] || 0) + o.w - (o.d === d ? tot : 0)));
 };
-// Sorter: filter matches out the front, the rest out the sides. Crate: front.
-FA.logiSides = function (b) {
-  const k = FA.def(b).kind, o = b.out[0];
-  if (k === 'crate') return [b.dir];
-  return !b.filter || (o && o.kind === b.filter) ? [b.dir] : [(b.dir + 1) % 4, (b.dir + 3) % 4];
-};
+// Crate: front.
+FA.logiSides = b => [b.dir];
 FA.updLogi = function (b, dt) {
   const split = FA.def(b).kind === 'splitter';
   if (split) FA.splitConn(b);
@@ -627,7 +630,7 @@ FA.state = function (b) {
     if (FA.crafterReady(b) !== 0) return 'work';
     return Object.keys(CFG.recipes[b.recipe].in).some(i => (b.inv[i] || 0) > 0) ? 'missing' : 'starve';
   }
-  if (k === 'splitter' || k === 'sorter') return b.out.length >= 2 ? 'full' : b.out.length ? (b.blocked ? 'jam' : 'work') : null;
+  if (k === 'splitter') return b.out.length >= 2 ? 'full' : b.out.length ? (b.blocked ? 'jam' : 'work') : null;
   if (k === 'crate') return b.out.length >= CFG.crateCap ? 'full' : b.out.length && b.blocked ? 'jam' : null;
   if (k === 'station') return b.bat == null ? 'starve' : b.bat <= 0 ? 'missing' : G.fac.demand > 0 ? 'work' : null;
   if (k === 'charger') {
@@ -790,6 +793,7 @@ FA.update = function (dt) {
     if (o.z > 0 || o.vz > 0) { o.z += o.vz * dt; o.vz -= 14 * dt; if (o.z <= 0) { o.z = 0; o.vz = Math.abs(o.vz) > 2 ? -o.vz * 0.35 : 0; } }
   }
   FA.gatherFloor(dt);
+  FA.autoPick(dt);
   for (let i = f.parts.length - 1; i >= 0; i--) {
     const p = f.parts[i];
     p.t -= dt; p.x += p.vx * dt * 0.5; p.y += p.vy * dt * 0.5; p.z += p.vz * dt; p.vz -= (p.g === undefined ? 9 : p.g) * dt;
@@ -803,6 +807,19 @@ FA.update = function (dt) {
   if (G.bd.squash > 0) G.bd.squash -= dt;
 };
 
+// a slight pickup range: a loose item that has settled within autoPick.r tiles of the Builder hops into his hands, one every autoPick.gap seconds
+FA.autoPick = function (dt) {
+  const A = CFG.autoPick, bd = G.bd;
+  if (bd.apT > 0) { bd.apT -= dt; return; }
+  if (bd.gather || A.r <= 0) return;
+  let best = null, bs = A.r;
+  for (const o of G.fac.floor) {
+    if (o.t < A.delay || o.z > 0.05) continue;
+    const d = Math.hypot(o.x - bd.x, o.y - bd.y);
+    if (d < bs && FA.canHold(o.kind)) { bs = d; best = o; }
+  }
+  if (best) { FA.pickFloor(best); bd.apT = A.gap; }
+};
 // resting floor items slide toward the nearest item of the same kind, so loose packets settle into piles
 FA.gatherFloor = function (dt) {
   const fl = G.fac.floor;
@@ -1033,7 +1050,7 @@ FA.distTo = function (t) {
 
 FA.startGather = function (b) {
   const el = FA.def(b).elem;
-  G.bd.gather = { b, t: 0, total: 1, el };   // the meter only moves when E is tapped (FA.crank)
+  G.bd.gather = { b, t: b.hand || 0, total: 1, el };   // the meter only moves when E is tapped (FA.crank); it starts from what is already cranked
   G.bd.target = null;
   AU.sfx('blip');
 };
@@ -1041,7 +1058,7 @@ FA.tapGain = () => (1 + CFG.upgrade.manual * lvl('manual')) / CFG.manual.taps;  
 FA.crank = function () {
   const g = G.bd.gather;
   if (!g) return;
-  g.t += FA.tapGain();
+  g.t += FA.tapGain(); g.b.hand = Math.min(g.t, 0.999);
   G.bd.squash = 0.15;
   FA.eburst(g.b.x + 0.5, g.b.y + 0.5, g.el, 4);
   AU.sfx('crank');
@@ -1052,7 +1069,7 @@ FA.updGather = function (dt) {
   if (G.fac.grid[g.b.y * G.fac.w + g.b.x] !== g.b) { bd.gather = null; return; }
   bd.bob += dt * 9;
   if (g.t >= g.total) {
-    bd.gather = null;
+    bd.gather = null; g.b.hand = 0;
     if (FA.canHold(g.el)) FA.addHands(g.el, 1); else FA.dropAt(g.el, bd.x, bd.y);
     G.flags.gathered = true; G.stats.packets++; FA.elTick(g.el);
     AU.sfx('el_' + g.el);
@@ -1094,7 +1111,7 @@ FA.sweepTarget = function (kind) {
 FA.findTarget = function (mode) {
   const lk = FA.lockValid(mode);
   if (lk) return lk.c;
-  const bd = G.bd, fm = Math.hypot(bd.fx, bd.fy) || 1, hk = G.hands && G.hands.kind;
+  const bd = G.bd, fm = Math.hypot(bd.fx, bd.fy) || 1, hk = FA.tailKind();
   let best = null, bs = 1e9, info = null, is = 1e9;
   for (const c of FA.candidates()) {
     const dx = c.x - bd.x, dy = c.y - bd.y, d = Math.hypot(dx, dy);
@@ -1121,7 +1138,7 @@ FA.actionFor = function (t, mode) {
     case 'pile': {
       if (!pick) return NONE;
       const r = t.o;
-      if (h && (k !== r || h.n >= FA.cap())) return FULL;
+      if (!FA.canHold(r)) return FULL;
       if (G.stock[r] <= 0) return A('No ' + itemName(r) + ': the Wizard must bring more', null, false, [r, 'ic_x']);
       return A('Take ' + itemName(r), () => FA.takePile(r), true, [r]);
     }
@@ -1150,11 +1167,11 @@ FA.bldAction = function (b, pick) {
     if (d.kind === 'splitter') return h ? NONE : A('Set the split', () => UI.openSplit(b), false, ['ic_gear']);
     if (b.out.length) return FA.canHold(b.out[0].kind) ? A('Take ' + itemName(b.out[0].kind), () => FA.takeOut(b), true, [b.out[0].kind]) : FULL;
     if ((d.kind === 'station' || d.kind === 'charger') && b.bat != null) {
-      if (h && k === 'battery') return A('Swap Battery (' + Math.round(b.bat / CFG.batteryMax * 100) + '%)', () => {
+      if (k === 'battery') return A('Swap Battery (' + Math.round(b.bat / CFG.batteryMax * 100) + '%)', () => {
         const it = FA.takeOne(); FA.addHands('battery', 1, FA.takeBat(b)); FA.insert(b, 'battery', it.charge);
         AU.sfx('pickup'); G.bd.squash = 0.2; UI.changed();
       }, false, ['battery', 'ic_swap']);
-      if (h) return FULL;
+      if (!FA.canHold('battery')) return FULL;
       return A('Take Battery (' + Math.round(b.bat / CFG.batteryMax * 100) + '%)', () => { FA.addHands('battery', 1, FA.takeBat(b)); AU.sfx('pickup'); }, false, ['battery']);
     }
     return NONE;
@@ -1162,11 +1179,6 @@ FA.bldAction = function (b, pick) {
   if (G.bd.gather && G.bd.gather.b === b) return A('Crank!', () => FA.crank(), false, [G.bd.gather.el]);
   if (d.kind === 'splitter') return A('Set up the routes', () => UI.openSplit(b), false, ['ic_gear']);   // it has no front to turn
   const turn = A('Turn output', () => { b.dir = (b.dir + 1) % 4; b.pop = 0.2; AU.sfx('blip'); }, false, ['ic_rotate']);
-  if (d.kind === 'sorter') {
-    if (h && b.filter !== k) return A('Sort ' + itemName(k) + ' out the front', () => { b.filter = k; b.pop = 0.3; AU.sfx('blip'); UI.changed(); }, false, [k]);
-    if (!h && b.filter) return A('Clear filter (' + itemName(b.filter) + ')', () => { b.filter = null; AU.sfx('blip'); UI.changed(); }, false, [b.filter, 'ic_x']);
-    return turn;
-  }
   if (d.kind === 'harness') return FA.canHold(d.elem) ? A('Hand-gather ' + ELEM[d.elem].name + ' (tap to fill the meter)', () => FA.startGather(b), false, [d.elem]) : FULL;
   if (d.kind === 'crafter') {
     const list = FA.recipesFor(b.type);
@@ -1246,7 +1258,6 @@ FA.status = function (b) {
     const dn = ['east', 'south', 'west', 'north'];
     return n + ': ' + b.outs.map(o => (b.pct[o] || 0) + '% ' + dn[o] + (FA.splitHas(b, o) ? ' (' + b.filt[o].map(itemName).join(' + ') + ')' : '')).join(', ') + (b.blocked && b.out.length ? '. BLOCKED' : '') + ' (click to set)';
   }
-  if (d.kind === 'sorter') return n + ': ' + (b.filter ? itemName(b.filter) + ' out the front, everything else out the sides' : 'no filter (E with an item in hand sets it)') + (b.out.length >= 2 ? '. BLOCKED' : '');
   if (d.kind === 'crate') return n + ': ' + b.out.length + '/' + CFG.crateCap + (b.out.length ? ', next out: ' + itemName(b.out[0].kind) : ', empty') + '. Feeds its arrow side; point it at nothing to just store';
   if (d.kind === 'station') return n + ': ' + (b.bat == null ? 'empty, insert a charged Battery' : 'Battery ' + Math.round(b.bat) + '/' + CFG.batteryMax + (b.bat > 0 ? ', +' + (CFG.stationGen + (b.over > 0 ? CFG.overcharge.power : 0)) + ' power, ' + Math.ceil(FA.life(b)) + 's left at this load' : ' (flat)') + (b.over > 0 ? '. OVERCHARGED ' + Math.ceil(b.over) + 's' : ''));
   if (d.kind === 'charger') {
@@ -1273,7 +1284,7 @@ FA.toJSON = function () {
       if (b.inv) { o.recipe = b.recipe; o.inv = b.inv; o.prog = b.prog; }
       if (b.bat !== undefined) o.bat = b.bat;
       if (b.fuel) { o.fuel = b.fuel; o.types = b.types; }
-      if (b.filter) o.filter = b.filter;
+      if (b.hand > 0) o.hand = Math.round(b.hand * 1000) / 1000;
       if (b.pct) { o.pct = b.pct; o.filt = b.filt; o.sig = b.sig; }
       if (b.over > 0) o.over = b.over;
       return o;
@@ -1283,17 +1294,23 @@ FA.toJSON = function () {
     portalQ: f.portalQ, eggQ: f.eggQ,
   };
 };
+const LEGACY_SORTER = { wood: 2, stone: 1, shard: 1 };
 FA.fromJSON = function (j) {
   const sz = CFG.factorySizes[Math.min(lvl('expand'), CFG.factorySizes.length - 1)];
   G.fac = FA.fresh(j.w || sz[0], j.h || sz[1]);
   (j.bld || []).forEach(o => {
+    if (o.type === 'sorter') {   // the Sorter was dropped (a Splitter's element toggles do its job): refund it and set its contents down
+      for (const k in LEGACY_SORTER) G.stock[k] = (G.stock[k] || 0) + LEGACY_SORTER[k];
+      (o.out || []).forEach(x => { if (x && ITEMS[x.kind]) FA.dropAt(x.kind, o.x + 0.5, o.y + 0.5, x.charge); });
+      return;
+    }
     if (!CFG.buildings[o.type] || !FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;
     const b = FA.makeBuilding(o.type, o.x, o.y, false, o.free, o.dir || 0);
     b.done = !!o.done; b.got = o.got || {}; b.out = Array.isArray(o.out) ? o.out.filter(x => x && ITEMS[x.kind]) : []; b.timer = o.timer || 0;
     if (b.inv) { b.recipe = o.recipe && CFG.recipes[o.recipe] ? o.recipe : null; b.inv = o.inv || {}; b.prog = o.prog || 0; }
     if (b.bat !== undefined) b.bat = o.bat == null ? null : o.bat;
     if (b.fuel) { b.fuel = Object.assign(b.fuel, o.fuel || {}); b.types = o.types || []; }
-    if (b.filter !== undefined) b.filter = o.filter && ITEMS[o.filter] ? o.filter : null;
+    if (b.hand !== undefined && o.hand > 0) b.hand = Math.min(0.999, +o.hand);
     if (b.pct && o.pct && typeof o.pct === 'object') {
       for (const k in o.pct) if (+k >= 0 && +k < 4) b.pct[k] = Math.max(0, Math.min(100, Math.round(+o.pct[k] || 0)));
       for (const k in o.filt || {}) if (Array.isArray(o.filt[k])) b.filt[k] = o.filt[k].filter(x => ITEMS[x]);

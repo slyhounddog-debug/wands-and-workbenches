@@ -6,7 +6,13 @@ const WZ = {};
 const T_GRASS = 0, T_DIRT = 1, T_SAND = 2, T_FLOWER = 3, T_DARK = 4, T_POND = 5, T_PATH = 6, T_BOG = 7;
 const T_ICE = 8, T_WALL = 9;   // temporary terrain from spells (G.w.tmod): Flash Frost ice (full speed, even over water), Earth Wall blocks (impassable)
 // decor that leans when a body pushes through it (G.w.bend)
-const BENDY = new Set(['tuft', 'tuft2', 'tuft3', 'flower0', 'flower1', 'flower2', 'flower3', 'bush', 'reeds']);
+const BENDY = new Set(['tuft', 'tuft2', 'tuft3', 'flower0', 'flower1', 'flower2', 'flower3', 'reeds'].concat(SHRUB_NAMES));
+// which plain shrub grows at a spot: shape, size and colour come from a hash of the position (no RNG, so nothing else in the world moves); the colours follow the ground
+WZ.shrubAt = function (x, y, t) {
+  const h = ((Math.floor(x * 13.7) * 73856093) ^ (Math.floor(y * 17.3) * 19349663)) >>> 0;
+  const pals = t === T_DARK ? [1, 4, 0, 1] : t === T_FLOWER ? [2, 3, 0, 2] : [0, 2, 1, 0];
+  return 'sh_' + (h % 3) + ((h >> 4) % 3) + pals[(h >> 8) % 4];
+};
 const SPAWN = { x: 100.5, y: 100.5 };
 const BASICS = ['gust', 'fireball', 'spray', 'boulder'];
 const ELEMS = ['air', 'water', 'fire', 'earth'];
@@ -110,7 +116,7 @@ WZ.generate = function () {
     let spr = null;
     if (t === T_FLOWER) { if (roll < 0.55) spr = 'flower' + Math.floor(r() * 4); }
     else if (t === T_GRASS || t === T_DARK) {
-      if (roll < 0.30) spr = 'tuft'; else if (roll < 0.34) spr = 'bush';
+      if (roll < 0.30) spr = 'tuft'; else if (roll < 0.34) spr = WZ.shrubAt(x, y, t);
       else if (t === T_DARK && roll < 0.38) spr = 'shrooms'; else if (roll < 0.345) spr = 'pebbles';
       else if (roll > 0.97) spr = 'flower' + Math.floor(r() * 4);
     } else if (t === T_SAND || t === T_DIRT) { if (roll < 0.15) spr = 'pebbles'; }
@@ -155,6 +161,14 @@ WZ.generate = function () {
     const x = 1 + rt() * (WW - 2), y = 1 + rt() * (WH - 2), t = tyAt(x, y), roll = rt();
     if (t === T_POND || t === T_PATH || t === T_SAND || Math.hypot(x - SPAWN.x, y - SPAWN.y) < 2 || nearMark(x, y)) continue;
     add({ x, y, spr: t === T_BOG ? (roll < 0.5 ? 'reeds' : 'tuft3') : roll < 0.45 ? 'tuft2' : roll < 0.8 ? 'tuft' : 'tuft3', deco: true });
+  }
+  // more plain shrubs on top of the ones above (also their own RNG)
+  const rs = rngMaker(61616);
+  for (let i = 0; i < CFG.bend.shrubs; i++) {
+    const x = 1 + rs() * (WW - 2), y = 1 + rs() * (WH - 2), t = tyAt(x, y);
+    if (t !== T_GRASS && t !== T_DARK && t !== T_FLOWER) continue;
+    if (Math.hypot(x - SPAWN.x, y - SPAWN.y) < 3 || nearMark(x, y)) continue;
+    add({ x, y, spr: WZ.shrubAt(x, y, t), deco: true });
   }
 };
 

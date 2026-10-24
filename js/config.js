@@ -6,8 +6,8 @@ const CFG = {
   // Everything is drawn into a low-res buffer and scaled up by P, so the whole game shares one pixel grid.
   FT: { TW: 80, TH: 40, S: 4, P: 4 },   // factory iso tile (in screen px) + sprite scale + pixel size
   WT: { TW: 60, TH: 30, S: 3, P: 3 },   // wizard world
-  // factory grows through the Expansion upgrade: index = tier owned (starts at 60% of the original 26x18 area)
-  factorySizes: [[20, 14], [22, 15], [23, 16], [25, 17], [26, 19], [28, 20]],
+  // factory grows through the Expansion upgrade: index = tier owned (starts at 16x12, the sixth tier reaches 28x20)
+  factorySizes: [[16, 12], [18, 13], [20, 14], [22, 15], [24, 17], [26, 19], [28, 20]],
   start: { wood: 10, stone: 6, iron: 0 },
   satchel: 5,
   autosave: 9,
@@ -15,7 +15,7 @@ const CFG = {
   manual: { taps: 8 },        // hand-harnessing: taps of E to fill the meter and get one packet (the meter never fills by itself); Quick Hands adds upgrade.manual per tier to each tap
   buffer: 3,
   fuelPerPacket: 15, fuelCap: 120,
-  starterSplit: 70,           // the starting Splitter: % of the Air packets that go straight to the Spell Portal (the rest feed the Spawner)
+  starterSplit: 25,           // the starting Splitter: % of the Air packets that go straight to the Spell Portal (the rest, 75%, feed the Spawner)
   chargeBonus: 0.10,          // every packet burns this much longer in a Charger (+10% charge)
   chargeThrowBonus: 0.20,     // ...and a packet thrown in by hand adds this much on top (+20%)
   batteryMax: 90, stationGen: 10,
@@ -25,6 +25,8 @@ const CFG = {
   swapHold: 1.5, swapCooldown: 5,
   builder: { speed: 5.5, accel: 42, friction: 34, radius: 0.24 },
   reach: 1.75, pickRepeat: 0.2,
+  handSlots: 4,              // the Builder's hands hold up to this many stacks at once (first in, first out; each stack up to the satchel size)
+  autoPick: { r: 1.0, delay: 0.7, gap: 0.12 },   // a slight pickup range: loose items that have settled within r tiles hop into the hands, one every gap seconds (r 0 = off); delay = seconds after landing
   tipRadius: 3.5,            // building info panels only show within this many tiles of the Builder (or when hovered)
   portalAlpha: 0.5,          // how solid the Spell / Skill Portals are drawn (they are see-through)
   stockFlight: { gap: 0.12, baseT: 0.6, perTile: 0.05, maxT: 1.6 },   // what the Wizard sends to the Stockpile flies out of the Spell Portal: seconds between items, flight time = baseT + perTile x distance (capped)
@@ -53,7 +55,7 @@ const CFG = {
   music: { gain: 0.63, fade: 1.2, curve: 0.5, airFloor: 0.3, menu: 0.8, muffleHz: 2200, muffleT: 0.25 },
   weather: { tau: 30, min: 6, full: 30, ease: 0.035, shrine: 0.5 },   // wilds weather from the factory: packets/min of an element below min = clear, at full = full weather; ease = how fast it turns (per s); a claimed shrine / Portal Storm adds this much of its element
   decalMax: 70,               // spell scorch / crack / frost marks on the ground at once (each spell's dec in CFG.spells)
-  bend: { r: 0.45, hold: 0.1, spring: 10, damp: 3.4, amp: 0.6, life: 1.5, bigRad: 0.45, tufts: 15000 },   // grass and flowers lean away from the Wizard and big foes, then spring back; tufts = extra grass tufts sown over the wilds
+  bend: { r: 0.45, hold: 0.1, spring: 10, damp: 3.4, amp: 0.6, life: 1.5, bigRad: 0.45, tufts: 24000, shrubs: 1100 },   // grass and flowers lean away from the Wizard and big foes, then spring back; tufts = extra grass tufts sown over the wilds
   wizard: {
     hp: 100, speed: 6.5, accel: 48, friction: 40, radius: 0.3,
     rollTime: 0.45, rollSpeed: 2.3, rollCd: 1.1, armorMax: 100, dodgeCd: 0.3,
@@ -106,7 +108,7 @@ const CFG = {
   forage: {
     mound:  { count: 50, taps: 10, drop: { stone: 2 }, bonus: { iron: 0.35 } },
     sticks: { count: 55, taps: 8,  drop: { wood: 3 },  bonus: { wood: 0.5 } },
-    bush:   { count: 29, taps: 4,  potion: 0.6 },   // otherwise Armor Plate
+    bush:   { count: 40, taps: 4,  potion: 0.6 },   // otherwise Armor Plate
     reach: 1.15, decay: 2.5, respawn: 150, bushRespawn: 240,
   },
   // DEV ONLY: the solo-testing Wizard bot (js/devbot.js, toggled with F4 on the F3 overlay or __wands.bot('wizard')). Distances are tiles.
@@ -135,7 +137,7 @@ const CFG = {
     potion: { heal: 35 }, elixir: { heal: 80 },
     armor: { armor: 35 }, plate: { armor: 70 },
   },
-  // costs were 50% up on the original, then cut ~30% (belts stay 1 Wood; Splitter and Sorter are 2 Wood + 1 Stone, the Sorter still wants its Shard)
+  // costs were 50% up on the original, then cut ~30% (belts stay 1 Wood; the Splitter is 2 Wood + 1 Stone)
   buildings: {
     air:      { name: 'Air Harnesser',   kind: 'harness', elem: 'air',   cost: { wood: 6, stone: 4 },            cycle: 3.41, power: 2, unlock: null,
                 desc: 'Makes Air Pockets every 3.4s. Draws 2 power (hand-gathering is free, so the factory can always restart). Stand beside it and press E to hand-gather.' },
@@ -157,8 +159,6 @@ const CFG = {
                 desc: 'Recharges a Battery by burning element packets as fuel (16.5s each, 19.5s when thrown in by hand). More element types = faster. Uses no electricity.' },
     splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 2, stone: 1 }, unlock: 'logistics',
                 desc: 'Routes what comes in to up to 3 outputs: every side that has something to feed (the side items arrive from is the input). Share them out by %, or give an output element filters (Fire + Earth left, Water + Air right). Click it to set it up.' },
-    sorter:   { name: 'Sorter', kind: 'sorter', cost: { wood: 2, stone: 1, shard: 1 }, unlock: 'logistics',
-                desc: 'E while holding an item sets the filter: matching items go out the front, everything else out the sides. E with empty hands clears it.' },
     crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 8, stone: 4 }, unlock: 'logistics',
                 desc: 'Holds up to 30 packets, spells or pickups (never raw resources) and feeds them out of its arrow side, one at a time.' },
     spawner1: { name: 'Creature Spawner I', kind: 'crafter', tier: 1, cost: { wood: 10, stone: 8, iron: 3 }, unlock: null,
@@ -175,7 +175,7 @@ const CFG = {
     harness: { name: 'Harnessers', members: ['air', 'water', 'fire', 'earth'] },
     craft:   { name: 'Crafters',   members: ['cauldron', 'forge', 'anvil', 'altar'] },
     power:   { name: 'Power',      members: ['station', 'charger'] },
-    logi:    { name: 'Logistics',  members: ['splitter', 'sorter', 'crate'] },
+    logi:    { name: 'Logistics',  members: ['splitter', 'crate'] },
     spawn:   { name: 'Creature Spawners', members: ['spawner1', 'spawner2', 'spawner3'] },
   },
   hotbar: ['hand', 'belt', 'harness', 'craft', 'power', 'logi', 'spawn'],
@@ -212,7 +212,7 @@ const CFG = {
     { id: 'earth',     col: 0, icon: 'b:earth',    name: 'Earth Harnesser', xp: 60, req: ['fire'], pay: { air: 10, water: 10, fire: 10 }, desc: 'Unlock the Earth Harnesser (and the Elixir / Heavy Plate recipes).' },
     { id: 'forge',     col: 0, icon: 'b:forge',    name: 'Elemental Forge', xp: 90, req: ['fire'], pay: { air: 15, water: 15, fire: 15 }, desc: 'Unlock the Elemental Forge. Each combo spell is then unlocked on its own.' },
     { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 68, req: ['earth'], pay: { air: 18, fire: 30, earth: 20 }, desc: 'Unlock the Armor Anvil: armor pickups for the Wizard.' },
-    { id: 'logistics', col: 0, icon: 'b:splitter', name: 'Logistics',       xp: 60, req: ['fire'], pay: { air: 20, water: 20, fire: 20 }, desc: 'Unlock the Splitter, the Sorter (needs an Aether Shard) and the Storage Crate.' },
+    { id: 'logistics', col: 0, icon: 'b:splitter', name: 'Logistics',       xp: 60, req: ['fire'], pay: { air: 20, water: 20, fire: 20 }, desc: 'Unlock the Splitter and the Storage Crate.' },
     { id: 'heavy',     col: 0, icon: 'battery',    name: 'Heavy Batteries', xp: 120, req: ['armory'], pay: { air: 25, water: 25, fire: 30, earth: 30, magma: 2 }, desc: 'Batteries in a Station last 50% longer before they run flat. You still haul them by hand.' },
     { id: 'summon',   col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: ['nova'], pay: { air: 40, water: 40, fire: 40, earth: 40 }, core: 1, desc: 'Unlock the Summoning Altar: craft a Boss Sigil and face the Primal Chimera. Needs a Warden Core from a Stronghold. Beat it to win.' },
     // col 1: Spells (each Forge recipe on its own).
@@ -229,9 +229,9 @@ const CFG = {
     { id: 'nova',         col: 1, icon: 'nova',         name: 'Elemental Nova', xp: 210, req: ['meteor', 'thunder', 'blizzard', 'geyser'], pay: { air: 50, fire: 50, water: 50, earth: 60, meteor: 1, thunder: 1, blizzard: 1, geyser: 1 }, desc: 'All four: a huge radial blast.' },
     // col 2: Upgrades — many small tiers, cheap first, steep last
     { id: 'expand',  col: 2, icon: 'ic_expand', name: 'Factory Expansion', per: 'Bigger factory floor (stockpile moves back)',
-      tiers: [30, 45, 65, 85, 105],
-      kinds: [['air'], ['air', 'water'], ['air', 'water', 'fire'], ['air', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']],
-      combos: { 3: { sandstorm: 2 }, 4: { blizzard: 1, thunder: 1 } } },
+      tiers: [30, 45, 65, 85, 105, 130],
+      kinds: [['air'], ['air', 'water'], ['air', 'water', 'fire'], ['air', 'fire', 'earth'], ['air', 'water', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']],
+      combos: { 3: { sandstorm: 2 }, 4: { blizzard: 1, thunder: 1 }, 5: { meteor: 1, geyser: 1 } } },
     { id: 'swift',   col: 2, icon: 'ic_fast', name: 'Swift Harnessing', per: '+12.5% harnesser speed',
       tiers: [12, 18, 25, 33, 43, 54, 65, 80],
       kinds: [['air'], ['air'], ['air', 'water'], ['air', 'water'], ['water', 'fire'], ['water', 'fire'], ['fire', 'earth'], ['air', 'water', 'fire', 'earth']],
@@ -346,7 +346,7 @@ const CFG = {
   },
   // ---- Strongholds: four far-off keeps, one per element, each guarded by crafted creatures and a Warden ----
   strong: {
-    minDist: 70, reveal: 30, wake: 9, shards: 8, gems: 12,
+    minDist: 70, reveal: 30, wake: 9, warnT: 10, shards: 8, gems: 12,   // warnT: seconds the Wizard must stand inside the wake radius before the guards and the Warden spawn (leaving resets it)
     guards: {   // creature types per element (crafted-creature types of that element, plus the Warden)
       air:   { zephyr: 4, thunderhead: 2 },
       water: { puddle: 4, shambler: 2 },
@@ -494,7 +494,7 @@ const QUESTS = {
     { from: 13, icon: 'flamethrower', text: 'Unlock a combo spell and deliver it from the Forge', xp: 15, gift: { bank: { air: 3, fire: 3 } }, done: g => g.flags.combo, hint: { combo: 2 } },
     { icon: 'ic_fast', text: 'Overdrive: put a charged Battery Station right beside a Forge or Cauldron', xp: 12, done: g => G.fac.bld.some(b => b.done && b.od), hint: { make: 'station' } },
     { icon: 'steam', text: 'Deliver 6 combo spells to the Wizard (two or more elements each)', xp: 15, gift: { stock: { shard: 1 } }, stat: g => g.stats.combos || 0, n: 6, hint: { combo: 2 } },
-    { from: 15, icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter or Sorter to route packets', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && (b.type === 'splitter' || b.type === 'sorter')), hint: { make: 'splitter' } },
+    { from: 15, icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter to route packets', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && b.type === 'splitter'), hint: { make: 'splitter' } },
     { from: 16, icon: 'armor', text: 'Unlock the Armory and send Armor to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'anvil' } },
     { icon: 'plate', text: 'Plate up the Wizard: send 4 more Armor or Heavy Plates', xp: 12, gift: { stock: { iron: 6 } }, stat: g => sentN(g, 'armor', 'plate'), n: 4, hint: { make: 'anvil' } },
     { from: 17, icon: 'ic_expand', text: 'Expand the factory floor once', xp: 15, done: g => (g.tree.expand || 0) >= 1, hint: { tree: 1 } },

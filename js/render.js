@@ -273,7 +273,6 @@ R.drawFactory = function (main, dt) {
     const k = b.done && FA.def(b).kind;
     if (!k || k === 'station' || k === 'charger') continue;
     if (k === 'splitter') b.outs.forEach((d, i) => R.splitArrow(ctx, v, b, t, d, FA.splitCol[i], b.pct[d] || 0, b.filt[d]));
-    else if (k === 'sorter') { R.outArrow(ctx, v, b, t, b.dir, '#9dff9d'); if (b.filter) { R.outArrow(ctx, v, b, t, (b.dir + 1) % 4); R.outArrow(ctx, v, b, t, (b.dir + 3) % 4); } }
     else R.outArrow(ctx, v, b, t);
   }
 
@@ -485,6 +484,8 @@ R.drawBuilding = function (ctx, v, b, t) {
       R.item(ctx, d.elem, p[0] + Math.cos(a) * 32, cy - 34 + Math.sin(a) * 12, 4, t, false);
     }
     if (b.out.length < CFG.buffer) R.bar(ctx, p[0], base + 2, 48, b.timer / FA.cycle(b.type), ELEM[d.elem].color, 8);
+    // a half-cranked packet stays on the Harnesser when the Builder walks away: a second, white-edged bar keeps what he put in
+    if (b.hand > 0 && !(G.bd.gather && G.bd.gather.b === b)) { R.bar(ctx, p[0], base + 22, 48, b.hand, ELEM[d.elem].color, 8); dspr(ctx, SP.ic_hand, p[0] - 40, base + 28, 2); }
     if (!b.powered && d.power > 0) R.noPower(ctx, p[0], top + 20, t);
     else if (FA.shrineBoost(b.type) > 1 && Math.sin(t * 6) > -0.3) {   // shrine boost: a pulsing rim (the stream from the portal is drawn in R.drawShrineStreams)
       ctx.strokeStyle = ELEM[d.elem].color; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw * 0.95, v.hh * 0.95); ctx.stroke();
@@ -573,11 +574,11 @@ R.drawBuilding = function (ctx, v, b, t) {
     if (tip && b.bat != null) R.bar(ctx, p[0], top + 52, 64, b.bat / CFG.batteryMax, b.bat >= CFG.batteryMax ? '#3ad06b' : '#ffd93a');
     if (tip && ft > 0) R.bar(ctx, p[0], top + 66, 64, ft / CFG.fuelCap, '#ff8a3a', 8);
   }
-  if (d.kind === 'splitter' || d.kind === 'sorter') b.out.forEach((o, i) => R.item(ctx, o.kind, p[0] - 8 + i * 16, base - 52 - i * 8, 4, t));
-  if (d.kind === 'sorter' || d.kind === 'crate') {
-    // a tiny item floats over the tile: the Sorter's filter / the Crate's next item. Faint until you stand at or hover it
+  if (d.kind === 'splitter') b.out.forEach((o, i) => R.item(ctx, o.kind, p[0] - 8 + i * 16, base - 52 - i * 8, 4, t));
+  if (d.kind === 'crate') {
+    // a tiny item floats over the tile: the Crate's next item. Faint until you stand at or hover it
     const lit = R.isNear(b), a = lit ? 1 : 0.45, fy = base - 84 + (Math.sin(t * 3 + b.x + b.y) > 0 ? 0 : 4);
-    const kind = d.kind === 'sorter' ? b.filter : b.out.length ? b.out[0].kind : null;
+    const kind = b.out.length ? b.out[0].kind : null;
     if (kind && lit) R.item(ctx, kind, p[0], fy, 4, t);
     else if (kind) dspr(ctx, itemSprite(kind), p[0], fy, 4, a);
     ctx.globalAlpha = a;
@@ -797,6 +798,7 @@ R.drawSuck = function (ctx, v, s, base) {
 R.drawPile = function (ctx, v, k, pos) {
   const p = R.toScreen(v, pos.x, pos.y), n = G.stock[k];
   const cnt = Math.min(15, Math.ceil(n / 2));
+  if (R.pickOf(k)) R.pickFx(ctx, p[0], p[1], G.fac.t, 2);
   ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(Math.round((p[0] - 36) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 72, 12);
   for (let i = 0; i < cnt; i++) {
     const row = Math.floor(i / 5), col = i % 5;
@@ -821,24 +823,34 @@ R.drawHint = function (ctx, v, h, t) {
   }
 };
 R.arrow = function (ctx, x, y, nx, ny) {   // chunky gold arrow whose tip sits at (x,y), pointing along (nx,ny)
-  const px = -ny, py = nx, L = 36, W = 22;
+  const px = -ny, py = nx, L = 25, W = 15;   // 70% of the old size
   const tri = (k, col) => {
     ctx.fillStyle = col; ctx.beginPath();
     ctx.moveTo(x, y); ctx.lineTo(x - nx * L * k + px * W * k, y - ny * L * k + py * W * k); ctx.lineTo(x - nx * L * k - px * W * k, y - ny * L * k - py * W * k); ctx.closePath(); ctx.fill();
   };
-  ctx.fillStyle = '#1a0f28'; ctx.fillRect(Math.round((x - nx * 52 - 10) / 4) * 4, Math.round((y - ny * 52 - 10) / 4) * 4, 20, 20);
+  ctx.fillStyle = '#1a0f28'; ctx.fillRect(Math.round((x - nx * 36 - 8) / 4) * 4, Math.round((y - ny * 36 - 8) / 4) * 4, 16, 16);
   tri(1.25, '#1a0f28'); tri(1, '#ffd23a');
-  ctx.fillStyle = '#ffd23a'; ctx.fillRect(Math.round((x - nx * 50 - 6) / 4) * 4, Math.round((y - ny * 50 - 6) / 4) * 4, 12, 12);
+  ctx.fillStyle = '#ffd23a'; ctx.fillRect(Math.round((x - nx * 35 - 4) / 4) * 4, Math.round((y - ny * 35 - 4) / 4) * 4, 8, 8);
+};
+// the thing the pick button will take (the focus list's pick entry): it hops, a ring spreads from its feet and four sparks orbit it, so no tooltip is needed
+R.pickOf = o => !!R.focus && R.focus.list.some(e => e.key === 'pick' && e.t.o === o);
+R.pickFx = function (ctx, x, y, t, rad) {
+  const k = (t * 2) % 1, rw = (16 + k * 20) * rad;
+  ctx.globalAlpha = 1 - k; ctx.strokeStyle = '#ffec8c'; ctx.lineWidth = 4; diamond(ctx, x, y, rw, rw / 2); ctx.stroke(); ctx.globalAlpha = 1;
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < 4; i++) { const a = t * 3 + i * 1.571; ctx.fillRect(Math.round((x + Math.cos(a) * 24 * rad) / 4) * 4, Math.round((y - 20 + Math.sin(a) * 12 * rad) / 4) * 4, 4, 4); }
 };
 R.drawFloor = function (ctx, v, o, t) {
-  const p = R.toScreen(v, o.x, o.y);
+  const p = R.toScreen(v, o.x, o.y), pk = R.pickOf(o);
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(Math.round((p[0] - 12) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 24, 8);
-  const bob = o.z > 0 ? o.z * 26 : (Math.sin(t * 3 + o.x * 5) > 0 ? 8 : 4);
+  if (pk) R.pickFx(ctx, p[0], p[1], t, 1);
+  const bob = o.z > 0 ? o.z * 26 : pk ? (Math.sin(t * 10) > 0 ? 16 : 8) : (Math.sin(t * 3 + o.x * 5) > 0 ? 8 : 4);
   R.item(ctx, o.kind, p[0], p[1] - bob, 4, t);
 };
 R.drawFloorPile = function (ctx, v, g, t) {
   const p = R.toScreen(v, g.x, g.y), n = g.items.length;
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(Math.round((p[0] - 16) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 32, 8);
+  if (g.items.some(R.pickOf)) R.pickFx(ctx, p[0], p[1], t, 1.3);
   for (let i = 0; i < Math.min(n, 4); i++) R.item(ctx, g.kind, p[0] + (i % 2 ? 4 : -4), p[1] - 6 - i * 10, 4, t, i === Math.min(n, 4) - 1);
   txt(ctx, '' + n, p[0] + 24, p[1] - 10, 12, '#ffffff', 'center', 'd');
 };
@@ -889,6 +901,12 @@ R.drawBuilder = function (ctx, v, bd, t) {
     }
     const label = h.kind === 'battery' ? Math.round(h.charge / CFG.batteryMax * 100) + '%' : 'x' + h.n;
     txt(ctx, label, p[0] + 34, y0 - n * 8 + 6, 12, h.n >= FA.stackMax(h.kind) ? '#ffe36b' : '#ffffff', 'center', 'd');
+    // the stacks waiting behind it (first in, first out): a small icon each, with its count, in a row beside the front stack
+    G.handQ.forEach((q, i) => {
+      const qx = p[0] + 76 + i * 40, qy = y0 + 4;
+      R.item(ctx, q.kind, qx, qy, 3, t, false);
+      txt(ctx, q.kind === 'battery' ? Math.round(q.charge / CFG.batteryMax * 100) + '%' : 'x' + q.n, qx, qy + 24, 12, '#ffffff', 'center', 'd');
+    });
   }
 };
 R.drawGhost = function (ctx, v, g, t) {
@@ -952,6 +970,7 @@ R.key = which => { const alt = Main.kbShared() && G.swapped; return which === 'p
 R.drawFocus = function (ctx, v, f, t) {
   f.list.forEach((e, i) => {
     const tg = e.t, a = e.a;
+    if (tg.kind === 'floor' || tg.kind === 'pile') return;   // no bubble over loose items or the Stockpile: the item itself lights up (R.pickFx)
     let x = tg.x, y = tg.y, lift = 120;
     if (tg.kind === 'floor') lift = 56;
     if (tg.kind === 'pile') lift = 74;
@@ -1036,6 +1055,7 @@ R.drawWorld = function (main, dt) {
   }
   for (const dc of w.decals) R.drawDecal(ctx, v, dc);
   for (const z of w.zones) R.drawZone(ctx, v, z);
+  for (const m of WZ.marks) if (m.type === 'stronghold') R.drawKeepArea(ctx, v, m);
   for (const f of w.fx_) if (f.type === 'ring' || f.type === 'warn') R.drawFx(ctx, v, f); else if (f.type === 'drop') R.drawDrop(ctx, v, f, true);
 
   for (const dr of w.drops) objs.push({ d: dr.x + dr.y, t: 'drop', o: dr });
@@ -1081,6 +1101,7 @@ R.drawWorld = function (main, dt) {
   for (const p of w.eproj) R.drawProj(ctx, v, p);
   for (const f of w.fx_) if (f.type !== 'ring' && f.type !== 'warn') R.drawFx(ctx, v, f);
   for (const a of w.arcs) R.drawArc(ctx, v, a);
+  R.drawKeepCount(ctx, v, wt);
   R.drawWeather(ctx, wt);
 
   for (const pk of w.pickups) {   // off-screen pointers to pickups
@@ -1257,6 +1278,30 @@ R.drawMark = function (ctx, v, m) {
   }
   if (done && d < 8 && m.type !== 'shrine') ic = [['ic_check']];
   if (ic && d < (m.type === 'stronghold' ? CFG.strong.reveal + 6 : 13)) R.defer.push(c => R.iconRow(c, p[0], p[1] - (m.type === 'stronghold' ? 126 : 96), ic));
+};
+// a Stronghold's wake radius on the ground: a faint dashed rim once it is scouted and close, a flashing red warning while the Wizard stands in it
+R.drawKeepArea = function (ctx, v, m) {
+  const w = G.w, s = w.lm[m.id], K = CFG.strong;
+  if (s.state !== 'idle' || !s.seen || w.dead || Math.hypot(w.x - m.x, w.y - m.y) > K.wake + 12) return;
+  const p = R.toScreen(v, m.x, m.y), t = w.t, hot = s.warnT > 0, fl = Math.sin(t * 12) > 0;
+  ctx.beginPath(); ctx.ellipse(p[0], p[1], K.wake * v.hw * 1.414, K.wake * v.hh * 1.414, 0, 0, 6.283);
+  if (hot) { ctx.globalAlpha = fl ? 0.42 : 0.18; ctx.fillStyle = '#ff3a3a'; ctx.fill(); }
+  ctx.globalAlpha = hot ? 1 : 0.45; ctx.strokeStyle = hot ? (fl ? '#ffffff' : '#ff3a3a') : ELEM[m.el].color; ctx.lineWidth = 6;
+  ctx.setLineDash([18, 12]); ctx.lineDashOffset = -Math.floor(t * 10) * 6; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+};
+// the countdown over the Wizard's head while he stands in one: a flashing warning sign and the seconds left
+R.drawKeepCount = function (ctx, v, t) {
+  const w = G.w, K = CFG.strong;
+  if (w.dead) return;
+  for (const m of WZ.marks) {
+    if (m.type !== 'stronghold') continue;
+    const s = w.lm[m.id];
+    if (s.state !== 'idle' || !(s.warnT > 0)) continue;
+    const p = R.toScreen(v, w.x, w.y), fl = Math.sin(t * 12) > 0;
+    if (fl) dspr(ctx, SP.ic_warn, p[0], p[1] - 96, 4);
+    txt(ctx, '' + Math.ceil(K.warnT - s.warnT), p[0], p[1] - 136, 36, fl ? '#ffffff' : '#ff5a5a', 'center', 'd');
+    return;
+  }
 };
 // goal pointer in the wilds: an arrow over the target, or a boxed pointer on the edge with the distance
 R.drawWHint = function (ctx, v, h, t) {

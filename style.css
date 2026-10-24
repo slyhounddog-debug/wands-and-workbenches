@@ -74,9 +74,15 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 #armFill { background: #9fc4ff; box-shadow: inset 0 -5px 0 0 #4a74e0; }
 .bar.arm { height: 20px; margin-top: 6px; }
 .bar.arm span { line-height: 21px; }
-#handTxt { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 20px; }
-#handTxt .cnt { margin-left: auto; font: 16px var(--display); }
-#handTxt .cnt i { font-style: normal; color: var(--muted); }
+/* power and hands side by side: the hands card is a third of the old width, power takes the rest */
+.hrow { display: flex; gap: 10px; align-items: stretch; }
+.hrow #powCard { flex: 1; min-width: 0; }
+#handCard { width: 96px; padding: 10px 8px 8px; flex: none; }
+#handTxt { display: flex; gap: 2px; min-height: 26px; }
+#handTxt .hs { width: 18px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+#handTxt .hs b { font: 8px var(--display); color: var(--cream); }
+#handTxt .hs.fr { background: var(--panel-lo); box-shadow: 0 0 0 2px var(--gold); }
+#handTxt .hs.em { height: 18px; background: var(--panel-lo); opacity: .5; }
 #handCard.full { box-shadow: 0 -4px 0 0 var(--gold), 0 4px 0 0 var(--gold), -4px 0 0 0 var(--gold), 4px 0 0 0 var(--gold), inset 0 4px 0 0 var(--panel-hi), inset 0 -4px 0 0 var(--panel-lo); }
 
 .iconbtns { display: flex; gap: 12px; }

@@ -56,7 +56,7 @@ UI.tickToasts = function (dt) {
   }
 };
 UI.dirty = false;
-UI.changed = function () { UI.dirty = true; };
+UI.changed = function () { UI.dirty = true; Main.still = 0; };   // also: a frozen frame may need redrawing (see the main loop)
 
 // ---------- never fail silently: every caught error lands in a badge (click it for the list) ----------
 UI.errs = [];
@@ -95,15 +95,19 @@ UI.batteryStatus = function () {
     for (const o of b.out) if (o.kind === 'battery') ct(o.charge);
   }
   for (const o of G.fac.floor) if (o.kind === 'battery') ct(o.charge);
-  if (G.hands && G.hands.kind === 'battery') ct(G.hands.charge);
+  for (const h of FA.hlist()) if (h.kind === 'battery') ct(h.charge);
   if (!charged && !flat && !charging) return null;
   return [charged, flat, charging];
 };
+// the hands as a row of small slots, oldest (the next one thrown) first and lit; empty slots stay as outlines
 UI.handsHtml = function () {
-  const h = G.hands;
-  if (!h) return '<span class="dim">empty</span>';
-  const extra = h.kind === 'battery' ? Math.round(h.charge / CFG.batteryMax * 100) + '%' : 'x' + h.n + '<i>/' + FA.stackMax(h.kind) + '</i>';
-  return UI.img(h.kind, 24) + '<span>' + itemName(h.kind) + '</span><span class="cnt">' + extra + '</span>';
+  const l = FA.hlist();
+  let s = '';
+  for (let i = 0; i < CFG.handSlots; i++) {
+    const h = l[i];
+    s += h ? '<span class="hs' + (i ? '' : ' fr') + '">' + UI.img(h.kind, 16) + '<b>' + (h.kind === 'battery' ? Math.round(h.charge / CFG.batteryMax * 100) : h.n) + '</b></span>' : '<span class="hs em"></span>';
+  }
+  return s;
 };
 UI.updateHud = function (dt) {
   const f = G.fac, w = G.w;
@@ -129,7 +133,7 @@ UI.updateHud = function (dt) {
   $('powCard').classList.toggle('low', low);
   $('vigL').classList.toggle('on', low);
   setHtml('handTxt', UI.handsHtml());
-  $('handCard').classList.toggle('full', !!G.hands && G.hands.n >= FA.stackMax(G.hands.kind));
+  $('handCard').classList.toggle('full', !!G.hands && !FA.canHold(FA.tailKind()));
   $('btnDemo').classList.toggle('on', G.demolish);
   const mh = WZ.maxHp();
   setTxt('hpTxt', Math.ceil(w.hp) + '/' + mh);
@@ -623,7 +627,7 @@ UI.buy = function (id) {
   if (id === 'hearty') G.w.hp = Math.min(WZ.maxHp(), G.w.hp + CFG.upgrade.hearty);
   if (id === 'expand') {
     const sz = CFG.factorySizes[Math.min(G.tree.expand, CFG.factorySizes.length - 1)];
-    FA.resize(sz[0], sz[1]);
+    FA.resize(Math.max(sz[0], G.fac.w), Math.max(sz[1], G.fac.h));   // never smaller than the floor already built (older saves started bigger)
     UI.toast('The factory floor grew to ' + sz[0] + 'x' + sz[1] + '!', 'L', 'ic_expand');
   }
   FA.refreshRecipes();
@@ -745,7 +749,7 @@ UI.updatePins = function (dt) {
   for (const sd of ['L', 'R']) {
     const id = G.pins && G.pins[sd], el = $('pin' + sd);
     el.classList.toggle('hidden', !id);
-    if (id && CFG.tree.find(t => t.id === id)) el.innerHTML = UI.pinHtml(sd, id);
+    if (id && CFG.tree.find(t => t.id === id)) setHtml('pin' + sd, UI.pinHtml(sd, id));
   }
 };
 UI.refreshTrees = function () {
@@ -846,7 +850,7 @@ const HOWTO = {
     ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with a charged Battery in a Battery Station and a Charger beside it: a Battery drains while anything needs power, so carry it to the Charger and throw element packets at it to refill it (hand-gathered packets are free). Every packet charges 10% more than its base, and a packet you throw in by hand adds another 20%. Craft a Battery at the Forge (2 Iron Ore), charge it at a Charger by feeding it packets (more kinds = faster), then haul it to a Battery Station. A charged Station right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, <b>Heavy Batteries</b> make every Battery last 50% longer in a Station.'],
     ['Creatures', 'The <b>Creature Spawner</b> turns element packets into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. Tier 2 and 3 Spawners (Skill Tree) hatch two- and three-element creatures; each one is its own node. At most 12 factory creatures live at once: extra Eggs wait in the portal. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
     ['Growing', 'The floor starts small. <b>Factory Expansion</b> in the Skill Tree makes it bigger, pushing the Stockpile further from the portals.'],
-    ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> shares items between its two sides (right and left of its arrow) by the percentages you choose: click it (<b>A</b> on a pad) for a slider, 50 / 50 to start. The <b>180 / 90</b> toggle sets whether its two sides are opposite each other or at a right angle; <b>Turn</b> steps through every orientation. Each end of the slider has the colour of one arrow on the tile (pink or cyan), and the arrows pulse to show where items go. The <b>Sorter</b> sends one item kind out the front (E while holding it) and the rest out the sides. The <b>Storage Crate</b> holds 30 packets or spells and feeds them out of its arrow. E turns any of them (a Sorter with a filter clears it first).'],
+    ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> routes what comes in to up to 3 outputs: every side that has a belt, machine or portal to feed (the side items arrive from is the input). Click it (<b>A</b> on a pad) to share the outputs out by percentage with a slider, and switch element toggles on an output to make it a <b>filter</b> (Fire + Earth left, Water + Air right). The starting Splitter sends 25% to the Spell Portal and 75% to the Spawner. The <b>Storage Crate</b> holds 30 packets or spells and feeds them out of its arrow. E turns a Crate.'],
     ['Reading the floor', 'Every machine shows its state the moment it changes, with an outline, an icon, how fast it animates and a little chirp: <b>green flowing dashes</b> working (up close), <b>yellow dashes</b> + a ghost of the missing ingredient, <b>grey dots</b> + <b>?</b> starved, <b>orange long dashes</b> + <b>!</b> output jammed, <b>thick red</b> + stacked bars output full (stopped), <b>purple dash-dot</b> + bolt no power. Each portal shows how many items it took in the last minute.'],
     ['Elements', 'Each element has its own shape everywhere: <b>Air</b> is a ring, <b>Water</b> a drop, <b>Fire</b> a flame, <b>Earth</b> a block. Their particles move differently too (swirling rings, falling drops, rising sparks, tumbling chunks) and each has its own little sound.'],
     ['Handling lots of items', 'Hold pick to sweep up every matching item nearby until your hands are full. <b>Shift + right-click</b> (pad <b>LT + B</b>) throws your whole stack. Items left on the floor slide together into piles. The throw line shows a ghost where the item will land and outlines what will catch it (green) or bounce it (red).'],
@@ -861,7 +865,7 @@ const HOWTO = {
     ['Pickups', 'Potions and armor sent through the Spell Portal fall beside the Wizard. Walk over them to use them. They wait if HP or armor is already full.'],
     ['Weaknesses', 'Biome monsters take <b>double damage</b> from one element and half from another: <b>Ember Imps</b> (sand, dirt) hate Water, <b>Bog Lurkers</b> hate Fire, <b>Gale Wisps</b> (far meadows) hate Earth, <b>Stone Golems</b> (far dark woods) hate Air. Combo spells count every element in them. A small diamond over a foe shows its weakness, and yellow numbers with a ! mean a weak hit.'],
     ['Elites', 'Big gold-ringed monsters with a crown. Much tougher, but they drop <b>Aether Shards</b> and lots of XP. Each one is weak to one element.'],
-    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard walks up: clear them. <b>Crypts</b> (purple) open if he waits at the door, and their Guardian must fall. Both pay Aether Shards, the rare resource for Sorters and the Summoning Altar. <b>Shrines</b> (element colours): stand on one and a ring shrinks toward the crystal. Press the roll button when it lights up over the white ring, three times, to claim it for a Shard (a miss just restarts the ring). From then on, while the Wizard stands on it, the factory\'s Harnessers of that element run <b>25% faster</b>.'],
+    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard walks up: clear them. <b>Crypts</b> (purple) open if he waits at the door, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours): stand on one and a ring shrinks toward the crystal. Press the roll button when it lights up over the white ring, three times, to claim it for a Shard (a miss just restarts the ring). From then on, while the Wizard stands on it, the factory\'s Harnessers of that element run <b>25% faster</b>.'],
     ['Foraging', '<b>Dirt Mounds</b>, <b>Stick Piles</b> and <b>Berry Bushes</b> are scattered everywhere. Stand still at one and <b>mash the roll button</b> (<kbd>.</kbd>, pad <b>A</b>) to dig out Stone (sometimes Iron Ore) or Wood, or shake a Health Potion or Armor Plate out of a bush. Move while pressing it to roll away instead. They grow back after a while.'],
     ['Dodging', 'The roll makes the Wizard <b>invulnerable</b> while he flickers white. A hit he rolls through pops <b>DODGE!</b>.'],
     ['The Primal Chimera', 'The boss. It only takes real damage from its current weakness (shown on the boss bar and its glowing belly), and the weakness changes every quarter of its health, so the factory has to switch what it sends. Roll or walk out of the pink slam marks and dodge its orbs.'],
@@ -882,8 +886,8 @@ UI.howPage = function (tab) {
     const uses = {
       wood: 'Every building, belts (1 each), Cauldron brews',
       stone: 'Every building, Armor',
-      iron: 'Fire Harnesser, Forge, Anvil, Station, Charger, Sorter, Altar, Batteries, Armor',
-      shard: 'Rare: only from landmarks and elites. Sorter, Summoning Altar, Boss Sigil',
+      iron: 'Fire Harnesser, Forge, Anvil, Station, Charger, Altar, Batteries, Armor',
+      shard: 'Rare: only from landmarks and elites. Summoning Altar, Boss Sigil',
       core: 'Once per Stronghold per save. Costs of Spawner III and Summoning',
       sigil: 'Spell Portal: summons the Primal Chimera beside the Wizard',
       air: 'Spell Portal: Air Gust. Skill Portal: currency. Charger fuel, recipes',
@@ -937,7 +941,7 @@ const CONTROLS = [
     [K('LEFT-CLICK'), 'Pick up one item (hold to keep taking, it walks there first). On a Splitter: open its settings'],
     [K('RIGHT-CLICK'), 'Throw one item along the dotted line (hold = rapid). While hand-gathering: cancel the gather'],
     [K('SHIFT') + ' + ' + K('RIGHT-CLICK'), 'Throw the whole stack'],
-    [K('E'), 'Use: hand-gather a Harnesser (tap again and again to fill the meter), turn a belt or machine, switch recipe, set a Sorter filter'],
+    [K('E'), 'Use: hand-gather a Harnesser (tap again and again to fill the meter), turn a belt or machine, switch recipe'],
     [K('1') + ' - ' + K('7') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, then the building families)'],
     [K('[') + ' ' + K(']'), 'Previous / next hotbar slot'],
     [K('Q') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot)'],

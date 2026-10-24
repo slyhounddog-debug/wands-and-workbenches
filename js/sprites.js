@@ -261,12 +261,6 @@ task(() => {
     x.fillStyle = '#ffe36b';   // a "Y" fork on the lid
     x.fillRect(cx, cy - 10, 1, 3); x.fillRect(cx - 2, cy - 12, 2, 1); x.fillRect(cx + 1, cy - 12, 2, 1); x.fillRect(cx - 3, cy - 13, 1, 1); x.fillRect(cx + 3, cy - 13, 1, 1);
   });
-  bsprite('b_sorter', (x, cx, cy) => {
-    isoBox(x, cx, cy, 9, 5, '#9a7ac0', '#6a4a90', '#543a76');
-    poly(x, [[cx - 6, cy - 13], [cx + 6, cy - 13], [cx + 3, cy - 6], [cx - 3, cy - 6]], '#c8c0d8');
-    poly(x, [[cx - 6, cy - 13], [cx + 6, cy - 13], [cx + 4, cy - 14], [cx - 4, cy - 14]], '#e8e0f4');
-    circ(x, cx, cy - 4, 2, '#c890ff'); x.fillStyle = '#ffffff'; x.fillRect(cx - 1, cy - 5, 1, 1);
-  });
   bsprite('b_crate', (x, cx, cy) => {
     isoBox(x, cx, cy, 8, 10, '#d8a066', '#a8683a', '#8a5528');
     x.fillStyle = '#6e3f1c';
@@ -284,6 +278,10 @@ task(() => {
 });
 
 // ---------- world: harvestables & decor (anchored bottom center) ----------
+const SHRUB_SHAPES = ['hedge', 'fern', 'tall'], SHRUB_SIZES = [0.7, 1, 1.4];
+const SHRUB_PALS = [['#2a7a36', '#3c9a44', '#6cc85a'], ['#1f6a5a', '#2f8f7a', '#62d0b0'], ['#6a7a2a', '#93a83a', '#cfe070'], ['#7a4422', '#b0682c', '#eaa24e'], ['#4a3a7a', '#6a58aa', '#a592e0']];
+const SHRUB_NAMES = [];   // 'sh_<shape><size><colour>'
+SHRUB_SHAPES.forEach((s, si) => SHRUB_SIZES.forEach((k, zi) => SHRUB_PALS.forEach((p, pi) => SHRUB_NAMES.push('sh_' + si + zi + pi))));
 task(() => {
   reg('tree', mk(26, 36, x => {
     x.fillStyle = '#6e4423'; x.fillRect(11, 22, 4, 13); x.fillStyle = '#8a5a30'; x.fillRect(11, 22, 2, 13);
@@ -321,11 +319,38 @@ task(() => {
     x.fillStyle = '#2e7a3a'; x.fillRect(1, 3, 1, 6); x.fillRect(3, 0, 1, 9); x.fillRect(5, 2, 1, 7);
     x.fillStyle = '#58b850'; x.fillRect(2, 4, 1, 5); x.fillRect(4, 1, 1, 8); x.fillRect(6, 5, 1, 4); x.fillRect(0, 6, 1, 3);
   }), 3, 8);
-  reg('bush', mk(16, 12, x => {
-    circ(x, 8, 7, 5.5, '#2e8a3e'); circ(x, 4, 8, 3.5, '#2e8a3e'); circ(x, 12, 8, 3.5, '#2e8a3e');
-    circ(x, 7, 5, 3.5, '#46b452');
-    x.fillStyle = '#e8384a'; x.fillRect(5, 6, 2, 2); x.fillRect(10, 5, 2, 2); x.fillRect(8, 9, 2, 2); x.fillRect(3, 9, 2, 1);
-  }), 8, 11);
+  // plain shrubs (decor you cannot search): 3 shapes x 3 sizes x 5 colours, no berries and no shine, so they never read as the berry bushes
+  SHRUB_SHAPES.forEach((shape, si) => SHRUB_SIZES.forEach((k, zi) => SHRUB_PALS.forEach((p, pi) => {
+    let c, ay;
+    if (shape === 'hedge') {   // low and wide: a row of rounded humps
+      const w = Math.round(20 * k), h = Math.round(9 * k) + 2, n = Math.max(3, Math.round(w / 5));
+      c = mk(w, h, x => {
+        for (let i = 0; i < n; i++) { const r = (h - 2) * (0.42 + 0.06 * ((i * 5) % 3)); circ(x, 3 + i * (w - 6) / (n - 1), h - 1 - r, r, p[0]); }
+        for (let i = 0; i < n; i++) circ(x, 2 + i * (w - 6) / (n - 1), h * 0.45, (h - 2) * 0.28, p[1]);
+        for (let i = 1; i < n; i += 2) { x.fillStyle = p[2]; x.fillRect(Math.round(1 + i * (w - 6) / (n - 1)), Math.round(h * 0.3), 2, 1); }
+      });
+      ay = h - 1;
+    } else if (shape === 'fern') {   // blades fanning out of one spot
+      const w = Math.round(16 * k), h = Math.round(12 * k);
+      c = mk(w, h, x => {
+        const cx = w / 2, by = h - 1;
+        for (let i = 0; i < 9; i++) {
+          const a = -Math.PI / 2 + (i - 4) * 0.34, L = (h - 2) * (0.7 + 0.15 * ((i * 7) % 3));
+          x.strokeStyle = i % 2 ? p[1] : p[0]; x.lineWidth = 2; x.beginPath(); x.moveTo(cx, by); x.lineTo(cx + Math.cos(a) * L, by + Math.sin(a) * L); x.stroke();
+          x.fillStyle = p[2]; x.fillRect(Math.round(cx + Math.cos(a) * L), Math.round(by + Math.sin(a) * L), 1, 1);
+        }
+        circ(x, cx, by - 1, 2, p[0]);
+      });
+      ay = h - 1;
+    } else {   // tall: a narrow stack of leafy lumps
+      const w = Math.round(10 * k), h = Math.round(17 * k);
+      c = mk(w, h, x => {
+        circ(x, w / 2, h - w * 0.5 - 1, w * 0.5, p[0]); circ(x, w / 2, h * 0.5, w * 0.42, p[0]); circ(x, w / 2, h * 0.3, w * 0.32, p[1]); circ(x, w / 2 - 1, h * 0.28, Math.max(1, w * 0.14), p[2]);
+      });
+      ay = h - 1;
+    }
+    reg('sh_' + si + zi + pi, c, c.width / 2, ay);
+  })));
   reg('shrooms', mk(24, 12, x => {
     const spots = [[3, 6], [8, 3], [15, 3], [20, 6], [12, 9]];
     spots.forEach((p, i) => {

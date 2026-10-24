@@ -6,5 +6,17 @@ window.TUNING = {
  "resistMul": 0.6,
  "world.spawnFloor": 2,
  "world.spawnMul": 0.99,
- "world.spawnStart": 20
+ "world.spawnStart": 20,
+ "batteryLife": 100,
+ "batteryMax": 100,
+ "buildings.air.cycle": 3.25,
+ "buildings.water.cycle": 4.25,
+ "buildings.fire.cycle": 4.75,
+ "buildings.earth.cycle": 5,
+ "tree.#water.pay.air": 8,
+ "tree.#water.xp": 20,
+ "tree.#fire.xp": 30,
+ "tree.#earth.xp": 45,
+ "upgrade.gems": 0.43,
+ "gemCap": 3.5
 };

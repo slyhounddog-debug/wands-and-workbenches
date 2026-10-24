@@ -581,7 +581,7 @@ Main.updateFocus = function () {
   UI.setHint(qh.slot && G.selected !== qh.slot ? qh.slot : null, qh.treeL, qh.treeR);
   R.aim = null;
   const frozen = UI.treeOpen.L || UI.treeOpen.R || Main.graceT > 0;
-  if (G.hands.length && !frozen) R.aim = aimNow();
+  if (G.hands.length && !frozen && G.selected === 'hand' && !G.demolish) R.aim = aimNow();   // with a building selected the placement ghost is the only preview (a throw still works, it just isn't outlined)
   R.ghost = null; R.demo = null;
   if (frozen) return;
   const [gx, gy] = useMouseAim() || (G.lastInput === 'mouse' && mouseInFactory()) ? hoverTile(R.fv) : frontTile();

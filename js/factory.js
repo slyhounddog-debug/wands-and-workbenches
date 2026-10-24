@@ -347,8 +347,8 @@ FA.insert = function (b, kind, charge, thrown) {
   const d = FA.def(b);
   if (d.kind === 'crafter') b.inv[kind] = (b.inv[kind] || 0) + 1;
   else if (FA.isLogi(b)) b.out.push({ kind });
-  if (d.kind === 'charger' && ELEM[kind]) FA.elTick(kind);
-  else if (d.kind === 'station') {
+  if (d.kind === 'charger' && ELEM[kind]) FA.elTick(kind);   // the weather feels it, and the packet below still fuels the Charger
+  if (d.kind === 'station') {
     b.bat = charge || 0;
     if (b.bat <= 0) FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_x']]);
   } else if (d.kind === 'charger') {

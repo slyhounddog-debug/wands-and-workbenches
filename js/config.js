@@ -27,7 +27,7 @@ const CFG = {
   reach: 1.75, pickRepeat: 0.2,
   autoPick: { r: 1.0, delay: 0.7, gap: 0.12 },   // a slight pickup range: loose items that have settled within r tiles hop into the hands, one every gap seconds (r 0 = off); delay = seconds after landing
   tipRadius: 3.5,            // building info panels only show within this many tiles of the Builder (or when hovered)
-  portalAlpha: 0.5,          // how solid the Spell / Skill Portals are drawn (they are see-through)
+  portalAlpha: 0.425,        // how solid the Spell / Skill Portals are drawn (they are see-through; 15% more than the old 0.5)
   stockFlight: { gap: 0.12, baseT: 0.6, perTile: 0.05, maxT: 1.6 },   // what the Wizard sends to the Stockpile flies out of the Spell Portal: seconds between items, flight time = baseT + perTile x distance (capped)
   inputBuffer: 0.1,         // pick / use / place / roll presses that can't happen yet keep trying this long
   sweepRepeat: 0.07,         // holding pick sweeps up identical nearby items this fast

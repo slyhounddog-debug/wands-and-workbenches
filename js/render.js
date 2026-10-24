@@ -257,6 +257,7 @@ R.drawFactory = function (main, dt) {
   for (const g of piles2) list.push({ d: g.x + g.y, o: g, t: g.items.length > 1 ? 'floorG' : 'floor' });
   for (const o of f.flying) list.push({ d: o.x + o.y + 0.5, o, t: 'fly' });
   list.push({ d: bd.x + bd.y, o: bd, t: 'builder' });
+  if (R.ghost) list.push({ d: R.ghost.x + R.ghost.y + (R.ghost.type === 'belt' ? 0.45 : 1.05), o: R.ghost, t: 'ghost' });   // the hovering piece sorts among the real ones
   list.sort((a, b) => a.d - b.d);
 
   // reflections in the shiny grass
@@ -269,6 +270,7 @@ R.drawFactory = function (main, dt) {
       R.reflect(ctx, G.hands.length ? SP.builderC : SP.builder, p[0], p[1], S, 0.22);
     }
   }
+  if (R.ghost) R.drawGhostGround(ctx, v, R.ghost, t);
   for (const b of f.bld) {
     const k = b.done && FA.def(b).kind;
     if (!k || k === 'station' || k === 'charger') continue;
@@ -286,10 +288,11 @@ R.drawFactory = function (main, dt) {
       case 'floorG': R.drawFloorPile(ctx, v, it.o, t); break;
       case 'fly': R.drawFly(ctx, v, it.o, t); break;
       case 'builder': R.drawBuilder(ctx, v, bd, t); break;
+      case 'ghost': R.drawGhost(ctx, v, it.o, t); break;
     }
   }
   R.drawShrineStreams(ctx, v, t);
-  if (R.ghost) R.drawGhost(ctx, v, R.ghost, t);
+  if (R.ghost) R.drawGhostLinks(ctx, v, R.ghost, t);
   if (R.demo) R.drawDemo(ctx, v, R.demo, t);
   if (R.aim && G.hands.length && !bd.gather) R.drawAim(ctx, v, R.aim, t);
   R.drawLock(ctx, v, t);
@@ -899,12 +902,57 @@ R.drawBuilder = function (ctx, v, bd, t) {
     R.item(ctx, G.hands[i].kind, p[0] + wob + (i % 2 ? 4 : -4), y0 - i * 12, 4, t, i === n - 1);
   }
 };
+// The placement preview in three parts so it reads against the green floor and sits correctly among the objects:
+// the footprint lies on the ground under everything (a lifted dark shadow, a cyan / red wash and marching dashes: nothing like the grass),
+// the hovering piece is depth-sorted with the buildings, and the links show what it would connect to.
+R.drawGhostGround = function (ctx, v, g, t) {
+  const p = R.toScreen(v, g.x + 0.5, g.y + 0.5), col = g.ok ? '#3a6cff' : '#ff4a4a';   // deep blue: it has to stand out from the light green floor
+  ctx.fillStyle = 'rgba(8,16,40,0.4)'; diamond(ctx, p[0] + 8, p[1] + 8, v.hw, v.hh); ctx.fill();   // the shadow the hovering piece casts
+  ctx.globalAlpha = Math.sin(t * 6) > 0 ? 0.8 : 0.62; ctx.fillStyle = col; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill(); ctx.globalAlpha = 1;
+  ctx.strokeStyle = '#1a0f28'; ctx.lineWidth = 12; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.stroke();
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8; ctx.setLineDash([16, 16]); ctx.lineDashOffset = -Math.floor(t * 6) * 8; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.stroke(); ctx.setLineDash([]);
+};
+// what the piece would connect to: neighbours that would feed it (an input finished) and neighbours it would feed (an output started)
+R.ghostLinks = function (g) {
+  const dk = g.type === 'belt' ? 'belt' : CFG.buildings[g.type].kind, out = [];
+  const gives = dk === 'belt' || dk === 'harness' || dk === 'crafter' || dk === 'crate', routes = dk === 'splitter';
+  const takes = dk === 'belt' || dk === 'crafter' || dk === 'charger' || dk === 'splitter' || dk === 'crate';
+  for (let d = 0; d < 4; d++) {
+    const nx = g.x + DIRS[d][0], ny = g.y + DIRS[d][1], c = FA.cell(nx, ny), back = (d + 2) % 4;
+    if (!c) continue;
+    const ck = c.type === 'belt' ? 'belt' : c.type === 'portal' ? 'portal' : FA.def(c).kind, done = c.type === 'belt' || c.type === 'portal' || c.done;
+    const feeds = c.type === 'belt' ? c.dir === back : done && (ck === 'harness' || ck === 'crafter' || ck === 'crate') ? c.dir === back : done && ck === 'splitter' && dk === 'belt' && g.dir !== d;
+    const accepts = ck === 'belt' ? c.dir !== back : ck === 'portal' || !done || ck === 'crafter' || ck === 'charger' || ck === 'splitter' || ck === 'crate';
+    if (feeds && takes) out.push({ x: nx, y: ny, into: true });
+    else if ((gives ? g.dir === d : routes) && accepts && !feeds) out.push({ x: nx, y: ny, into: false });
+  }
+  return out;
+};
+// gold chevrons run along each link (neighbour -> piece for an input, piece -> neighbour for an output) and the neighbour is outlined
+R.drawGhostLinks = function (ctx, v, g, t) {
+  if (!g.ok) return;
+  for (const l of R.ghostLinks(g)) {
+    const a = l.into ? [l.x + 0.5, l.y + 0.5] : [g.x + 0.5, g.y + 0.5], b = l.into ? [g.x + 0.5, g.y + 0.5] : [l.x + 0.5, l.y + 0.5];
+    const o = R.toScreen(v, l.x + 0.5, l.y + 0.5);
+    ctx.strokeStyle = Math.sin(t * 8) > 0 ? '#9dff9d' : '#ffffff'; ctx.lineWidth = 8; diamond(ctx, o[0], o[1], v.hw, v.hh); ctx.stroke();
+    const s0 = R.toScreen(v, a[0], a[1]), s1 = R.toScreen(v, b[0], b[1]), dx = s1[0] - s0[0], dy = s1[1] - s0[1], m = Math.hypot(dx, dy) || 1, nx = dx / m, ny = dy / m;
+    for (let i = 0; i < 3; i++) {
+      const k = (t * 1.6 + i / 3) % 1, x = s0[0] + dx * k, y = s0[1] + dy * k - 20;
+      for (const [sz, col] of [[18, '#1a0f28'], [12, '#ffe36b']]) {
+        ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x + nx * sz, y + ny * sz); ctx.lineTo(x - nx * sz * 0.6 - ny * sz * 0.8, y - ny * sz * 0.6 + nx * sz * 0.8); ctx.lineTo(x - nx * sz * 0.6 + ny * sz * 0.8, y - ny * sz * 0.6 - nx * sz * 0.8); ctx.closePath(); ctx.fill();
+      }
+    }
+    dspr(ctx, SP.ic_check, o[0], o[1] - 84 + (Math.sin(t * 6) > 0 ? 0 : 4), 4);
+  }
+};
 R.drawGhost = function (ctx, v, g, t) {
-  const p = R.toScreen(v, g.x + 0.5, g.y + 0.5);
-  ctx.fillStyle = g.ok ? 'rgba(120,255,140,0.4)' : 'rgba(255,90,90,0.45)';
-  diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill();
+  const p = R.toScreen(v, g.x + 0.5, g.y + 0.5), hov = Math.sin(t * 4) > 0 ? 8 : 4;
+  if (g.type === 'belt') {   // a pale slab hovering over the tile, so a belt reads as a piece and not as a patch of floor
+    ctx.fillStyle = g.ok ? '#d8e6ff' : '#ffc0c0'; ctx.globalAlpha = 0.85; diamond(ctx, p[0], p[1] - 16 - hov, v.hw * 0.62, v.hh * 0.62); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#1a0f28'; ctx.lineWidth = 4; diamond(ctx, p[0], p[1] - 16 - hov, v.hw * 0.62, v.hh * 0.62); ctx.stroke();
+  }
   const dd = DIRS[g.dir], sdx = (dd[0] - dd[1]) * v.hw * 0.45, sdy = (dd[0] + dd[1]) * v.hh * 0.45;
-  if (g.type !== 'belt') dspr(ctx, R.bldSprite({ type: g.type }), p[0], p[1] + v.hh * 0.9 - 2, 4, 0.55);
+  if (g.type !== 'belt') dspr(ctx, R.bldSprite({ type: g.type }), p[0], p[1] + v.hh * 0.9 - 2 - hov, 4, 0.7);
   if (g.type !== 'splitter') {   // a Splitter has no front: it routes to whatever its sides touch
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8;
     const ex = p[0] + sdx * 1.2, ey = p[1] + sdy * 1.2;

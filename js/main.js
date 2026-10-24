@@ -21,7 +21,7 @@ function blankState(slot) {
     credits: { station: 0, charger: 0 },
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
     flags: {}, quest: { B: 0, W: 0 }, qbase: { B: null, W: null }, bankLog: [], pins: { L: null, R: null }, lock: null,
-    hands: null, handQ: [], swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
+    hands: [], swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
 }
@@ -56,14 +56,14 @@ Main.applySave = function (slot, s) {
   if (s.qbase && typeof s.quest === 'object') G.qbase = Object.assign(G.qbase, s.qbase);   // null = measured from when the goal first shows
   G.bankLog = Array.isArray(s.bankLog) ? s.bankLog.filter(k => ITEMS[k]) : [];
   G.pins = Object.assign({ L: null, R: null }, s.pins || {}); G.pinBp = !!s.pinBp;
-  // the hands: a first-in-first-out line of stacks (G.hands is the front); older saves have just the one
-  const stacks = [s.hands].concat(Array.isArray(s.handQ) ? s.handQ : []).filter(h => h && ITEMS[h.kind] && h.n > 0).slice(0, CFG.handSlots);
-  G.hands = stacks.shift() || null; G.handQ = stacks;
+  // the hands: one pile of single items, bottom first. Older saves held one stack { kind, n } (and for a moment a queue of them): expand them in order.
+  G.hands = [].concat(s.hands || [], Array.isArray(s.handQ) ? s.handQ : []).filter(h => h && ITEMS[h.kind]).reduce((a, h) => { for (let i = 0; i < (h.n || 1); i++) a.push(h.kind === 'battery' ? { kind: 'battery', charge: h.charge || 0 } : { kind: h.kind }); return a; }, []);
   G.w = WZ.fresh();
   G.ev = WZ.evFresh(s.ev && s.ev.n || 0);
   FA.fromJSON(s.fac || {});
   G.bd = FA.freshBuilder();
   if (s.bd && FA.inb(Math.floor(s.bd.x), Math.floor(s.bd.y))) { G.bd.x = s.bd.x; G.bd.y = s.bd.y; }
+  while (G.hands.length > FA.cap()) { const it = G.hands.shift(); FA.dropAt(it.kind, G.bd.x, G.bd.y, it.charge); }   // an old save held more than the pile allows: the extras go on the floor
   Main.enter();
 };
 // older saves had ONE goal chain (an index): bring it up to the v4 numbering, then hand each track the first of its goals
@@ -92,7 +92,7 @@ Main.save = function () {
     const looseCores = G.w ? G.w.drops.filter(d => d.kind === 'core').reduce((a, d) => a + d.val, 0) : 0;
     const data = JSON.stringify({
       v: SAVE_VERSION, qv: QUEST_VERSION, xp: G.xp, tree: G.tree, stock: Object.assign({}, G.stock, { shard: G.stock.shard + loose, core: G.stock.core + looseCores }, ...Object.entries(FA.inFlight()).map(([k, n]) => ({ [k]: G.stock[k] + n + (k === 'shard' ? loose : k === 'core' ? looseCores : 0) }))), ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
-      flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, handQ: G.handQ, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: FA.toJSON(), at: Date.now(),
+      flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: FA.toJSON(), at: Date.now(),
       bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp,
     });
     if (!Main.saveOk(JSON.parse(data))) throw new Error('the new save failed its own check');
@@ -165,7 +165,7 @@ function aimNow() {
 }
 // every throw lands exactly where the lead line on screen points (R.aim, refreshed each frame)
 function throwAlongAim() {
-  if (!G.hands || G.bd.gather || G.noThrow) return;
+  if (!G.hands.length || G.bd.gather || G.noThrow) return;
   const a = R.aim || aimNow();
   if (a) FA.throwOne(a.x, a.y);
 }
@@ -176,8 +176,8 @@ function handleMouseFactory(dt) {
   const [tx, ty] = hoverTile(R.fv), [px, py] = hoverPoint(R.fv);
   const sel = G.selected, bd = G.bd;
   // right mouse: throw along the lead line (hold = rapid), or cancel the current tool
-  if (m.r && G.hands && !IN.shift() && !(bd.burst > 0)) throwAlongAim();
-  else if (m.rp && !(IN.shift() && G.hands)) { if (G.demolish) G.demolish = false; else if (sel !== 'hand') UI.select('hand'); }
+  if (m.r && G.hands.length && !IN.shift() && !(bd.burst > 0)) throwAlongAim();
+  else if (m.rp && !(IN.shift() && G.hands.length)) { if (G.demolish) G.demolish = false; else if (sel !== 'hand') UI.select('hand'); }
   if (m.lp) {
     if (G.demolish) FA.demolish(tx, ty);
     else if (sel === 'hand') {   // left click picks up: walk to the thing under the cursor and take one
@@ -195,11 +195,11 @@ function handleMouseFactory(dt) {
   } else if (m.l && sel === 'hand' && !G.demolish && !bd.target) {   // hold to keep taking
     G.mRepeat -= dt;
     // with something in hand, holding sweeps up the same kind nearby; empty-handed it repeats on the hovered thing
-    const thing = G.mRepeat <= 0 && (G.hands ? FA.sweepTarget(FA.tailKind()) : FA.thingAt(tx, ty, px, py));
+    const thing = G.mRepeat <= 0 && (G.hands.length ? FA.sweepTarget(FA.topKind()) : FA.thingAt(tx, ty, px, py));
     if (thing && FA.distTo(thing) < CFG.reach + 0.5) {
       const a = FA.actionFor(thing, 'pick');
       if (a.fn && a.rep) a.fn();
-      G.mRepeat = G.hands ? CFG.sweepRepeat : CFG.pickRepeat;
+      G.mRepeat = G.hands.length ? CFG.sweepRepeat : CFG.pickRepeat;
     }
   } else if (m.l && sel === 'belt' && G.drag && !G.demolish) {
     if ((tx !== G.drag.x || ty !== G.drag.y) && FA.inb(tx, ty)) {
@@ -360,12 +360,12 @@ Main.controls = function (dt) {
   if (!frozen) { handleMouseFactory(dt); handleMouseWizard(); }
   if (!frozen) {
     if (cyc) FA.cycleLock(cyc);
-    if (stackThrow && G.hands && !G.bd.gather && !G.noThrow) {   // a burst at one aim point, one item every throwStackGap
+    if (stackThrow && G.hands.length && !G.bd.gather && !G.noThrow) {   // a burst at one aim point, one item every throwStackGap
       const a = R.aim || aimNow();
-      if (a) { G.bd.burst = G.hands.n; G.bd.burstAim = { x: a.x, y: a.y }; }
+      if (a) { G.bd.burst = G.hands.length; G.bd.burstAim = { x: a.x, y: a.y }; }
     }
     if (G.bd.burst > 0) {
-      if (!G.hands) G.bd.burst = 0;
+      if (!G.hands.length) G.bd.burst = 0;
       else if (FA.throwOne(G.bd.burstAim.x, G.bd.burstAim.y, CFG.throwStackGap)) G.bd.burst--;
     }
     // pick / use presses are buffered: if nothing is in reach yet (still walking up to it), keep trying for
@@ -399,8 +399,8 @@ Main.controls = function (dt) {
     } else if (pickHeld && !building && G.pRepeat > 0) {
       G.pRepeat -= dt;
       if (G.pRepeat <= 0) {
-        const t = G.hands ? FA.sweepTarget(FA.tailKind()) : FA.findTarget('pick'), a = t && FA.actionFor(t, 'pick');
-        if (a && a.rep && a.fn) { a.fn(); G.pRepeat = G.hands ? CFG.sweepRepeat : CFG.pickRepeat; }
+        const t = G.hands.length ? FA.sweepTarget(FA.topKind()) : FA.findTarget('pick'), a = t && FA.actionFor(t, 'pick');
+        if (a && a.rep && a.fn) { a.fn(); G.pRepeat = G.hands.length ? CFG.sweepRepeat : CFG.pickRepeat; }
       }
     } else if (!pickHeld) G.pRepeat = 0;
     if (throwHeld && !(G.bd.burst > 0) && !(p0 && p0.ltHeld)) throwAlongAim();
@@ -581,7 +581,7 @@ Main.updateFocus = function () {
   UI.setHint(qh.slot && G.selected !== qh.slot ? qh.slot : null, qh.treeL, qh.treeR);
   R.aim = null;
   const frozen = UI.treeOpen.L || UI.treeOpen.R || Main.graceT > 0;
-  if (G.hands && !frozen) R.aim = aimNow();
+  if (G.hands.length && !frozen) R.aim = aimNow();
   R.ghost = null; R.demo = null;
   if (frozen) return;
   const [gx, gy] = useMouseAim() || (G.lastInput === 'mouse' && mouseInFactory()) ? hoverTile(R.fv) : frontTile();

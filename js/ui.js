@@ -95,18 +95,15 @@ UI.batteryStatus = function () {
     for (const o of b.out) if (o.kind === 'battery') ct(o.charge);
   }
   for (const o of G.fac.floor) if (o.kind === 'battery') ct(o.charge);
-  for (const h of FA.hlist()) if (h.kind === 'battery') ct(h.charge);
+  for (const h of G.hands) if (h.kind === 'battery') ct(h.charge);
   if (!charged && !flat && !charging) return null;
   return [charged, flat, charging];
 };
-// the hands as a row of small slots, oldest (the next one thrown) first and lit; empty slots stay as outlines
+// the hands as small slots in pile order (the first grabbed on the left, the top of the pile, thrown next, lit); empty slots stay as outlines. Never numbers.
 UI.handsHtml = function () {
-  const l = FA.hlist();
+  const l = G.hands, cap = FA.cap();
   let s = '';
-  for (let i = 0; i < CFG.handSlots; i++) {
-    const h = l[i];
-    s += h ? '<span class="hs' + (i ? '' : ' fr') + '">' + UI.img(h.kind, 16) + '<b>' + (h.kind === 'battery' ? Math.round(h.charge / CFG.batteryMax * 100) : h.n) + '</b></span>' : '<span class="hs em"></span>';
-  }
+  for (let i = 0; i < cap; i++) s += l[i] ? '<span class="hs' + (i === l.length - 1 ? ' fr' : '') + '">' + UI.img(l[i].kind, 16) + '</span>' : '<span class="hs em"></span>';
   return s;
 };
 UI.updateHud = function (dt) {
@@ -133,7 +130,7 @@ UI.updateHud = function (dt) {
   $('powCard').classList.toggle('low', low);
   $('vigL').classList.toggle('on', low);
   setHtml('handTxt', UI.handsHtml());
-  $('handCard').classList.toggle('full', !!G.hands && !FA.canHold(FA.tailKind()));
+  $('handCard').classList.toggle('full', !FA.canHold());
   $('btnDemo').classList.toggle('on', G.demolish);
   const mh = WZ.maxHp();
   setTxt('hpTxt', Math.ceil(w.hp) + '/' + mh);
@@ -537,7 +534,7 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
     case 'swift': return [row('Harnesser speed', l => fPct(up * l)), row('Air Pocket every', l => fSec(CFG.buildings.air.cycle / (1 + up * l))), row('Water Drop every', l => fSec(CFG.buildings.water.cycle / (1 + up * l)))];
     case 'manual': return [row('Hand-harnessing speed', l => fPct(up * l)), row('Taps to fill the meter', l => (CFG.manual.taps / (1 + up * l)).toFixed(1))];
     case 'belts': return [row('Belt speed', l => fPct(up * l)), row('Time per tile', l => fSec(CFG.beltTime / (1 + up * l)))];
-    case 'satchel': return [row('Hand stack', l => '' + (CFG.satchel + up * l))];
+    case 'satchel': return [row('Items carried (any mix)', l => '' + (CFG.satchel + up * l))];
     case 'zoomies': return [row('Wizard speed', l => fPct(up * l))];
     case 'hearty': return [row('Wizard max HP', l => '' + (CFG.wizard.hp + up * l))];
     case 'gems': return [row('Gem drop chance', l => 'x' + Math.pow(1 + up, l).toFixed(2)), row('Cinder Imp gem chance', l => Math.min(95, Math.round(CFG.creatures.cinder.gem[1] * 100 * Math.pow(1 + up, l))) + '%'), row('Wild Slime gem chance', l => Math.min(95, Math.round(CFG.enemies.slime.gem[1] * 100 * Math.pow(1 + up, l))) + '%')];

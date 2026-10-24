@@ -25,7 +25,6 @@ const CFG = {
   swapHold: 1.5, swapCooldown: 5,
   builder: { speed: 5.5, accel: 42, friction: 34, radius: 0.24 },
   reach: 1.75, pickRepeat: 0.2,
-  handSlots: 4,              // the Builder's hands hold up to this many stacks at once (first in, first out; each stack up to the satchel size)
   autoPick: { r: 1.0, delay: 0.7, gap: 0.12 },   // a slight pickup range: loose items that have settled within r tiles hop into the hands, one every gap seconds (r 0 = off); delay = seconds after landing
   tipRadius: 3.5,            // building info panels only show within this many tiles of the Builder (or when hovered)
   portalAlpha: 0.5,          // how solid the Spell / Skill Portals are drawn (they are see-through)

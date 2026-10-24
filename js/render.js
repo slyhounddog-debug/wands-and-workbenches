@@ -266,7 +266,7 @@ R.drawFactory = function (main, dt) {
       if (spr) R.reflect(ctx, spr, p[0], p[1] + v.hh * 0.9, S, b.done ? 0.22 : 0.1);
     } else if (it.t === 'builder') {
       const p = R.toScreen(v, bd.x, bd.y);
-      R.reflect(ctx, G.hands ? SP.builderC : SP.builder, p[0], p[1], S, 0.22);
+      R.reflect(ctx, G.hands.length ? SP.builderC : SP.builder, p[0], p[1], S, 0.22);
     }
   }
   for (const b of f.bld) {
@@ -291,7 +291,7 @@ R.drawFactory = function (main, dt) {
   R.drawShrineStreams(ctx, v, t);
   if (R.ghost) R.drawGhost(ctx, v, R.ghost, t);
   if (R.demo) R.drawDemo(ctx, v, R.demo, t);
-  if (R.aim && G.hands && !bd.gather) R.drawAim(ctx, v, R.aim, t);
+  if (R.aim && G.hands.length && !bd.gather) R.drawAim(ctx, v, R.aim, t);
   R.drawLock(ctx, v, t);
 
   for (const p of f.parts) {
@@ -870,7 +870,7 @@ R.drawFly = function (ctx, v, o, t) {
 R.drawBuilder = function (ctx, v, bd, t) {
   const p = R.toScreenLocked(v, bd.x, bd.y), S = 4;
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(Math.round((p[0] - 20) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 40, 12);
-  const carrying = !!G.hands;
+  const carrying = G.hands.length > 0;
   const step = Math.sin(bd.bob);
   const hop = Math.round((bd.gather ? Math.abs(Math.sin(bd.bob)) * 12 : (bd.moving ? Math.abs(step) * 5 : 0)) / 4) * 4;
   const spr = carrying ? (bd.moving && step > 0 ? SP.builderC2 : SP.builderC) : (bd.moving && step > 0 ? SP.builder2 : SP.builder);
@@ -892,21 +892,11 @@ R.drawBuilder = function (ctx, v, bd, t) {
   ctx.scale((1 + sq) * (1 - stretch * 0.45) * (flip ? -1 : 1), (1 - sq) * (1 + stretch));
   ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S + pv, spr.c.width * S, spr.c.height * S);
   ctx.restore();
-  const h = G.hands;
-  if (h) {
-    const n = Math.min(h.n, 8), y0 = p[1] - 72 - hop;
-    for (let i = 0; i < n; i++) {
-      const wob = bd.moving && i > 1 ? (Math.sin(t * 6 + i * 0.7) > 0 ? 4 : 0) : 0;
-      R.item(ctx, h.kind, p[0] + wob + (i % 2 ? 4 : -4), y0 - i * 8, 4, t, i === n - 1);
-    }
-    const label = h.kind === 'battery' ? Math.round(h.charge / CFG.batteryMax * 100) + '%' : 'x' + h.n;
-    txt(ctx, label, p[0] + 34, y0 - n * 8 + 6, 12, h.n >= FA.stackMax(h.kind) ? '#ffe36b' : '#ffffff', 'center', 'd');
-    // the stacks waiting behind it (first in, first out): a small icon each, with its count, in a row beside the front stack
-    G.handQ.forEach((q, i) => {
-      const qx = p[0] + 76 + i * 40, qy = y0 + 4;
-      R.item(ctx, q.kind, qx, qy, 3, t, false);
-      txt(ctx, q.kind === 'battery' ? Math.round(q.charge / CFG.batteryMax * 100) + '%' : 'x' + q.n, qx, qy + 24, 12, '#ffffff', 'center', 'd');
-    });
+  // what he carries: one pile above his head, the last thing grabbed on top (that is the one a throw sends first). No numbers: each item is drawn.
+  const n = G.hands.length, y0 = p[1] - 72 - hop;
+  for (let i = 0; i < n; i++) {
+    const wob = bd.moving && i > 1 ? (Math.sin(t * 6 + i * 0.7) > 0 ? 4 : 0) : 0;
+    R.item(ctx, G.hands[i].kind, p[0] + wob + (i % 2 ? 4 : -4), y0 - i * 12, 4, t, i === n - 1);
   }
 };
 R.drawGhost = function (ctx, v, g, t) {
@@ -947,7 +937,7 @@ R.drawAim = function (ctx, v, a, t) {
     const k = i / 24, x = s[0] + (e[0] - s[0]) * k, y = s[1] - 70 + (e[1] - s[1] + 70) * k - Math.sin(k * Math.PI) * h;
     ctx.fillRect(Math.round(x / 4) * 4 - 4, Math.round(y / 4) * 4 - 4, 8, 8);
   }
-  const hd = G.hands, ok = !!(hd && a.obj && FA.accepts(a.obj, hd.kind)), col = !a.obj ? '#ffffff' : ok ? '#9dff9d' : '#ff6a6a';
+  const hd = FA.top(), ok = !!(hd && a.obj && FA.accepts(a.obj, hd.kind)), col = !a.obj ? '#ffffff' : ok ? '#9dff9d' : '#ff6a6a';
   if (a.obj && a.obj.type !== 'belt') R.outlineObj(ctx, v, a.obj, col, t, 1.04);
   else { ctx.strokeStyle = col; ctx.lineWidth = 6; diamond(ctx, e[0], e[1], 24, 12); ctx.stroke(); }
   if (hd) dspr(ctx, itemSprite(hd.kind), e[0], e[1] - 10 + (Math.sin(t * 6) > 0 ? 0 : 4), 4, 0.5);   // where it will land

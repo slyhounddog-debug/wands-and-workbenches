@@ -32,7 +32,6 @@ FA.reserved = (x, y) => { const z = FA.zone(); return x >= z.x0 && x <= z.x1 && 
 
 // ----- upgrade effects -----
 FA.cap = () => CFG.satchel + lvl('satchel') * CFG.upgrade.satchel;
-FA.stackMax = k => (ITEMS[k] && ITEMS[k].stack) || FA.cap();
 FA.beltTime = () => CFG.beltTime / (1 + CFG.upgrade.belts * lvl('belts'));
 // the Wizard standing at a shrine speeds up that element's harnessers (G.w.shrine, set by WZ.updMarks)
 FA.shrineBoost = type => {
@@ -205,38 +204,28 @@ FA.inFlight = function () {   // what the saved stock must add: stock-bound item
 FA.say = a => { if (a.ic) FA.ipop(G.bd.x, G.bd.y - 0.3, a.ic.map(k => [k])); else if (a.label) FA.pop(G.bd.x, G.bd.y - 0.3, a.label, '#ffd0a0'); };   // why an action can't happen
 
 // ---------- hands & floor items ----------
-// The hands are a first-in-first-out line of stacks: G.hands is the front (the oldest, what a throw sends first), G.handQ the stacks behind it.
-// A pick adds to the last stack when it is the same kind (and has room), otherwise starts a new one, up to CFG.handSlots stacks.
-FA.hlist = () => (G.hands ? [G.hands].concat(G.handQ) : []);
-FA.tail = () => (G.handQ.length ? G.handQ[G.handQ.length - 1] : G.hands);
-FA.tailKind = () => { const t = FA.tail(); return t ? t.kind : null; };
-FA.canHold = k => { const t = FA.tail(); return !t || (t.kind === k && t.n < FA.stackMax(k)) || 1 + G.handQ.length < CFG.handSlots; };
+// The hands are ONE pile of single items, G.hands (bottom first, the last one grabbed on top), at most FA.cap() items in total whatever they are.
+// The top of the pile is what a throw sends first (last in, first out).
+FA.top = () => (G.hands.length ? G.hands[G.hands.length - 1] : null);
+FA.topKind = () => { const t = FA.top(); return t ? t.kind : null; };
+FA.canHold = () => G.hands.length < FA.cap();
 FA.addHands = function (k, n, charge) {
-  const t = FA.tail();
-  if (t && t.kind === k && t.n + n <= FA.stackMax(k)) { t.n += n; return; }
-  const s = { kind: k, n };
-  if (k === 'battery') s.charge = charge || 0;
-  if (!G.hands) G.hands = s; else G.handQ.push(s);
+  for (let i = 0; i < n; i++) G.hands.push(k === 'battery' ? { kind: k, charge: charge || 0 } : { kind: k });
 };
 FA.takeOne = function () {
-  const h = G.hands;
-  if (!h) return null;
-  const it = { kind: h.kind, charge: h.charge };
-  h.n--;
-  if (h.n <= 0) G.hands = G.handQ.shift() || null;
-  return it;
+  const it = G.hands.pop();
+  return it ? { kind: it.kind, charge: it.charge } : null;
 };
 FA.dropAt = function (kind, x, y, charge) {
   const a = Math.random() * 6.283, r = Math.random() * 0.25;
   G.fac.floor.push({ kind, charge, x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, z: 0.4, vz: 2.5, t: 0 });
 };
 FA.dropHands = function () {   // never deletes: everything lands on the floor at the Builder's feet
-  while (G.hands) { const it = FA.takeOne(); FA.dropAt(it.kind, G.bd.x, G.bd.y, it.charge); }
+  while (G.hands.length) { const it = FA.takeOne(); FA.dropAt(it.kind, G.bd.x, G.bd.y, it.charge); }
 };
 FA.stash = function () {       // resources back to the Stockpile; anything else lands on the floor
-  if (!G.hands) return;
-  const keep = FA.hlist().filter(h => { if (RES[h.kind]) G.stock[h.kind] += h.n; return !RES[h.kind]; });
-  G.hands = keep.shift() || null; G.handQ = keep;
+  if (!G.hands.length) return;
+  G.hands = G.hands.filter(h => { if (RES[h.kind]) G.stock[h.kind]++; return !RES[h.kind]; });
   FA.dropHands(); AU.sfx('drop');
 };
 FA.pickFloor = function (it) {   // one item per press (hold to keep grabbing)
@@ -864,7 +853,7 @@ FA.throwList = function (k) {
 // ---------- deliberate target selection (pad right stick / Tab): G.lock pins one target until it stops being valid ----------
 // holding something: cycle the receivers that take it (best first). Empty-handed: cycle what's in reach to pick or use
 FA.lockList = function () {
-  const bd = G.bd, h = G.hands;
+  const bd = G.bd, h = FA.top();
   if (h) return FA.throwList(h.kind).sort((a, b) => a.d * a.prio - b.d * b.prio).map(c => ({ thr: true, held: h.kind, x: c.x, y: c.y, obj: c.obj }));
   const out = [];
   for (const c of FA.candidates()) {
@@ -885,7 +874,7 @@ FA.cycleLock = function (dir) {
 };
 // the lock if it still makes sense for this mode ('throw' / 'pick' / 'use'), otherwise null
 FA.lockValid = function (mode) {
-  const l = G.lock, h = G.hands;
+  const l = G.lock, h = FA.top();
   if (!l) return null;
   if (l.thr) {
     if (mode !== 'throw' || !h || h.kind !== l.held || !FA.accepts(l.obj, h.kind) || Math.hypot(l.x - G.bd.x, l.y - G.bd.y) > CFG.throwRange) return null;
@@ -898,7 +887,7 @@ FA.lockValid = function (mode) {
   return FA.actionFor(c, mode).fn ? l : null;
 };
 FA.throwTarget = function (aimX, aimY) {
-  const bd = G.bd, h = G.hands;
+  const bd = G.bd, h = FA.top();
   if (!h) return null;
   const k = h.kind;
   if (aimX !== undefined) {   // mouse aim: land exactly there (clamped to range)
@@ -925,7 +914,7 @@ FA.throwTarget = function (aimX, aimY) {
 };
 FA.throwOne = function (aimX, aimY, cd) {
   const bd = G.bd;
-  if (!G.hands || bd.throwCd > 0) return false;
+  if (!G.hands.length || bd.throwCd > 0) return false;
   const tg = FA.throwTarget(aimX, aimY);
   const it = FA.takeOne();
   if (FA.canSwap(tg.obj, it.kind)) FA.addHands('battery', 1, FA.takeBat(tg.obj));   // the old one comes back to the hands
@@ -1111,7 +1100,7 @@ FA.sweepTarget = function (kind) {
 FA.findTarget = function (mode) {
   const lk = FA.lockValid(mode);
   if (lk) return lk.c;
-  const bd = G.bd, fm = Math.hypot(bd.fx, bd.fy) || 1, hk = FA.tailKind();
+  const bd = G.bd, fm = Math.hypot(bd.fx, bd.fy) || 1, hk = FA.topKind();
   let best = null, bs = 1e9, info = null, is = 1e9;
   for (const c of FA.candidates()) {
     const dx = c.x - bd.x, dy = c.y - bd.y, d = Math.hypot(dx, dy);
@@ -1128,7 +1117,7 @@ FA.findTarget = function (mode) {
 const A = (label, fn, rep, ic) => ({ label, fn, rep: !!rep, ic });
 const NONE = A('', null), FULL = A('Hands full: right-click to throw', null, false, ['ic_hand', 'ic_x']);
 FA.actionFor = function (t, mode) {
-  const h = G.hands, k = h && h.kind, f = G.fac, pick = mode === 'pick';
+  const h = FA.top(), k = h && h.kind, f = G.fac, pick = mode === 'pick';
   switch (t.kind) {
     case 'floor': {
       const it = t.o;
@@ -1157,7 +1146,7 @@ FA.actionFor = function (t, mode) {
   return NONE;
 };
 FA.bldAction = function (b, pick) {
-  const h = G.hands, k = h && h.kind, d = FA.def(b);
+  const h = FA.top(), k = h && h.kind, d = FA.def(b);
   if (!b.done) {
     if (!pick) return NONE;
     const need = FA.needOf(b);

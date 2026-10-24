@@ -41,7 +41,6 @@ const RULES = [
   [/^builder\.radius$/, 'Builder body size in tiles, used for bumping into buildings.'],
   [/^reach$/, 'How far (tiles) the Builder can pick up, use or place things.'],
   [/^pickRepeat$/, 'Seconds between pickups while the pick button is held.'],
-  [/^handSlots$/, 'How many different stacks the Builder hands hold at once (first in, first out; each stack up to the satchel size).'],
   [/^autoPick.r$/, 'Pickup range (tiles): loose items that have settled this close to the Builder hop into his hands by themselves. 0 turns it off.'],
   [/^autoPick.delay$/, 'Seconds a dropped or thrown item must lie still before the pickup range takes it.'],
   [/^autoPick.gap$/, 'Seconds between two automatic pickups.'],

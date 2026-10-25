@@ -28,7 +28,7 @@ function blankState(slot) {
     credits: { battery: 0, heavybat: 0 },
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
     flags: {}, quest: { B: 0, W: 0 }, qbase: { B: null, W: null }, bankLog: [], pins: { L: null, R: null }, lock: null,
-    aug: WZ.augFresh(), hold: { on: false, spell: null },   // what he wears and which keeps are open, and the held-spell slot (unlocked by the first Warden)
+    altar: WZ.altarFresh(), aug: WZ.augFresh(), hold: { on: false, spell: null },   // the Summoning Altar (where it stands, which sockets are lit)   // what he wears and which keeps are open, and the held-spell slot (unlocked by the first Warden)
     hands: [], swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
@@ -65,6 +65,7 @@ Main.applySave = function (slot, s) {
   G.flags = s.flags || {}; G.quest = Main.questOf(s); G.placeDir = s.placeDir || 0;
   // the Wizard's gear: an old save has none (everything defaults to empty). A save that already captured a Stronghold gets the glow-up and the spell slot silently (no animation)
   G.aug = WZ.augFix(s.aug);
+  G.altar = WZ.altarFix(s.altar);
   const captured = (G.stats.keeps || 0) > 0 || ELEMS.some(el => G.flags['core_' + el]);
   if (captured) G.flags.glow = true;
   G.hold = { on: !!(G.flags.glow || (s.hold && s.hold.on)), spell: s.hold && SPELL_COL[s.hold.spell] ? s.hold.spell : null };
@@ -164,7 +165,7 @@ Main.save = function () {
     const data = JSON.stringify({
       v: SAVE_VERSION, qv: QUEST_VERSION, tv: TREE_VERSION, xp: G.xp, tree: G.tree, stock: stockSaved, ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
       flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: Main.facSaved(), at: Date.now(),
-      bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp, aug: G.aug, hold: G.hold,
+      bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp, aug: G.aug, hold: G.hold, altar: G.altar,
     });
     if (!Main.saveOk(JSON.parse(data))) throw new Error('the new save failed its own check');
     // rolling backup: the save we're about to replace becomes the backup, if it was good
@@ -628,9 +629,12 @@ Main.hintFor = function (q) {
     let best = null, bd = 1e9;
     for (const m of WZ.marks) { if (m.type !== 'stronghold' || w.lm[m.id].state === 'done' || (h.keep === 'scout' && w.lm[m.id].seen)) continue; const d = Math.hypot(m.x - w.x, m.y - w.y); if (d < bd) { bd = d; best = m; } }
     if (best) out.w = { x: best.x, y: best.y, lift: 150 };
-  } else if (h.boss) {
+  } else if (h.boss) {   // the Chimera while it is out, else the Altar that calls it
     if (G.w.boss) out.w = { x: G.w.boss.x, y: G.w.boss.y, lift: 140 };
-    else make('altar');
+    else if (WZ.altarOn()) out.w = { x: G.altar.x, y: G.altar.y, lift: 190 };
+  } else if (h.altar) {   // not bought yet: the tree; landing: nothing; standing: the Altar
+    if (!G.tree.summon) out.tree = true;
+    else if (WZ.altarOn()) out.w = { x: G.altar.x, y: G.altar.y, lift: 190 };
   }
   return out;
 };

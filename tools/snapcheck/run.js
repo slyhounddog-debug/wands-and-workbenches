@@ -20,6 +20,9 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'playwright-core');
     ['fresh run', () => {}],
     ['factory running', W => { W.step(0.05, 200); }],
     ['mid-combat', W => { W.egg('egg_zephyr'); W.egg('egg_puddle'); W.egg('egg_cinder'); W.step(0.05, 120); W.deliver('fire'); W.deliver('water'); W.step(0.05, 20); W.event(1); W.step(0.05, 130); }],
+    ['altar arriving', W => { W.G.tree.summon = true; W.step(0.05, 70); }],   // the Summoning Altar's particles gathering it in mid-air
+    ['altar shockwaves', W => { W.step(0.05, 50); }],   // landed, rings running out across the wilds and the factory
+    ['altar lit, ritual', W => { W.step(0.05, 80); const A = W.G.altar, w = W.G.w; A.lit = [true, true, true, true]; for (const el of ['air', 'water', 'fire', 'earth']) W.G.flags['core_' + el] = true; w.x = A.x - 3; w.y = A.y; w.time = 50; W.step(0.05, 20); }],   // all sockets lit, the Chimera ritual building
     ['boss out', W => { W.boss(); W.step(0.05, 60); }],
     ['skill tree open', W => { W.UI.openTree('L', true); }],
   ];

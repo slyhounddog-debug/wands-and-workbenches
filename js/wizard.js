@@ -334,6 +334,7 @@ WZ.fresh = function () {
     roll: 0, rollCd: 0, rdx: 0, rdy: 0, hurtT: 0, moving: false, bob: 0, shake: 0, ghosts: [],
     enemies: [], proj: [], eproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
     time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
+    cine: null, rit: 0, quake: 0, altarFlash: 0,   // the Altar's landing cinematic, the Chimera ritual countdown, the world shake after the impact, the flash when a spell hits it
     arcs: [], decals: [], bend: {}, tmod, tmodN, kick: null, jump: null,   // deliveries in flight, ground marks, leaning grass, spell terrain, recoil, geyser jump
     boulders: (WZ.boulderSpots || []).map(b => ({ x: b.x, y: b.y, vx: 0, vy: 0 })), blink: null, glowT: 0, scorchT: 0,   // loose boulders, the Circlet's blink, the glow-up timer, time spent on scorched ground
     lm: WZ.marks.map(() => ({ state: 'idle', t: 0, sp: 0, near: false })),
@@ -506,6 +507,7 @@ WZ.drop = function (kind, x, y, val) {
 // call fn(target, dist, isEnemy) for everything within r of (x,y)
 WZ.each = function (x, y, r, fn) {
   const w = G.w;
+  WZ.altarTouch(x, y, r);   // a player spell that reaches the Summoning Altar lights its socket
   for (const e of w.enemies) { if (e.dead) continue; const d = Math.hypot(e.x - x, e.y - y); if (d <= r + e.rad) fn(e, d, true); }
   for (const h of WZ.harv) { if (h.broken) continue; const d = Math.hypot(h.x - x, h.y - y); if (d <= r + 0.4) fn(h, d, false); }
 };
@@ -633,7 +635,8 @@ WZ.chain = function (n, dmg, col, range) {
   let px = w.x, py = w.y;
   const pts = [[px, py]];
   for (let i = 0; i < n; i++) {
-    const e = WZ.nearest(px, py, range || 12, hit);
+    const e = WZ.nearest(px, py, range || 12, hit), al = WZ.altarChainTarget(px, py, range || 12);
+    if (al && (!e || Math.hypot(al.x - px, al.y - py) < Math.hypot(e.x - px, e.y - py))) { hit.push(al); pts.push([al.x, al.y]); px = al.x; py = al.y; WZ.altarHit(WZ.ctx); continue; }   // the bolt arcs to the Altar
     if (!e) break;
     hit.push(e); pts.push([e.x, e.y]); px = e.x; py = e.y;
     WZ.mark(e.x, e.y, 1);
@@ -749,7 +752,8 @@ WZ.cast = function (spell) {
       for (let i = 0; i < S.n; i++) {
         WZ.later(i * S.gap, () => {
           const alive = G.w.enemies.filter(e => !e.dead && Math.hypot(e.x - G.w.x, e.y - G.w.y) < S.range);
-          const e = alive.length ? alive[Math.floor(Math.random() * alive.length)] : null;
+          const al = i === 0 ? WZ.altarChainTarget(G.w.x, G.w.y, S.range) : null;   // the first meteor falls on the Altar when it is in range and still wants this tier
+          const e = al || (alive.length ? alive[Math.floor(Math.random() * alive.length)] : null);
           const x = e ? e.x : G.w.x + rand(-7, 7), y = e ? e.y : G.w.y + rand(-7, 7);
           G.w.fx_.push({ type: 'meteor', x, y, t: 0, dur: S.fall });
           WZ.later(S.fall, () => { WZ.explode(x, y, S.r, S.dmg, '#ff7a30'); AU.sfx('hit'); });
@@ -771,6 +775,8 @@ WZ.cast = function (spell) {
       AU.sfx('zap_water');
       WZ.launch(S.jump);   // Geyser Jump: one erupts under the Wizard too and throws him over the water ahead
       const list = G.w.enemies.filter(e => !e.dead).sort((a, b) => Math.hypot(a.x - px, a.y - py) - Math.hypot(b.x - px, b.y - py)).slice(0, S.n);
+      const alt = WZ.altarChainTarget(px, py, 14);
+      if (alt) list.unshift({ x: alt.x, y: alt.y });   // one erupts under the Altar too
       list.forEach((e, i) => {
         const x = e.x, y = e.y;
         G.w.fx_.push({ type: 'warn', x, y, r: S.r, t: 0, dur: S.delay + i * S.gap, col: '#4aa8ff' });
@@ -904,10 +910,10 @@ WZ.updMarks = function (dt) {
 };
 
 // ---------- the Primal Chimera ----------
-WZ.summonBoss = function () {
+WZ.summonBoss = function (ax, ay) {   // at the Altar when it calls it (ax, ay); beside the Wizard for the debug hook
   const w = G.w;
   if (!w || w.dead || w.boss) return false;
-  const spot = WZ.dryNear(w.x, w.y, 30, [8, 11]) || [w.x + 6, w.y];
+  const spot = ax !== undefined ? (WZ.dryNear(ax, ay, 30, [3, 5]) || [ax + 3, ay]) : (WZ.dryNear(w.x, w.y, 30, [8, 11]) || [w.x + 6, w.y]);
   const e = WZ.makeEnemy('boss', spot[0], spot[1], false);
   e.boss = true; e.order = ELEMS.slice().sort(() => Math.random() - 0.5); e.phase = 0; e.weak = e.order[0];
   e.slamT = 3; e.sumT = 6; e.volT = 5;
@@ -1056,6 +1062,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   for (let i = w.decals.length - 1; i >= 0; i--) if ((w.decals[i].t += dt) > w.decals[i].dur) w.decals.splice(i, 1);
   WZ.tmodTick(dt);
   WZ.arcTick(dt);
+  WZ.cineTick(dt);   // the Summoning Altar's landing (runs even if he dies meanwhile)
   if (w.dead) { w.shrine = null; w.dig = null; w.jump = null; w.blink = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
   w.time += dt;
   if (w.hurtT > 0) w.hurtT -= dt;
@@ -1155,6 +1162,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     if (w.target && w.x === ox && w.y === oy) w.target = null;
   }
   WZ.augTick(dt);   // augment cooldowns, washing ashore, the keeps' doors, boulders
+  WZ.altarTick(dt);   // the Summoning Altar: placing it, its sockets, the Chimera ritual
   // scorched ground burns (the Emberward Cloak walks it unharmed and throws embers up instead)
   if (tn === T_SCORCH && !w.jump && !w.blink) {
     if (WZ.has('ember')) { if (Math.random() < dt * 10) w.fx_.push({ type: 'spark', x: w.x + rand(-0.4, 0.4), y: w.y + rand(-0.4, 0.4), vx: 0, vy: 0, z: 0.1, vz: rand(1.5, 3), g: -2, col: Math.random() < 0.5 ? '#ffb030' : '#ff7a30', t: 0, dur: 0.5 }); }
@@ -1271,8 +1279,15 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     let hit = null, hitE = false;
     for (const e of w.enemies) { if (!e.dead && Math.hypot(e.x - p.x, e.y - p.y) < p.r + e.rad) { hit = e; hitE = true; break; } }
     if (!hit) for (const h of WZ.harv) { if (!h.broken && Math.hypot(h.x - p.x, h.y - p.y) < p.r + 0.4) { hit = h; break; } }
+    if (!hit && p.ctx && WZ.altarBlocks(p.x, p.y, p.r)) hit = 'altar';   // a bolt or boulder that reaches the Summoning Altar bursts on it
     WZ.ctx = p.ctx;
-    if (hit) {
+    if (hit === 'altar') {
+      WZ.altarHit(p.ctx);
+      if (p.kind === 'magma') { WZ.explode(p.x, p.y, p.sr, p.dmg, '#ff4a1a'); WZ.zone({ x: p.x, y: p.y, r: 3, t: 3, dps: 10, slow: 0, col: '#ff6a1a' }); }
+      else if (p.splash) WZ.explode(p.x, p.y, p.sr, p.splash, p.kind === 'rock' ? '#a98a5c' : '#ff9a2b');
+      else { WZ.mark(p.x, p.y, 1); WZ.puff(p.x, p.y, p.col, 5); }
+      w.proj.splice(i, 1);
+    } else if (hit) {
       if (p.kind === 'magma') {
         WZ.explode(p.x, p.y, p.sr, p.dmg, '#ff4a1a');
         WZ.zone({ x: p.x, y: p.y, r: 3, t: 3, dps: 10, slow: 0, col: '#ff6a1a' });

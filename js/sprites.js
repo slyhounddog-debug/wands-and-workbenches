@@ -165,8 +165,6 @@ task(() => {
   reg('gem', mk(6, 6, x => { poly(x, [[3, 0], [6, 3], [3, 6], [0, 3]], '#7be0ff'); poly(x, [[3, 0], [0, 3], [3, 3]], '#d5f6ff'); }), 3, 3);
   reg('it_shard', mapSprite(['...o....', '..oco...', '..occo..', '.occwco.', '.occwco.', 'occcccco', '.occcco.', '..oCCo..', '...oo...'],
     { o: '#3a1a5a', c: '#c890ff', C: '#8a54d0', w: '#ffffff' }), 4, 9);
-  reg('it_sigil', mapSprite(['..oooooo..', '.orrrrrro.', 'orrwrrwrro', 'orrrwwrrro', 'orrwwwwrro', 'orrrwwrrro', 'orrwrrwrro', '.orrrrrro.', '..oooooo..'],
-    { o: '#3a0a2a', r: '#ff4a8a', w: '#ffe36b' }), 5, 9);
 });
 
 // ---------- landmarks (anchored bottom centre) ----------
@@ -608,6 +606,18 @@ task(() => {
     x.fillStyle = '#140a20'; x.fillRect(7, 14, 2, 4); x.fillRect(30, 14, 2, 4);
     x.fillStyle = '#6e4423'; x.fillRect(19, 2, 2, 12);
   }), 20, 35);
+  // the Summoning Altar (js/altar.js): three broad steps and a rune-carved obelisk; the four spell sockets orbit above it and are drawn live (R.drawAltar)
+  reg('lm_altar', mk(46, 48, x => {
+    isoBox(x, 23, 46, 21, 3, '#9a9aa8', '#74748a', '#5a5a70');
+    isoBox(x, 23, 43, 17, 3, '#b0b0c0', '#85859a', '#6a6a80');
+    isoBox(x, 23, 40, 12, 2, '#c4c4d4', '#9494aa', '#74748a');
+    isoBox(x, 23, 38, 6, 22, '#d6d2e6', '#a29cba', '#7e789a');
+    poly(x, [[23, 8], [29, 16], [23, 19], [17, 16]], '#e8e4f6'); poly(x, [[23, 8], [17, 16], [23, 19]], '#c4bedc'); poly(x, [[23, 8], [29, 16], [23, 19]], '#aaa4c8');
+    x.fillStyle = '#c890ff'; x.fillRect(19, 29, 1, 4); x.fillRect(19, 30, 3, 1); x.fillRect(26, 25, 1, 4); x.fillRect(24, 26, 3, 1); x.fillRect(21, 21, 2, 1); x.fillRect(22, 20, 1, 3);
+    x.fillStyle = '#ffe36b'; x.fillRect(22, 33, 2, 1); x.fillRect(28, 31, 1, 2);
+    x.fillStyle = '#2b1d3e'; for (let i = 0; i < 4; i++) x.fillRect(5 + i * 12, 44 - (i % 2 ? 2 : 0), 3, 1);   // socket studs on the lowest step
+    x.fillStyle = '#6a8a56'; x.fillRect(6, 45, 3, 2); x.fillRect(38, 44, 2, 3);
+  }), 23, 47);
   // the Creature Spawner: a hatchery base and a clutch of eggs, three coloured pips on the front (one, two or three elements per Egg)
   bsprite('b_spawner', (x, cx, cy) => {
     isoBox(x, cx, cy, 9, 5, '#d8c6a0', '#a8956a', '#867552');

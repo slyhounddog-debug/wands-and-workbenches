@@ -16,7 +16,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     imp: 'Lives on sand and dirt. Weak to Water, resists Fire. Its element is Fire.', lurker: 'Lives in the bogs. Weak to Fire, resists Water. Its element is Water.',
     wisp: 'Drifts over the far meadows and flower fields. Weak to Earth, resists Air. Its element is Air.', golem: 'Walks the dark woods far from the start. Weak to Air, resists Earth. Its element is Earth.',
     warden: 'Guards a Stronghold: an elite with slams and orb volleys. It wakes only once its keep\'s Ward Key has been sent in through the portal.',
-    boss: 'The Primal Chimera, called out by the Boss Sigil. Only its current weakness hurts it, and the weakness changes every quarter of its health.',
+    boss: 'The Primal Chimera, called out of the Summoning Altar once it is lit and every Stronghold is claimed. Only its current weakness hurts it, and the weakness changes every quarter of its health.',
   };
   const BASIC_EL = { gust: 'air', fireball: 'fire', spray: 'water', boulder: 'earth' };
   const spellIcon = id => BASIC_EL[id] || id;
@@ -86,13 +86,14 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
         s += line(UI.img('ic_xp', 16), E.gems + ' XP gems' + (kind === 'crafted' && !CFG.crafted.eliteShards ? '' : eliteShard));
         if (I.els.length) {
           s += line(coreIcons(I.els), 'always ' + (C.elite[0] === C.elite[1] ? C.elite[0] : C.elite[0] + '-' + C.elite[1]) + ' Core' + (C.elite[1] > 1 ? 's' : '') + (I.els.length > 1 ? ' of each element' : ''));
-          s += I.els.map(e => line(UI.img('key_' + e, 16), KEY_NAME(e) + ' if it is your first ' + ELEM_WORD[e] + ' elite', have(A.key[e] || A.got['key_' + e], 'GOT IT', 'NOT YET'))).join('');
-        } else s += line(UI.img('ic_x', 16), 'no element: no Cores, no Ward Key');
+        } else s += line(UI.img('ic_x', 16), 'no element: no Cores');
       }
       s += '</div>';
     }
     s += '<div class="bkdc"><h4>CORES GO INTO</h4>';
-    s += I.garments.length ? I.garments.map(a => line(UI.img('aug_' + a, 16), AUGS[a].name + ': ' + Object.keys(AUGS[a].make.in).filter(isCoreKind).map(k => AUGS[a].make.in[k] + ' ' + CORE_NAME[k.slice(5)]).join(' + '), have(FA.augMade(a), 'MADE', 'NOT YET'))).join('') : line(UI.img('ic_x', 16), 'nothing: it drops no Cores');
+    s += I.els.map(e => line(UI.img('key_' + e, 16), KEY_NAME(e) + ': ' + CFG.keyCost.cores + ' ' + CORE_NAME[e] + ' + Iron + Shard (Armory)', have(A.key[e], 'DOOR OPEN', 'NOT YET'))).join('');
+    s += I.els.length ? line(coreIcons(I.els), 'a Shrine of any OTHER element takes one') : '';
+    s += I.garments.length ? I.garments.map(a => line(UI.img('aug_' + a, 16), AUGS[a].name + ': ' + Object.keys(AUGS[a].make.in).filter(isCoreKind).map(k => AUGS[a].make.in[k] + ' ' + CORE_NAME[k.slice(5)]).join(' + '), have(FA.augMade(a), 'MADE', 'NOT YET'))).join('') : I.els.length ? '' : line(UI.img('ic_x', 16), 'nothing: it drops no Cores');
     return s + '</div>';
   }
   // ---- the Wardrobe page: what each garment does, what it is made from and where those Cores come from (the Builder forges them, the Wizard walks onto them) ----

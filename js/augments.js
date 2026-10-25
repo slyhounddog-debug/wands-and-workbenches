@@ -2,17 +2,17 @@
 // The Wizard's own loot and verbs (plain WZ extensions, loaded after creatures.js). Everything here is plain data in G (G.aug, G.hold, G.flags.glow, G.w.boulders,
 // G.w.tmod) so it survives JSON and the photo test:
 //  - CORES (core_<el>): the components of his garments. Creatures of an element drop that element's Core (rare from normals, more from pairs / triples, a
-//    guaranteed chunk from elites); they fly home to the Stockpile like shards. The Builder forges garments from them at the Armory, and a Core sent through the
-//    Spell Portal while the Wizard is near a shrine of that element claims it.
-//  - WARD KEYS (key_<el>): the first elite of an element drops its key (to the Stockpile too). Sent through the portal while he is near that element's
-//    Stronghold it flies down and opens the keep's door for good (G.aug.key[el]).
+//    guaranteed chunk from elites); they fly home to the Stockpile like shards. The Builder forges garments (and Ward Keys) from them at the Armory. A shrine takes
+//    one Core of each of the THREE OTHER elements, sent through the Spell Portal one at a time while the Wizard stands near it (G.w.lm[id].fed).
+//  - WARD KEYS (key_<el>): forged at the Armory from Cores of their own element + Iron + a Shard (CFG.keyCost). Sent through the portal while he is near that
+//    element's Stronghold it flies down and opens the keep's door for good (G.aug.key[el]).
 //  - AUGMENTS (CFG AUGS): garments in four slots (hat, robe, boots, charm) that give him a new VERB, never a number. The Builder forges one at the Armory and
 //    sends it through the portal; it lands in the wilds like a creature drop and he wears it by walking onto it. The garment it replaces pops off and flies
 //    to the Wardrobe Shelf by the factory portal (G.fac.shelf), where the Builder can pick it up and send it back whenever he likes.
 //  - the held-spell slot (G.hold): unlocked by the first Warden to fall.
 WZ.augFresh = () => ({
   v: 2, worn: { hat: '', robe: '', boots: '', charm: '' }, key: { air: false, water: false, fire: false, earth: false },   // key[el]: that keep's door has been opened
-  got: {}, cd: { phoenix: 0 },   // got: 'key_<el>' once that element's first elite has dropped its key; cd.phoenix: seconds until the Feather can save him again
+  cd: { phoenix: 0 },   // cd.phoenix: seconds until the Feather can save him again
 });
 // a save's augment state with every field defaulted and checked. An old save (before the Builder forged garments) also hands back what it owned:
 // f.legacyOwn = garment ids that were in his wardrobe (they go on the shelf), f.legacyOff = Offerings carried (they come back as Cores)
@@ -23,8 +23,6 @@ WZ.augFix = function (a) {
   for (const id in a.own || {}) if (AUGS[id] && a.own[id]) own[id] = true;
   for (const sl of AUG_SLOTS) { const id = a.worn && a.worn[sl[0]]; if (id && AUGS[id] && AUGS[id].slot === sl[0] && (a.v >= 2 || own[id])) f.worn[sl[0]] = id; }
   for (const el of ELEMS) f.key[el] = !!(a.key && a.key[el]);
-  for (const k in a.got || {}) if (isKeyKind(k) && a.got[k]) f.got[k] = true;
-  for (const el of ELEMS) if (f.key[el]) f.got['key_' + el] = true;
   f.cd.phoenix = Math.max(0, +(a.cd && a.cd.phoenix) || 0);
   if (!(a.v >= 2)) {
     f.legacyOwn = Object.keys(own).filter(id => f.worn[AUGS[id].slot] !== id);
@@ -56,17 +54,14 @@ WZ.dropInfo = function (type) {
 };
 // n separate Cores burst out of a kill (each one is picked up, and flies home, on its own)
 WZ.dropCores = function (el, n, x, y) { for (let i = 0; i < n; i++) WZ.drop('core_' + el, x, y, 1); };
-// what a death pays out of the Wizard's own loot classes (called from WZ.onDeath): a Core (a rare chance from normals, a guaranteed chunk of each of its
-// elements from elites) and the Ward Key of an element's first elite
+// what a death pays out of the Wizard's own loot class (called from WZ.onDeath): a Core (a rare chance from normals, a guaranteed chunk of each of its
+// elements from elites). Ward Keys are forged at the Armory, they never drop.
 WZ.lootDrops = function (e) {
   if (e.mini || e.warden || e.boss) return;
-  const A = G.aug, els = WZ.elemsOf(e), C = CFG.cores;
+  const els = WZ.elemsOf(e), C = CFG.cores;
   if (!els.length) return;
   if (e.elite) {
-    for (const el of els) {
-      WZ.dropCores(el, C.elite[0] + Math.floor(Math.random() * (C.elite[1] - C.elite[0] + 1)), e.x, e.y);
-      if (!A.got['key_' + el]) { A.got['key_' + el] = true; WZ.drop('key_' + el, e.x, e.y, 1); }
-    }
+    for (const el of els) WZ.dropCores(el, C.elite[0] + Math.floor(Math.random() * (C.elite[1] - C.elite[0] + 1)), e.x, e.y);
   } else if (Math.random() < WZ.coreChance(e)) WZ.dropCores(pickOf(els), 1, e.x, e.y);
 };
 
@@ -76,13 +71,8 @@ WZ.collect = function (dr) {   // the Wizard reached a Core or a Ward Key: it fl
   FA.toStock(k, n);
   G.stats.cores = (G.stats.cores || 0) + (isCoreKind(k) ? n : 0);
   WZ.icon(w.x, w.y, k); AU.sfx('chest');
-  if (isKeyKind(k)) {
-    WZ.ring(w.x, w.y, 2.2, ELEM[el].color, 0.5); WZ.puff(w.x, w.y, ELEM[el].color, 14);
-    UI.toast(KEY_NAME(el) + '! Ask the Builder to send it through the portal while you stand near the ' + ELEM_WORD[el] + ' Stronghold', 'R', k); UI.toast('The Wizard found the ' + KEY_NAME(el) + ': it is in the Stockpile', 'L', k);
-  } else {
-    WZ.puff(w.x, w.y, ELEM[el].color, 6);
-    if (!G.flags['core_seen_' + el]) { G.flags['core_seen_' + el] = true; UI.toast(CORE_NAME[el] + '! The Builder forges garments from Cores (the Armory), and it opens a ' + ELEM_WORD[el] + ' Shrine', 'R', k); UI.toast('The Wizard found a ' + CORE_NAME[el] + ': it is in the Stockpile', 'L', k); }
-  }
+  WZ.puff(w.x, w.y, ELEM[el].color, 6);
+  if (!G.flags['core_seen_' + el]) { G.flags['core_seen_' + el] = true; UI.toast(CORE_NAME[el] + '! The Builder forges garments and Ward Keys from Cores (the Armory); the other three elements\' Shrines take it', 'R', k); UI.toast('The Wizard found a ' + CORE_NAME[el] + ': it is in the Stockpile', 'L', k); }
   UI.changed();
 };
 // Cores and Ward Keys still lying in the wilds when the run ends (or the game is saved) are the Stockpile's anyway, like shards; so is a garment nobody walked onto
@@ -116,22 +106,40 @@ WZ.garmentOff = function (id) {   // pops off in a ring of sparks and flies thro
 };
 
 // ---------- Cores and keys sent through the Spell Portal ----------
+// a shrine takes the Cores of the three OTHER elements (an Air Shrine: Water, Fire and Earth), one each, sent while the Wizard stands within CFG.unlockR of it;
+// WZ.shrineNeeds lists the elements it still lacks (its own Core, ones it already has and ones already in the air towards it are refused)
+WZ.shrineNeeds = function (m) {
+  const fed = G.w.lm[m.id].fed || {};
+  return ELEMS.filter(e => e !== m.el && !fed[e]);
+};
+WZ.shrineFed = m => ELEMS.filter(e => e !== m.el && G.w.lm[m.id].fed && G.w.lm[m.id].fed[e]).length;
 // the shrine / keep a Core or Ward Key of this kind would open, if the Wizard is close enough to it (else null: the portal bounces it back)
 WZ.unlockTarget = function (k) {
   const w = G && G.w;
   if (!w || w.dead || !(isCoreKind(k) || isKeyKind(k))) return null;
-  const el = k.slice(k.indexOf('_') + 1), core = isCoreKind(k);
-  return WZ.marks.find(m => m.el === el && (core ? m.type === 'shrine' && w.lm[m.id].state !== 'done' : m.type === 'stronghold' && w.lm[m.id].state !== 'done' && !G.aug.key[el]) &&
+  const el = k.slice(k.indexOf('_') + 1);
+  if (isCoreKind(k)) return WZ.marks.find(m => m.type === 'shrine' && w.lm[m.id].state !== 'done' && WZ.shrineNeeds(m).indexOf(el) >= 0 && !w.arcs.some(a => a.mark === m.id && a.kind === k) &&
+    Math.hypot(w.x - m.x, w.y - m.y) < CFG.unlockR) || null;
+  return WZ.marks.find(m => m.el === el && m.type === 'stronghold' && w.lm[m.id].state !== 'done' && !G.aug.key[el] && !w.arcs.some(a => a.mark === m.id) &&
     Math.hypot(w.x - m.x, w.y - m.y) < CFG.unlockR) || null;
 };
 WZ.unlockLand = function (a) {   // the Core / key has come down on its shrine / keep
   const w = G.w, m = WZ.marks.find(q => q.id === a.mark);
   if (!m) return;
-  const el = m.el, col = ELEM[el].color;
+  const el = m.type === 'shrine' ? a.kind.slice(5) : m.el, col = ELEM[el].color;   // a shrine's colour is the Core that came down on it
   WZ.ring(m.x, m.y, 3, col, 0.5); WZ.puff(m.x, m.y, col, 16); WZ.icon(m.x, m.y - 0.6, a.kind);
   if (m.type === 'shrine') {
-    if (w.lm[m.id].state === 'done') return;
-    w.lm[m.id].flash = 0.5; AU.sfx('shrine');
+    const s = w.lm[m.id];
+    if (s.state === 'done') return;
+    (s.fed || (s.fed = {}))[el] = true; s.flash = 0.5;
+    const have = WZ.shrineFed(m);
+    if (have < 3) {
+      AU.sfx('chest'); w.shake = Math.max(w.shake, 0.15);
+      UI.toast('The ' + ELEM_WORD[m.el] + ' Shrine took a ' + CORE_NAME[el] + ' (' + have + '/3)', 'R', a.kind); UI.toast('The ' + ELEM_WORD[m.el] + ' Shrine took a ' + CORE_NAME[el] + ' (' + have + '/3)', 'L', a.kind);
+      UI.changed();
+      return;
+    }
+    AU.sfx('shrine');
     WZ.claim(m);
   } else {
     G.aug.key[el] = true; AU.sfx('chest'); w.shake = Math.max(w.shake, 0.3);

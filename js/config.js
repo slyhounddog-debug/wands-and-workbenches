@@ -152,7 +152,7 @@ const CFG = {
     forge:    { name: 'Elemental Forge', kind: 'crafter', cost: { wood: 13, stone: 10, iron: 4 }, unlock: 'forge',
                 desc: 'Fuses element packets into combo spells (each spell is unlocked separately). Press E at it to switch recipe.' },
     anvil:    { name: 'Armory', kind: 'crafter', cost: { wood: 6, stone: 8, iron: 4 }, unlock: 'armory',
-                desc: 'Forges the Wizard\'s garments (augments) from the Cores he hunts, plus Iron Ore and an Aether Shard: throw them in, E picks the garment. Send the finished garment through the Spell Portal: it lands in the wilds and he wears it by walking onto it. Each garment is made once; swapping puts the old one on the Wardrobe Shelf by the portal.' },
+                desc: 'Forges the Wizard\'s garments (augments) and the Ward Keys that open the Strongholds, from the Cores he hunts, plus Iron Ore and an Aether Shard: throw them in, E picks the recipe. Send the finished garment through the Spell Portal: it lands in the wilds and he wears it by walking onto it. Each garment is made once; swapping puts the old one on the Wardrobe Shelf by the portal.' },
     battery:  { name: 'Battery', kind: 'cell', cost: { wood: 8, stone: 6, iron: 4 }, unlock: null,
                 desc: 'Gives +10 power to the whole factory while it has charge, and drains while anything needs power. Feed it element packets, Wood or Stone (belt or throw) and it burns them to charge itself (16.5s each, 19.5s when thrown in by hand; more kinds at once = faster). Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed. Throw a combo spell or an Elixir in to overcharge it (extra charge, +5 power for a while).' },
     heavybat: { name: 'Heavy Battery', kind: 'cell', cost: { wood: 14, stone: 10, iron: 8 }, unlock: 'heavy',
@@ -165,14 +165,12 @@ const CFG = {
                 desc: 'Holds up to 30 packets, spells or pickups (never raw resources) and feeds them out of its arrow side, one at a time.' },
     spawner:  { name: 'Creature Spawner', kind: 'crafter', cost: { wood: 10, stone: 8, iron: 3, shard: 1 }, unlock: null,
                 desc: 'Hatches a creature Egg from the element packets fed into it: one element = a basic creature, two = a pair, three = a triple. E switches recipe. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. Costs an Aether Shard to build (the starting one is free).' },
-    altar:    { name: 'Summoning Altar', kind: 'crafter', cost: { stone: 14, iron: 7, shard: 6 }, unlock: 'summon',
-                desc: 'Binds an Elemental Nova and Aether Shards into a Boss Sigil. Send the Sigil through the Spell Portal to summon the Primal Chimera.' },
   },
   // the one Harnesser carries any of the four elements (a crystal grows growT seconds after every switch, then shakes shakeT seconds before it starts making packets)
   harness: { growT: 15, shakeT: 1.2, order: ['air', 'water', 'fire', 'earth'], air: { cycle: 3.41, power: 2 }, water: { cycle: 5.11, power: 2 }, fire: { cycle: 5.11, power: 2 }, earth: { cycle: 6.25, power: 2 } },
   // hotbar slots: 'hand', 'belt' or a family (members cycle with Q / the wheel over the slot / pad right-trigger)
   families: {
-    craft:   { name: 'Crafters',   members: ['cauldron', 'forge', 'anvil', 'altar'] },
+    craft:   { name: 'Crafters',   members: ['cauldron', 'forge', 'anvil'] },
     power:   { name: 'Power',      members: ['battery', 'heavybat'] },
     logi:    { name: 'Logistics',  members: ['splitter', 'crate'] },
     spawn:   { name: 'Creature Spawner', members: ['spawner'] },
@@ -185,7 +183,6 @@ const CFG = {
     elixir:       { machine: 'cauldron', in: { water: 2, earth: 1, air: 1 },    out: 'elixir',  time: 9,  power: 0, tier: 'alchemy', use: 'Heals the Wizard 80 HP' },
     armor:        { machine: 'cauldron', in: { earth: 2, fire: 1 },             out: 'armor',   time: 7,  power: 0, tier: 'alchemy', use: '+35 armor for the Wizard' },
     plate:        { machine: 'cauldron', in: { earth: 3, fire: 1, water: 1 },   out: 'plate',   time: 11, power: 0, tier: 'alchemy', use: '+70 armor for the Wizard' },
-    sigil:        { machine: 'altar',    in: { nova: 1, shard: 5 },             out: 'sigil',   time: 12, power: 6, tier: 'summon', use: 'Summons the Primal Chimera beside the Wizard' },
     flamethrower: { machine: 'forge', in: { air: 1, fire: 1 },       out: 'flamethrower', time: 8,  power: 5 },
     steam:        { machine: 'forge', in: { fire: 1, water: 1 },     out: 'steam',        time: 8,  power: 5 },
     sandstorm:    { machine: 'forge', in: { air: 1, earth: 1 },      out: 'sandstorm',    time: 8,  power: 5 },
@@ -206,38 +203,38 @@ const CFG = {
     // col 0: Factory unlocks
     { id: 'alchemy',   col: 0, icon: 'b:cauldron', name: 'Alchemy',         xp: 45, req: [], pay: { air: 10, water: 13 }, desc: 'Unlock the Alchemy Cauldron: Health Potions for the Wizard.' },
     { id: 'forge',     col: 0, icon: 'b:forge',    name: 'Elemental Forge', xp: 90, req: [], pay: { air: 15, water: 15, fire: 15 }, desc: 'Unlock the Elemental Forge. Each combo spell is then unlocked on its own.' },
-    { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 68, req: [], pay: { air: 18, fire: 30, earth: 20 }, desc: 'Unlock the Armory: it forges the Wizard\'s garments (augments) from Cores, Iron and a Shard.' },
+    { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 34, req: [], pay: { air: 9, fire: 15, earth: 10 }, desc: 'Unlock the Armory: it forges the Wizard\'s garments (augments) and the Ward Keys that open the Strongholds, from Cores, Iron and a Shard.' },
     { id: 'logistics', col: 0, icon: 'b:splitter', name: 'Logistics',       xp: 60, req: [], pay: { air: 20, water: 20, fire: 20 }, desc: 'Unlock the Splitter and the Storage Crate.' },
     { id: 'heavy',     col: 0, icon: 'battery',    name: 'Heavy Batteries', xp: 120, req: [], pay: { air: 25, water: 25, fire: 30, earth: 30, magma: 2 }, desc: 'Unlock the Heavy Battery: a Battery building that drains 33% slower, so each charge lasts 50% longer.' },
-    { id: 'summon',   col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: [], pay: { air: 40, water: 40, fire: 40, earth: 40 }, core: 1, desc: 'Unlock the Summoning Altar: craft a Boss Sigil and face the Primal Chimera. Needs a Warden Core from a Stronghold. Beat it to win.' },
+    { id: 'summon',   col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: [], pay: { air: 40, water: 40, fire: 40, earth: 40 }, core: 1, desc: 'The Summoning Altar falls from the sky into the wilds beside the Wizard. Hit it with a Single, a Pair, a Triple and the Nova, with every Stronghold claimed, and the Primal Chimera rises. Costs 6 Aether Shards (send them into the Skill Portal) and a Warden Core.' },
     // col 2: Upgrades — many small tiers, cheap first, steep last
     { id: 'swift',   col: 2, icon: 'ic_fast', name: 'Swift Harnessing', per: '+12.5% harnesser speed',
       tiers: [12, 18, 25, 33, 43, 54, 65, 80],
-      kinds: [['air'], ['air'], ['air', 'water'], ['air', 'water'], ['water', 'fire'], ['water', 'fire'], ['fire', 'earth'], ['air', 'water', 'fire', 'earth']],
+      kinds: [['air'], ['fire', 'earth'], ['air', 'fire'], ['water', 'earth'], ['air', 'earth'], ['water', 'fire'], ['water', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']],
       combos: { 6: { steam: 1 }, 7: { steam: 1, sandstorm: 1 } } },
     { id: 'manual',  col: 2, icon: 'ic_hand', name: 'Quick Hands', per: '+30% hand-harnessing speed',
       tiers: [4, 14, 28],
-      kinds: [['air'], ['air'], ['air', 'water']],
+      kinds: [['air'], ['water', 'fire'], ['air', 'earth']],
       combos: {} },
     { id: 'belts',   col: 2, icon: 'belt', name: 'Swift Belts', per: '+15% belt speed',
       tiers: [15, 24, 35, 48, 62, 76],
-      kinds: [['air'], ['air'], ['air', 'water'], ['water', 'fire'], ['fire', 'earth'], ['air', 'fire', 'earth']],
+      kinds: [['water'], ['air', 'earth'], ['water', 'fire'], ['air', 'water'], ['fire', 'earth'], ['air', 'water', 'fire', 'earth']],
       combos: { 5: { flamethrower: 2 } } },
     { id: 'satchel', col: 2, icon: 'ic_bag', name: 'Bigger Satchel', per: '+1 carry space',
       tiers: [16, 26, 38, 52, 68],
-      kinds: [['air'], ['air', 'water'], ['water', 'earth'], ['earth', 'fire'], ['air', 'water', 'fire', 'earth']],
+      kinds: [['earth'], ['air', 'water'], ['fire', 'earth'], ['air', 'fire'], ['air', 'water', 'fire', 'earth']],
       combos: { 4: { mud: 1, magma: 1 } } },
     { id: 'zoomies', col: 2, icon: 'ic_boot', name: 'Wizard Zoomies', per: '+6% Wizard speed',
       tiers: [12, 18, 26, 36, 48, 60],
-      kinds: [['air'], ['air'], ['air', 'water'], ['air', 'fire'], ['air', 'earth'], ['air', 'water', 'fire']],
+      kinds: [['air'], ['water', 'earth'], ['air', 'fire'], ['fire', 'earth'], ['air', 'water'], ['water', 'fire', 'earth']],
       combos: { 4: { tempest: 1 }, 5: { tempest: 2, thunder: 1 } } },
     { id: 'hearty',  col: 2, icon: 'ic_heart', name: 'Hearty Hat', per: '+12 max HP (and heal 12)',
       tiers: [12, 17, 23, 30, 38, 47, 60, 73],
-      kinds: [['air'], ['air', 'water'], ['water'], ['water', 'earth'], ['water', 'earth'], ['water', 'fire', 'earth'], ['water', 'earth', 'fire'], ['air', 'water', 'fire', 'earth']],
+      kinds: [['air'], ['water', 'fire'], ['air', 'earth'], ['water', 'earth'], ['air', 'fire'], ['water', 'fire', 'earth'], ['air', 'water', 'earth'], ['air', 'water', 'fire', 'earth']],
       combos: { 5: { steam: 1 }, 6: { mud: 2 }, 7: { geyser: 1, blizzard: 1 } } },
     { id: 'gems',    col: 2, icon: 'ic_xp', name: 'Gem Wisdom', per: 'x1.125 on every XP gem drop chance',
       tiers: [14, 20, 27, 35, 44, 54, 62, 74],
-      kinds: [['air'], ['air'], ['air', 'water'], ['water', 'fire'], ['fire'], ['fire', 'earth'], ['air', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']],
+      kinds: [['fire'], ['air', 'water'], ['fire', 'earth'], ['water', 'earth'], ['air', 'water'], ['air', 'earth'], ['air', 'water', 'fire'], ['air', 'water', 'fire', 'earth']],
       combos: { 5: { flamethrower: 1 }, 6: { magma: 2 }, 7: { meteor: 1 } } },
   ],
   // every number a delivered spell uses (WZ.cast; the skill-tree hover card reads them too).
@@ -346,6 +343,20 @@ const CFG = {
   // ---- Cores: the components of the Wizard's garments, and the keys to shrines and keeps. A kill by a creature of an element can drop that element's Core
   // (a rare chance for normals, more for pairs and triples, a guaranteed chunk [min, max] from elites); Cores fly home to the Stockpile like shards.
   cores: { wild: 0.022, basic: 0.033, pair: 0.055, triple: 0.085, elite: [1, 1], warden: 5, boss: 4 },   // chances per normal kill / elite chunk / Warden (of its element) / Chimera (of each)
+  keyCost: { cores: 4, iron: 2, shard: 1, time: 18 },   // a Ward Key at the Armory: Cores of its own element, Iron Ore and an Aether Shard
+  altar: {   // the Summoning Altar (js/altar.js): bought in the tree, it falls out of the sky beside the Wizard and stands in the wilds from then on
+    shards: 6,                  // Aether Shards the Summoning node costs (sent into the Skill Portal)
+    r: 1.7, solid: 1.1,         // its body: spells that reach this far hit it; the Wizard cannot walk closer than this (+ his own radius)
+    spotMin: 5, spotMax: 8.5,   // tiles from the Wizard where it lands (on screen, dry, clear of landmarks and trees)
+    clear: 9,                   // landmarks keep this far from it
+    form: 3.8, hang: 1.2, fall: 0.8, height: 4.8,   // the cinematic: seconds the particles gather, hang whole in the air, fall; tiles up it hangs
+    waves: [0, 0.55, 1.15], quake: 3.2,   // shockwave ring times after the impact; seconds the world shakes
+    ring: 16, speed: 11, push: 7, daze: 0.8,   // how far a shockwave runs (tiles), how fast it runs (tiles/s), the shove foes get and how long they stagger
+    wakeR: 9, ritual: 3.2,      // the Wizard must stand this close for the Chimera to rise; seconds the Altar gathers its power before it steps out
+    sockets: ['Single', 'Pair', 'Triple', 'Nova'],   // one per spell tier (elements in the spell)
+    cols: ['#e6f8ff', '#7be0ff', '#ffd23a', '#ff6ae0'],   // each socket's colour
+    keys: ['air', 'steam', 'meteor', 'nova'],   // each socket's icon (an item sprite)
+  },
   unlockR: 9,                 // a Core or Ward Key the Builder sends only goes through the portal when the Wizard is within this many tiles of the shrine / keep it opens
   // ---- Wizard augments (js/augments.js; the table of augments is AUGS below): garments the Builder forges at the Armory. They change what he can DO, never his numbers ----
   aug: {
@@ -377,6 +388,7 @@ if (window.OV) OV.tune(CFG, window.TUNING);
       for (const k in n.pay) n.pay[k] = sp(n.pay[k] * S.unlock);
     }
   }
+  CFG.tree.find(n => n.id === 'summon').pay.shard = CFG.altar.shards;   // the Altar's Aether Shards are not scaled
 })();
 
 // Fire is weak to Water, Water to Earth, Earth to Air, Air to Fire
@@ -404,7 +416,7 @@ const WEAK_TO = { fire: 'water', water: 'earth', earth: 'air', air: 'fire' };
   // the Loot Magnet track (spells and creatures are not in the tree: the Collection Book lists them and production gates them)
   CFG.tree.push({ id: 'magnet', col: 2, icon: 'ic_magnet', name: 'Loot Magnet', per: '+0.35 tiles of pickup range',
     tiers: [8, 12, 18, 25, 34], pk: [6, 9, 13, 18, 24],
-    kinds: [['air'], ['air', 'water'], ['water', 'earth'], ['fire', 'earth'], ['air', 'water', 'fire', 'earth']], combos: {} });
+    kinds: [['water'], ['air', 'earth'], ['water', 'fire'], ['air', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']], combos: {} });
 })();
 
 const ELEM = {
@@ -499,7 +511,8 @@ const ITEMS = {};
     ITEMS['aug_' + id] = { name: a.name, aug: true, id, color: a.col };
     CFG.recipes['aug_' + id] = { machine: 'anvil', in: a.make.in, out: 'aug_' + id, time: a.make.time, power: 2, tier: 'armory', aug: id, use: a.verb };
   }
-  ITEMS.sigil = { name: 'Boss Sigil', sigil: true, color: '#ff4a8a' };
+  // the Ward Keys are forged at the Armory too, from Cores of their own element + Iron + a Shard (one per Stronghold; the recipe hides once its door is open)
+  for (const el in ELEM) CFG.recipes['key_' + el] = { machine: 'anvil', in: { ['core_' + el]: CFG.keyCost.cores, iron: CFG.keyCost.iron, shard: CFG.keyCost.shard }, out: 'key_' + el, time: CFG.keyCost.time, power: 2, tier: 'armory', key: el, use: 'Opens the ' + ELEM_WORD[el] + ' Stronghold door' };
   for (const id in CFG.creatures) ITEMS['egg_' + id] = { name: CFG.creatures[id].name + ' Egg', egg: true, creature: id, color: CFG.creatures[id].col };
   for (const k in CFG.recipes) {
     const r = CFG.recipes[k];
@@ -514,7 +527,8 @@ const recipeUse = id => {
   if (r.use) return r.use;
   return SPELL_INFO[id] ? SPELL_INFO[id].desc.replace(/^[^:]*:\s*/, '') : '';
 };
-const SPELL_KINDS = Object.keys(ITEMS).filter(k => ITEMS[k].elem || ITEMS[k].spell);   // what the Skill Portal banks
+const SPELL_KINDS = Object.keys(ITEMS).filter(k => ITEMS[k].elem || ITEMS[k].spell);   // the spells and packets the Skill Portal banks
+const BANK_KINDS = SPELL_KINDS.concat(['shard']);   // ...and Aether Shards (the Summoning node costs them)
 // the elements each spell carries (for weaknesses, and its tier: how hard it lands back at the Spell Portal)
 const SPELL_EL = { gust: ['air'], fireball: ['fire'], spray: ['water'], boulder: ['earth'] };
 for (const k in CFG.recipes) { const r = CFG.recipes[k]; if (ITEMS[r.out] && ITEMS[r.out].spell) SPELL_EL[r.out] = Object.keys(r.in); }
@@ -561,8 +575,8 @@ const QUESTS = {
     { v5: 20, icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner' } },
     { from: 19, v5: 21, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, done: g => g.flags.triple, hint: { combo: 3 } },
     { from: 20, v5: 22, icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, done: g => g.flags.sent_nova, hint: { combo: 4 } },
-    { from: 23, v5: 23, icon: 'b:altar', text: 'Unlock Summoning (it costs a Warden Core) and build the Summoning Altar (it needs Aether Shards)', xp: 40, done: g => FA.count('altar') >= 1, hint: { make: 'altar' } },
-    { from: 24, v5: 24, icon: 'ic_crown', text: 'Craft a Boss Sigil and send it through the Spell Portal. Then keep the right element flowing!', xp: 60, done: g => g.flags.sent_sigil, hint: { make: 'altar' } },
+    { from: 23, v5: 23, icon: 'b:altar', text: 'Buy Summoning (6 Shards into the Skill Portal first): the Altar falls into the wilds', xp: 40, done: g => !!g.tree.summon, hint: { tree: 1 } },
+    { from: 24, v5: 24, icon: 'ic_crown', text: 'Light the Altar: send a Single, a Pair, a Triple and the Nova while the Wizard is by it', xp: 60, done: g => !!(g.altar && g.altar.placed && WZ.altarLitN() >= 4), hint: { altar: 1 } },
   ],
   W: [
     { from: 1,  icon: 'ic_hat', text: 'Stand right next to a tree. The factory\'s Air Gusts will chop it down', xp: 4, done: g => g.stats.harvested >= 1, hint: { harv: 1 } },
@@ -573,8 +587,8 @@ const QUESTS = {
     { icon: 'ic_shield', text: 'Dodge 3 hits: roll into an attack (you can\'t be hurt mid-roll)', xp: 8, stat: g => g.stats.dodges || 0, n: 3 },
     { icon: 'ic_tree', text: 'Open your Skill Tree (Y) and buy a Wizard upgrade: Hearty Hat or Wizard Zoomies', xp: 8, gift: { bank: { air: 3 } }, done: g => lvl('hearty') >= 1 || lvl('zoomies') >= 1, hint: { tree: 1 } },
     { icon: 'potion', text: 'Walk over 2 Potions or Shield Potions the Builder sends you', xp: 8, stat: g => g.stats.used || 0, n: 2 },
-    { icon: 'ic_bolt', text: 'Hit weaknesses: finish off 10 monsters with a yellow ! hit (match the element)', xp: 12, gift: { pickup: ['potion'], stock: { core_air: 1, core_water: 1, core_fire: 1, core_earth: 1 } }, stat: g => g.stats.weakKills || 0, n: 10 },   // the Cores are for the next goal: any Shrine will take its own element's
-    { icon: 'ic_flag', text: 'Claim a Shrine: stand by it and have the Builder send its element\'s Core through the portal', xp: 12, gift: { pickup: ['plate'] }, stat: g => g.stats.shrines || 0, n: 1, hint: { mark: 'shrine' } },
+    { icon: 'ic_bolt', text: 'Hit weaknesses: finish off 10 monsters with a yellow ! hit (match the element)', xp: 12, gift: { pickup: ['potion'], stock: { core_air: 1, core_water: 1, core_fire: 1, core_earth: 1 } }, stat: g => g.stats.weakKills || 0, n: 10 },   // the Cores are for the next goal: any Shrine takes one of each of the three OTHER elements, so one of each is enough for the first
+    { icon: 'ic_flag', text: 'Claim a Shrine: while the Wizard stands by it, send the Cores of the 3 other elements', xp: 12, gift: { pickup: ['plate'] }, stat: g => g.stats.shrines || 0, n: 1, hint: { mark: 'shrine' } },
     { icon: 'ic_fast', text: 'Stand on a claimed Shrine for 20 seconds: that element\'s Harnessers run faster', xp: 10, stat: g => g.stats.shrineT || 0, n: 20, hint: { mark: 'myshrine' } },
     { from: 14, icon: 'ic_flag', text: 'Clear a Monster Camp or an Ancient Crypt (see the map) for Aether Shards', xp: 15, gift: { pickup: ['potion', 'plate'] }, stat: g => g.stats.clears || 0, n: 1, hint: { mark: 'camp' } },
     { icon: 'ic_skull', text: 'Defeat 60 monsters', xp: 12, done: g => g.stats.kills >= 60, prog: g => [g.stats.kills, 60] },
@@ -586,7 +600,7 @@ const QUESTS = {
     { from: 21, icon: 'ic_keep', text: 'Scout a Stronghold, far out in the wilds (see the map): get near to reveal its guards', xp: 20, done: g => !!g.flags.scouted, hint: { keep: 'scout' } },
     { from: 22, icon: 'core', text: 'Open a Stronghold: wear its terrain garment, have its Ward Key sent in, beat its Warden', xp: 40, done: g => (g.stats.keeps || 0) >= 1, hint: { keep: 'claim' } },
     { icon: 'nova', text: 'Blast 10 monsters with the Elemental Nova', xp: 40, gift: { pickup: ['elixir', 'plate'] }, stat: g => g.stats.k4 || 0, n: 10 },
-    { from: 24, icon: 'ic_crown', text: 'Defeat the Primal Chimera! The Builder\'s Boss Sigil calls it out', xp: 150, done: g => g.flags.won, hint: { boss: 1 } },
+    { from: 24, icon: 'ic_crown', text: 'Claim all four Strongholds, light the Altar and defeat the Primal Chimera!', xp: 150, done: g => g.flags.won, hint: { boss: 1 } },
   ],
 };
 

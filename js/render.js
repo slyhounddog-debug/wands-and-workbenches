@@ -622,10 +622,6 @@ R.drawBuilding = function (ctx, v, b, t) {
   }
   if (d.kind === 'splitter') R.pile(ctx, b.out.map(o => o.kind), p[0], base - 40, t, b.id);
   if (d.kind === 'crate') R.pile(ctx, b.out.slice(0, 9).map(o => o.kind), p[0], base - 36, t, b.id);   // the crate shows what is inside, in the order it will come out (bottom first)
-  if (d.kind === 'crafter' && b.type === 'altar' && b.prog > 0 && b.powered) {
-    ctx.strokeStyle = Math.sin(t * 10) > 0 ? '#ff4a8a' : '#c890ff'; ctx.lineWidth = 4;
-    diamond(ctx, p[0], p[1], v.hw * 0.7, v.hh * 0.7); ctx.stroke();
-  }
   // throughput: a building stuck for a moment shows why (orange ! = output blocked, grey ? = waiting on inputs)
   R.drawState(ctx, v, b, t, p, top);
 };
@@ -1194,19 +1190,23 @@ R.drawWorld = function (main, dt) {
   for (const dc of w.decals) R.drawDecal(ctx, v, dc);
   for (const z of w.zones) R.drawZone(ctx, v, z);
   for (const m of WZ.marks) if (m.type === 'stronghold') { R.drawKeepArea(ctx, v, m); R.drawKeepDoor(ctx, v, m); }
-  for (const f of w.fx_) if (f.type === 'ring' || f.type === 'warn') R.drawFx(ctx, v, f); else if (f.type === 'drop') R.drawDrop(ctx, v, f, true);
+  const alt = G.altar && (G.altar.placed || w.cine) ? G.altar : null, airborne = !!(alt && w.cine && !w.cine.landed);   // the Summoning Altar (still in the air while it lands)
+  if (alt) R.drawAltarGround(ctx, v, w);
+  for (const f of w.fx_) if (f.type === 'ring' || f.type === 'warn' || f.type === 'shock') R.drawFx(ctx, v, f); else if (f.type === 'drop') R.drawDrop(ctx, v, f, true);
 
   for (const b of w.boulders) objs.push({ d: b.x + b.y, t: 'boulder', o: b });
   for (const dr of w.drops) objs.push({ d: dr.x + dr.y, t: 'drop', o: dr });
   for (const pk of w.pickups) objs.push({ d: pk.x + pk.y, t: 'pick', o: pk });
   for (const e of w.enemies) objs.push({ d: e.x + e.y, t: 'enemy', o: e });
   objs.push({ d: w.x + w.y, t: 'wiz', o: w });
+  if (alt && !airborne) objs.push({ d: alt.x + alt.y, t: 'altar', o: alt });
   objs.sort((a, b) => a.d - b.d);
   for (const it of objs) {
     const o = it.o;
     if (it.t === 'deco') {
       const p = R.toScreen(v, o.x, o.y);
       if (p[0] < left - 60 || p[0] > right + 60) continue;
+      if (alt && Math.abs(o.x - alt.x) < 2.7 && Math.abs(o.y - alt.y) < 2.7) continue;   // nothing grows through the Altar
       let sk = 0;
       if (BENDY.has(o.spr)) {
         const bn = w.bend[it.k], B = CFG.bend;
@@ -1234,13 +1234,16 @@ R.drawWorld = function (main, dt) {
     } else if (it.t === 'pick') R.drawPickup(ctx, v, o, wt);
     else if (it.t === 'forage') R.drawForage(ctx, v, o);
     else if (it.t === 'lm') R.drawMark(ctx, v, o.lm);
+    else if (it.t === 'altar') R.drawAltar(ctx, v, w);
     else if (it.t === 'enemy') R.drawEnemy(ctx, v, o);
     else if (it.t === 'wiz') R.drawWizard(ctx, v, o);
   }
   for (const p of w.proj) R.drawProj(ctx, v, p);
   for (const p of w.eproj) R.drawProj(ctx, v, p);
-  for (const f of w.fx_) if (f.type !== 'ring' && f.type !== 'warn') R.drawFx(ctx, v, f);
+  if (airborne) R.drawAltar(ctx, v, w);
+  for (const f of w.fx_) if (f.type !== 'ring' && f.type !== 'warn' && f.type !== 'shock') R.drawFx(ctx, v, f);
   for (const a of w.arcs) R.drawArc(ctx, v, a);
+  if (airborne) R.drawAltarParts(ctx, v, w);
   R.drawKeepCount(ctx, v, wt);
   R.drawMaskHints(ctx, v, wt);
   R.drawWeather(ctx, wt);
@@ -1373,10 +1376,11 @@ R.drawMark = function (ctx, v, m) {
     ctx.strokeStyle = col; ctx.lineWidth = on || (near && !done) ? 6 : 3; ctx.globalAlpha = on ? (Math.sin(t * 8) > 0 ? 1 : 0.6) : near && !done ? 0.9 : 0.35;
     diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4, M.shrineR * v.hh * 1.4); ctx.stroke(); ctx.globalAlpha = 1;
     if (s.flash > 0) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 9; ctx.globalAlpha = s.flash / 0.5; diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4 * (1.6 - s.flash), M.shrineR * v.hh * 1.4 * (1.6 - s.flash)); ctx.stroke(); ctx.globalAlpha = 1; }   // just claimed
-    if (!done && near && !w.dead) R.iprompt(ctx, p[0], p[1] - 150, null, ['core_' + m.el, 'ic_portal'], CFG.W, CFG.HALF, false);   // the Core it wants, sent through the Spell Portal (the Builder's job)
+    const wants = ELEMS.filter(e => e !== m.el).map(e => (s.fed && s.fed[e] ? 'ic_check' : 'core_' + e));   // the three Cores it takes (every element but its own); a check for each it already has
+    if (!done && near && !w.dead) R.iprompt(ctx, p[0], p[1] - 150, null, wants.concat(['ic_portal']), CFG.W, CFG.HALF, false);   // sent through the Spell Portal one by one (the Builder's job)
     dspr(ctx, SP.lm_shrine, p[0], p[1], S);
     dspr(ctx, SP['cr_' + m.el], p[0], p[1] - 39 - (Math.sin(t * (on ? 8 : 3)) > 0 ? 3 : 0), S, done && !on ? 0.6 : 1);
-    if (!done && !near) ic = [['core_' + m.el]];   // what it wants
+    if (!done && !near) ic = wants.map(k => [k]);   // what it wants
     if (on) {   // boosting: the shrine's power streams up into a little portal (and out of the factory's Spell Portal)
       const top = p[1] - 168, rw = 27 + (Math.sin(t * 6) > 0 ? 3 : 0);
       ctx.fillStyle = '#2a1050'; diamond(ctx, p[0], top, rw, rw / 2.5); ctx.fill();
@@ -1473,11 +1477,103 @@ R.drawMinimap = function (c) {
   let kp = null, kd = 1e9;
   for (const m of WZ.marks) if (m.type === 'stronghold' && w.lm[m.id].seen && w.lm[m.id].state !== 'done') { const dd = Math.hypot(m.x - w.x, m.y - w.y); if (dd < kd) { kd = dd; kp = m; } }
   if (kp) { const g = CFG.strong.guards[kp.el]; R.iconRow(c, cx, cy - 72, Object.keys(g).map(k => ['egg_' + k, g[k]]).concat([['ic_crown'], ['wk_' + WZ.WARDEN_WEAK(kp.el)]])); }
+  if (WZ.altarOn()) dot(G.altar.x, G.altar.y, 8, WZ.altarLitN() >= 4 ? (Math.sin(t * 6) > 0 ? '#ffe36b' : '#ff6ae0') : '#c890ff');   // the Summoning Altar
   if (w.boss && Math.sin(t * 10) > 0) dot(w.boss.x, w.boss.y, 10, '#ff4a8a');
   if (R.whint) dot(R.whint.x, R.whint.y, 6, Math.sin(t * 8) > 0 ? '#ffd23a' : '#ffffff');
   dot(w.x, w.y, 6, Math.sin(t * 6) > -0.5 ? '#ffffff' : '#7be0ff');
   c.font = '8px ' + FONT_D; c.textAlign = 'center'; c.fillStyle = '#c8b8e8'; c.fillText('MAP', cx, cy - 64);
   c.restore();
+};
+// ---------- the Summoning Altar (G.altar, js/altar.js) ----------
+// how high the Altar hangs while it lands (px above its spot): high while the particles gather it and it holds, then it falls
+R.altarLift = function (c) {
+  const K = CFG.altar, H = K.height * 40, tH = K.form + K.hang;
+  if (!c || c.landed) return 0;
+  if (c.t < tH) return H + Math.round(Math.sin(c.t * 3) * 2) * 3;
+  const u = Math.min(1, (c.t - tH) / K.fall);
+  return H * (1 - u * u);
+};
+// its shadow, the target ring on the ground while it is coming, and the landing dust ring
+R.drawAltarGround = function (ctx, v, w) {
+  const A = G.altar, K = CFG.altar, c = w.cine, p = R.toScreen(v, A.x, A.y), t = w.t;
+  const lift = R.altarLift(c), H = K.height * 40, k = c && !c.landed ? 1 - lift / H : 1;
+  ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.globalAlpha = c && !c.landed ? 0.35 + 0.65 * k : 1;
+  diamond(ctx, p[0], p[1], (1.4 + 1.2 * k) * v.hw, (1.4 + 1.2 * k) * v.hh); ctx.fill(); ctx.globalAlpha = 1;
+  if (c && !c.landed) {   // the spot it will land on: a dashed ring that tightens and flashes as it comes down
+    const fl = c.t > K.form + K.hang && Math.sin(t * 24) > 0;
+    ctx.strokeStyle = fl ? '#ffffff' : '#ffe36b'; ctx.lineWidth = 6; ctx.globalAlpha = 0.35 + 0.5 * k;
+    ctx.setLineDash([18, 12]); ctx.lineDashOffset = -Math.floor(t * 10) * 6;
+    const rr = (3.2 - 1.2 * k) * v.hw * 1.0; diamond(ctx, p[0], p[1], rr * 1.3, rr * 0.65); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+};
+R.drawAltar = function (ctx, v, w) {
+  const A = G.altar, K = CFG.altar, c = w.cine, S = CFG.WT.S, t = w.t, p = R.toScreen(v, A.x, A.y);
+  const air = c && !c.landed, lift = R.altarLift(c), rit = w.rit > 0;
+  const alpha = air ? Math.max(0, Math.min(1, (c.t - 0.7) / Math.max(0.1, K.form - 0.9))) : 1;   // it solidifies as the particles arrive
+  const jx = air && c.t > K.form ? (Math.random() < 0.5 ? -3 : 3) * Math.min(1, (c.t - K.form) / 0.6) : rit && Math.random() < 0.5 ? 3 : 0;
+  const x = snap(p[0] + jx), y = Math.round((p[1] - lift) / 3) * 3, spr = SP.lm_altar;
+  if (alpha > 0.04) {
+    dspr(ctx, spr, x, y, S, Math.ceil(alpha * 5) / 5);
+    if (alpha < 1 || w.altarFlash > 0 || (rit && Math.sin(t * 20) > 0)) dspr(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, x, y, S, alpha < 1 ? (1 - alpha) * 0.7 : Math.max(w.altarFlash, 0) * 1.1 + (rit ? 0.35 : 0));
+  }
+  // the four sockets orbit over the obelisk: dark and hollow until a spell of their tier has hit the Altar
+  const lit = A.lit, cx = x, cy = y - 100, spin = t * (rit ? 5 : 1.1);
+  for (let i = 0; i < 4; i++) {
+    const a = spin + i * 1.5708, ox = Math.cos(a) * 48, oy = Math.sin(a) * 18, back = Math.sin(a) < 0, col = CFG.altar.cols[i];
+    const ex = snap(cx + ox), ey = Math.round((cy + oy - (lit[i] && Math.sin(t * 4 + i) > 0 ? 3 : 0)) / 3) * 3;
+    ctx.globalAlpha = (back ? 0.65 : 1) * Math.max(alpha, 0);
+    ctx.fillStyle = '#1a0f28'; ctx.fillRect(ex - 12, ey - 12, 24, 24);
+    if (lit[i]) {
+      ctx.fillStyle = col; ctx.fillRect(ex - 9, ey - 9, 18, 18);
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(ex - 3, ey - 6, 6, 6);
+      if (Math.sin(t * 8 + i * 2) > 0.2) { ctx.fillStyle = col; ctx.fillRect(ex - 15, ey - 3, 6, 6); ctx.fillRect(ex + 9, ey - 3, 6, 6); ctx.fillRect(ex - 3, ey - 15, 6, 6); }
+    } else { ctx.fillStyle = '#3a2a52'; ctx.fillRect(ex - 9, ey - 9, 18, 18); ctx.fillStyle = col; ctx.globalAlpha *= 0.35; ctx.fillRect(ex - 3, ey - 3, 6, 6); }
+    ctx.globalAlpha = 1;
+  }
+  if (air) return;
+  if (WZ.altarLitN() >= 4) {   // fully lit: a shaft of light and a ring of sparks; sealed (a red lock) until every Stronghold is claimed
+    const open = WZ.keepsOpen();
+    ctx.globalAlpha = (rit ? 0.7 : 0.28) + 0.12 * Math.sin(t * 5); ctx.fillStyle = open ? '#ffe36b' : '#ff7a9a';
+    ctx.fillRect(snap(x - 9), y - 520, 18, 420); ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(x - 3), y - 520, 6, 420); ctx.globalAlpha = 1;
+  }
+  if (rit) {   // the ritual: the four elements' light climbs the Altar and the ground cracks open with rings
+    for (let i = 0; i < 4; i++) {
+      const el = ELEMS[i], a = i * 1.5708 + t * 2, bx = snap(x + Math.cos(a) * 66), by = Math.round((p[1] + Math.sin(a) * 33) / 3) * 3;
+      ctx.globalAlpha = 0.75; ctx.fillStyle = ELEM[el].color; ctx.fillRect(bx - 6, by - 330, 12, 330);
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(bx - 2, by - 330, 4, 330); ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = Math.sin(t * 16) > 0 ? '#ff4a8a' : '#ffffff'; ctx.lineWidth = 9;
+    const q = 1 + (1 - w.rit / K.ritual) * 2; diamond(ctx, p[0], p[1], 2.2 * v.hw * q, 2.2 * v.hh * q); ctx.stroke();
+  }
+  if (Math.hypot(w.x - A.x, w.y - A.y) < 16 && !w.dead) {   // what it wants: one spell of each tier, then (once lit) the Strongholds
+    const gy = p[1] - 164;
+    for (let i = 0; i < 4; i++) { const k = CFG.altar.keys[i], on = lit[i]; R.defer.push(c => R.iconRow(c, p[0] + (i - 1.5) * 54, gy, [[k]], on ? 1 : 0.4)); if (on) R.defer.push(c => R.iconRow(c, p[0] + (i - 1.5) * 54 + 22, gy + 4, [['ic_check']])); }
+    if (WZ.altarLitN() >= 4 && !w.boss) { const left = ELEMS.filter(e => !G.flags['core_' + e]).length; R.defer.push(c => R.iconRow(c, p[0], gy - 34, left ? [['ic_keep', left], ['ic_lock']] : [['ic_keep'], ['ic_check']])); }
+  }
+};
+// the particles that gather the Altar out of the air: they leave the wilds' top-left (where deliveries from the Spell Portal come in) and fly to where it hangs
+R.drawAltarParts = function (ctx, v, w) {
+  const c = w.cine, A = G.altar, K = CFG.altar;
+  if (!c || c.landed) return;
+  const p = R.toScreen(v, A.x, A.y), lift = R.altarLift(c), tx = p[0], ty = p[1] - lift - 70, N = 190;
+  const H = (i, s) => { const q = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return q - Math.floor(q); };
+  const cols = ['#c890ff', '#ffe36b', '#ffffff', ELEM.air.color, ELEM.water.color, ELEM.fire.color, ELEM.earth.color];
+  const Y = q => Math.round(q / 3) * 3;
+  for (let i = 0; i < N; i++) {
+    const dep = H(i, 1) * Math.max(0.5, K.form - 1.5), dur = 1.0 + H(i, 2) * 0.6, u = (c.t - dep) / dur;
+    if (u <= 0 || u >= 1) continue;
+    const sx = CFG.HALF + 10 + H(i, 3) * 150, sy = -40 + H(i, 4) * 230, ex = tx + (H(i, 5) - 0.5) * 84, ey = ty + (H(i, 6) - 0.5) * 120, bend = Math.sin(u * Math.PI) * (H(i, 7) - 0.5) * 150;
+    for (let k = 0; k < 6; k++) {   // a trail behind each particle
+      const uu = u - k * 0.03; if (uu <= 0) break;
+      const e = uu * uu * (3 - 2 * uu), px = sx + (ex - sx) * e + bend * 0.5, py = sy + (ey - sy) * e - bend, sz = [15, 12, 12, 9, 6, 3][k];
+      ctx.globalAlpha = 1 - k * 0.15; ctx.fillStyle = k ? cols[i % cols.length] : '#ffffff'; ctx.fillRect(snap(px - sz / 2), Y(py - sz / 2), sz, sz);
+    }
+  }
+  ctx.globalAlpha = 1;
+  if (c.t > 0.8) for (let i = 0; i < 10; i++) {   // sparkle on the forming Altar
+    const a = H(i + Math.floor(c.t * 9), 8) * 6.283, r = 40 + H(i + Math.floor(c.t * 9), 9) * 60;
+    ctx.fillStyle = i % 2 ? '#ffe36b' : '#ffffff'; ctx.fillRect(snap(tx + Math.cos(a) * r * 0.6), Y(ty + Math.sin(a) * r * 0.9), 6, 6);
+  }
 };
 R.drawWizard = function (ctx, v, w) {
   const p = R.toScreenLocked(v, w.x, w.y), S = CFG.WT.S, spr = SP.wizard;
@@ -1801,6 +1897,14 @@ R.drawFx = function (ctx, v, f) {
     ctx.globalAlpha = 1 - fr; ctx.strokeStyle = f.col; ctx.lineWidth = 9;
     diamond(ctx, s[0], s[1], f.r * st * v.hw * K, f.r * st * v.hh * K); ctx.stroke();
     ctx.globalAlpha = (1 - fr) * 0.22; ctx.fillStyle = f.col; ctx.fill(); ctx.globalAlpha = 1;
+  } else if (f.type === 'shock') {   // the Altar's landing shockwave: a front of two rings running out across the ground
+    const st = Math.ceil(fr * 16) / 16, r = f.r * st, a = Math.max(0, 1 - fr * fr);
+    ctx.globalAlpha = a * 0.16; ctx.fillStyle = f.col; diamond(ctx, s[0], s[1], r * v.hw * K, r * v.hh * K); ctx.fill();
+    ctx.globalAlpha = a; ctx.strokeStyle = f.col; ctx.lineWidth = 15;
+    diamond(ctx, s[0], s[1], r * v.hw * K, r * v.hh * K); ctx.stroke();
+    ctx.globalAlpha = a * 0.7; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6;
+    diamond(ctx, s[0], s[1], r * 0.94 * v.hw * K, r * 0.94 * v.hh * K); ctx.stroke();
+    ctx.globalAlpha = 1;
   } else if (f.type === 'boom') {
     const st = 0.4 + Math.ceil(fr * 3) / 3 * 0.6;
     ctx.globalAlpha = 1 - fr; ctx.fillStyle = f.col;

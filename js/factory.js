@@ -58,9 +58,9 @@ FA.qInfo = function (k) {
   let use;
   if (k === 'wood' || k === 'stone') use = 'Builds things. Burns in a Battery.';
   else if (k === 'iron') use = 'Builds Forges, Armory, Batteries.';
-  else if (k === 'shard') use = 'Rare. Spawners, Altar, garments.';
+  else if (k === 'shard') use = 'Rare. Spawners, garments, keys. Skill Portal: Summoning.';
   else if (k === 'core') use = 'Unlocks Summoning in the tree.';
-  else if (isCoreKind(k)) use = 'Opens a Shrine. Forges garments.';
+  else if (isCoreKind(k)) use = 'Forges garments and keys. Opens other Shrines.';
   else if (isKeyKind(k)) use = 'Opens that Stronghold door.';
   else if (ELEM[k]) use = 'Feeds Forge, Spawner, Battery.';
   else if (ITEMS[k] && ITEMS[k].spell) use = 'Cast it: Spell Portal. Bank it: Skill.';
@@ -68,7 +68,6 @@ FA.qInfo = function (k) {
   else if (k === 'armor' || k === 'plate') use = 'Armors the Wizard via the Spell Portal.';
   else if (ITEMS[k] && ITEMS[k].egg) use = 'Spell Portal: hatches beside the Wizard.';
   else if (ITEMS[k] && ITEMS[k].aug) use = 'Spell Portal: the Wizard wears it.';
-  else if (k === 'sigil') use = 'Spell Portal: summons the Chimera.';
   else use = 'Throw it into a machine or portal.';
   return { name: itemName(k), use, stores: !!(RES[k] || ELEM[k]) };
 };
@@ -116,12 +115,11 @@ FA.unlocked = id => {
   const u = CFG.buildings[id].unlock;
   return !u || !!G.tree[u];
 };
-FA.isDeliverable = k => !!ITEMS[k] && (!!(ITEMS[k].elem || ITEMS[k].spell || ITEMS[k].pickup || ITEMS[k].sigil || ITEMS[k].egg || ITEMS[k].aug) || FA.isUnlockKind(k));   // Spell Portal
-FA.isBankable = k => SPELL_KINDS.indexOf(k) >= 0;                                                 // Skill Portal
-// a Sigil only goes through while the Wizard is alive and no Chimera is already out
+FA.isDeliverable = k => !!ITEMS[k] && (!!(ITEMS[k].elem || ITEMS[k].spell || ITEMS[k].pickup || ITEMS[k].egg || ITEMS[k].aug) || FA.isUnlockKind(k));   // Spell Portal
+FA.isBankable = k => BANK_KINDS.indexOf(k) >= 0;                                                 // Skill Portal (packets, spells and Aether Shards)
 // an Egg is taken while the crafted-creature cap has room, then it waits in the portal queue; a full queue stops the portal taking more
 FA.eggRoom = () => G.fac.eggQ.length < CFG.crafted.queue || (!G.w.dead && WZ.craftedAlive() < CFG.crafted.cap);
-FA.portalTakes = (c, k) => (c.which === 'skill' ? FA.isBankable(k) : FA.isDeliverable(k) && (k !== 'sigil' || (!G.w.dead && !G.w.boss)) && (!ITEMS[k].egg || FA.eggRoom()) &&
+FA.portalTakes = (c, k) => (c.which === 'skill' ? FA.isBankable(k) : FA.isDeliverable(k) && (!ITEMS[k].egg || FA.eggRoom()) &&
   (!ITEMS[k].aug || (!G.w.dead)) && (!FA.isUnlockKind(k) || !!WZ.unlockTarget(k)));   // a garment needs a living Wizard; a Core / key only goes when he stands near the shrine / keep it opens
 FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 'crate'; };
 
@@ -381,9 +379,9 @@ FA.demolish = function (x, y, force) {
 };
 
 // ---------- recipes ----------
-// Production is the only gate for spells and creatures: a recipe needs its tree node only when it has a tier (potions, armor, the Sigil),
+// Production is the only gate for spells and creatures: a recipe needs its tree node only when it has a tier (potions, armor, garments, keys),
 // and a Triple / the Nova needs its parent spells to have been MADE at least once (G.stats.made, counted from crafter output)
-FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (!r.aug || !FA.augMade(r.aug)) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
+FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (!r.aug || !FA.augMade(r.aug)) && (!r.key || (!G.aug.key[r.key] && !(G.stock['key_' + r.key] > 0))) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
 FA.recipesFor = type => Object.keys(CFG.recipes).filter(id => CFG.recipes[id].machine === type && FA.recipeOk(id));
 // The Creature Spawner has no recipe to choose: the elements it is holding decide. Each creature is one packet of each of its elements, so the SET of elements
 // inside names the creature (Air = Zephyr Wisp, Fire + Air = Cinder Phoenix ...). A set that is also part of a bigger creature waits CFG.spawnSettle seconds
@@ -536,8 +534,7 @@ FA.deliver = function (kind, x, y) {
   if (ITEMS[kind].egg) G.stats.eggs = (G.stats.eggs || 0) + 1;
   else if ((SPELL_EL[kind] || []).length >= 2) G.stats.combos = (G.stats.combos || 0) + 1;
   FA.suck(kind, x === undefined ? p.x + 0.5 : x, y === undefined ? p.y + 1 : y);
-  if (kind === 'sigil') WZ.summonBoss();
-  else if (ITEMS[kind].egg) WZ.hatch(kind);
+  if (ITEMS[kind].egg) WZ.hatch(kind);
   else if (ITEMS[kind].pickup || ITEMS[kind].aug) WZ.send(kind, 'pickup');   // it arcs out of the factory and sails into the wilds, then lands (a garment where a creature would drop in)
   else if (FA.isUnlockKind(kind)) WZ.send(kind, 'unlock');   // a Core / Ward Key sails down onto the shrine / keep it opens
   else {
@@ -1504,6 +1501,10 @@ FA.fromJSON = function (j) {
     j = Object.assign({}, j, { bld: (j.bld || []).map(mv), belts: (j.belts || []).map(mv), floor: (j.floor || []).map(mv) });
   }
   (j.bld || []).forEach(o => {
+    if (o.type === 'altar') {   // the Summoning Altar left the factory (it falls into the wilds when Summoning is bought): refund its materials
+      for (const k of ['stone', 'iron', 'shard']) G.stock[k] = (G.stock[k] || 0) + ({ stone: 14, iron: 7, shard: 6 })[k];
+      return;
+    }
     if (o.type === 'sorter') {   // the Sorter was dropped (a Splitter's element toggles do its job): refund it and set its contents down
       for (const k in LEGACY_SORTER) G.stock[k] = (G.stock[k] || 0) + LEGACY_SORTER[k];
       (o.out || []).forEach(x => { if (x && known(x.kind)) FA.dropAt(x.kind, o.x + 0.5, o.y + 0.5); });

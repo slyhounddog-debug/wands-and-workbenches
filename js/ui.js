@@ -107,7 +107,7 @@ UI.updateHud = function (dt) {
   pulse('tXp', xp);
   // the Skill Portal bank: four element packets + how many combo spells are banked
   const combos = SPELL_KINDS.filter(k => ITEMS[k].spell).reduce((a, k) => a + (G.bank[k] || 0), 0);
-  setHtml('tBank', UI.img('ic_skill', 24) + ['air', 'water', 'fire', 'earth'].map(k => UI.img(k, 16) + '<b>' + (G.bank[k] || 0) + '</b>').join('') + (combos ? UI.img('flamethrower', 16) + '<b>' + combos + '</b>' : ''));
+  setHtml('tBank', UI.img('ic_skill', 24) + ['air', 'water', 'fire', 'earth'].map(k => UI.img(k, 16) + '<b>' + (G.bank[k] || 0) + '</b>').join('') + (combos ? UI.img('flamethrower', 16) + '<b>' + combos + '</b>' : '') + (G.bank.shard > 0 ? UI.img('shard', 16) + '<b>' + G.bank.shard + '</b>' : ''));
   pulse('tBank', G.bankTotal || 0);
   const gen = f.gen, dem = f.demand, low = dem > gen;
   setTxt('powTxt', gen + ' / ' + dem);
@@ -300,9 +300,9 @@ UI.debugEvent = function () {
 };
 // the Wizard's worn garments, the Wardrobe Shelf, open keeps, Cores and held spell (F3 overlay)
 UI.debugGear = function () {
-  const A = G.aug, worn = AUG_SLOTS.map(s => s[1] + ' ' + (A.worn[s[0]] ? AUGS[A.worn[s[0]]].name : '-')).join(' | ');
+  const A = G.aug, worn = AUG_SLOTS.map(s => s[1] + ' ' + (A.worn[s[0]] ? AUGS[A.worn[s[0]]].name : '-')).join(' | '), al = G.altar;
   return '<div>Worn: <b>' + worn + '</b></div><div class="dim">Shelf ' + (G.fac.shelf.join(',') || '-') + '  Cores ' + ELEMS.map(e => e[0].toUpperCase() + (G.stock['core_' + e] || 0)).join(' ') +
-    '  Open keeps ' + (ELEMS.filter(e => A.key[e]).join(',') || '-') + '  Held spell <b>' + (G.hold.on ? (G.hold.spell || 'empty') : 'locked') + '</b>  Feather ' + Math.ceil(A.cd.phoenix) + 's</div>';
+    '  Open keeps ' + (ELEMS.filter(e => A.key[e]).join(',') || '-') + '  Keeps claimed ' + (ELEMS.filter(e => G.flags['core_' + e]).join(',') || '-') + '  Altar ' + (al.placed ? 'lit ' + al.lit.map(l => (l ? 'X' : '.')).join('') : G.tree.summon ? 'landing' : 'not bought') + '  Held spell <b>' + (G.hold.on ? (G.hold.spell || 'empty') : 'locked') + '</b>  Feather ' + Math.ceil(A.cd.phoenix) + 's</div>';
 };
 UI.updateDebug = function (dt) {
   const el = $('debug');
@@ -482,7 +482,7 @@ UI.openTree = function (side, open) {
 UI.renderTree = function (side) {
   const el = $(side === 'L' ? 'treeL' : 'treeR');
   const cols = [['ic_factory', 'FACTORY', 0], ['ic_up', 'UPGRADES', 2]];   // spells and creatures live in the Collection Book now
-  const bank = SPELL_KINDS.filter(k => G.bank[k] > 0).map(k => '<span class="bk">' + UI.img(k, 16) + G.bank[k] + '</span>').join('') || '<span class="dim">empty: send spells into the Skill Portal</span>';
+  const bank = BANK_KINDS.filter(k => G.bank[k] > 0).map(k => '<span class="bk">' + UI.img(k, 16) + G.bank[k] + '</span>').join('') || '<span class="dim">empty: send spells into the Skill Portal</span>';
   let h = '<div class="treeHead"><h2>' + UI.img(side === 'L' ? 'ic_wrench' : 'ic_hat', 32) + 'SKILL TREE</h2><div class="xpbig">' + UI.img('ic_xp', 24) + Math.floor(G.xp) + '</div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>';
   const un = UI.undoKind();
   h += '<div class="bankRow">' + UI.img('ic_skill', 24) + '<span class="lbl">BANK</span>' + bank +
@@ -551,6 +551,7 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
     case 'hearty': return [row('Wizard max HP', l => '' + (CFG.wizard.hp + up * l))];
     case 'gems': return [row('Gem drop chance', l => 'x' + Math.pow(1 + up, l).toFixed(2)), row('Cinder Imp gem chance', l => Math.min(95, Math.round(CFG.creatures.cinder.gem[1] * 100 * Math.pow(1 + up, l))) + '%'), row('Wild Slime gem chance', l => Math.min(95, Math.round(CFG.enemies.slime.gem[1] * 100 * Math.pow(1 + up, l))) + '%')];
     case 'magnet': return [row('Pickup range', l => (CFG.world.vacuum + up * l).toFixed(2) + ' tiles'), row('Shard / Core range', l => ((CFG.world.vacuum + up * l) * 2.5).toFixed(2) + ' tiles')];
+    case 'summon': return [['Lands', 'in the wilds beside the Wizard'], ['Lit by', 'a Single, a Pair, a Triple, the Nova'], ['Wakes the Chimera', 'with all 4 Strongholds claimed']];
     case 'heavy': {
       const life = k => Math.round(CFG.batteryLife * k) + 's';
       return [['Battery at full load lasts', life(1)], ['Heavy Battery at full load lasts', life(1 + CFG.heavyBattery)]];
@@ -830,7 +831,7 @@ const HOWTO = {
     ['The loop', 'The Wizard stands near trees, rocks and ore so delivered spells smash them. Drops vacuum into him and land in the factory <b>Stockpile</b>. The Builder carries them to blueprints to grow the factory, which makes stronger spells, potions, shield potions and garments.'],
     ['Two portals', 'The <b>Spell Portal</b> sends things to the Wizard. The <b>Skill Portal</b> banks element packets and spells as currency for the <b>Skill Tree</b>, together with XP from kills.'],
     ['Follow the goals', 'Each player has their own goal card (Builder on the left, Wizard on the right) and the two run at the same time. Every goal pays XP, and the bigger ones add a gift: spells for the skill tree, building materials, a free Battery, potions and shield potions. A gold arrow points at where to go, and the right hotbar slot or skill-tree button blinks.'],
-    ['Winning', 'Late on, claim a <b>Stronghold</b> for a <b>Warden Core</b> (Summoning costs one), build the <b>Summoning Altar</b>, bind an Elemental Nova and Aether Shards into a <b>Boss Sigil</b> and send it through the Spell Portal. Beat the <b>Primal Chimera</b> to win. You can keep playing afterwards.'],
+    ['Winning', 'Late on, claim a <b>Stronghold</b> for a <b>Warden Core</b> (Summoning costs one, plus 6 Aether Shards sent into the <b>Skill Portal</b>). Buying <b>Summoning</b> makes the <b>Summoning Altar</b> fall from the sky into the wilds beside the Wizard. He lights its four sockets by hitting it with one spell of each tier: a Single, a Pair, a Triple and the Elemental Nova (the Builder sends them; a socket stays lit for good). With <b>all four Strongholds</b> claimed, the Primal Chimera rises from the Altar when he stands by it. Beat it to win. You can keep playing afterwards.'],
   ],
   'FACTORY': [
     ['Hands', 'The Builder carries one stack (5 at first). <b>Left-click</b> (pad <b>A</b>) picks up <b>one item at a time</b>: hold it to keep grabbing. <b>Right-click</b> (pad <b>B</b>) throws one item along the dotted lead line: it aims at machines, blueprints, belts, portals or the Stockpile. Throwing is the only way to put things in. Nothing ever vanishes.'],
@@ -856,7 +857,7 @@ const HOWTO = {
     ['Pickups', 'Potions and Shield Potions sent through the Spell Portal fall beside the Wizard. Walk over them to use them. They wait if HP or shield is already full.'],
     ['Weaknesses', 'Biome monsters take <b>double damage</b> from one element and half from another: <b>Ember Imps</b> (sand, dirt) hate Water, <b>Bog Lurkers</b> hate Fire, <b>Gale Wisps</b> (far meadows) hate Earth, <b>Stone Golems</b> (far dark woods) hate Air. Combo spells count every element in them. A small diamond over a foe shows its weakness, and yellow numbers with a ! mean a weak hit.'],
     ['Elites', 'Big gold-ringed monsters with a crown. Much tougher, but they drop <b>Aether Shards</b> and lots of XP. Each one is weak to one element.'],
-    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard walks up: clear them. <b>Crypts</b> (purple) open if he waits at the door, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours) want that element\'s <b>Core</b>: creatures of that element drop them now and then (elites always do). Stand near the Shrine and have the Builder send its Core through the Spell Portal: it sails down onto the Shrine and claims the Shard. From then on, while the Wizard stands on it, the factory\'s Harnessers of that element run <b>25% faster</b>.'],
+    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard walks up: clear them. <b>Crypts</b> (purple) open if he waits at the door, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours) want <b>three Cores</b>, one of each element the Shrine does NOT belong to (an Air Shrine takes Water, Fire and Earth): creatures of those elements drop them now and then (elites always do). Stand near the Shrine and have the Builder send the Cores through the Spell Portal one by one: each sails down onto the Shrine, and the third claims the Shard. From then on, while the Wizard stands on it, the factory\'s Harnessers of that element run <b>25% faster</b>.'],
     ['Foraging', '<b>Dirt Mounds</b>, <b>Stick Piles</b> and <b>Berry Bushes</b> are scattered everywhere. Stand still at one and <b>mash the roll button</b> (<kbd>.</kbd>, pad <b>A</b>) to dig out Stone (sometimes Iron Ore) or Wood, or shake a Health Potion or Armor Plate out of a bush. Move while pressing it to roll away instead. They grow back after a while. Wearing the Kilnsight Mask also shows <b>buried caches</b> glinting in the grass: dig those the same way.'],
     ['Dodging', 'The roll makes the Wizard <b>invulnerable</b> while he flickers white. A hit he rolls through pops <b>DODGE!</b>.'],
     ['The Primal Chimera', 'The boss. It only takes real damage from its current weakness (shown on the boss bar and its glowing belly), and the weakness changes every quarter of its health, so the factory has to switch what it sends. Roll or walk out of the pink slam marks and dodge its orbs.'],
@@ -877,10 +878,9 @@ UI.howPage = function (tab) {
     const uses = {
       wood: 'Every building, belts (1 each), fuel for a Battery',
       stone: 'Every building, fuel for a Battery',
-      iron: 'Forge, Armory, Battery, Heavy Battery, Altar, every garment, Floor Tiles after the 28th',
-      shard: 'Rare: only from landmarks and elites. Summoning Altar, Boss Sigil',
-      core: 'Once per Stronghold per save. Costs of Summoning',
-      sigil: 'Spell Portal: summons the Primal Chimera beside the Wizard',
+      iron: 'Forge, Armory, Battery, Heavy Battery, every garment and Ward Key, Floor Tiles after the 28th',
+      shard: 'Rare: only from landmarks and elites. Spawners, garments, Ward Keys; 6 go into the Skill Portal for Summoning',
+      core: 'Once per Stronghold per save. Costs of Summoning; all four Strongholds must be claimed to wake the Chimera',
       air: 'Spell Portal: Air Gust. Skill Portal: currency. Battery fuel, recipes',
       water: 'Spell Portal: Water Spray. Skill Portal: currency. Battery fuel, recipes',
       fire: 'Spell Portal: Fireball. Skill Portal: currency. Battery fuel, recipes',

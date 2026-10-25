@@ -122,6 +122,7 @@ const Net = {
     }));
   };
   function hostConn(conn) {
+    if (Net.hooks.guestDialing && !Net.conn) Net.hooks.guestDialing();
     const dropT = setTimeout(() => { if (conn !== Net.conn) { try { conn.close(); } catch (e) { /* ignore */ } } }, 12000);   // never said hello
     conn.on('data', m => hostMsg(conn, m));
     conn.on('close', () => { clearTimeout(dropT); if (conn === Net.conn) guestGone('closed'); });
@@ -241,13 +242,37 @@ const Net = {
       peer.on('open', () => {
         const conn = peer.connect(Net.PREFIX + Net.code, { reliable: true, serialization: 'binary' });
         Net.conn = conn;
+        watchIce(conn);
         conn.on('open', () => send(conn, { t: 'hello', v: Net.VERSION, tok: Net.tok }));
         conn.on('data', m => guestMsg(conn, m, res, fail, again));
         conn.on('close', () => { if (conn === Net.conn) connLost('closed'); });
         conn.on('error', () => { if (conn === Net.conn) connLost('error'); });
       });
-      setTimeout(() => fail('The host did not answer. They may be behind a network that blocks direct connections (this version has no relay).'), 25000);
+      setTimeout(() => fail(why()), 25000);
     }));
+  }
+  // What the browser saw while it tried to connect: the ICE state and which kinds of candidate showed up (host = a local address, srflx = our public address as STUN
+  // sees it; "mdns" = the local address was hidden behind a .local name, which only works if both computers can find each other by multicast).
+  function watchIce(conn) {
+    const d = Net.diag = { ice: 'new', open: false, host: 0, mdns: 0, srflx: 0, relay: 0 };
+    conn.on('open', () => { d.open = true; });
+    const pc = conn.peerConnection;
+    if (!pc) return;
+    pc.addEventListener('iceconnectionstatechange', () => { d.ice = pc.iceConnectionState; console.info('[net] ice ' + d.ice); });
+    pc.addEventListener('icecandidate', e => {
+      if (!e.candidate) return;
+      const m = / typ (\w+)/.exec(e.candidate.candidate), t = m ? m[1] : '?';
+      if (t === 'host' && /\.local /.test(e.candidate.candidate)) d.mdns++; else if (d[t] !== undefined) d[t]++;
+    });
+  }
+  function why() {
+    const d = Net.diag || {};
+    console.info('[net] gave up', JSON.stringify(d));
+    if (d.open) return 'Connected to the host, but it never answered the handshake. Ask them to restart the game and try again.';
+    if (!d.ice || d.ice === 'new') return 'The host did not answer. Check the code, and that their game is still showing "Waiting for player 2".';
+    return 'Found the host, but the two computers could not open a direct connection (' + d.ice + '; seen ' + d.host + ' local, ' + d.mdns + ' hidden-local, ' + d.srflx + ' public addresses). ' +
+      'On the same Wi-Fi this usually means the router isolates devices from each other (a guest network or "AP isolation") or blocks local discovery; a VPN does it too. ' +
+      'This version has no relay server. Try one of you on a phone hotspot or wired, or turn the VPN off.';
   }
   function guestMsg(conn, m, res, fail, again) {
     if (!m || typeof m !== 'object' || conn !== Net.conn) return;

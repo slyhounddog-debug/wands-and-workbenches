@@ -361,7 +361,7 @@ WZ.fresh = function () {
   for (const i of WZ.rockTiles || []) { tmod[i] = { k: 'rock', t: 1e9, dur: 1e9 }; tmodN++; }
   for (const i of WZ.vineTiles || []) { tmod[i] = { k: 'vine', t: 1e9, dur: 1e9 }; tmodN++; }
   return {
-    x: SPAWN.x, y: SPAWN.y, hp: WZ.maxHp(), armor: 0, fx: 1, fy: 1, vx: 0, vy: 0, target: null,
+    x: SPAWN.x, y: SPAWN.y, hp: WZ.maxHp(), armor: 0, fx: 1, fy: 1, sx: 0, sy: 0, vx: 0, vy: 0, target: null,
     roll: 0, rollCd: 0, rdx: 0, rdy: 0, hurtT: 0, moving: false, bob: 0, shake: 0, ghosts: [],
     enemies: [], proj: [], eproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
     time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
@@ -561,6 +561,11 @@ WZ.nearest = function (x, y, maxD, skip) {
   }
   return best;
 };
+// the Wizard's right stick as a world direction + tilt [dx, dy, 0..1], or null when it is at rest (w.sx / w.sy are set from the pad every frame)
+WZ.stickAim = function () {
+  const w = G.w, m = Math.hypot(w.sx || 0, w.sy || 0);
+  return m > 0.3 ? [w.sx / m, w.sy / m, Math.min(1, m)] : null;
+};
 WZ.aim = function () {
   const w = G.w;
   let dx = w.fx, dy = w.fy;
@@ -731,7 +736,7 @@ WZ.cast = function (spell) {
       break;
     case 'boulder':   // it bounces: every landing crushes what is round it
       AU.sfx('zap_earth');
-      WZ.proj({ vx: a[0] * S.speed, vy: a[1] * S.speed, life: 30, dmg: S.dmg, sr: S.sr, push: S.push, col: '#8a6a3c', kind: 'boulder', size: 9, r: 0.75, hops: S.hops, hop: S.hop, ht: 0, n: 0 });
+      WZ.proj({ vx: a[0] * S.speed, vy: a[1] * S.speed, life: 30, dmg: S.dmg, sr: S.sr, push: S.push, col: '#8a6a3c', kind: 'boulder', size: 9, r: 0.75, hops: S.hops, h0: S.hops, hop: S.hop, ht: 0, n: 0 });
       WZ.recoil(a, S.recoil);
       break;
     case 'flamethrower':   // a stream of fire out in front of him for S.t seconds (it follows his aim)
@@ -739,9 +744,9 @@ WZ.cast = function (spell) {
       WZ.zone({ kind: 'flame', follow: true, r: S.range, t: S.t, dps: S.dps, half: S.half, ax: a[0], ay: a[1], col: '#ff9a2b', trT: 0, snd: 0 });
       WZ.recoil(a, S.recoil);
       break;
-    case 'steam':   // scalding steam swells round him, then blows
+    case 'steam':   // a storm orb drifts out along the aim and keeps zapping
       AU.sfx('zap_combo');
-      WZ.zone({ kind: 'steam', follow: true, r: S.r, t: S.t, dps: S.dps, slow: S.slow, col: '#f4f4f8' });
+      WZ.zone({ kind: 'orb', x: px + a[0] * 1, y: py + a[1] * 1, vx: a[0] * S.speed, vy: a[1] * S.speed, r: S.range, t: S.t, zt: 0.05, col: '#bfe9ff' });
       break;
     case 'sandstorm':   // a twister set loose along the aim: it hunts, pulls and grinds
       AU.sfx('zap_combo');
@@ -754,15 +759,17 @@ WZ.cast = function (spell) {
       WZ.recoil(a, S.recoil);
       break;
     }
-    case 'tempest':   // a storm orb drifts out along the aim and keeps zapping
-      AU.sfx('zap_combo');
-      WZ.zone({ kind: 'orb', x: px + a[0] * 1, y: py + a[1] * 1, vx: a[0] * S.speed, vy: a[1] * S.speed, r: S.range, t: S.t, zt: 0.05, col: '#bfe9ff' });
+    case 'tempest':   // a controllable water droplet: it joins the fan of live ones (WZ.zoneSpecial 'tear'), its own clock running
+      AU.sfx('zap_water');
+      WZ.zone({ kind: 'tear', x: px, y: py, r: S.r, t: S.life, col: '#4fc3ff', trT: 0 });
+      WZ.epuff(px, py, 'water', 6);
       break;
-    case 'mud': {   // a mudslide races to the nearest foe, rooting all in its path; the snare and the Earth Wall rise where it stops
+    case 'mud': {   // blue / brown orbs circle him; each goes off on the first foe it touches (WZ.zoneSpecial 'mshield')
       AU.sfx('zap_earth');
-      const e = WZ.nearest(px, py, S.range);
-      const tx = e ? e.x : px + a[0] * 5, ty = e ? e.y : py + a[1] * 5, d = Math.max(0.5, Math.hypot(tx - px, ty - py)), U = S.surge;
-      WZ.proj({ vx: (tx - px) / d * U.speed, vy: (ty - py) / d * U.speed, life: d / U.speed, dmg: U.dmg, w: U.w, root: U.root, col: '#6e4a2a', kind: 'surge', size: 8, r: U.w / 2, sid, ox: px, oy: py, tx, ty, trT: 0 });
+      const orbs = [];
+      for (let i = 0; i < S.orbs; i++) orbs.push(i / S.orbs * 6.283);
+      WZ.zone({ kind: 'mshield', follow: true, r: S.orbitR + 0.6, t: S.t, orbs, ang: 0, col: '#8a5a2a' });
+      WZ.puff(px, py, '#6e4a2a', 8); WZ.epuff(px, py, 'water', 6); WZ.epuff(px, py, 'earth', 6);
       break;
     }
     case 'meteor': {   // ONE huge meteor on the thickest crowd; it shatters into fragments
@@ -781,24 +788,15 @@ WZ.cast = function (spell) {
       WZ.zone({ kind: 'blizzard', r: S.r, t: S.t, dps: S.dps, slow: S.slow, follow: true, col: '#dff4ff', frost: S.frost.every, fk: S.frost.every, it: 0 });   // keeps freezing round him while it rages
       if (WZ.freeze(px, py, S.r, S.frost.t)) AU.sfx('freeze');   // Flash Frost: bog and water turn to ice
       break;
-    case 'geyser': {
+    case 'geyser':   // waves of eruptions: the nearest foes first, then random ones (WZ.geyserWave); he stays on the ground
       AU.sfx('zap_water');
-      WZ.launch(S.jump);   // Geyser Jump: one erupts under the Wizard too and throws him over the water ahead
-      const list = G.w.enemies.filter(e => !e.dead).sort((p, q) => Math.hypot(p.x - px, p.y - py) - Math.hypot(q.x - px, q.y - py)).slice(0, S.n).map(e => [e.x, e.y]);
-      const alt = WZ.altarChainTarget(px, py, 14);
-      if (alt) list.unshift([alt.x, alt.y]);   // one erupts under the Altar too
-      list.forEach((q, i) => {
-        const x = q[0], y = q[1];
-        G.w.fx_.push({ type: 'warn', x, y, r: S.r, t: 0, dur: S.delay + i * S.gap, col: '#4aa8ff' });
-        WZ.later(S.delay + i * S.gap, () => WZ.erupt(x, y, S));
-      });
+      for (let k = 0; k < S.waves; k++) WZ.later(k * S.waveGap, () => WZ.geyserWave(k, S));
       break;
-    }
-    case 'nova': {   // four rings in a row, one per element
+    case 'nova': {   // everything within pullR is hauled in and everything within r zapped, then it bursts (WZ.zoneSpecial 'novapull' -> WZ.novaBurst)
       AU.sfx('zap_combo');
       w.fx_.push({ type: 'flash', x: px, y: py, col: '#ffffff', t: 0, dur: 0.3 });
-      w.shake = Math.max(w.shake, 0.8);
-      ['air', 'water', 'fire', 'earth'].forEach((el, i) => WZ.later(i * S.gap, () => WZ.novaRing(px, py, el, S, i === 3)));
+      w.shake = Math.max(w.shake, 0.6);
+      WZ.zone({ kind: 'novapull', follow: true, r: S.pullR, t: S.pullT, zt: 0, col: '#ffe36b' });
       break;
     }
   }
@@ -842,10 +840,13 @@ WZ.lobLand = function (p) {
   else if (p.sub === 'meteor') {
     WZ.explode(x, y, S.r, S.dmg, '#ff7a30', null, S.push);
     WZ.boom(x, y, S.r * 1.3, '#ffffff'); WZ.ring(x, y, S.r * 1.6, '#ffb030', 0.6);
-    splat('frag', S.frags, S.fragDist, 0.55, 2.2, 6, '#ffb030');
+    for (let i = 0; i < S.frags; i++) {   // the fragments are burning boulders that fly out and bounce
+      const an = (i + Math.random() * 0.6) / S.frags * 6.283;
+      WZ.proj({ x, y, vx: Math.cos(an) * S.fragSpeed, vy: Math.sin(an) * S.fragSpeed, life: 30, dmg: S.fragDmg, sr: S.fragR, push: 6, col: '#ff7a30', kind: 'boulder', burn: true, size: 7, r: 0.5, hops: S.fragHops, h0: S.fragHops, hop: S.fragHop * (0.9 + Math.random() * 0.3), ht: 0, n: 0 });
+    }
     w.shake = Math.max(w.shake, 0.8); AU.sfx('slam'); AU.sfx('thud'); WZ.puff(x, y, '#d8c8a8', 24); WZ.epuff(x, y, 'fire', 16);
     WZ.bendRing(x, y, S.r * 2);
-  } else if (p.sub === 'frag') { WZ.explode(x, y, S.fragR, S.fragDmg, '#ffb030'); AU.sfx('hit'); }
+  }
 };
 // Cyclone Gust: one spinning pulse
 WZ.gustPulse = function (x, y, r, S, last) {
@@ -862,17 +863,33 @@ WZ.gustPulse = function (x, y, r, S, last) {
   if (last) WZ.gustEffects(x, y, r);   // the Stonefist Charm: boulders shoved, cracked rock broken
 };
 WZ.bendRing = function (x, y, r) { const n = Math.max(6, Math.ceil(r * 5)); for (let i = 0; i < n; i++) { const an = i / n * 6.283; WZ.bendAt(x + Math.cos(an) * r, y + Math.sin(an) * r, Math.cos(an) * 6, Math.sin(an) * 6, 0.7); } };
-// Pressure Cooker: the swollen steam blows
-WZ.steamPop = function (z) {
-  const S = CFG.spells.steam, w = G.w, x = z.x, y = z.y;
-  WZ.ctx = z.ctx;
-  WZ.ring(x, y, S.r, '#ffffff', 0.5); WZ.boom(x, y, S.r, '#f4f4f8');
-  WZ.mark(x, y, S.r);
-  WZ.each(x, y, S.r, (t, d, isE) => { const m = d || 1; WZ.hit(t, isE, S.blast, isE ? (t.x - x) / m * S.push : 0, isE ? (t.y - y) / m * S.push : 0); if (isE) WZ.slowE(t, S.slow, S.slowT); });
-  for (let i = 0; i < 16; i++) { const an = i / 16 * 6.283; w.fx_.push({ type: 'spark', x, y, vx: Math.cos(an) * 9, vy: Math.sin(an) * 9, z: 0.6, vz: 2, g: -2, col: i % 2 ? '#ffffff' : '#cfe8ff', t: 0, dur: 0.6 }); }
-  WZ.bendRing(x, y, S.r);
-  w.shake = Math.max(w.shake, 0.4); AU.sfx('slam');
-  WZ.ctx = null;
+// Mud Shield: an orb goes off on the foe it touched
+WZ.mudBlast = function (x, y, S) {
+  const w = G.w;
+  WZ.mark(x, y, S.sr); WZ.boom(x, y, S.sr, '#8a5a2a'); WZ.ring(x, y, S.sr, '#4aa8ff', 0.4);
+  WZ.each(x, y, S.sr, (t, d, isE) => { const m = d || 1; WZ.hit(t, isE, S.dmg, isE ? (t.x - x) / m * S.push : 0, isE ? (t.y - y) / m * S.push : 0); if (isE) WZ.slowE(t, S.slow, S.slowT); });
+  WZ.puff(x, y, '#6e4a2a', 10); WZ.puff(x, y, '#4aa8ff', 8); WZ.epuff(x, y, 'earth', 6); WZ.epuff(x, y, 'water', 6);
+  WZ.bendRing(x, y, S.sr);
+  w.shake = Math.max(w.shake, 0.3); AU.sfx('thud');
+};
+// Geyser Eruption: one wave. Wave 0 goes under the nearest foes (and the Altar), later waves under random ones that are not already in the air
+WZ.geyserWave = function (k, S) {
+  const w = G.w, px = w.x, py = w.y;
+  const live = w.enemies.filter(e => !e.dead && !(e.fall > 0));
+  let list;
+  if (k === 0) list = live.sort((p, q) => Math.hypot(p.x - px, p.y - py) - Math.hypot(q.x - px, q.y - py));
+  else {
+    list = live.filter(e => !(e.air > 0) && Math.hypot(e.x - px, e.y - py) < S.range);
+    for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)), t = list[i]; list[i] = list[j]; list[j] = t; }
+  }
+  list = list.slice(0, S.n).map(e => [e.x, e.y]);
+  const alt = k === 0 ? WZ.altarChainTarget(px, py, 14) : null;
+  if (alt) list.unshift([alt.x, alt.y]);   // one erupts under the Altar too
+  list.forEach((q, i) => {
+    const x = q[0], y = q[1];
+    w.fx_.push({ type: 'warn', x, y, r: S.r, t: 0, dur: S.delay + i * S.gap, col: '#4aa8ff' });
+    WZ.later(S.delay + i * S.gap, () => WZ.erupt(x, y, S));
+  });
 };
 // Geyser: one eruption throws what stands on it into the air (WZ.update brings it down for land dmg)
 WZ.erupt = function (x, y, S) {
@@ -881,27 +898,35 @@ WZ.erupt = function (x, y, S) {
   WZ.explode(x, y, S.r, S.dmg, '#7ad0ff');
   for (const e of w.enemies) {
     if (e.dead || e.boss || e.warden || e.fall > 0 || Math.hypot(e.x - x, e.y - y) > S.r + e.rad) continue;
-    e.air = e.airT = S.toss; e.airDmg = S.land; e.airEl = (WZ.ctx ? WZ.ctx.el : []).slice();
+    e.air = e.airT = S.toss; e.airDmg = S.land; e.airSlow = S.slow; e.airSlowT = S.slowT; e.airEl = (WZ.ctx ? WZ.ctx.el : []).slice();
   }
   WZ.epuff(x, y, 'water', 10); AU.sfx('zap_water');
 };
-// Elemental Nova: one of its four rings
-WZ.novaRing = function (x, y, el, S, last) {
-  const w = G.w, col = ELEM[el].color;
-  WZ.ring(x, y, S.r, col, 0.55); WZ.boom(x, y, S.r * (last ? 1 : 0.6), last ? '#ffe36b' : col);
-  WZ.epuff(x, y, el, 18);
-  if (last) WZ.mark(x, y, S.r);
+// Elemental Nova, the burst: everything within r is shoved hard, hurt, slowed, scorched and staggered, and a spray of magma balls, water drops, air wisps and rock chunks
+// ('nbit' projectiles) flies out of him to the edge, hitting what it crosses
+WZ.novaBurst = function (z) {
+  const S = CFG.spells.nova, w = G.w, x = z.x, y = z.y;
+  WZ.ctx = z.ctx;
+  WZ.ring(x, y, S.r, '#ffe36b', 0.55); WZ.ring(x, y, S.r * 0.6, '#ffffff', 0.4); WZ.boom(x, y, S.r, '#ffe36b');
+  w.fx_.push({ type: 'flash', x, y, col: '#ffffff', t: 0, dur: 0.3 });
+  WZ.mark(x, y, S.r);
   WZ.each(x, y, S.r, (t, d, isE) => {
-    const m = d || 1, push = el === 'air' ? S.push : el === 'earth' ? S.push * 0.3 : 0;
-    WZ.hit(t, isE, S.dmg / 4, isE ? (t.x - x) / m * push : 0, isE ? (t.y - y) / m * push : 0);
-    if (!isE) return;
-    if (el === 'water') WZ.slowE(t, S.slow, S.slowT);
-    if (el === 'fire' && !t.dead) WZ.decal(t.x, t.y, 1, { k: 'burn', r: 0.5, t: 3, a: 0.6 });
-    if (el === 'earth' && !t.boss && !t.dead) t.dazeT = Math.max(t.dazeT || 0, S.stagger);
+    const m = d || 1;
+    WZ.hit(t, isE, S.dmg, isE ? (t.x - x) / m * S.push : 0, isE ? (t.y - y) / m * S.push : 0);
+    if (!isE || t.dead) return;
+    WZ.slowE(t, S.slow, S.slowT);
+    WZ.decal(t.x, t.y, 1, { k: 'burn', r: 0.5, t: 3, a: 0.6 });
+    if (!t.boss) t.dazeT = Math.max(t.dazeT || 0, S.stagger);
   });
+  const n = S.bits * 4, EL = ['fire', 'water', 'air', 'earth'];
+  for (let i = 0; i < n; i++) {
+    const an = i / n * 6.283 + (Math.random() - 0.5) * 0.2, sp = S.bitSpeed * (0.85 + Math.random() * 0.3), el = EL[i % 4];
+    WZ.proj({ x, y, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp, life: (S.r + 0.5) / sp, dmg: S.bitDmg, kind: 'nbit', el, sid: Math.floor(Math.random() * 1e9), col: ELEM[el].color, size: 6, r: 0.5, trT: 0 });
+  }
+  EL.forEach(el => WZ.epuff(x, y, el, 14));
   WZ.bendRing(x, y, S.r);
-  w.shake = Math.max(w.shake, last ? 0.9 : 0.35);
-  AU.sfx(last ? 'slam' : 'el_' + el);
+  w.shake = Math.max(w.shake, 0.9); AU.sfx('slam');
+  WZ.ctx = null;
 };
 // Thunderstorm: one bolt comes down on (x, y) and forks on to the nearest foes
 WZ.strikeAt = function (x, y) {
@@ -937,15 +962,30 @@ WZ.projSpecial = function (p, dt) {
     if (p.ht < p.hop) return false;
     p.ht = 0; p.n++;
     if (WZ.tile(p.x, p.y) === T_POND || WZ.tile(p.x, p.y) === T_CHASM || WZ.blocked(p.x, p.y, 0.2)) { WZ.puff(p.x, p.y, '#bfe6ff', 12); AU.sfx('thud'); return true; }   // swallowed by water / a chasm, or it hit a wall
-    WZ.explode(p.x, p.y, p.sr, p.dmg, '#a98a5c', null, p.push);
-    WZ.puff(p.x, p.y, '#d8c8a8', 10); WZ.epuff(p.x, p.y, 'earth', 6);
-    w.shake = Math.max(w.shake, 0.25 + 0.05 * (S ? S.hops - p.n : 0)); AU.sfx('thud');
+    WZ.explode(p.x, p.y, p.sr, p.dmg, p.burn ? '#ff7a30' : '#a98a5c', null, p.push);
+    WZ.puff(p.x, p.y, p.burn ? '#ffb030' : '#d8c8a8', 10); WZ.epuff(p.x, p.y, p.burn ? 'fire' : 'earth', 6);
+    w.shake = Math.max(w.shake, p.burn ? 0.12 : 0.25 + 0.05 * Math.max(0, (p.h0 || 0) - p.n)); AU.sfx(p.burn ? 'hit' : 'thud');
     p.hops--; p.hop *= 0.85; p.vx *= 0.9; p.vy *= 0.9;
     return p.hops <= 0;
   }
+  if (p.kind === 'nbit') {   // a magma ball / water drop / air wisp / rock chunk flying out of the Nova: hits each foe once
+    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+    for (const e of w.enemies) {
+      if (e.dead || e.fall > 0 || e.surf === p.sid || Math.hypot(e.x - p.x, e.y - p.y) > p.r + e.rad) continue;
+      e.surf = p.sid;
+      WZ.hurtE(e, p.dmg, p.vx * 0.15, p.vy * 0.15);
+      if (p.el === 'water') WZ.slowE(e, CFG.spells.nova.slow, CFG.spells.nova.slowT);
+      if (p.el === 'fire' && !e.dead) WZ.mark(e.x, e.y, 0.6);
+    }
+    WZ.altarTouch(p.x, p.y, 0.6);
+    if (Math.random() < dt * 30) w.fx_.push({ type: 'spark', x: p.x, y: p.y, vx: -p.vx * 0.1 + rand(-1, 1), vy: -p.vy * 0.1 + rand(-1, 1), z: 0.4, vz: rand(0, 2), g: 6, col: p.col, t: 0, dur: 0.35, el: p.el });
+    if (p.life > 0) return false;
+    WZ.epuff(p.x, p.y, p.el, 4);
+    return true;
+  }
   if (p.kind === 'icicle') { p.life -= dt; if (p.life > 0) return false; WZ.icicleHit(p.x, p.y); return true; }
   if (p.kind === 'strike') { p.life -= dt; if (p.life > 0) return false; WZ.strikeAt(p.x, p.y); return true; }
-  if (p.kind === 'wave' || p.kind === 'surge') {   // pierces: hits each foe once (sid), the wave carries them, the surge roots them
+  if (p.kind === 'wave') {   // pierces: hits each foe once (sid) and carries them
     p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
     const sp = Math.hypot(p.vx, p.vy) || 1, ux = p.vx / sp, uy = p.vy / sp;
     if ((p.trT -= dt) <= 0) { p.trT = S.trailGap; WZ.trail(p.x, p.y); }
@@ -957,19 +997,14 @@ WZ.projSpecial = function (p, dt) {
       if (e.surf !== p.sid) {
         e.surf = p.sid;
         WZ.hurtE(e, p.dmg, 0, 0);
-        if (p.kind === 'wave') WZ.slowE(e, p.slow, p.slowT); else { WZ.slowE(e, 0.92, p.root); WZ.puff(e.x, e.y, '#6e4a2a', 4); }
+        WZ.slowE(e, p.slow, p.slowT);
       }
-      if (p.kind === 'wave' && !e.boss) { const kb = e.kb !== undefined ? e.kb : e.elite ? 0.4 : 1, mk = p.mk || 1; e.kx = p.vx * 1.1 * kb * mk; e.ky = p.vy * 1.1 * kb * mk; }   // it surfs the wave
+      if (!e.boss) { const kb = e.kb !== undefined ? e.kb : e.elite ? 0.4 : 1, mk = p.mk || 1; e.kx = p.vx * 1.1 * kb * mk; e.ky = p.vy * 1.1 * kb * mk; }   // it surfs the wave
     }
     for (const h of WZ.harv) if (!h.broken && h.surf !== p.sid && Math.hypot(h.x - p.x, h.y - p.y) < p.w / 2 + 0.4) { h.surf = p.sid; WZ.hurtH(h, p.dmg); }
-    if (p.kind === 'wave' && Math.random() < dt * 40) { const s = (Math.random() - 0.5) * p.w; w.fx_.push({ type: 'spark', x: p.x - uy * s, y: p.y + ux * s, vx: ux * 3, vy: uy * 3, z: 0.4, vz: rand(2, 4), g: 16, col: Math.random() < 0.4 ? '#ffffff' : '#7ad0ff', t: 0, dur: 0.5, el: 'water' }); }
+    if (Math.random() < dt * 40) { const s = (Math.random() - 0.5) * p.w; w.fx_.push({ type: 'spark', x: p.x - uy * s, y: p.y + ux * s, vx: ux * 3, vy: uy * 3, z: 0.4, vz: rand(2, 4), g: 16, col: Math.random() < 0.4 ? '#ffffff' : '#7ad0ff', t: 0, dur: 0.5, el: 'water' }); }
     if (p.life > 0) return false;
-    if (p.kind === 'surge') {   // it stops at the target: the snare and the Earth Wall rise
-      const x = p.tx, y = p.ty, d = Math.hypot(x - p.ox, y - p.oy), nx = d > 0.5 ? (x - p.ox) / d : ux, ny = d > 0.5 ? (y - p.oy) / d : uy, k = Math.max(2, Math.min(S.wall.dist, d * 0.6));
-      WZ.zone({ x, y, r: S.r, t: S.t, dps: S.dps, slow: S.slow, col: '#6e4a2a', kind: 'mud' });
-      WZ.mark(x, y, S.r); WZ.puff(x, y, '#8a6a3c', 16); AU.sfx('wall');
-      WZ.wall(p.ox + nx * k, p.oy + ny * k, nx, ny, S.wall);
-    } else WZ.puff(p.x, p.y, '#7ad0ff', 10);
+    WZ.puff(p.x, p.y, '#7ad0ff', 10);
     return true;
   }
   if (p.kind === 'fire' && p.home) {   // homing: it turns toward the nearest foe ahead of it within seek tiles
@@ -1021,11 +1056,55 @@ WZ.zoneSpecial = function (z, dt) {
     if ((z.snd -= dt) <= 0) { z.snd = 0.3; AU.sfx('zap_fire'); }
     return true;
   }
-  if (z.kind === 'steam') {   // it swells from a third of its size to all of it
-    const rr = z.r * (0.35 + 0.65 * (1 - z.t / z.dur));
-    z.rr = rr;
-    WZ.each(z.x, z.y, rr, (t, d, isE) => { if (isE) { WZ.hurtE(t, z.dps * dt, 0, 0, true); WZ.slowE(t, z.slow, 0.25); } });
-    if (Math.random() < dt * 25) { const an = Math.random() * 6.283, d = Math.random() * rr; w.fx_.push({ type: 'spark', x: z.x + Math.cos(an) * d, y: z.y + Math.sin(an) * d, vx: 0, vy: 0, z: 0.2, vz: rand(1, 2.5), g: -1, col: '#ffffff', t: 0, dur: 0.6 }); }
+  if (z.kind === 'tear') {   // a water droplet: flies toward a spot S.reach tiles out along his aim, offset spread degrees from its neighbours, hurting and slowing all it passes through
+    const sib = w.zones.filter(o => o.kind === 'tear'), n = sib.length, i = sib.indexOf(z), st = WZ.stickAim();
+    const an = Math.atan2(st ? st[1] : w.fy, st ? st[0] : w.fx) + (i - (n - 1) / 2) * S.spread * Math.PI / 180;
+    const reach = st ? Math.max(S.minReach, S.reach * st[2]) : S.reach;
+    const dx = w.x + Math.cos(an) * reach - z.x, dy = w.y + Math.sin(an) * reach - z.y, d = Math.hypot(dx, dy), step = WZ.speed() * S.speedMul * dt;
+    if (d > 0.001) { const k = Math.min(1, step / d); z.x += dx * k; z.y += dy * k; }
+    const lx = z.x - w.x, ly = z.y - w.y, ld = Math.hypot(lx, ly);
+    if (ld > S.reach) { z.x = w.x + lx / ld * S.reach; z.y = w.y + ly / ld * S.reach; }   // the leash: never more than reach tiles from him
+    z.vx = d > 0.001 ? dx / d : 0; z.vy = d > 0.001 ? dy / d : 0;
+    for (const e of w.enemies) {
+      if (e.dead || e.fall > 0 || Math.hypot(e.x - z.x, e.y - z.y) > z.r + e.rad) continue;
+      WZ.hurtE(e, S.dps * dt, 0, 0, true); WZ.slowE(e, S.slow, S.slowT); e.flash = 0.05;
+    }
+    for (const h of WZ.harv) if (!h.broken && Math.hypot(h.x - z.x, h.y - z.y) < z.r + 0.4) { h.hp -= S.dps * dt * WZ.harvMul(); h.flash = 0.05; if (h.hp <= 0) { h.hp = 0.0001; WZ.hurtH(h, 1); } }
+    WZ.altarTouch(z.x, z.y, z.r);
+    if ((z.trT -= dt) <= 0) { z.trT = S.trailGap; WZ.trail(z.x, z.y); }
+    if (Math.random() < dt * 24) w.fx_.push({ type: 'spark', x: z.x, y: z.y, vx: rand(-1, 1), vy: rand(-1, 1), z: 0.5, vz: rand(0.5, 2), g: 6, col: Math.random() < 0.4 ? '#ffffff' : '#4fc3ff', t: 0, dur: 0.4, el: 'water' });
+    return true;
+  }
+  if (z.kind === 'mshield') {   // orbs circle him; the first foe (or the Altar) one touches sets it off
+    z.ang += S.spin * dt;
+    for (let i = z.orbs.length - 1; i >= 0; i--) {
+      const an = z.ang + z.orbs[i], ox = z.x + Math.cos(an) * S.orbitR, oy = z.y + Math.sin(an) * S.orbitR;
+      let hit = WZ.altarBlocks(ox, oy, S.orbR);
+      if (!hit) for (const e of w.enemies) if (!e.dead && !(e.fall > 0) && Math.hypot(e.x - ox, e.y - oy) < S.orbR + e.rad) { hit = true; break; }
+      if (!hit) { if (Math.random() < dt * 12) w.fx_.push({ type: 'spark', x: ox, y: oy, vx: 0, vy: 0, z: 0.6, vz: 0.5, g: 0, col: i % 2 ? '#4aa8ff' : '#8a5a2a', t: 0, dur: 0.3 }); continue; }
+      z.orbs.splice(i, 1);
+      WZ.mudBlast(ox, oy, S);
+    }
+    if (!z.orbs.length) z.t = 0;
+    return true;
+  }
+  if (z.kind === 'novapull') {   // the Nova gathers: everything within pullR is hauled toward him while everything within r is zapped
+    for (const e of w.enemies) {
+      if (e.dead || e.fall > 0) continue;
+      const dx = z.x - e.x, dy = z.y - e.y, d = Math.hypot(dx, dy);
+      if (d > S.pullR + e.rad || d < 1.4) continue;
+      const kb = e.kb !== undefined ? e.kb : e.boss ? 0.08 : e.elite ? 0.4 : 1;
+      e.kx += dx / d * S.pull * kb * dt * 6; e.ky += dy / d * S.pull * kb * dt * 6;
+    }
+    if ((z.zt -= dt) <= 0) {
+      z.zt = S.zapEvery;
+      const hit = [];
+      WZ.each(z.x, z.y, S.r, (t, d, isE) => {
+        if (isE) { WZ.hurtE(t, S.zapDmg, 0, 0, true); t.flash = 0.08; if (hit.length < S.zapN) hit.push(t); } else WZ.hurtH(t, S.zapDmg);
+      });
+      for (const t of hit) w.fx_.push({ type: 'bolt', pts: [[z.x, z.y], [t.x, t.y]], t: 0, dur: 0.18, col: Math.random() < 0.5 ? '#ffe36b' : '#ffffff' });
+      if (hit.length) AU.sfx('zap_air');
+    }
     return true;
   }
   if (z.kind === 'twister') {   // it hunts the nearest foe within seek, drags foes into its eye and grinds them
@@ -1330,9 +1409,10 @@ WZ.flowDir = function (e, d) {   // unit step toward the Wizard around water, or
 };
 
 // ---------- main update ----------
-WZ.update = function (dt, ix, iy, rollPressed) {
+WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
   const w = G.w, cfg = CFG.world;
   w.t += dt;
+  w.sx = ((rx || 0) + (ry || 0)) / 1.414; w.sy = ((ry || 0) - (rx || 0)) / 1.414;   // the right stick, in world directions (iso, like the movement stick)
   // broken nodes respawn
   for (const h of WZ.harv) {
     if (h.flash > 0) h.flash -= dt;
@@ -1526,8 +1606,9 @@ WZ.update = function (dt, ix, iy, rollPressed) {
       e.air -= dt;
       if (e.air <= 0) {
         e.air = 0; e.land = 0.22; WZ.puff(e.x, e.y, '#d8c8a8', 8); AU.sfx('thud');
-        const c = WZ.ctx; WZ.ctx = { spell: 'geyser', el: e.airEl || [], hits: 0, kills: 0, weak: 0 };
+        const c = WZ.ctx; WZ.ctx = { spell: 'geyser', el: (e.airEl || []).slice(), hits: 0, kills: 0, weak: 0 };
         WZ.mark(e.x, e.y, 0.8); WZ.hurtE(e, e.airDmg || 0, 0, 0);
+        if (!e.dead && e.airSlowT) WZ.slowE(e, e.airSlow, e.airSlowT);   // slowed once it is back down
         WZ.ctx = c;
       }
       continue;
@@ -1648,12 +1729,12 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     }
     if (z.frost && (z.fk -= dt) <= 0) { z.fk = z.frost; WZ.freeze(z.x, z.y, z.r, CFG.spells.blizzard.frost.t); }   // the Blizzard freezes the ground it passes over
     WZ.ctx = z.ctx;
-    if (!WZ.zoneSpecial(z, dt)) WZ.each(z.x, z.y, z.r, (t, d, isE) => {   // (a flame cone, the swelling steam, a twister, the storm orb and cloud do their own thing)
+    if (!WZ.zoneSpecial(z, dt)) WZ.each(z.x, z.y, z.r, (t, d, isE) => {   // (a flame cone, a twister, the storm orb and cloud, a droplet, the mud shield, the Nova's pull do their own thing)
       if (z.dps) { if (isE) WZ.hurtE(t, z.dps * dt, 0, 0, true); else { t.hp -= z.dps * dt * WZ.harvMul(); t.flash = 0.05; if (t.hp <= 0) { t.hp = 0.0001; WZ.hurtH(t, 1); } } }
       if (isE && z.slow) WZ.slowE(t, z.slow, 0.25);
     });
     WZ.ctx = null;
-    if (z.t <= 0) { if (z.kind === 'steam') WZ.steamPop(z); w.zones.splice(i, 1); }   // the Pressure Cooker blows when its time is up
+    if (z.t <= 0) { if (z.kind === 'novapull') WZ.novaBurst(z); w.zones.splice(i, 1); }   // the Nova bursts when its gathering is done
   }
   w.zSlow = zs;
 

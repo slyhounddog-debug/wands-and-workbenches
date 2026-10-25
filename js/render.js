@@ -1789,6 +1789,16 @@ R.drawProj = function (ctx, v, p) {
     ctx.fillStyle = 'rgba(0,0,0,' + (big ? 0.35 : 0.25) + ')'; ctx.fillRect(snap(s[0] - sw / 2), Y(s[1]) - 3, sw, big ? 12 : 6);
     if (big) { ctx.globalAlpha = 0.3 + 0.4 * (1 - z / p.h); ctx.strokeStyle = Math.floor(t * 12) % 2 ? '#ff7a30' : '#ffe36b'; ctx.lineWidth = 6; diamond(ctx, s[0], s[1], 3.4 * v.hw * 1.414, 3.4 * v.hh * 1.414); ctx.stroke(); ctx.globalAlpha = 1; }
     const cx = snap(s[0]), cy = Y(s[1] - lift - sz / 2), r0 = big ? 27 : p.kind === 'boulder' ? 15 : p.sub === 'magma' ? 12 : 6;
+    if (p.kind === 'boulder' && p.burn) {   // a burning boulder: glowing rock, flames licking off the top
+      const sp = Math.floor((p.ht / p.hop + p.n) * 4) % 4;
+      for (let i = 1; i < 4; i++) { ctx.globalAlpha = 0.5 - i * 0.12; ctx.fillStyle = i % 2 ? '#ffd23a' : '#ff5a1a'; ctx.fillRect(snap(cx - p.vx * i * 0.5 - 4), Y(cy - (p.vy + p.vx) * i * 0.3 + i * 3), 9, 9); }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#4a1a0a'; ctx.fillRect(cx - r0, cy - r0 + 3, r0 * 2, r0 * 2 - 6); ctx.fillRect(cx - r0 + 3, cy - r0, r0 * 2 - 6, r0 * 2);
+      ctx.fillStyle = '#c8501a'; ctx.fillRect(cx - r0 + 3, cy - r0 + 3, r0 * 2 - 6, r0 * 2 - 9);
+      ctx.fillStyle = '#ffb030'; ctx.fillRect(cx + [-6, 3, 3, -6][sp], cy + [-6, -6, 0, 0][sp], 6, 6);
+      ctx.fillStyle = Math.floor(t * 14) % 2 ? '#ffd23a' : '#ff5a1a'; ctx.fillRect(cx - 6, cy - r0 - 6, 6, 9); ctx.fillRect(cx + 3, cy - r0 - 3 - (Math.floor(t * 9) % 2) * 3, 6, 6);
+      return;
+    }
     if (p.kind === 'boulder') {   // a tumbling rock: its highlight turns as it flies
       const sp = Math.floor((p.ht / p.hop + p.n) * 4) % 4;
       ctx.fillStyle = '#5a4428'; ctx.fillRect(cx - r0, cy - r0 + 3, r0 * 2, r0 * 2 - 6); ctx.fillRect(cx - r0 + 3, cy - r0, r0 * 2 - 6, r0 * 2);
@@ -1803,8 +1813,17 @@ R.drawProj = function (ctx, v, p) {
     ctx.fillStyle = Math.floor(t * 10) % 2 ? '#ffe36b' : '#ffffff'; ctx.fillRect(cx - 3, cy - 3, 6, 6);
     return;
   }
-  if (p.kind === 'wave' || p.kind === 'surge') {   // a crescent of water (or a wall of mud) w tiles wide, rolling out
-    const sp = Math.hypot(p.vx, p.vy) || 1, ux = p.vx / sp, uy = p.vy / sp, n = Math.max(4, Math.round(p.w * 3)), wave = p.kind === 'wave';
+  if (p.kind === 'nbit') {   // a bit of the Nova flying out: a magma ball, a water drop, an air wisp or a rock chunk
+    const c = snap(s[0]), y = Y(s[1] - 27 + Math.sin(t * 30 + p.sid) * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(c - 6, Y(s[1]) - 3, 12, 6);
+    if (p.el === 'fire') { for (let i = 1; i <= 3; i++) { ctx.globalAlpha = 0.6 - i * 0.15; ctx.fillStyle = i % 2 ? '#ffd23a' : '#ff5a1a'; ctx.fillRect(c - Math.round(p.vx * i * 0.25 / 3) * 3 - 3, y - Math.round(p.vy * i * 0.12 / 3) * 3 - 3, 9, 9); } ctx.globalAlpha = 1; ctx.fillStyle = '#7a1a08'; ctx.fillRect(c - 9, y - 9, 18, 18); ctx.fillStyle = '#ff7a30'; ctx.fillRect(c - 6, y - 6, 12, 12); ctx.fillStyle = '#ffe36b'; ctx.fillRect(c - 3, y - 3, 6, 6); }
+    else if (p.el === 'water') { ctx.fillStyle = '#1f5fa8'; ctx.fillRect(c - 3, y - 12, 6, 3); ctx.fillRect(c - 6, y - 9, 12, 12); ctx.fillStyle = '#4aa8ff'; ctx.fillRect(c - 3, y - 9, 6, 9); ctx.fillStyle = '#ffffff'; ctx.fillRect(c - 3, y - 6, 3, 3); }
+    else if (p.el === 'air') { for (let i = 0; i < 4; i++) { const a2 = t * 14 + i * 1.571 + p.sid; ctx.fillStyle = i % 2 ? '#ffffff' : '#bfe9ff'; ctx.fillRect(snap(c + Math.cos(a2) * 9 - 3), Y(y + Math.sin(a2) * 6 - 3), 6, 6); } ctx.fillStyle = '#ffffff'; ctx.fillRect(c - 3, y - 3, 6, 6); }
+    else { ctx.fillStyle = '#4a3418'; ctx.fillRect(c - 9, y - 6, 18, 15); ctx.fillStyle = '#8a6a3c'; ctx.fillRect(c - 6, y - 6, 12, 9); ctx.fillStyle = '#b8945c'; ctx.fillRect(c - 3, y - 6, 6, 3); }
+    return;
+  }
+  if (p.kind === 'wave') {   // a crescent of water w tiles wide, rolling out
+    const sp = Math.hypot(p.vx, p.vy) || 1, ux = p.vx / sp, uy = p.vy / sp, n = Math.max(4, Math.round(p.w * 3)), wave = true;
     for (let i = 0; i <= n; i++) {
       const k = i / n - 0.5, bend = (1 - 4 * k * k) * (wave ? 0.5 : 0.2), qx = p.x - uy * k * p.w + ux * bend, qy = p.y + ux * k * p.w + uy * bend, q = R.toScreen(v, qx, qy);
       const h = Math.round(((wave ? 24 : 15) * (1 - 2 * Math.abs(k)) + 9 + (Math.sin(t * 20 + i) > 0 ? 3 : 0)) / 3) * 3;
@@ -1828,7 +1847,7 @@ R.drawProj = function (ctx, v, p) {
   ctx.fillRect(x - 3, y, sz + 6, sz); ctx.fillRect(x, y - 3, sz, sz + 6);
   ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, 6, 6);
 };
-const TALL_ZONES = { flame: 1, steam: 1, twister: 1, orb: 1, storm: 1 };   // zones that stand up: drawn over the bodies
+const TALL_ZONES = { flame: 1, twister: 1, orb: 1, storm: 1, tear: 1, mshield: 1, novapull: 1 };   // zones that stand up: drawn over the bodies
 R.drawZone = function (ctx, v, z) {
   const s = R.toScreen(v, z.x, z.y), fr = Math.min(1, z.t / z.dur), t = G.w.t, Y = n => Math.round(n / 3) * 3;
   if (z.kind === 'flame') {   // the stream of fire: tongues of flame fanning out along his aim, flickering
@@ -1842,12 +1861,49 @@ R.drawZone = function (ctx, v, z) {
     ctx.globalAlpha = 1;
     return;
   }
-  if (z.kind === 'steam') {   // a swelling cloud of scalding steam
-    const r = z.rr || z.r * 0.35, rx = r * v.hw * 1.414, ry = r * v.hh * 1.414;
-    ctx.globalAlpha = 0.28 + 0.2 * (1 - fr); ctx.fillStyle = '#f4f4f8'; diamond(ctx, s[0], s[1] - 12, rx, ry * 1.3); ctx.fill();
-    ctx.globalAlpha = 0.8; ctx.strokeStyle = Math.floor(t * 14) % 2 ? '#ffffff' : '#bfe0ff'; ctx.lineWidth = 6; diamond(ctx, s[0], s[1] - 12, rx, ry * 1.3); ctx.stroke();
-    ctx.fillStyle = '#ffffff';
-    for (let i = 0; i < 10; i++) { const an = i * 0.628 + t * 1.5, q = R.toScreen(v, z.x + Math.cos(an) * r * 0.7, z.y + Math.sin(an) * r * 0.7); ctx.globalAlpha = 0.6; ctx.fillRect(snap(q[0] - 9), Y(q[1] - 30 - (i % 3) * 9), 18, 12); }
+  if (z.kind === 'tear') {   // a water droplet hovering over the ground, a glittering trail behind it
+    const fade = Math.min(1, z.t / 0.4, (z.dur - z.t) / 0.15), bob = Math.sin(t * 7 + z.x) > 0 ? 3 : 0, y = s[1] - 36 + bob;
+    const dx = ((z.vx || 0) - (z.vy || 0)) * v.hw, dy = ((z.vx || 0) + (z.vy || 0)) * v.hh;
+    ctx.globalAlpha = 0.25 * fade; ctx.fillStyle = '#4fc3ff'; diamond(ctx, s[0], s[1], z.r * v.hw * 1.414, z.r * v.hh * 1.414); ctx.fill();   // what it will hurt
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.globalAlpha = fade; ctx.fillRect(snap(s[0] - 12), Y(s[1]) - 3, 24, 9);
+    for (let i = 1; i <= 4; i++) { ctx.globalAlpha = fade * (0.55 - i * 0.11); ctx.fillStyle = i % 2 ? '#bfe9ff' : '#4fc3ff'; const q = 12 - i * 2; ctx.fillRect(snap(s[0] - dx * i * 0.18 - q / 2), Y(y - dy * i * 0.18 - q / 2), Math.round(q / 3) * 3, Math.round(q / 3) * 3); }
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = '#1f5fa8'; ctx.fillRect(snap(s[0] - 3), Y(y - 24), 6, 3); ctx.fillRect(snap(s[0] - 6), Y(y - 21), 12, 3); ctx.fillRect(snap(s[0] - 9), Y(y - 18), 18, 6); ctx.fillRect(snap(s[0] - 12), Y(y - 12), 24, 12); ctx.fillRect(snap(s[0] - 9), Y(y), 18, 3);
+    ctx.fillStyle = '#4fc3ff'; ctx.fillRect(snap(s[0] - 3), Y(y - 21), 6, 3); ctx.fillRect(snap(s[0] - 6), Y(y - 18), 12, 6); ctx.fillRect(snap(s[0] - 9), Y(y - 12), 18, 9);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(s[0] - 6), Y(y - 12), 3, 6);
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (z.kind === 'mshield') {   // blue and brown orbs circling him, a faint ring on the ground where they run
+    const fade = Math.min(1, z.t / 0.5), S = CFG.spells.mud, blink = z.t < 1.5 && Math.floor(t * 10) % 2;
+    ctx.globalAlpha = 0.3 * fade; ctx.strokeStyle = '#8a5a2a'; ctx.lineWidth = 3; ctx.setLineDash([9, 9]); ctx.lineDashOffset = -Math.floor(t * 8) * 3;
+    diamond(ctx, s[0], s[1], S.orbitR * v.hw * 1.414, S.orbitR * v.hh * 1.414); ctx.stroke(); ctx.setLineDash([]);
+    if (blink) { ctx.globalAlpha = 1; return; }
+    z.orbs.forEach((o, i) => {
+      const an = z.ang + o, q = R.toScreen(v, z.x + Math.cos(an) * S.orbitR, z.y + Math.sin(an) * S.orbitR), oy = q[1] - 33 + (Math.sin(t * 6 + i) > 0 ? 3 : 0);
+      ctx.globalAlpha = 0.25 * fade; ctx.fillStyle = '#000000'; ctx.fillRect(snap(q[0] - 12), Y(q[1]) - 3, 24, 9);
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = '#2a1a0a'; ctx.fillRect(snap(q[0] - 15), Y(oy - 15), 30, 30);
+      for (let k = 0; k < 4; k++) {   // two blue and two brown blocks chasing each other round the middle
+        const a2 = t * 8 + k * 1.571 + i, bx = Math.cos(a2) * 6, by = Math.sin(a2) * 6;
+        ctx.fillStyle = k % 2 ? '#4aa8ff' : '#8a5a2a'; ctx.fillRect(snap(q[0] + bx - 9), Y(oy + by - 9), 18, 18);
+      }
+      ctx.fillStyle = Math.floor(t * 10) % 2 ? '#bfe9ff' : '#d8b48a'; ctx.fillRect(snap(q[0] - 3), Y(oy - 3), 6, 6);
+    });
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (z.kind === 'novapull') {   // the Nova gathers: rings of light fall in on him, the zap range pulsing at the edge
+    const S = CFG.spells.nova, k0 = 1 - z.t / z.dur, fade = Math.min(1, z.t / 0.2 + 0.3);
+    ctx.globalAlpha = (0.5 + 0.3 * Math.sin(t * 20)) * fade; ctx.strokeStyle = '#ffe36b'; ctx.lineWidth = 6; ctx.setLineDash([15, 12]); ctx.lineDashOffset = -Math.floor(t * 14) * 3;
+    diamond(ctx, s[0], s[1], S.r * v.hw * 1.414, S.r * v.hh * 1.414); ctx.stroke(); ctx.setLineDash([]);
+    for (let i = 0; i < 3; i++) {
+      const k = 1 - ((k0 * 2.4 + i / 3) % 1), rr = Math.max(0.5, z.r * k);
+      ctx.globalAlpha = (1 - k) * 0.9 * fade; ctx.strokeStyle = i % 2 ? '#ffffff' : '#ffe36b'; ctx.lineWidth = 6;
+      diamond(ctx, s[0], s[1], rr * v.hw * 1.414, rr * v.hh * 1.414); ctx.stroke();
+    }
+    ctx.globalAlpha = fade; ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 4; i++) { const el = ELEMS[i], an = t * 5 + i * 1.571, rr = 0.9 + 0.4 * Math.sin(t * 9 + i), q = R.toScreen(v, z.x + Math.cos(an) * rr, z.y + Math.sin(an) * rr); ctx.fillStyle = ELEM[el].color; ctx.fillRect(snap(q[0] - 6), Y(q[1] - 30), 12, 12); }
     ctx.globalAlpha = 1;
     return;
   }
@@ -2382,18 +2438,16 @@ R.drawDrop = function (ctx, v, f, ground) {
       }
       break;
     }
-    case 'steam':   // puffs billow down and gather into a cloud round him
-      if (ground) break;
-      portal(top, R0, '#c8ccd8');
-      for (let i = 0; i < 8; i++) {
-        const p = c01((fr - 0.12 - i * 0.05) / 0.5);
-        if (p <= 0) continue;
-        const a = i * 2.3 + sd, x = cx + Math.cos(a) * p * 36, y = top + (q[1] - 24 - top) * Math.sqrt(p) + Math.sin(a) * p * 9, sz = 12 + p * 15;
-        ctx.globalAlpha = 0.85 - p * 0.35;
-        blk(x, y, sz, i % 3 ? '#f4f4f8' : '#c8ccd8'); blk(x + sz * 0.4, y - sz * 0.3, sz * 0.66, '#ffffff');
-      }
-      ctx.globalAlpha = 1;
+    case 'tempest': {   // a droplet gathers in the portal, swells, and drops; a ring ripples out where it lands
+      if (ground) { flat(0.4 + fr * 0.5, '#4fc3ff', 0.12 + fr * 0.2); break; }
+      portal(top, R0, '#4fc3ff', '#0e2a4a');
+      if (fr < 0.15) break;
+      const sw = c01((fr - 0.15) / 0.35), p = ease(c01((fr - 0.5) / 0.5)), y = fr < 0.5 ? top + 6 + sw * 12 : top + 18 + (land - top - 18) * p, s2 = 12 + Math.round(sw * 4) * 3;
+      if (fr < 0.5) { ctx.fillStyle = '#2a72c8'; ctx.fillRect(snap(cx - 3), Y(top), 6, Y(y - top)); }
+      blk(cx, y - s2 * 0.6, 6, '#1f5fa8');
+      blk(cx, y, s2 + 6, '#1f5fa8'); blk(cx, y, s2, '#4fc3ff'); blk(cx - 3, y - 3, Math.max(3, s2 - 12), '#ffffff');
       break;
+    }
     case 'sandstorm': {   // a sand funnel twists down from the portal, wide at the top, narrow at his feet
       if (ground) { flat(0.4 + fr * 0.5, f.col, 0.25); break; }
       portal(top, R0, '#b08a40');
@@ -2421,7 +2475,7 @@ R.drawDrop = function (ctx, v, f, ground) {
       blk(cx, y, sz + 6, '#3a0a08'); blk(cx, y, sz, '#ff4a1a'); blk(cx - 3, y - 3, Math.max(3, sz - 12), '#ffc850');
       break;
     }
-    case 'tempest': {   // a storm cloud gathers over the portal, slanting rain, lightning flickering inside
+    case 'steam': {   // (the Storm Orb) a storm cloud gathers over the portal, slanting rain, lightning flickering inside
       if (ground) break;
       portal(top, R0, '#9aa8d8');
       const grow = c01(fr / 0.3);
@@ -2436,26 +2490,12 @@ R.drawDrop = function (ctx, v, f, ground) {
       }
       break;
     }
-    case 'mud': {   // gloopy blobs arc out and splat round his feet; the target gets marked
-      const spots = [];
-      for (let i = 0; i < 4; i++) {
-        const p = c01((fr - 0.15 - i * 0.12) / 0.45), a = i * 1.571 + sd + 0.8, ex = Math.cos(a) * 1.1, ey = Math.sin(a) * 1.1;
-        spots.push([p, cx + (ex - ey) * v.hw * p, q[1] + (ex + ey) * v.hh * p]);
-      }
-      if (ground) {
-        ctx.fillStyle = '#6e4a2a';
-        for (const s of spots) if (s[0] >= 1) { diamond(ctx, s[1], s[2], 18, 9); ctx.fill(); }
-        const e = WZ.nearest(w.x, w.y, CFG.spells.mud.range);
-        if (e && Math.floor(t * 12) % 2) {
-          const p = R.toScreen(v, e.x, e.y);
-          ctx.strokeStyle = f.col; ctx.lineWidth = 6; ctx.setLineDash([9, 6]); diamond(ctx, p[0], p[1], 1.2 * v.hw, 1.2 * v.hh); ctx.stroke(); ctx.setLineDash([]);
-        }
-        break;
-      }
-      portal(top, R0, '#8a5a2a');
-      for (const s of spots) if (s[0] > 0 && s[0] < 1) {
-        const y = top + (s[2] - top) * s[0] - Math.sin(s[0] * Math.PI) * 30;
-        blk(s[1], y, 12, '#6e4a2a'); blk(s[1] - 3, y - 3, 6, '#a07a4a');
+    case 'mud': {   // a blue and a brown orb spiral down out of the portal and start circling him
+      if (ground) { flat(0.4 + fr * 0.5, '#8a5a2a', 0.12 + fr * 0.2); break; }
+      portal(top, R0, '#8a5a2a', '#1a2a4a');
+      for (let k = 0; k < 2; k++) {
+        const p = c01((fr - 0.15) / 0.7), a = t * 9 + k * 3.14 + sd, rr = 33 * p, y = top + (land - top) * ease(p) + Math.sin(a) * rr * 0.3;
+        blk(cx + Math.cos(a) * rr, y, 18, k ? '#2a72c8' : '#4a3018'); blk(cx + Math.cos(a) * rr - 3, y - 3, 9, k ? '#4aa8ff' : '#8a6a3c');
       }
       break;
     }

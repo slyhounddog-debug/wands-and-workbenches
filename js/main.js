@@ -338,6 +338,7 @@ Main.controls = function (dt) {
   const bk = !c.kbB ? none : sh ? (G.swapped ? arrows : wasd) : either, wk = !c.kbW ? none : sh ? (G.swapped ? wasd : arrows) : either;
   let bix = clampv(bk[0] + (p0 ? p0.ix : 0)), biy = clampv(bk[1] + (p0 ? p0.iy : 0));
   let wix = clampv(wk[0] + (p1 ? p1.ix : 0)), wiy = clampv(wk[1] + (p1 ? p1.iy : 0));
+  let wrx = p1 ? p1.rx || 0 : 0, wry = p1 ? p1.ry || 0 : 0;   // the Wizard's right stick: where a Tempest Tear aims
   if (bk[0] || bk[1]) G.lastInput = 'kb';
   if (p0 && (p0.ix || p0.iy || p0.any)) G.lastInput = 'pad';
   if (IN.mouse.mv) G.lastInput = 'mouse';
@@ -418,7 +419,7 @@ Main.controls = function (dt) {
   const inTree = UI.treeOpen.L || UI.treeOpen.R, frozen = inTree || Main.graceT > 0;
   if (inTree && (IN.hit('KeyQ') || (p0 && p0.x) || (!Net.on && p1 && p1.x))) UI.undoBank();   // Q / pad X: take the last deposit back out
   if (inTree) Main.treePads(dt, p0, Net.on ? null : p1);
-  if (frozen) { bix = 0; biy = 0; use = false; pick = false; broll = false; if (!Net.on) { wix = 0; wiy = 0; roll = false; hold = false; } }   // (online a tree only holds ITS player still: the sim and the other player carry on)
+  if (frozen) { bix = 0; biy = 0; use = false; pick = false; broll = false; if (!Net.on) { wix = 0; wiy = 0; wrx = 0; wry = 0; roll = false; hold = false; } }   // (online a tree only holds ITS player still: the sim and the other player carry on)
   // a demolish question is open: E / Enter / A confirms, Esc / B backs out
   if (UI.askB && !frozen) {
     if (use || IN.hit('Enter') || (p0 && p0.a)) UI.askClose(true);
@@ -508,7 +509,7 @@ Main.controls = function (dt) {
       }
     } else G.lastFeet = null;
   }
-  return { bix, biy, wix, wiy, roll, hold: !!hold, broll: !!broll };
+  return { bix, biy, wix, wiy, wrx, wry, roll, hold: !!hold, broll: !!broll };
 };
 // the name of the key that fires the held spell, for the toast
 Main.holdKeyName = () => (Main.padW() ? 'X' : 'Z');
@@ -528,7 +529,7 @@ Main.step = function (dt, ctl) {
   }
   if (!frozen) {
     if (ctl.hold) WZ.fireHeld();   // the Wizard fires the spell he is holding (it aims like a delivered one)
-    WZ.update(dt, ctl.wix, ctl.wiy, ctl.roll);
+    WZ.update(dt, ctl.wix, ctl.wiy, ctl.roll, ctl.wrx, ctl.wry);
   }
   if (!G) return;   // a victory screen button may have gone to the title mid-step
   // soft footsteps, one stride timer each

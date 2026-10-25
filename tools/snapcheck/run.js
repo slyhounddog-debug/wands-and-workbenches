@@ -20,7 +20,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'playwright-core');
     ['fresh run', () => {}],
     ['factory running', W => { W.step(0.05, 200); }],
     ['mid-combat', W => { W.egg('egg_zephyr'); W.egg('egg_puddle'); W.egg('egg_cinder'); W.step(0.05, 120); W.deliver('fire'); W.deliver('water'); W.step(0.05, 20); W.event(1); W.step(0.05, 130); }],
-    ['spells raging', W => { for (const k of ['flamethrower', 'sandstorm', 'tempest', 'thunder', 'magma', 'earth', 'water']) W.deliver(k); W.step(0.05, 45); }],   // a flame stream, a twister, a storm orb and cloud, a lob, a bouncing boulder, a wave all at once
+    ['spells raging', W => { for (const k of ['flamethrower', 'sandstorm', 'tempest', 'steam', 'mud', 'thunder', 'magma', 'meteor', 'earth', 'water']) W.deliver(k); W.step(0.05, 45); }],   // a flame stream, a twister, a storm orb and cloud, a lob, a bouncing boulder, a wave all at once
     ['builder tumbling', W => { W.G.tree.tumble = 2; W.G.hands.push({ kind: 'air' }); W.FA.builderRoll(1, 0); W.step(0.05, 4); }],   // the Builder's roll: somersault, afterimages, the cooldown bar
     ['altar arriving', W => { W.G.tree.summon = true; W.step(0.05, 70); }],   // the Summoning Altar's particles gathering it in mid-air
     ['altar shockwaves', W => { W.step(0.05, 50); }],   // landed, rings running out across the wilds and the factory

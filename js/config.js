@@ -168,7 +168,7 @@ const CFG = {
     crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 8, stone: 4 }, unlock: 'logistics',
                 desc: 'Holds any number of ONE kind of element packet or Egg. Belt them in (or throw them) and it feeds them out of its arrow side, one at a time; point it at nothing and it just stores.' },
     spawner:  { name: 'Creature Spawner', kind: 'crafter', cost: { wood: 10, stone: 8, iron: 3, shard: 1 }, unlock: null,
-                desc: 'Hatches a creature Egg from ONE thing fed into it: an element packet = that element\'s basic creature; a Flamethrower, Tempest, Magma Bomb, Mud Snare, Meteor Shower, Thunderstorm or Geyser Eruption spell = the pair or triple creature of its elements. Steam Burst, Sandstorm and Blizzard are not seeds: they bounce back. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. Costs an Aether Shard to build (the starting one is free).' },
+                desc: 'Hatches a creature Egg from ONE thing fed into it: an element packet = that element\'s basic creature; a Flamethrower, Tempest Tear, Magma Bomb, Mud Shield, Meteor Shower, Thunderstorm or Geyser Eruption spell = the pair or triple creature of its elements. Steam Burst, Sandstorm and Blizzard are not seeds: they bounce back. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. Costs an Aether Shard to build (the starting one is free).' },
   },
   // the one Harnesser carries any of the four elements (a crystal grows growT seconds after every switch, then shakes shakeT seconds before it starts making packets)
   harness: { growT: 15, shakeT: 1.2, order: ['air', 'water', 'fire', 'earth'], air: { cycle: 3.41, power: 2 }, water: { cycle: 5.11, power: 2 }, fire: { cycle: 5.11, power: 2 }, earth: { cycle: 6.25, power: 2 } },
@@ -261,26 +261,31 @@ const CFG = {
     boulder:      { drop: 0.6, speed: 7.5, hops: 4, hop: 0.42, dmg: 24, sr: 1.6, push: 7, recoil: 0.38, dec: { k: 'crack', r: 0.8, t: 4.5, a: 0.8 } },
     // Flamethrower: a stream of fire blown out in front of him for t s (it follows his aim): dps to everything in a cone range tiles long, half rad wide
     flamethrower: { drop: 0.5, t: 2.2, range: 5.5, half: 0.42, dps: 30, recoil: 0.3, dec: { k: 'scorch', r: 0.45, t: 3.2, a: 0.5 }, trailGap: 0.09 },
-    // Pressure Cooker: scalding steam swells round him for t s (dps, slow), then BLOWS: blast dmg and a big shove out to r
-    steam:        { drop: 0.6, r: 5.5, t: 1.1, dps: 12, slow: 0.5, blast: 26, push: 18, slowT: 2.5, dec: { k: 'wet', r: 0.6, t: 4, a: 0.6 } },
     // Sand Twister: a tornado set loose along the aim; it hunts foes within seek tiles, drags them into its eye (pull) and grinds them (dps) for t s
     sandstorm:    { drop: 0.65, speed: 3.6, t: 4, r: 2.6, pull: 8, dps: 16, slow: 0.35, seek: 8, dec: { k: 'swirl', c: '#d9b46a', r: 0.9, t: 3.5, a: 0.55 }, trailGap: 0.22 },
     // Magma Bomb: lobbed high onto the thickest crowd within range (flight s), a big blast, a lava pool, and blobs of magma that splatter out and burst
     magma:        { drop: 0.7, flight: 0.75, range: 12, dmg: 48, sr: 2.8, pool: { r: 2.3, t: 4, dps: 12 }, blobs: 5, blobDmg: 14, blobR: 1.2, blobDist: [2, 3.6], recoil: 0.55, dec: { k: 'lava', r: 0.9, t: 6, a: 1 } },
-    // Storm Orb: a crackling orb drifts out along the aim for t s, zapping the nearest foe within range every zap s (slows it)
-    tempest:      { drop: 0.65, speed: 2.4, t: 3.2, zap: 0.26, range: 4.4, dmg: 12, slow: 0.3, slowT: 1.2, dec: { k: 'glass', r: 0.55, t: 3.5, a: 0.6 } },
-    // Mudslide: a surge of mud races to the nearest foe (speed), rooting everything in its path (root s), then the sticky snare and an Earth Wall rise there
-    mud:          { drop: 0.55, range: 30, r: 4, t: 3.5, dps: 6, slow: 0.8, surge: { speed: 20, w: 1.7, dmg: 8, root: 1.4 }, dec: { k: 'mud', r: 1, t: 4.5, a: 0.7 }, trail: { k: 'mud', r: 0.6, t: 3.5, a: 0.55 }, trailGap: 0.04, wall: { len: 9, dist: 3, t: 10 } },
-    // Meteor Strike: ONE huge meteor on the thickest crowd within range (fall s, its shadow grows), then it shatters into frags burning fragments
-    meteor:       { drop: 0.8, range: 16, fall: 1.0, r: 3.4, dmg: 85, push: 14, frags: 6, fragR: 1.4, fragDmg: 22, fragDist: [2.4, 4.6], dec: { k: 'crater', r: 0.9, t: 6, a: 1 } },
+    // Storm Orb (Fire + Water; the recipe id stays 'steam'): a crackling orb drifts out along the aim for t s, zapping the nearest foe within range every zap s (slows it)
+    steam:        { drop: 0.65, speed: 2.4, t: 3.2, zap: 0.26, range: 4.4, dmg: 12, slow: 0.3, slowT: 1.2, dec: { k: 'glass', r: 0.55, t: 3.5, a: 0.6 } },
+    // Tempest Tear (Air + Water; the recipe id stays 'tempest'): a controllable water droplet for life s (every delivery has its own clock). It flies at speedMul x his speed toward a point
+    // reach tiles out along his aim (right stick, else the way he faces; the stick's tilt shortens it, never under minReach), hurting (dps) and slowing all it passes through. Live droplets
+    // fan out spread degrees apart, the oldest on the left
+    tempest:      { drop: 0.5, life: 5, reach: 6, minReach: 1.5, speedMul: 2, spread: 10, r: 0.95, dps: 30, slow: 0.45, slowT: 0.9, dec: { k: 'wet', r: 0.5, t: 2.5, a: 0.35 }, trailGap: 0.12 },
+    // Mud Shield: orbs blue / brown orbs circle him (orbitR tiles out, spin rad/s) for t s; the first foe an orb touches (orbR) sets it off: a blast of sr tiles, dmg, a shove and a slow
+    mud:          { drop: 0.6, t: 12, orbs: 3, orbitR: 1.7, spin: 3.4, orbR: 0.6, sr: 2.5, dmg: 42, push: 13, slow: 0.7, slowT: 2.2, dec: { k: 'mud', r: 1, t: 4.5, a: 0.7 } },
+    // Meteor Strike: ONE huge meteor on the thickest crowd within range (fall s, its shadow grows), then it shatters into frags burning, bouncing boulders that fly out at fragSpeed tiles/s,
+    // hop fragHops times (fragHop s each) and crush fragR tiles round every landing for fragDmg
+    meteor:       { drop: 0.8, range: 16, fall: 1.0, r: 3.4, dmg: 85, push: 14, frags: 6, fragR: 1.4, fragDmg: 22, fragSpeed: 6.5, fragHops: 4, fragHop: 0.36, dec: { k: 'crater', r: 0.9, t: 6, a: 1 } },
     // Thunderstorm: a storm cloud hangs over him for t s and calls a bolt every every s on a foe within range (warn s ahead), each bolt forking to chain more
     thunder:      { drop: 0.6, t: 4, every: 0.32, range: 9, warn: 0.22, r: 1.3, dmg: 24, chain: 2, chainR: 4.5, chainDmg: 12, dec: { k: 'glass', r: 0.85, t: 4, a: 0.8 } },
     // Blizzard: a storm round him for t s (dps, slow) raining icicles every icicle s; a foe hit chill times freezes solid for freeze s. Flash Frost turns bog / water to ice
     blizzard:     { drop: 0.7, r: 7, t: 4, dps: 6, slow: 0.6, icicle: 0.09, iceDmg: 12, iceR: 1.1, chill: 3, freeze: 1.6, dec: { k: 'frost', r: 0.8, t: 5, a: 0.85 }, frost: { t: 14, every: 0.1 } },
-    // Geyser Eruption: erupts under the n nearest foes and throws them up for toss s (they take land dmg coming down); it launches the Wizard over water too
-    geyser:       { drop: 0.55, n: 6, delay: 0.45, gap: 0.1, r: 1.8, dmg: 26, toss: 0.85, land: 20, dec: { k: 'wet', r: 0.9, t: 4.5, a: 0.85 }, jump: { dist: 8, min: 2.5, T: 0.8, h: 2.6 } },
-    // Elemental Nova: four rings, one per element, gap s apart out to r: Air shoves, Water slows, Fire burns, Earth crushes and staggers (dmg split over the four)
-    nova:         { drop: 0.9, r: 8, dmg: 84, push: 30, slow: 0.5, slowT: 2.4, gap: 0.14, stagger: 0.7, dec: { k: 'nova', r: 0.7, t: 6, a: 1 } },
+    // Geyser Eruption: waves of eruptions: wave 1 under the n nearest foes, each later wave (waveGap s on) under n random ones within range. Each throws its foes up for toss s
+    // (land dmg coming down), then slows them slow for slowT s. The Wizard stays on the ground
+    geyser:       { drop: 0.55, n: 6, waves: 2, waveGap: 1.2, range: 16, delay: 0.45, gap: 0.1, r: 1.8, dmg: 26, toss: 0.85, land: 20, slow: 0.6, slowT: 5, dec: { k: 'wet', r: 0.9, t: 4.5, a: 0.85 } },
+    // Elemental Nova: for pullT s every foe within pullR is hauled in (pull) while every foe within r is zapped (zapDmg every zapEvery s, up to zapN bolts drawn); then magma balls,
+    // water drops, air wisps and rock chunks (bits of each) burst out of him to r: dmg, a big shove (push), slow, stagger; each bit also hits for bitDmg as it flies
+    nova:         { drop: 0.9, r: 8, pullR: 12, pullT: 1.4, pull: 14, zapEvery: 0.16, zapDmg: 6, zapN: 9, dmg: 50, push: 30, slow: 0.5, slowT: 2.4, stagger: 0.7, bits: 5, bitSpeed: 18, bitDmg: 8, dec: { k: 'nova', r: 0.7, t: 6, a: 1 } },
   },
   // what each upgrade tier is worth
   upgrade: { swift: 0.125, manual: 0.3, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125, magnet: 0.35,   // gems: x(1+0.125) per tier on every gem drop chance (cap gemCap); magnet: tiles of extra pickup radius per tier
@@ -564,8 +569,8 @@ for (const el in ELEM) RES['core_' + el] = { name: CORE_NAME[el], short: CORE_NA
 const BASIC_SPELL = { air: 'gust', fire: 'fireball', water: 'spray', earth: 'boulder' };
 const SPELLS = {
   gust: 'Cyclone Gust', fireball: 'Seeker Fireball', spray: 'Tidal Wave', boulder: 'Bouncing Boulder',
-  flamethrower: 'Flamethrower', steam: 'Pressure Cooker', sandstorm: 'Sand Twister', magma: 'Magma Bomb',
-  tempest: 'Storm Orb', mud: 'Mudslide', meteor: 'Meteor Strike', thunder: 'Thunderstorm',
+  flamethrower: 'Flamethrower', steam: 'Storm Orb', sandstorm: 'Sand Twister', magma: 'Magma Bomb',
+  tempest: 'Tempest Tear', mud: 'Mud Shield', meteor: 'Meteor Strike', thunder: 'Thunderstorm',
   blizzard: 'Blizzard', geyser: 'Geyser Eruption', nova: 'Elemental Nova',
 };
 // the Collection Book's text for every spell (these used to be the skill-tree node descriptions)
@@ -575,20 +580,20 @@ const SPELL_INFO = {
   spray: { desc: 'Water: a crescent wave rolls out and carries every foe it catches along with it, slowing them; it splashes the Wizard back to health a little.' },
   boulder: { desc: 'Earth: a boulder that bounces along the ground, crushing everything around each landing.' },
   flamethrower: { desc: 'Air + Fire: a roaring stream of fire blown out in front of the Wizard for two seconds, scorching the ground.' },
-  tempest: { desc: 'Air + Water: a crackling storm orb drifts out and keeps zapping the nearest foe.' },
-  steam: { desc: 'Fire + Water: scalding steam swells around the Wizard, then blows everything away.' },
+  tempest: { desc: 'Air + Water: a controllable water droplet for five seconds, flying twice as fast as the Wizard along his aim (right stick, or the way he faces) up to six tiles out, hurting and slowing everything it passes through. Every delivery is its own droplet on its own clock, and live droplets fan out ten degrees apart.' },
+  steam: { desc: 'Fire + Water: a crackling storm orb drifts out and keeps zapping the nearest foe.' },
   sandstorm: { desc: 'Air + Earth: a sand twister hunts down foes, drags them into its eye and grinds them.' },
   magma: { desc: 'Fire + Earth: lobbed onto the thickest crowd: a big blast, a lava pool and magma blobs splattering out.' },
-  mud: { desc: 'Water + Earth: a mudslide races to the nearest foe, rooting all in its path, then a sticky snare and an Earth Wall rise there.' },
-  meteor: { desc: 'Air + Fire + Earth: one huge meteor crashes onto the thickest crowd and shatters into burning fragments.' },
+  mud: { desc: 'Water + Earth: blue and brown orbs circle the Wizard like a shield; the first foe an orb touches sets it off in a muddy blast that shoves and slows.' },
+  meteor: { desc: 'Air + Fire + Earth: one huge meteor crashes onto the thickest crowd and shatters into burning, bouncing boulders that crush everything they land on.' },
   thunder: { desc: 'Air + Fire + Water: a storm cloud over the Wizard calls lightning down on foes for four seconds, each bolt forking on.' },
   blizzard: { desc: 'Air + Water + Earth: a freezing storm rains icicles round the Wizard; foes hit three times freeze solid. Freezes bog and water into ice he can run on.' },
-  geyser: { desc: 'Fire + Water + Earth: geysers burst under the 6 nearest foes and throw them into the air; it launches the Wizard over water and bog too.' },
-  nova: { desc: 'All four: four rings in a row: Air shoves, Water slows, Fire burns, Earth crushes.' },
+  geyser: { desc: 'Fire + Water + Earth: two waves of geysers, 1.2 seconds apart: the 6 nearest foes, then 6 random ones, are thrown into the air and slowed for five seconds after they land.' },
+  nova: { desc: 'All four: foes within 12 tiles are hauled in and everyone within 8 is zapped, then magma balls, water drops, air wisps and rock chunks explode out of the Wizard and shove everything away.' },
 };
 const SPELL_COL = {
   gust: '#e6f8ff', fireball: '#ff7a30', spray: '#4aa8ff', boulder: '#b58a4c',
-  flamethrower: '#ff9a2b', steam: '#f4f4f8', sandstorm: '#d9b46a', magma: '#ff4a1a', tempest: '#bfe9ff', mud: '#8a5a2a',
+  flamethrower: '#ff9a2b', steam: '#bfe9ff', sandstorm: '#d9b46a', magma: '#ff4a1a', tempest: '#4fc3ff', mud: '#8a5a2a',
   meteor: '#ff7a30', thunder: '#fff27a', blizzard: '#dff4ff', geyser: '#4aa8ff', nova: '#ffe36b',
 };
 
@@ -628,7 +633,7 @@ const BANK_KINDS = SPELL_KINDS.concat(['shard']);   // ...and Aether Shards (the
 // the elements each spell carries (for weaknesses, and its tier: how hard it lands back at the Spell Portal)
 const SPELL_EL = { gust: ['air'], fireball: ['fire'], spray: ['water'], boulder: ['earth'] };
 for (const k in CFG.recipes) { const r = CFG.recipes[k]; if (ITEMS[r.out] && ITEMS[r.out].spell) SPELL_EL[r.out] = Object.keys(r.in); }
-// the Creature Spawner's seeds: a combo spell -> the creature (pair or triple) it hatches. A spell with no creature (Steam Burst, Sandstorm, Blizzard) is no seed
+// the Creature Spawner's seeds: a combo spell -> the creature (pair or triple) it hatches. A spell with no creature (Storm Orb, Sandstorm, Blizzard) is no seed
 const SEED_SPELL = {};
 for (const id in CFG.creatures) { const ks = Object.keys(CFG.creatures[id].cost); if (ks.length === 1 && ITEMS[ks[0]] && ITEMS[ks[0]].spell) SEED_SPELL[ks[0]] = id; }
 
@@ -666,7 +671,7 @@ const QUESTS = {
     { from: 13, v5: 13, icon: 'flamethrower', text: 'Craft a combo spell at the Forge (press E to pick Air + Fire, Air + Water...) and deliver it', xp: 15, gift: { bank: { air: 3, fire: 3 } }, done: g => g.flags.combo, hint: { combo: 2 } },
     { v5: 14, icon: 'ic_fast', text: 'Overdrive: put a charged Battery right beside a Forge or Cauldron', xp: 12, done: g => G.fac.bld.some(b => b.done && b.od), hint: { make: 'battery' } },
     { v5: 15, icon: 'steam', text: 'Deliver 6 combo spells to the Wizard (two or more elements each)', xp: 15, gift: { stock: { shard: 1 } }, stat: g => g.stats.combos || 0, n: 6, hint: { combo: 2 } },
-    { from: 15, v5: 16, icon: 'b:splitter', text: 'Unlock Logistics (a Tempest Chain is part of the price), build a Splitter', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && b.type === 'splitter'), hint: { make: 'splitter' } },
+    { from: 15, v5: 16, icon: 'b:splitter', text: 'Unlock Logistics (a Tempest Tear is part of the price), build a Splitter', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && b.type === 'splitter'), hint: { make: 'splitter' } },
     { from: 16, v5: 17, icon: 'armor', text: 'Brew a Shield Potion at the Cauldron (Earth + Fire packets) and send it to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'cauldron' } },
     { v5: 18, icon: 'plate', text: 'Unlock the Armory (costs a Flamethrower): forge a garment from Cores, send it', xp: 20, gift: { stock: { iron: 6 } }, done: g => !!g.flags.sent_aug, hint: { make: 'anvil' } },
     { icon: 'egg_pebble', text: 'Hatch a Pebble Golem: set a Harnesser to Earth, feed a Spawner, send the Egg', xp: 12, stat: g => (g.stats.sent || {}).egg_pebble || 0, n: 1, hint: { make: 'spawner' } },

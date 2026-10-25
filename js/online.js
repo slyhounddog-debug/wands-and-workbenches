@@ -13,7 +13,7 @@ Main.modal = () => Net.role === 'host' && (Main.menuUp || Book.isOpen);
 Main.wizardOnly = function () {
   const p1 = Main.padW();
   if (IN.hit('Escape') && Main.menuUp && !Book.isOpen) Main.pause(false);
-  return { bix: 0, biy: 0, wix: p1 ? p1.ix : 0, wiy: p1 ? p1.iy : 0, roll: !!(p1 && p1.a), hold: !!(p1 && p1.x), broll: false };
+  return { bix: 0, biy: 0, wix: p1 ? p1.ix : 0, wiy: p1 ? p1.iy : 0, wrx: p1 ? p1.rx || 0 : 0, wry: p1 ? p1.ry || 0 : 0, roll: !!(p1 && p1.a), hold: !!(p1 && p1.x), broll: false };
 };
 
 // ---------- banners over the game ----------

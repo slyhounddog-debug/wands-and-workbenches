@@ -80,6 +80,18 @@ async function boot(browser, name) {
   const held = await hp.evaluate(() => __wands.G.hold.spell);
   ok(held === null, 'guest E fires the held spell', 'slot now ' + held);
 
+  // ---- the guest's right stick aims the Tempest Tear on the host, and the guest sees the fan of droplets
+  await gp.evaluate(() => { navigator.getGamepads = () => [{ connected: true, axes: [0, 0, 0.9, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false })) }]; });
+  await sleep(500);
+  const stick = await hp.evaluate(() => [__wands.G.w.sx, __wands.G.w.sy]);
+  ok(Math.hypot(stick[0], stick[1]) > 0.5, "the guest's right stick reaches the host's Wizard (aim)", stick.map(v => v.toFixed(2)).join(','));
+  await hp.evaluate(() => { const W = __wands; W.G.w.enemies.length = 0; for (let i = 0; i < 3; i++) W.WZ.cast('tempest'); });
+  await sleep(700);
+  const fan = await gp.evaluate(() => { const w = __wands.G.w, t = w.zones.filter(z => z.kind === 'tear'); return { n: t.length, d: t.map(z => Math.hypot(z.x - w.x, z.y - w.y)) }; });
+  ok(fan.n === 3 && fan.d.every(d => d <= 6.05), 'the guest sees three Tempest Tears, each within 6 tiles of him', fan.n + ' tears, ' + fan.d.map(d => d.toFixed(1)).join(','));
+  await gp.evaluate(() => { delete navigator.getGamepads; });
+  await hp.evaluate(() => { __wands.G.w.zones.length = 0; });
+
   // ---- the tree: T opens it on the guest; a purchase is an intent the host validates
   await hp.evaluate(() => { __wands.G.xp = 500; __wands.G.bank.air = 40; __wands.G.bank.water = 40; });
   await sleep(300);

@@ -497,7 +497,7 @@ FA.spawnerFor = function (have) {   // the egg recipe whose one input is this (a
 FA.spawnerPick = b => FA.spawnerFor(FA.spawnerHave(b));
 FA.eggOf = rid => CFG.creatures[ITEMS[CFG.recipes[rid].out].creature];   // the creature an egg recipe hatches
 // It takes ONE thing at a time, only while it is empty (and the finished eggs are not backed up): an element packet, or a seed spell (SEED_SPELL). Anything else is refused
-// and boings back (Steam Burst, Sandstorm, Blizzard, a second thing while an egg grows).
+// and boings back (Storm Orb, Sandstorm, Blizzard, a second thing while an egg grows).
 FA.spawnerTakes = function (b, kind) {
   if (!(ELEM[kind] || SEED_SPELL[kind]) || FA.spawnerHave(b).length || b.out.length >= CFG.buffer) return false;
   return !!FA.spawnerFor([kind]);

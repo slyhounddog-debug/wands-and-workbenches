@@ -8,12 +8,12 @@ const SPV = {};
   const CAP = {
     gust: 'CYCLONE: three pulses fling foes into each other', fireball: 'SEEKER: very fast, homes in on a foe',
     spray: 'WAVE: rolls out and carries foes with it', boulder: 'BOUNCER: crushes round every landing',
-    flamethrower: 'STREAM: a cone of fire for two seconds', steam: 'PRESSURE: swells, then blows them away',
+    flamethrower: 'STREAM: a cone of fire for two seconds', steam: 'STORM ORB: drifts out zapping the nearest',
     sandstorm: 'TWISTER: hunts foes and drags them in', magma: 'LOB: blast, lava pool, splattering blobs',
-    tempest: 'STORM ORB: drifts out zapping the nearest', mud: 'MUDSLIDE: roots its path, snare + wall at the end',
-    meteor: 'ONE BIG ROCK: then burning fragments', thunder: 'STORM CLOUD: bolts rain down and fork',
-    blizzard: 'ICICLES: three hits freeze a foe solid', geyser: 'TARGETED: throws the 6 nearest foes up',
-    nova: 'FOUR RINGS: shove, slow, burn, crush',
+    tempest: 'TEMPEST TEAR: steer droplets, they fan out', mud: 'MUD SHIELD: orbs circle, one bursts per foe',
+    meteor: 'ONE BIG ROCK: then burning boulders', thunder: 'STORM CLOUD: bolts rain down and fork',
+    blizzard: 'ICICLES: three hits freeze a foe solid', geyser: 'TWO WAVES: nearest 6, then 6 random',
+    nova: 'PULL, ZAP, THEN BURST OUT',
   };
   const col = k => SPELL_COL[k] || '#fff';
 
@@ -41,11 +41,16 @@ const SPV = {};
   const SC = {
     gust: { len: 2.8, W: [0, 0], en: [[-2.5, 1], [-2, -0.5], [3, -2], [2, 3], [2.6, 2.2], [-1, -4], [5, 2], [9, -1]],
       cast: (s, S) => { for (let i = 0; i < S.pulses; i++) s.later(i * S.gap, () => burst(s, Object.assign({}, S, { r: S.r * (i + 1) / S.pulses }), col('gust'), 0.35)); } },
-    steam: { len: 3.6, W: [0, 0], en: [[-3, 2], [3, -1], [1, 4], [-4, -2], [4, 3], [8, 0]],
-      cast: (s, S) => s.zone({ r: S.r, t: S.t, dps: S.dps, slow: S.slow, follow: true, col: col('steam'), kind: 'steam',
-        end: z => { s.boom(z.x, z.y, S.r, '#ffffff'); burst(s, { r: S.r, dmg: S.blast, push: S.push, slow: S.slow, slowT: S.slowT }, '#ffffff', 0.5); } }) },
-    nova: { len: 3.6, W: [0, 0], en: [[-6, 1], [5, -3], [2, 6], [-3, -5], [7, 3], [-1, 2], [9.4, -1]],
-      cast: (s, S) => ['air', 'water', 'fire', 'earth'].forEach((el, i) => s.later(i * S.gap, () => burst(s, { r: S.r, dmg: S.dmg / 4, push: el === 'air' ? S.push : 0, slow: el === 'water' ? S.slow : 0, slowT: S.slowT }, ELEM[el].color, 0.55, i === 3))) },
+    steam: { len: 4, W: [-8.5, 0], en: [[-6, 1.5], [-2.5, -3], [0.5, 2], [3.5, -2], [6.5, 2], [9, -3]],
+      cast: (s, S) => s.zone({ x: s.W.x + 1, y: s.W.y, vx: S.speed * 1.6, vy: 0, r: S.range, t: S.t, col: '#bfe9ff', kind: 'orb', zap: S.zap, zt: 0.05, dmg: S.dmg, slowT: S.slowT }) },
+    nova: { len: 4.4, W: [0, 0], en: [[-10, 1], [9, -4], [4, 9], [-5, -8], [7, 2], [-2, 3.5], [3, -5]],
+      cast: (s, S) => s.zone({ r: S.pullR, t: S.pullT, follow: true, col: '#ffe36b', kind: 'novapull', zt: 0, S,
+        end: z => {
+          s.ring(z.x, z.y, S.r, '#ffe36b', 0.55); s.boom(z.x, z.y, S.r, '#ffe36b');
+          s.each(z.x, z.y, S.r, (e, d) => { const m = d || 1; s.hurt(e, S.dmg, (e.x - z.x) / m, (e.y - z.y) / m, S.push); e.slowT = S.slowT; });
+          const n = S.bits * 4;
+          for (let i = 0; i < n; i++) { const an = i / n * 6.283, sp = S.bitSpeed; s.proj({ x: z.x, y: z.y, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp, life: S.r / sp, dmg: S.bitDmg, col: ELEM[['fire', 'water', 'air', 'earth'][i % 4]].color, size: 4, r: 0.3 }); }
+        } }) },
     fireball: { len: 3, W: [-8.5, 0], en: [[3, -2.5], [2.6, -3.3], [5, 2.5], [6.8, -1]],
       cast: (s, S) => proj(s, S, { vx: S.speed * 0.4, vy: S.speed * 0.2, splash: S.splash, sr: S.sr, col: '#ff7a30', kind: 'fire', size: 5, r: 0.5, home: S.turn, seek: S.seek * 2 }) },
     boulder: { len: 4, W: [-8.5, 0], en: [[-5, 0.4], [-2, -0.6], [1, 0.3], [4, -0.4], [7, 2.5]],
@@ -63,25 +68,27 @@ const SPV = {};
       cast: (s, S) => s.zone({ x: s.W.x + 1.5, y: s.W.y, vx: S.speed, vy: 0, r: S.r, t: S.t, dps: S.dps, slow: S.slow, col: col('sandstorm'), kind: 'twister', pull: S.pull, seek: S.seek, sp: S.speed }) },
     blizzard: { len: 5.6, W: [-4, 0], en: [[-2, -3], [1, 2.5], [4, -1.5], [6, 3], [-5, 3], [9, -2]],
       cast: (s, S) => { s.zone({ r: S.r, t: S.t, dps: S.dps, slow: S.slow, follow: true, col: col('blizzard'), kind: 'snow', ice: S }); walk(s, 2, S.t); } },
-    mud: { len: 4.8, W: [-8.5, 0], en: [[-4, 0.3], [-1, -0.4], [2, 0], [3.6, -2], [1.2, 2.3], [7, 0]],
-      cast: (s, S) => { const e = s.nearest(s.W.x + 9, s.W.y, 99) || { x: 2, y: 0 }; const d = Math.hypot(e.x - s.W.x, e.y - s.W.y), U = S.surge;
-        s.proj({ vx: (e.x - s.W.x) / d * U.speed * 0.5, vy: (e.y - s.W.y) / d * U.speed * 0.5, life: d / U.speed * 2, dmg: U.dmg, kind: 'surge', w: U.w, col: '#6e4a2a', size: 6, hit: [], slow: 1, slowT: U.root,
-          end: () => { s.zone({ x: e.x, y: e.y, r: S.r, t: S.t, dps: S.dps, slow: S.slow, col: col('mud'), kind: 'mud' }); s.fx.push({ type: 'wall', x: e.x - 2.2, y: e.y, t: 0, dur: S.t }); } }); } },
-    tempest: { len: 4, W: [-8.5, 0], en: [[-6, 1.5], [-2.5, -3], [0.5, 2], [3.5, -2], [6.5, 2], [9, -3]],
-      cast: (s, S) => s.zone({ x: s.W.x + 1, y: s.W.y, vx: S.speed * 1.6, vy: 0, r: S.range, t: S.t, col: '#bfe9ff', kind: 'orb', zap: S.zap, zt: 0.05, dmg: S.dmg, slowT: S.slowT }) },
+    mud: { len: 3.4, W: [0, 0], en: [[1.8, 0.3], [-1.3, 1.4], [0.4, -1.9], [-1.9, -0.6], [6, 2], [-7, -3]],
+      cast: (s, S) => s.zone({ r: S.orbitR + 0.6, t: S.t, follow: true, col: '#8a5a2a', kind: 'mshield', ang: 0, S, orbs: Array.from({ length: S.orbs }, (_, i) => i / S.orbs * 6.283) }) },
+    tempest: { len: 5.2, W: [-8.5, 0], en: [[-3.5, -3], [-3, -1.5], [-2.6, 0], [-3, 1.5], [-3.5, 3], [-0.5, -2], [0, 2.5], [3, 0]],
+      cast: (s, S) => { for (let i = 0; i < 5; i++) s.later(i * 0.3, () => s.zone({ x: s.W.x, y: s.W.y, r: S.r, t: S.life, col: '#4fc3ff', kind: 'tear', off: 0, S, i, dps: S.dps, slow: S.slow })); } },
     thunder: { len: 4.8, W: [-6, 0], en: [[-5.5, -1], [-4, 2.5], [-2.2, -2.5], [-0.8, 1.5], [0.8, -3], [2.4, 2], [4, -1.5], [5.6, 3], [7, -2.5]],
       cast: (s, S) => s.zone({ r: S.range * 1.5, t: S.t, follow: true, col: '#fff27a', kind: 'storm', every: S.every, zt: 0.05, S }) },
     meteor: { len: 4.6, W: [-7, 0], en: [[1, -1], [2.2, 0.6], [0.4, 1.2], [3, -1.8], [6.5, 3], [7, -3.5]],
       cast: (s, S) => { const c = crowd(s, S.range, S.r); lob(s, c[0] + 1.2, c[1] - 1.2, c[0], c[1], S.fall, 14, 12, '#ff7a30', (x, y) => {
         s.explode(x, y, S.r, S.dmg, '#ff7a30'); s.ring(x, y, S.r * 1.5, '#ffb030', 0.5);
-        splat(s, x, y, S.frags, S.fragDist, (bx, by) => lob(s, x, y, bx, by, 0.55, 2.2, 4, '#ffb030', (qx, qy) => s.explode(qx, qy, S.fragR, S.fragDmg, '#ffb030')));
+        for (let i = 0; i < S.frags; i++) { const an = i / S.frags * 6.283 + 0.3; s.proj({ x, y, vx: Math.cos(an) * S.fragSpeed, vy: Math.sin(an) * S.fragSpeed, life: 30, kind: 'boulder', col: '#ff7a30', size: 6, hops: S.fragHops, hop: S.fragHop, ht: 0, n: 0, sr: S.fragR, bdmg: S.fragDmg, burn: true }); }
       }, true); } },
-    geyser: { len: 3.8, W: [-6, 0], en: [[-1, -2], [-0.2, -1.2], [3, 2], [3.8, 2.8], [1, 4.5], [5, -3], [9, 0]],
+    geyser: { len: 5, W: [-6, 0], en: [[-1, -2], [-0.2, -1.2], [3, 2], [3.8, 2.8], [1, 4.5], [5, -3], [9, 0], [2, -4.5], [6, 1], [7.5, 3.5], [-2.5, 3.5], [4.5, -1.2]],
       cast: (s, S) => {
-        s.en.filter(e => !e.dead).sort((a, b) => Math.hypot(a.x - s.W.x, a.y - s.W.y) - Math.hypot(b.x - s.W.x, b.y - s.W.y)).slice(0, S.n).forEach((e, i) => {
-          const x = e.x, y = e.y, at = S.delay + i * S.gap;
-          s.fx.push({ type: 'warn', x, y, r: S.r, t: 0, dur: at, col: '#4aa8ff' });
-          s.later(at, () => { s.fx.push({ type: 'column', x, y, r: S.r, t: 0, dur: 0.5 }); s.explode(x, y, S.r, S.dmg, '#7ad0ff'); s.each(x, y, S.r, q => { q.air = q.airT = S.toss; }); s.later(S.toss, () => s.each(x, y, S.r + 1, q => { if (q.airT) { q.airT = 0; s.hurt(q, S.land, 0, 0, 0); } })); });
+        for (let k = 0; k < S.waves; k++) s.later(k * S.waveGap, () => {
+          let list = s.en.filter(e => !e.dead && !(e.air > 0));
+          if (k === 0) list.sort((a, b) => Math.hypot(a.x - s.W.x, a.y - s.W.y) - Math.hypot(b.x - s.W.x, b.y - s.W.y)); else list.sort(() => Math.random() - 0.5);
+          list.slice(0, S.n).forEach((e, i) => {
+            const x = e.x, y = e.y, at = S.delay + i * S.gap;
+            s.fx.push({ type: 'warn', x, y, r: S.r, t: 0, dur: at, col: '#4aa8ff' });
+            s.later(at, () => { s.fx.push({ type: 'column', x, y, r: S.r, t: 0, dur: 0.5 }); s.explode(x, y, S.r, S.dmg, '#7ad0ff'); s.each(x, y, S.r, q => { q.air = q.airT = S.toss; }); s.later(S.toss, () => s.each(x, y, S.r + 1, q => { if (q.airT) { q.airT = 0; s.hurt(q, S.land, 0, 0, 0); q.slowT = S.slowT; } })); });
+          });
         });
       } },
   };
@@ -133,11 +140,11 @@ const SPV = {};
         continue;
       }
       if (p.kind === 'boulder') {   // hops: each landing crushes the ring round it
-        p.x += p.vx * dt; p.ht += dt; p.z = Math.sin(Math.min(1, p.ht / p.hop) * Math.PI) * (1.8 - p.n * 0.3);
-        if (p.ht >= p.hop) { p.ht = 0; p.n++; p.hops--; p.hop *= 0.85; p.vx *= 0.9; s.explode(p.x, p.y, p.sr, CFG.spells.boulder.dmg, '#a98a5c'); if (p.hops <= 0) s.pj.splice(i, 1); }
+        p.x += p.vx * dt; p.y += (p.vy || 0) * dt; p.ht += dt; p.z = Math.sin(Math.min(1, p.ht / p.hop) * Math.PI) * (1.8 - p.n * 0.3);
+        if (p.ht >= p.hop) { p.ht = 0; p.n++; p.hops--; p.hop *= 0.85; p.vx *= 0.9; s.explode(p.x, p.y, p.sr, p.bdmg || CFG.spells.boulder.dmg, p.burn ? '#ff7a30' : '#a98a5c'); if (p.hops <= 0) s.pj.splice(i, 1); }
         continue;
       }
-      if (p.kind === 'wave' || p.kind === 'surge') {   // pierces: hits each dummy once; the wave carries them along, the mud roots them
+      if (p.kind === 'wave') {   // pierces: hits each dummy once and carries them along
         p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
         for (const e of s.en) if (!e.dead && Math.abs(e.x - p.x) < 0.9 && Math.abs(e.y - p.y) < p.w / 2 + 0.4) {
           if (p.hit.indexOf(e) < 0) { p.hit.push(e); s.hurt(e, p.dmg, 0, 0, 0); e.slowT = p.slowT; }
@@ -171,7 +178,34 @@ const SPV = {};
           s.each(z.x, z.y, z.r * 1.6, e => { const dx = z.x - e.x, dy = z.y - e.y, d = Math.hypot(dx, dy) || 1; if (d > 0.3) { e.kx += dx / d * z.pull * dt * 4; e.ky += dy / d * z.pull * dt * 4; } }); }
         z.x += z.vx * dt; z.y += z.vy * dt;
       }
-      const r = z.kind === 'steam' ? z.r * (0.35 + 0.65 * (1 - z.t / z.dur)) : z.r;
+      if (z.kind === 'tear') {   // a droplet sweeping back and forth at the end of the fan, hurting what it passes through
+        const a = Math.sin(s.t * 1.3) * 0.5 + (z.i - 2) * 0.1745, tx = s.W.x + Math.cos(a) * z.S.reach, ty = s.W.y + Math.sin(a) * z.S.reach, d = Math.hypot(tx - z.x, ty - z.y), k = Math.min(1, 10 * dt / (d || 1));
+        z.x += (tx - z.x) * k; z.y += (ty - z.y) * k;
+        z.tk = (z.tk || 0) - dt; const tick = z.tk <= 0; if (tick) z.tk = 0.3;
+        s.each(z.x, z.y, z.r, e => { if (tick) s.hurt(e, z.dps * 0.3, 0, 0, 0); e.slowT = Math.max(e.slowT, z.S.slowT); });
+        if (z.t <= 0) s.zn.splice(i, 1);
+        continue;
+      }
+      if (z.kind === 'mshield') {   // orbs circle him; the first foe one touches sets it off
+        z.ang += z.S.spin * dt;
+        for (let j = z.orbs.length - 1; j >= 0; j--) {
+          const an = z.ang + z.orbs[j], ox = z.x + Math.cos(an) * z.S.orbitR, oy = z.y + Math.sin(an) * z.S.orbitR, e = s.nearest(ox, oy, z.S.orbR + 0.45);
+          if (!e) continue;
+          z.orbs.splice(j, 1);
+          s.boom(ox, oy, z.S.sr, '#8a5a2a');
+          s.each(ox, oy, z.S.sr, (q, d) => { const m = d || 1; s.hurt(q, z.S.dmg, (q.x - ox) / m, (q.y - oy) / m, z.S.push); q.slowT = z.S.slowT; });
+        }
+        if (z.t <= 0 || !z.orbs.length) { s.zn.splice(i, 1); }
+        continue;
+      }
+      if (z.kind === 'novapull') {   // everything within pullR is hauled in, everything within r zapped
+        const S = z.S;
+        s.each(z.x, z.y, S.pullR, (e, d) => { if (d > 1.4) { e.kx += (z.x - e.x) / d * S.pull * dt * 4; e.ky += (z.y - e.y) / d * S.pull * dt * 4; } });
+        if ((z.zt -= dt) <= 0) { z.zt = S.zapEvery; let n = 0; s.each(z.x, z.y, S.r, e => { s.hurt(e, S.zapDmg, 0, 0, 0); if (n++ < 4) s.fx.push({ type: 'bolt', pts: [[z.x, z.y], [e.x, e.y]], gap: 0.03, t: 0, dur: 0.15, col: n % 2 ? '#ffe36b' : '#fff' }); }); }
+        if (z.t <= 0) { s.zn.splice(i, 1); if (z.end) z.end(z); }
+        continue;
+      }
+      const r = z.r;
       z.rr = r;
       const inZ = (e, d) => z.kind !== 'flame' || (d < 0.6 || ((e.x - z.x) / d > Math.cos(z.half) && e.x > z.x));   // a flame stream only burns its cone
       if (z.kind === 'orb' || z.kind === 'storm') {   // zaps: the orb hits the nearest dummy, the cloud drops a bolt on one that forks
@@ -262,6 +296,21 @@ const SPV = {};
         for (let k = 0; k < 7; k++) { const q = k / 6; dots(x, 2 + q * 8, 1 + q * 2, cx + Math.sin(s.t * 5 + k) * (1 + q * 2), cy - 2 - k * 4, k % 2 ? '#d9b46a' : '#a8844a', 1, s.t * 6, s.t * 6 + 6.283, true); }
         return;
       }
+      if (z.kind === 'tear') {   // a droplet
+        const bx = Math.round(cx), by = Math.round(cy - 9);
+        x.globalAlpha = fade; x.fillStyle = '#1f5fa8'; x.fillRect(bx - 1, by - 7, 2, 2); x.fillRect(bx - 3, by - 5, 6, 3); x.fillRect(bx - 4, by - 2, 8, 5);
+        x.fillStyle = '#4fc3ff'; x.fillRect(bx - 2, by - 4, 4, 2); x.fillRect(bx - 3, by - 2, 6, 4); x.fillStyle = '#fff'; x.fillRect(bx - 2, by - 2, 1, 2);
+        x.globalAlpha = 1; return;
+      }
+      if (z.kind === 'mshield') {   // two blue, two brown blocks circling
+        z.orbs.forEach((o, j) => { const an = z.ang + o, ox = sx(z.x + Math.cos(an) * z.S.orbitR), oy = sy(z.y + Math.sin(an) * z.S.orbitR) - 7;
+          x.fillStyle = '#2a1a0a'; x.fillRect(ox - 4, oy - 4, 8, 8); x.fillStyle = (Math.floor(s.t * 8) + j) % 2 ? '#4aa8ff' : '#8a5a2a'; x.fillRect(ox - 3, oy - 3, 3, 6); x.fillStyle = (Math.floor(s.t * 8) + j) % 2 ? '#8a5a2a' : '#4aa8ff'; x.fillRect(ox, oy - 3, 3, 6); });
+        return;
+      }
+      if (z.kind === 'novapull') {   // rings of light falling in
+        for (let j = 0; j < 3; j++) { const k = 1 - (((1 - z.t / z.dur) * 2.4 + j / 3) % 1); x.globalAlpha = (1 - k) * 0.9; dots(x, z.r * TX * k, z.r * TY * k, cx, cy, j % 2 ? '#fff' : '#ffe36b', 2, 0, 6.283, true); }
+        x.globalAlpha = 0.6; dots(x, z.S.r * TX, z.S.r * TY, cx, cy, '#ffe36b', 1, 0, 6.283, true); x.globalAlpha = 1; return;
+      }
       if (z.kind === 'orb') { x.fillStyle = '#2a4a8a'; x.fillRect(cx - 4, cy - 12, 8, 8); x.fillStyle = '#e6f8ff'; x.fillRect(cx - 2, cy - 10, 4, 4); dots(x, rx, ry, cx, cy, z.col, 1, 0, 6.283, true); return; }
       if (z.kind === 'storm') { x.globalAlpha = fade; x.fillStyle = '#3a3a5a'; for (let k = 0; k < 5; k++) x.fillRect(sx(s.W.x) - 22 + k * 9, OY - 50 + (k % 2) * 3, 12, 8); x.globalAlpha = 1; return; }
       if (z.kind === 'lava') { ell(x, cx, cy, rx, ry, '#ff6a1a', 0.7 * fade); ell(x, cx, cy, rx * 0.5, ry * 0.5, '#ffd23a', 0.7 * fade); return; }
@@ -350,7 +399,7 @@ const SPV = {};
         x.fillStyle = p.col; x.fillRect(Math.round(sx(p.x) - p.size / 2) + 1, by - p.size / 2 + 1, p.size - 2, p.size - 3);
         return;
       }
-      if (p.kind === 'wave' || p.kind === 'surge') {   // a crescent of water / a wall of mud
+      if (p.kind === 'wave') {   // a crescent of water
         for (let k = -3; k <= 3; k++) { const yy = sy(p.y + k * p.w / 6), xx = sx(p.x) - Math.abs(k) * 1.2, h = 8 - Math.abs(k); x.fillStyle = p.kind === 'wave' ? '#2a72c8' : '#4a3018'; x.fillRect(Math.round(xx) - 2, yy - h, 4, h); x.fillStyle = p.kind === 'wave' ? '#ffffff' : '#8a6a3c'; x.fillRect(Math.round(xx) - 2, yy - h - 1, 4, 2); }
         return;
       }

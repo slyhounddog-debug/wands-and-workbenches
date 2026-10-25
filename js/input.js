@@ -73,8 +73,11 @@ IN.pollPads = function () {
     const rs = g.axes[2] || 0, rsDir = rs > 0.6 ? 1 : rs < -0.6 ? -1 : 0;
     const cyc = (rsDir && rsDir !== IN.prevRs[p] ? rsDir : 0) || (edge(11) ? 1 : 0);
     IN.prevRs[p] = rsDir;
+    // the right stick as a raw direction (the Wizard aims the Tempest Tear with it)
+    let rx = g.axes[2] || 0, ry = g.axes[3] || 0;
+    if (Math.hypot(rx, ry) < 0.3) { rx = 0; ry = 0; }
     IN.pad[p] = {
-      ix, iy, cyc,
+      ix, iy, rx, ry, cyc,
       a: edge(0), b: edge(1), x: edge(2), y: edge(3), lb: edge(4), rb: edge(5), rt: edge(7), l3: edge(10),
       xHeld: !!b[2], aHeld: !!b[0], bHeld: !!b[1], ltHeld: !!b[6], startHeld: !!b[9], back: edge(8),
       any: b.some(Boolean),

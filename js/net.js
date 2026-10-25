@@ -16,7 +16,7 @@
 //                   { t: 'toast', text, icon }  { t: 'buyres', id, ok, toasts }  { t: 'pong', at }  { t: 'bye' }
 // Transport: PeerJS cloud for signaling only, a reliable ordered WebRTC data channel for traffic, STUN only (no TURN: a relay is Josh's decision, see CLAUDE.md).
 const Net = {
-  VERSION: 1,
+  VERSION: 2,
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
   SNAP_HZ: 20, PAD_HZ: 30,
@@ -156,7 +156,7 @@ const Net = {
   function hostPad(s) {
     if (!s || typeof s !== 'object') return;
     const g = Net.gpad || (Net.gpad = {}), e = Net.gedge || (Net.gedge = {});
-    g.ix = +s.ix || 0; g.iy = +s.iy || 0;
+    g.ix = +s.ix || 0; g.iy = +s.iy || 0; g.rx = +s.rx || 0; g.ry = +s.ry || 0;
     for (const k of HELD) g[k] = !!s[k];
     for (const k of EDGES) if (s[k]) e[k] = true;
     if (s.cyc) e.cyc = s.cyc;
@@ -166,7 +166,7 @@ const Net = {
   Net.drive = function () {
     if (Net.role !== 'host' || !G || G.ctl.pw < 0) return;
     const g = Net.gpad || {}, e = Net.gedge || {};
-    const pad = { ix: Math.max(-1, Math.min(1, g.ix || 0)), iy: Math.max(-1, Math.min(1, g.iy || 0)), cyc: e.cyc || 0, any: !!(g.any || Object.keys(e).length) };
+    const pad = { ix: Math.max(-1, Math.min(1, g.ix || 0)), iy: Math.max(-1, Math.min(1, g.iy || 0)), rx: Math.max(-1, Math.min(1, g.rx || 0)), ry: Math.max(-1, Math.min(1, g.ry || 0)), cyc: e.cyc || 0, any: !!(g.any || Object.keys(e).length) };
     for (const k of EDGES) pad[k] = !!e[k];
     for (const k of HELD) pad[k] = !!g[k];
     pad.y = false;   // T opens the guest's own tree on the guest's screen; it must not open anything here
@@ -298,13 +298,13 @@ const Net = {
   // a press made on the guest's own UI that has to reach the host as a button (the re-enter button on the results screen is the roll button)
   Net.latchPress = k => { (Net.latch || (Net.latch = {}))[k] = true; };
   Net.padNow = function () {
-    if (Net.mute) return { ix: 0, iy: 0, cyc: 0, a: false, b: false, x: false, y: false, lb: false, rb: false, rt: false, l3: false, back: false, xHeld: false, aHeld: false, bHeld: false, ltHeld: false, startHeld: false, any: false };
+    if (Net.mute) return { ix: 0, iy: 0, rx: 0, ry: 0, cyc: 0, a: false, b: false, x: false, y: false, lb: false, rb: false, rt: false, l3: false, back: false, xHeld: false, aHeld: false, bHeld: false, ltHeld: false, startHeld: false, any: false };
     const L = Net.latch || (Net.latch = {}), gp = IN.pad[0] || null;
     let ix = (IN.down('KeyD') ? 1 : 0) - (IN.down('KeyA') ? 1 : 0), iy = (IN.down('KeyS') ? 1 : 0) - (IN.down('KeyW') ? 1 : 0);
     if (!ix && gp) ix = gp.ix;
     if (!iy && gp) iy = gp.iy;
     const out = {
-      ix, iy, cyc: L.cyc || 0,
+      ix, iy, rx: gp ? gp.rx || 0 : 0, ry: gp ? gp.ry || 0 : 0, cyc: L.cyc || 0,
       xHeld: IN.down('KeyE') || !!(gp && gp.xHeld), aHeld: IN.down('Space') || !!(gp && gp.aHeld), bHeld: !!(gp && gp.bHeld), ltHeld: !!(gp && gp.ltHeld), startHeld: false,
     };
     for (const k of EDGES) out[k] = !!L[k];

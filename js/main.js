@@ -597,7 +597,7 @@ Main.hintFor = function (q) {
     const bp = bs.find(b => !b.done), done = bs.find(b => b.done);
     if (bp) out.f = at(bp); else if (done) out.f = at(done); else out.slot = type;
   };
-  if (h.pile) { const p = FA.piles()[h.pile]; out.f = { x: p.x, y: p.y, lift: 76 }; }
+  if (h.pile) { const p = FA.pileSpot(h.pile); out.f = { x: p.x, y: p.y, lift: 76 }; }
   else if (h.portal) { const p = FA.portal(h.portal); out.f = { x: p.x + 0.5, y: p.y + 1, lift: 240 }; }
   else if (h.use) { const b = G.fac.bld.find(b2 => b2.type === h.use && b2.done); if (b) out.f = at(b); }
   else if (h.build) { const bp = G.fac.bld.find(b => b.type === h.build && !b.done); if (bp) out.f = at(bp); else out.slot = h.build; }
@@ -665,7 +665,11 @@ Main.updateFocus = function () {
   R.hoverB = b;
   const ft = R.focus ? R.focus.list[0].t : t;
   if (!b && ft && ft.kind === 'bld') b = ft.o;
-  UI.setInspect(b ? FA.status(b) : null);
+  if (!b && G.selected === 'hand') {   // a Battery has nothing to press, so it never gets a prompt: its note shows whenever the Builder is in reach of it
+    let bs = CFG.reach;
+    for (const c of G.fac.bld) { if (!c.done || FA.def(c).kind !== 'cell') continue; const d = Math.hypot(c.x + 0.5 - bd.x, c.y + 0.5 - bd.y); if (d <= bs) { bs = d; b = c; } }
+  }
+  UI.setInspect(b ? FA.status(b) : null, R.focus ? R.focus.list.filter(e => e.t.kind !== 'floor' && e.t.kind !== 'pile' && e.t.kind !== 'shelf').length : 0);
   const qh = Main.questHint();
   R.hint = qh.f; R.whint = qh.w;
   UI.setHint(qh.slot && G.selected !== qh.slot ? qh.slot : null, qh.treeL, qh.treeR);

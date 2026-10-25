@@ -258,8 +258,9 @@ R.drawFactory = function (main, dt) {
   const ps = FA.portal('spell'), pk = FA.portal('skill');
   list.push({ d: ps.x + ps.y + 2, t: 'portal', o: 'spell' });
   list.push({ d: pk.x + pk.y + 2, t: 'portal', o: 'skill' });
-  for (const k2 in piles) if (!(FA.isUnlockKind(k2) && !G.stock[k2])) list.push({ d: piles[k2].x + piles[k2].y, o: k2, t: 'pile' });   // Cores and keys only show while there are any
+  for (const k2 in piles) list.push({ d: piles[k2].x + piles[k2].y, o: k2, t: 'pile' });   // only the kinds that are in the Stockpile have a stack
   const piles2 = [];
+  list.push({ d: FA.qTile().x + FA.qTile().y + 1, t: 'q' });
   for (const o of f.floor) {
     const g = o.z <= 0 && piles2.find(q => q.kind === o.kind && Math.abs(q.x - o.x) < 0.45 && Math.abs(q.y - o.y) < 0.45);
     if (g) g.items.push(o); else piles2.push({ kind: o.kind, x: o.x, y: o.y, items: [o] });
@@ -295,6 +296,7 @@ R.drawFactory = function (main, dt) {
       case 'bld': R.drawBuilding(ctx, v, it.o, t); break;
       case 'portal': R.drawPortal(ctx, v, t, it.o); break;
       case 'pile': R.drawPile(ctx, v, it.o, piles[it.o]); break;
+      case 'q': R.drawQ(ctx, v, t); break;
       case 'floor': R.drawFloor(ctx, v, it.o.items[0], t); break;
       case 'floorG': R.drawFloorPile(ctx, v, it.o, t); break;
       case 'fly': R.drawFly(ctx, v, it.o, t); break;
@@ -503,7 +505,7 @@ R.drawBuilding = function (ctx, v, b, t) {
       R.pile(ctx, R.rep(k, have), x, base - 44, t, i + b.id);
       R.pile(ctx, R.rep(k, (cost[k] || 0) - have), x, base - 44 - have * 8, t, 0, 0.35);
     });
-    if (R.inTip(b)) R.bar(ctx, p[0], top + 76, 72, got / tot, '#7be0ff');
+    R.rim(ctx, v, p, got / tot, '#7be0ff', 0.86);
     return;
   }
   const tip = R.inTip(b);   // info panels (recipes, battery bars, counts) only near the Builder
@@ -536,9 +538,10 @@ R.drawBuilding = function (ctx, v, b, t) {
       const a = b.anim * 2 + i * 2.094;
       R.item(ctx, b.out[i].kind, p[0] + Math.cos(a) * 32, cy - 34 + Math.sin(a) * 12, 4, t, false);
     }
-    if (!growing && b.shake <= 0 && b.out.length < CFG.buffer) R.bar(ctx, p[0], base + 2, 48, b.timer / FA.cycle(b), ELEM[el].color, 8);
+    if (growing) R.rim(ctx, v, p, grow, ELEM[el].color, 0.88);   // the crystal growing back
+    else if (b.shake <= 0 && b.out.length < CFG.buffer) R.rim(ctx, v, p, b.timer / FA.cycle(b), ELEM[el].color, 0.88);
     // a half-cranked packet stays on the Harnesser when the Builder walks away: a second, white-edged bar keeps what he put in
-    if (b.hand > 0 && !(G.bd.gather && G.bd.gather.b === b)) { R.bar(ctx, p[0], base + 22, 48, b.hand, ELEM[el].color, 8); dspr(ctx, SP.ic_hand, p[0] - 40, base + 28, 2); }
+    if (b.hand > 0 && !(G.bd.gather && G.bd.gather.b === b)) R.rim(ctx, v, p, b.hand, '#ffffff', 0.68);
     if (!b.powered && b.draw > 0) R.noPower(ctx, p[0], top + 20, t);
     else if (FA.shrineBoost(b) > 1 && Math.sin(t * 6) > -0.3) {   // shrine boost: a pulsing rim (the stream from the portal is drawn in R.drawShrineStreams)
       ctx.strokeStyle = ELEM[el].color; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw * 0.95, v.hh * 0.95); ctx.stroke();
@@ -572,11 +575,11 @@ R.drawBuilding = function (ctx, v, b, t) {
         R.pile(ctx, R.rep(k, have), x, base - 70, t, i + b.id);
         R.pile(ctx, R.rep(k, R2.in[k] - have), x, base - 70 - have * 8, t, 0, 0.35);
       });
-      if (b.prog > 0) R.bar(ctx, p[0], top + 52, 84, b.prog / R2.time, ITEMS[R2.out].color);
-      if (b.type === 'spawner' && b.prog > 0) {   // the creature being hatched, as a small icon in a state box (nothing while it idles: the faint Egg ghost beside it says what it will make)
-        const cs = SP[ITEMS[R2.out].creature], k = Math.max(1, Math.floor(36 / Math.max(cs.c.width, cs.c.height)));
-        pbox(ctx, p[0] - 28, top - 6, 56, 52, '#2b1d48');
-        dspr(ctx, cs, p[0], top + 40 + (Math.sin(t * 5) > 0 ? 0 : 4), k);
+      if (b.prog > 0) R.rim(ctx, v, p, b.prog / R2.time, ITEMS[R2.out].color, 0.88);
+      if (b.type === 'spawner' && b.prog > 0) {   // the creature being hatched looks out of a little window set into the building's own face (nothing while it idles)
+        const cs = SP[ITEMS[R2.out].creature], k = Math.max(1, Math.floor(24 / Math.max(cs.c.width, cs.c.height)));
+        pbox(ctx, p[0] - 20, base - 68, 40, 36, '#2b1d48');   // sits over the clutch's big egg, inside the building's own outline
+        dspr(ctx, cs, p[0], base - 38 + (Math.sin(t * 5) > 0 ? 0 : 4), k);
       }
       if (b.draw > 0 && !b.powered) R.noPower(ctx, p[0], top - 16, t);
     } else dspr(ctx, SP.ic_lock, p[0], top + 44, 4);
@@ -607,15 +610,14 @@ R.drawBuilding = function (ctx, v, b, t) {
       }
       if (Math.sin(t * 10) > 0) dspr(ctx, SP.ic_bolt, p[0] + 40, base - 70, 4);
     }
-    if (tip) R.bar(ctx, p[0], top + 96, 64, Math.min(1, fr), b.bat > 0 ? (fr >= 1 ? '#3ad06b' : '#ffd93a') : '#8a8a8a');
-    if (tip && fr > 1) R.bar(ctx, p[0], top + 110, 64, (fr - 1) / (CFG.overcharge.max - 1), '#fff07a', 8);   // the charge past full
+    // two level gauges set into the housing itself: the charge on its left face, the fuel waiting to burn on its right face
+    const hv = b.type === 'heavybat', gw = 9, gh = hv ? 11 : 8;
+    R.faceGauge(ctx, p[0], base, -1, gw, gh, Math.min(1, fr), fr > 1 ? '#fff07a' : fr >= 1 ? '#3ad06b' : '#ffd93a');
+    { let fk = null; for (const k in b.fuel) if (b.fuel[k] > 0 && (!fk || b.fuel[k] > b.fuel[fk])) fk = k;
+      R.faceGauge(ctx, p[0], base, 1, gw, gh, FA.fuelTotal(b) / CFG.fuelCap, fk ? (ELEM[fk] ? ELEM[fk].color : fk === 'wood' ? '#c88a52' : '#c4cad4') : '#8a8a8a'); }
     if (b.bat > 0 && Math.sin(t * 8) > 0) {
       ctx.fillStyle = '#fff07a';
       for (let i = 0; i < 5; i++) ctx.fillRect(Math.round((p[0] - 20 + i * 10) / 4) * 4, Math.round((base - 60 + (i % 2 ? -8 : 8)) / 4) * 4, 8, 4);
-    }
-    if (FA.fuelTotal(b) > 0) {   // the fuel waiting to burn, one item per packet's worth
-      const fuel = []; for (const k in b.fuel) for (let i = 0; i < Math.ceil(b.fuel[k] / (CFG.fuelPerPacket * (1 + CFG.chargeBonus)) - 0.01); i++) fuel.push(k);
-      R.pile(ctx, fuel, p[0] + 40, base - 20, t, b.id);
     }
   }
   if (d.kind === 'splitter') R.pile(ctx, b.out.map(o => o.kind), p[0], base - 40, t, b.id);
@@ -670,6 +672,7 @@ R.outlineObj = function (ctx, v, o, col, t, k) {
     ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.closePath(); ctx.stroke();
   };
   if (o === 'zone') { const z = FA.zone(); quad(z.x0, z.y0, z.x1 + 1, z.y1 + 1); }
+  else if (o === 'q') { const q = FA.qTile(); quad(q.x, q.y, q.x + 1, q.y + 1); }
   else if (o.type === 'portal') { const q = FA.portal(o.which); quad(q.x, q.y, q.x + 1, q.y + 2); }
   else quad(o.x, o.y, o.x + 1, o.y + 1);
   ctx.setLineDash([]);
@@ -683,6 +686,52 @@ R.noPower = function (ctx, x, y, t) {
   if (Math.sin(t * 8) < -0.2) return;
   pbox(ctx, x - 16, y - 16, 32, 32, '#e8304a');
   dspr(ctx, SP.ic_bolt, x, y + 12, 4);
+};
+// a gauge that lies on the ground inside the tile: a rail along the two front edges of the footprint (left corner, front corner, right corner), filled
+// from the left. k insets it (several gauges = several rails, outer to inner), so nothing sticks out of the building's own tile.
+R.rim = function (ctx, v, p, fr, col, k) {
+  const q = R.px, sn = x => Math.round(x / q) * q;
+  const L = [sn(p[0] - v.hw * k), sn(p[1])], B = [sn(p[0]), sn(p[1] + v.hh * k)], Rr = [sn(p[0] + v.hw * k), sn(p[1])];
+  ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
+  ctx.strokeStyle = '#2b1d48'; ctx.lineWidth = 12;
+  ctx.beginPath(); ctx.moveTo(L[0], L[1]); ctx.lineTo(B[0], B[1]); ctx.lineTo(Rr[0], Rr[1]); ctx.stroke();
+  fr = Math.max(0, Math.min(1, fr));
+  if (fr <= 0) return;
+  ctx.strokeStyle = col; ctx.lineWidth = 8;
+  const f1 = Math.min(1, fr * 2), f2 = Math.max(0, fr * 2 - 1);
+  ctx.beginPath(); ctx.moveTo(L[0], L[1]); ctx.lineTo(sn(L[0] + (B[0] - L[0]) * f1), sn(L[1] + (B[1] - L[1]) * f1));
+  if (f2 > 0) ctx.lineTo(sn(B[0] + (Rr[0] - B[0]) * f2), sn(B[1] + (Rr[1] - B[1]) * f2));
+  ctx.stroke();
+};
+// the ? station: a pad off the Stockpile's top-left edge; what was last thrown at it floats over it with a one-line use
+R.drawQ = function (ctx, v, t) {
+  const q = FA.qTile(), p = R.toScreen(v, q.x + 0.5, q.y + 0.5), S = 4, base = p[1] + v.hh * 0.9 - 2, f = G.fac.q;
+  ctx.fillStyle = '#c49258'; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill();
+  ctx.strokeStyle = '#f4d898'; ctx.lineWidth = 8; ctx.setLineDash([16, 16]); ctx.lineDashOffset = -Math.floor(t * 4) * 8; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.stroke(); ctx.setLineDash([]);
+  const w = f && f.age < 0.3 ? Math.sin(f.age / 0.3 * Math.PI) * 0.18 : 0;   // a thump when something hits it
+  dsprSq(ctx, SP.b_qstation, p[0], base, S, 1 + w, 1 - w);
+  if (!f) return;
+  const info = FA.qInfo(f.kind), W = 372, H = 112, cx = Math.max(W / 2 + 12, Math.min(CFG.HALF - W / 2 - 12, p[0])), x0 = Math.round(cx - W / 2), y0 = Math.max(176, Math.round(base - 112 - H)), tail = y0 + H < base - 110;   // never up under the top bar
+  ctx.globalAlpha = Math.min(1, f.t * 3, f.age * 6 + 0.2);
+  pbox(ctx, x0, y0, W, H, '#2b1d48', '#1a0f28');
+  if (tail) { ctx.fillStyle = '#2b1d48'; ctx.fillRect(Math.round(p[0] / 4) * 4 - 8, y0 + H, 16, 8); ctx.fillRect(Math.round(p[0] / 4) * 4 - 4, y0 + H + 8, 8, 4); }   // the tail pointing down at the station
+  pbox(ctx, x0 + 12, y0 + 16, 64, 64, '#4a3468', '#1a0f28');
+  const spr = R.spr(f.kind), k = spr ? Math.max(2, Math.floor(44 / Math.max(spr.c.width, spr.c.height))) : 1;
+  if (spr) dspr(ctx, spr, x0 + 44, y0 + 48 + spr.c.height * k / 2, k);
+  txt(ctx, info.name, x0 + 90, y0 + 36, 24, '#ffffff', 'left');
+  txt(ctx, info.use, x0 + 90, y0 + 62, 20, '#c8b8e8', 'left');
+  txt(ctx, info.stores ? 'Bounced into the Stockpile' : 'Cannot be stored: bounced back', x0 + 90, y0 + 90, 18, info.stores ? '#9dff9d' : '#ffb27a', 'left');
+  ctx.globalAlpha = 1;
+};
+// a level gauge set into one side face of a box sprite (side -1 = the left face, 1 = the right face; hw / h = the box's size in art pixels): art-pixel columns
+// whose bottoms slant like the face, filled from the bottom up to fr
+R.faceGauge = function (ctx, px, base, side, hw, h, fr, col) {
+  const X0 = Math.round(px / 4) * 4, gh = h - 3, n = Math.round(Math.max(0, Math.min(1, fr)) * gh);
+  for (let c = 0; c < hw - 2; c++) {
+    const ax = side < 0 ? -hw + 1 + c : 1 + c;
+    const edge = side < 0 ? (ax + 0.5 + hw) * 0.5 : hw / 2 - (ax + 0.5) * 0.5, yb = Math.floor(edge) - 2;
+    for (let j = 0; j < gh; j++) { ctx.fillStyle = j < n ? (j === n - 1 ? '#ffffff' : col) : '#1c1830'; ctx.fillRect(X0 + ax * 4, base + (yb - j) * 4, 4, 4); }
+  }
 };
 R.bar = function (ctx, x, y, w, fr, col, h) {
   h = h || 12;
@@ -765,7 +814,6 @@ R.drawPortal = function (ctx, v, t, which) {
     }
   }
   if (!skill) for (const s of f.sucks) R.drawSuck(ctx, v, s, base);
-  dspr(ctx, SP[skill ? 'ic_skill' : 'ic_portal'], base[0], base[1] - 160, 4);
   const q = f.portalQ.filter(e => e.which === which).length + (which === 'spell' ? f.eggQ.length : 0);
   if (q) txt(ctx, q + ' queued', base[0], base[1] - 146, 12, '#ffe36b', 'center', 'd');
 };
@@ -853,7 +901,7 @@ R.drawPile = function (ctx, v, k, pos) {
     const row = Math.floor(i / 5), col = i % 5;
     dspr(ctx, itemSprite(k), p[0] + (col - 2) * 12 + (row % 2) * 6, p[1] - row * 12 + ((col * 7) % 5) - 2, 4);
   }
-  txt(ctx, '' + n, p[0], p[1] + 30, 12, n > 0 ? (k === 'shard' ? '#e0b8ff' : '#ffffff') : '#ff9a9a', 'center', 'd');
+  txt(ctx, '' + n, p[0], p[1] + 30, 12, k === 'shard' ? '#e0b8ff' : '#ffffff', 'center', 'd');
 };
 // goal pointer in the factory: a bouncing arrow over the target, or an arrow on the edge pointing toward it
 R.drawHint = function (ctx, v, h, t) {
@@ -1058,23 +1106,20 @@ R.drawLock = function (ctx, v, t) {
 // the button label for the Builder's pick (take one item) and use (crank / rotate / switch) actions
 R.key = which => { const alt = Main.kbShared() && G.swapped; if (which === 'cycle') return R.padMode ? 'LT+X' : 'F'; return which === 'pick' ? (R.padMode ? 'A' : alt ? '.' : 'LMB') : (R.padMode ? 'X' : alt ? '/' : 'E'); };
 // f.list: up to two prompts ({t, a, key}); a second prompt over the same target stacks above the first
+// the Builder's button prompts live in a stack at the bottom-left, just above the hotbar (the first one lowest); the target itself only gets a ring
 R.drawFocus = function (ctx, v, f, t) {
-  f.list.forEach((e, i) => {
+  let row = 0;
+  f.list.forEach(e => {
     const tg = e.t, a = e.a;
-    if (tg.kind === 'floor' || tg.kind === 'pile' || tg.kind === 'shelf') return;   // no bubble over loose items, the Stockpile or the shelf: the item itself lights up (R.pickFx)
-    let x = tg.x, y = tg.y, lift = 120;
-    if (tg.kind === 'floor') lift = 56;
-    if (tg.kind === 'pile') lift = 74;
-    if (tg.kind === 'belt') lift = 56;
-    if (tg.kind === 'portal') { y = tg.o.y + (tg.o.y === FA.portal(tg.o.which).y ? 1 : 0); lift = 200; }
-    if (i && tg.o === f.list[0].t.o) lift += 48 * i;
-    const p = R.toScreen(v, x, y);
-    ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffec8c' : '#ffd23a'; ctx.lineWidth = 6;
-    if (tg.kind === 'bld' || tg.kind === 'belt') { diamond(ctx, p[0], p[1], v.hw * 1.02, v.hh * 1.02); ctx.stroke(); }
-    else if (tg.kind !== 'portal') { diamond(ctx, p[0], p[1], 28, 14); ctx.stroke(); }
-    const py = p[1] - lift + (Math.sin(t * 3) > 0 ? 0 : 4), mx = CFG.HALF * (R.org ? 2 : 1);
-    if (a.ic) R.iprompt(ctx, p[0], py, e.key ? R.key(e.key) : null, a.ic, mx, R.org, e.key === 'use' && !!G.bd.gather);
-    else R.prompt(ctx, p[0], py, e.key ? R.key(e.key) : null, a.label, mx, R.org);
+    if (tg.kind === 'floor' || tg.kind === 'pile' || tg.kind === 'shelf') return;   // no prompt for loose items, the Stockpile or the shelf: the item itself lights up (R.pickFx)
+    const y = CFG.H - 134 - row * 46;
+    if (a.ic) R.iprompt(ctx, 0, y, e.key ? R.key(e.key) : null, a.ic, CFG.HALF, 16, e.key === 'use' && !!G.bd.gather);
+    else R.prompt(ctx, 0, y, e.key ? R.key(e.key) : null, a.label, CFG.HALF, 16);
+    row++;
+    if (tg.kind === 'bld' || tg.kind === 'belt') {
+      const p = R.toScreen(v, tg.x, tg.y);
+      ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffec8c' : '#ffd23a'; ctx.lineWidth = 6; diamond(ctx, p[0], p[1], v.hw * 1.02, v.hh * 1.02); ctx.stroke();
+    }
   });
 };
 R.prompt = function (ctx, x, y, key, label, maxX, minX) {

@@ -85,7 +85,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
       else {
         s += line(UI.img('ic_xp', 16), E.gems + ' XP gems' + (kind === 'crafted' && !CFG.crafted.eliteShards ? '' : eliteShard));
         if (I.els.length) {
-          s += line(coreIcons(I.els), 'always ' + C.elite[0] + '-' + C.elite[1] + ' Cores' + (I.els.length > 1 ? ' of each element' : ''));
+          s += line(coreIcons(I.els), 'always ' + (C.elite[0] === C.elite[1] ? C.elite[0] : C.elite[0] + '-' + C.elite[1]) + ' Core' + (C.elite[1] > 1 ? 's' : '') + (I.els.length > 1 ? ' of each element' : ''));
           s += I.els.map(e => line(UI.img('key_' + e, 16), KEY_NAME(e) + ' if it is your first ' + ELEM_WORD[e] + ' elite', have(A.key[e] || A.got['key_' + e], 'GOT IT', 'NOT YET'))).join('');
         } else s += line(UI.img('ic_x', 16), 'no element: no Cores, no Ward Key');
       }
@@ -118,7 +118,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
       if (by(1).length) h += line(UI.img(by(1)[0], 16), by(1).map(nm).join(', ') + ': ' + pct(C.basic));
       if (by(2).length) h += line(UI.img(by(2)[0], 16), by(2).map(nm).join(', ') + ': ' + pct(C.pair));
       if (by(3).length) h += line(UI.img(by(3)[0], 16), by(3).map(nm).join(', ') + ': ' + pct(C.triple));
-      return h + line(UI.img('ic_crown', 16), 'any elite of it: ' + C.elite[0] + '-' + C.elite[1] + ' for sure') + '</div>';
+      return h + line(UI.img('ic_crown', 16), 'any elite of it: ' + (C.elite[0] === C.elite[1] ? C.elite[0] : C.elite[0] + '-' + C.elite[1]) + ' for sure') + '</div>';
     }).join('');
   }
   function creatureRows(id) {

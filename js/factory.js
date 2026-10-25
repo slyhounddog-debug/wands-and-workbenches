@@ -16,15 +16,70 @@ FA.base = () => CFG.factory.base;
 FA.portalCells = () => { const p = G.fac.pp; return [{ x: p.x, y: p.y, which: 'spell' }, { x: p.x, y: p.y + 1, which: 'spell' }, { x: p.x, y: p.y + 4, which: 'skill' }, { x: p.x, y: p.y + 5, which: 'skill' }]; };
 FA.portal = which => { const p = G.fac.pp; return { x: p.x, y: which === 'skill' ? p.y + 4 : p.y }; };   // top cell of a portal
 FA.zone = () => { const B = CFG.factory.base; return { x0: B.x0, y0: B.y0 + B.h - 5, x1: B.x0 + 4, y1: B.y0 + B.h - 1 }; };
+// The Stockpile is a loose 5x5 pad: every kind that is in it sits in a stack of its own, in the first free spot, so no two stacks touch. A kind with none
+// left gives its spot up (G.fac.slots: kind -> spot index, kept by FA.pileSync).
+FA.slotPts = () => {   // nine spots 1.7 tiles apart (the centre first), then the gaps between them, then the edges
+  const z = FA.zone(), x = z.x0, y = z.y0, out = [];
+  for (const [i, j] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]) out.push({ x: x + 2.5 + i * 1.7, y: y + 2.5 + j * 1.7 });
+  for (const [i, j] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) out.push({ x: x + 2.5 + i * 1.7, y: y + 2.5 + j * 1.7 });
+  for (const [i, j] of [[-0.5, -1.5], [0.5, -1.5], [-0.5, 1.5], [0.5, 1.5], [-1.5, -0.5], [-1.5, 0.5], [1.5, -0.5], [1.5, 0.5]]) out.push({ x: x + 2.5 + i * 1.5, y: y + 2.5 + j * 1.5 });
+  return out;
+};
+FA.pileSync = () => {
+  const f = G.fac, s = f.slots || (f.slots = {}), air = {};
+  for (const o of f.flying) if (o.stock) air[o.kind] = true;
+  for (const k in s) if (!(G.stock[k] > 0) && !air[k]) delete s[k];
+  for (const k in G.stock) if (G.stock[k] > 0) FA.slotFor(k);
+};
+FA.slotFor = k => {
+  const s = G.fac.slots || (G.fac.slots = {});
+  if (s[k] === undefined) { const used = {}; for (const q in s) used[s[q]] = true; let i = 0; while (used[i]) i++; s[k] = i; }
+  return s[k];
+};
+// where a kind's stack is (or would be): assign = reserve its spot now (a flight is on its way)
+FA.pileSpot = (k, assign) => {
+  const pts = FA.slotPts(), s = G.fac.slots || {};
+  if (assign) return pts[FA.slotFor(k) % pts.length];
+  if (s[k] !== undefined) return pts[s[k] % pts.length];
+  const used = {}; for (const q in s) used[s[q]] = true; let i = 0; while (used[i]) i++;
+  return pts[i % pts.length];
+};
+// the stacks that exist right now: only kinds with something in the Stockpile
 FA.piles = () => {
-  const z = FA.zone(), x = z.x0, y = z.y0;
-  // a 2x2 block on screen: wood | stone over iron | shard (the zone is 5x5 in the south-west corner of the base floor)
-  // the four spell spots (element packets the Wizard picked up) sit at the corners of the zone around them
-  return { wood: { x: x + 1.0, y: y + 2.5 }, stone: { x: x + 2.5, y: y + 1.0 }, iron: { x: x + 3.1, y: y + 4.6 }, shard: { x: x + 4.6, y: y + 3.1 }, core: { x: x + 4.3, y: y + 1.7 },
-    air: { x: x + 0.8, y: y + 0.7 }, water: { x: x + 0.7, y: y + 4.3 }, fire: { x: x + 4.6, y: y + 0.4 }, earth: { x: x + 4.5, y: y + 4.7 },
-    // the element Cores (a 2x2 block on screen in the middle) and the Ward Keys (near their element's corner): only drawn while there are any
-    core_air: { x: x + 2.0, y: y + 2.0 }, core_water: { x: x + 3.0, y: y + 2.0 }, core_fire: { x: x + 2.0, y: y + 3.0 }, core_earth: { x: x + 3.0, y: y + 3.0 },
-    key_air: { x: x + 1.5, y: y + 1.5 }, key_water: { x: x + 1.4, y: y + 3.6 }, key_fire: { x: x + 3.7, y: y + 1.0 }, key_earth: { x: x + 3.7, y: y + 3.9 } };
+  const out = {}, s = G.fac.slots || {}, pts = FA.slotPts();
+  for (const k in s) if (G.stock[k] > 0) out[k] = pts[s[k] % pts.length];
+  return out;
+};
+// The ? station: one tile off the Stockpile's top-left edge. Throw anything at it: it bounces off into the Stockpile (or back to the Builder when that
+// cannot be stored) and a short note floats over it saying what the thing is for (G.fac.q = { kind, t, age }).
+FA.qTile = () => { const z = FA.zone(); return { x: z.x0 - 1, y: z.y0 }; };
+FA.isQ = (x, y) => { const q = FA.qTile(); return x === q.x && y === q.y; };
+FA.qInfo = function (k) {
+  let use;
+  if (k === 'wood' || k === 'stone') use = 'Builds things. Burns in a Battery.';
+  else if (k === 'iron') use = 'Builds Forges, Armory, Batteries.';
+  else if (k === 'shard') use = 'Rare. Spawners, Altar, garments.';
+  else if (k === 'core') use = 'Unlocks Summoning in the tree.';
+  else if (isCoreKind(k)) use = 'Opens a Shrine. Forges garments.';
+  else if (isKeyKind(k)) use = 'Opens that Stronghold door.';
+  else if (ELEM[k]) use = 'Feeds Forge, Spawner, Battery.';
+  else if (ITEMS[k] && ITEMS[k].spell) use = 'Cast it: Spell Portal. Bank it: Skill.';
+  else if (k === 'potion' || k === 'elixir') use = 'Heals the Wizard via the Spell Portal.';
+  else if (k === 'armor' || k === 'plate') use = 'Armors the Wizard via the Spell Portal.';
+  else if (ITEMS[k] && ITEMS[k].egg) use = 'Spell Portal: hatches beside the Wizard.';
+  else if (ITEMS[k] && ITEMS[k].aug) use = 'Spell Portal: the Wizard wears it.';
+  else if (k === 'sigil') use = 'Spell Portal: summons the Chimera.';
+  else use = 'Throw it into a machine or portal.';
+  return { name: itemName(k), use, stores: !!(RES[k] || ELEM[k]) };
+};
+FA.qHit = function (o, bounce) {
+  const f = G.fac, k = o.kind, info = FA.qInfo(k);
+  f.q = { kind: k, t: CFG.qShow, age: 0 };
+  if (info.stores) {   // boings off the station and into its pile
+    const sp = FA.pileSpot(k, true);
+    FA.impact(o); AU.sfx('boing');
+    f.flying.push({ kind: k, n: 1, stock: true, q: true, boing: true, sx: o.x, sy: o.y, x: o.x, y: o.y, z: 0.8, tx: sp.x, ty: sp.y, t: 0, T: 0.6, h: 1.7 });
+  } else bounce();   // it cannot be stored: back toward the Builder like any refusal
 };
 FA.inb = (x, y) => x >= 0 && y >= 0 && x < G.fac.w && y < G.fac.h;
 FA.owned = (x, y) => FA.inb(x, y) && G.fac.land[y * G.fac.w + x] === 1;   // is this tile factory floor?
@@ -74,7 +129,7 @@ FA.fresh = function (w, h) {
   const f = { w, h, grid: new Array(w * h).fill(null), land: new Array(w * h).fill(0), pp: { x: 0, y: 0 }, added: 0, bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
     portalQ: [], eggQ: [], portalT: 0, nextId: 1, gen: 0, demand: 0, lowT: 0, flash: 0, flashCol: '#fff', skillFlash: 0, t: 0,
     log: { spell: [], skill: [] }, working: 0, thumps: [], sucks: [], bump: 0, bumpAmp: 0, weakFlash: 0, stockNext: 0,
-    rings: [], waves: [], shelf: [],   // throw impact rings, Spell Portal shockwaves; shelf = the garments on the Wardrobe Shelf (ids)
+    rings: [], waves: [], shelf: [], slots: {}, q: null,   // throw impact rings, Spell Portal shockwaves; shelf = the garments on the Wardrobe Shelf (ids)
     elAct: { air: 0, water: 0, fire: 0, earth: 0 }, weather: { air: 0, water: 0, fire: 0, earth: 0 } };   // element packets handled lately -> the wilds' weather (0..1 each)
   return f;
 };
@@ -110,7 +165,7 @@ FA.freshBuilder = () => { const B = CFG.factory.base; return { x: B.x0 + 6.5, y:
 // Floor Tiles: a blueprint placed just outside the floor; thrown its materials like any building, it turns into floor when finished.
 // The Iron cost only starts after the first CFG.factory.freeIron tiles were placed.
 FA.tileCost = () => { const c = Object.assign({}, CFG.buildings.expand.cost); if (G.fac.added >= CFG.factory.freeIron) c.iron = 1; return c; };
-FA.canExpand = (x, y) => FA.inb(x, y) && !FA.owned(x, y) && !FA.reserved(x, y) && !FA.shelfTile(x, y) && !G.fac.grid[y * G.fac.w + x] &&
+FA.canExpand = (x, y) => FA.inb(x, y) && !FA.owned(x, y) && !FA.reserved(x, y) && !FA.isQ(x, y) && !FA.shelfTile(x, y) && !G.fac.grid[y * G.fac.w + x] &&
   DIRS.some(d => FA.owned(x + d[0], y + d[1]));
 FA.costOf = b => b.cost || FA.def(b).cost;   // a Floor Tile's cost depends on how many came before it
 FA.finishTile = function (b) {   // the blueprint is paid for: the tile becomes floor and the blueprint goes away
@@ -127,7 +182,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   const f = G.fac, d = CFG.buildings[type];
   const b = { id: f.nextId++, type, x, y, dir: dir || 0, done: !!done, free: !!free, got: {}, out: [], timer: 0,
     powered: true, draw: 0, pop: 0, anim: Math.random() * 6 };
-  if (d.kind === 'crafter') { b.recipe = null; b.inv = {}; b.prog = 0; }
+  if (d.kind === 'crafter') { b.recipe = null; b.inv = {}; b.prog = 0; if (type === 'spawner') { b.settle = 0; b.hold = false; b.goal = null; } }
   if (d.kind === 'cell') { b.bat = 0; b.over = 0; b.top = false; b.fuel = { air: 0, water: 0, fire: 0, earth: 0, wood: 0, stone: 0 }; b.types = []; }   // bat = charge, fuel = what is waiting to burn, top = it was topped up lately (counts once per charge)
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
   if (d.kind === 'harness') { b.hand = 0; b.el = 'air'; b.grow = CFG.harness.growT; b.shake = 0; }   // hand: how far the Builder has cranked the next packet (it stays when he walks away); el / grow: the element crystal and how far it has grown
@@ -141,7 +196,7 @@ FA.onComplete = function (b, quiet) {
   b.done = true;
   if (FA.def(b).kind === 'harness' && !quiet) { b.grow = 0; b.shake = 0; }   // a new Harnesser grows its crystal first
   if (FA.def(b).kind === 'expand') { FA.finishTile(b); return; }
-  if (FA.def(b).kind === 'crafter' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
+  if (FA.def(b).kind === 'crafter' && !b.recipe && b.type !== 'spawner') b.recipe = FA.recipesFor(b.type)[0] || null;
   if (!quiet) {
     FA.burst(b.x + 0.5, b.y + 0.5, '#ffe36b', 22);
     AU.sfx('complete');
@@ -178,13 +233,12 @@ FA.eburst = function (x, y, el, n) {
 FA.pop = function (x, y, text, col) { G.fac.pops.push({ x, y, text, col: col || '#fff', t: 0 }); };
 // an icon pop instead of words: a row of [spriteKey, number?] floating up
 FA.ipop = function (x, y, ic) { G.fac.pops.push({ x, y, ic, t: 0 }); };
-FA.pileIn = k => { const p = FA.piles()[k]; if (p) FA.ipop(p.x, p.y - 0.4, [[k]]); };   // a harvest reached the Stockpile
+FA.pileIn = k => { const p = FA.pileSpot(k, true); if (p) FA.ipop(p.x, p.y - 0.4, [[k]]); };   // a harvest reached the Stockpile
 // something for the Stockpile (from the wilds: harvests, shards, Cores, spells, gifts) comes out of the Spell Portal and flies to its pile;
 // the count goes up when it lands. Up to 6 flights share n, a beat apart. The save counts anything still in the air as already there.
 FA.toStock = function (kind, n) {
   n = n || 1;
-  const f = G.fac, p = FA.piles()[kind], port = FA.portal('spell');
-  if (!p) { G.stock[kind] = (G.stock[kind] || 0) + n; return; }
+  const f = G.fac, p = FA.pileSpot(kind, true), port = FA.portal('spell');
   const px = port.x + 0.5, py = port.y + 1, d = Math.hypot(p.x - px, p.y - py), fl = Math.min(n, 6);
   for (let i = 0; i < fl; i++) {
     const delay = Math.max(0, f.stockNext - f.t);
@@ -203,13 +257,16 @@ FA.say = a => { if (a.ic) FA.ipop(G.bd.x, G.bd.y - 0.3, a.ic.map(k => [k])); els
 // ---------- the Wardrobe Shelf ----------
 // The garment the Wizard takes off flies through the portal to a shelf beside the Spell Portal; the Builder takes it from there and can send it back whenever
 // he likes. The shelf is not a building: it grows one slot (a tile along the factory's north edge, starting at the portal's column) per stored garment, so
-// there is nothing there until the first garment comes home. FA.shelfTiles lists every tile it could ever use (nothing is built or expanded on them).
-FA.shelfTiles = () => { const p = G.fac.pp, out = []; for (let i = 0; i < CFG.aug.wardrobeMax; i++) out.push({ x: p.x - i, y: p.y - 2 }); return out; };
-FA.shelfTile = (x, y) => !!G.fac.pp && FA.shelfTiles().some(t => t.x === x && t.y === y);
-FA.shelfSlot = i => { const all = FA.shelfTiles(), free = all.filter(q => !FA.owned(q.x, q.y)), a = free.length ? free : all; return a[Math.min(i, a.length - 1)]; };
+// there is nothing there until the first garment comes home. Only the tiles a stored garment (or one still flying in) stands on are kept clear: every other
+// tile along the edge can be built on or turned into floor like any other, and a slot that was built on meanwhile is skipped.
+FA.shelfTiles = () => { const p = G.fac.pp, out = []; for (let i = 0; i < CFG.aug.wardrobeMax * 2; i++) out.push({ x: p.x - i, y: p.y - 2 }); return out; };
+FA.shelfUsed = () => G.fac.shelf.length + G.fac.flying.filter(o => o.shelf).length;
+FA.shelfSlots = n => FA.shelfTiles().filter(q => FA.inb(q.x, q.y) && !G.fac.grid[q.y * G.fac.w + q.x]).slice(0, Math.max(0, n));
+FA.shelfTile = (x, y) => !!G.fac.pp && FA.shelfSlots(FA.shelfUsed()).some(t => t.x === x && t.y === y);
+FA.shelfSlot = i => { const a = FA.shelfSlots(i + 1); return a[Math.min(i, a.length - 1)] || FA.shelfTiles()[0]; };
 FA.shelfAdd = id => { const s = G.fac.shelf; if (AUGS[id] && s.indexOf(id) < 0) { s.push(id); UI.changed(); } };
 FA.toShelf = function (id, delay) {   // out of the Spell Portal and across to the next free slot
-  const f = G.fac, port = FA.portal('spell'), s = FA.shelfSlot(f.shelf.length + f.flying.filter(o => o.shelf).length);
+  const f = G.fac, port = FA.portal('spell'), s = FA.shelfSlot(FA.shelfUsed());
   const px = port.x + 0.5, py = port.y + 1, tx = s.x + 0.5, ty = s.y + 0.5, d = Math.hypot(tx - px, ty - py);
   f.flying.push({ kind: 'aug_' + id, shelf: id, sx: px, sy: py, x: px, y: py, z: 0.8, tx, ty, t: -(delay || 0), T: Math.min(1.6, 0.6 + d * 0.06), h: 1.5 + d * 0.15 });
 };
@@ -328,8 +385,29 @@ FA.demolish = function (x, y, force) {
 // and a Triple / the Nova needs its parent spells to have been MADE at least once (G.stats.made, counted from crafter output)
 FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (!r.aug || !FA.augMade(r.aug)) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
 FA.recipesFor = type => Object.keys(CFG.recipes).filter(id => CFG.recipes[id].machine === type && FA.recipeOk(id));
+// The Creature Spawner has no recipe to choose: the elements it is holding decide. Each creature is one packet of each of its elements, so the SET of elements
+// inside names the creature (Air = Zephyr Wisp, Fire + Air = Cinder Phoenix ...). A set that is also part of a bigger creature waits CFG.spawnSettle seconds
+// after the last packet arrived, in case that bigger one is coming.
+FA.spawnerHave = b => Object.keys(b.inv).filter(k => b.inv[k] > 0);
+FA.spawnerPick = function (b) {
+  const have = FA.spawnerHave(b);
+  let rid = null, goal = null, bigger = false;
+  for (const id of FA.recipesFor('spawner')) {
+    const ks = Object.keys(CFG.recipes[id].in), within = have.every(k => ks.indexOf(k) >= 0);
+    if (!within) continue;
+    if (ks.length === have.length) rid = id; else { bigger = true; if (!goal) goal = id; }
+  }
+  return { rid, goal, bigger };
+};
+// would a Spawner holding b.inv still be on the way to some creature if it also took one of kind?
+FA.spawnerTakes = function (b, kind) {
+  if (!ELEM[kind] || (b.inv[kind] || 0) >= 3) return false;
+  const have = FA.spawnerHave(b);
+  if (have.indexOf(kind) < 0) have.push(kind);
+  return FA.recipesFor('spawner').some(id => { const ks = Object.keys(CFG.recipes[id].in); return have.every(k => ks.indexOf(k) >= 0); });
+};
 FA.refreshRecipes = function () {
-  for (const b of G.fac.bld) if (b.done && FA.def(b).kind === 'crafter' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
+  for (const b of G.fac.bld) if (b.done && FA.def(b).kind === 'crafter' && b.type !== 'spawner' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
 };
 FA.setRecipe = function (b, id) {
   b.recipe = id; b.prog = 0;
@@ -345,6 +423,7 @@ FA.crafterReady = function (b) {   // power draw wanted (or -1 = ready with no p
   if (!b.done || !b.recipe) return 0;
   const R = CFG.recipes[b.recipe];
   if (b.out.length >= CFG.buffer) return 0;
+  if (b.type === 'spawner' && b.hold && b.settle > 0) return 0;   // a bigger creature may still be coming
   for (const k in R.in) if ((b.inv[k] || 0) < R.in[k]) return 0;
   return R.power || -1;
 };
@@ -355,6 +434,7 @@ FA.canInsert = function (b, kind) {
   if (!b.done) return (FA.needOf(b)[kind] || 0) > 0;
   const d = FA.def(b);
   if (d.kind === 'crafter') {
+    if (b.type === 'spawner') return FA.spawnerTakes(b, kind);
     if (!b.recipe) return false;
     const need = CFG.recipes[b.recipe].in[kind];
     return !!need && (b.inv[kind] || 0) < Math.max(6, need * 3);
@@ -372,7 +452,7 @@ FA.insert = function (b, kind, thrown) {
     return;
   }
   const d = FA.def(b);
-  if (d.kind === 'crafter') b.inv[kind] = (b.inv[kind] || 0) + 1;
+  if (d.kind === 'crafter') { b.inv[kind] = (b.inv[kind] || 0) + 1; if (b.type === 'spawner') b.settle = CFG.spawnSettle; }
   else if (FA.isLogi(b)) b.out.push({ kind });
   if (d.kind === 'cell') {   // fuel waits in the Battery and burns into charge (FA.updCell)
     if (ELEM[kind]) FA.elTick(kind);   // the weather feels it, and the packet below still fuels the Battery
@@ -637,7 +717,7 @@ FA.state = function (b) {
   if (k === 'crafter') {
     if (b.out.length >= CFG.buffer) return 'full';
     if (b.out.length && b.blocked) return 'jam';
-    if (!b.recipe) return 'starve';
+    if (!b.recipe) return b.type === 'spawner' && FA.spawnerHave(b).length ? 'missing' : 'starve';
     if (b.draw > 0 && !b.powered) return 'off';
     if (FA.crafterReady(b) !== 0) return 'work';
     return Object.keys(CFG.recipes[b.recipe].in).some(i => (b.inv[i] || 0) > 0) ? 'missing' : 'starve';
@@ -654,6 +734,11 @@ FA.state = function (b) {
 FA.stateSpeed = { work: 1, missing: 0.45, starve: 0.15, jam: 0.6, full: 0, off: 0 };
 // the first ingredient a crafter is still short of (shown as a ghost over it)
 FA.missingOf = function (b) {
+  if (b.type === 'spawner' && !b.recipe) {   // heading for a bigger creature: an element it does not hold yet
+    const g = b.goal && CFG.recipes[b.goal];
+    if (g) for (const k in g.in) if (!(b.inv[k] > 0)) return k;
+    return null;
+  }
   if (!b.recipe) return null;
   const R = CFG.recipes[b.recipe];
   for (const k in R.in) if ((b.inv[k] || 0) < R.in[k]) return k;
@@ -690,6 +775,7 @@ FA.power = function () {
 FA.update = function (dt) {
   const f = G.fac;
   f.t += dt;
+  FA.pileSync();
   if (f.flash > 0) f.flash -= dt;
   if (f.skillFlash > 0) f.skillFlash -= dt;
   if (f.weakFlash > 0) f.weakFlash -= dt;
@@ -729,6 +815,10 @@ FA.update = function (dt) {
     } else if (d.kind === 'crafter') {
       b.blocked = b.out.length > 0 && !FA.tryOut(b);
       b.od = FA.overdrive(b);
+      if (b.type === 'spawner') {   // the creature follows from what is inside (a craft under way keeps its recipe)
+        if (b.settle > 0) b.settle -= dt;
+        if (!(b.prog > 0)) { const pk = FA.spawnerPick(b); b.recipe = pk.rid; b.goal = pk.goal; b.hold = pk.bigger; }
+      }
       const w = FA.crafterReady(b);
       if (w !== 0) {
         if (b.powered) {
@@ -788,7 +878,7 @@ FA.update = function (dt) {
     const o = f.flying[i];
     o.t += dt;
     const k = Math.min(1, Math.max(0, o.t / o.T));
-    if (o.stock && o.t - dt < 0 && o.t >= 0) { FA.burst(o.sx, o.sy, ITEMS[o.kind].color, 5); f.flash = Math.max(f.flash, 0.12); f.flashCol = '#ffffff'; }   // it leaves the Spell Portal
+    if (o.stock && !o.q && o.t - dt < 0 && o.t >= 0) { FA.burst(o.sx, o.sy, ITEMS[o.kind].color, 5); f.flash = Math.max(f.flash, 0.12); f.flashCol = '#ffffff'; }   // it leaves the Spell Portal
     o.x = o.sx + (o.tx - o.sx) * k; o.y = o.sy + (o.ty - o.sy) * k; o.z = Math.sin(k * Math.PI) * o.h + (1 - k) * 0.8;
     if (k >= 1) { f.flying.splice(i, 1); FA.land(o); }
   }
@@ -797,7 +887,9 @@ FA.update = function (dt) {
     if (o.z > 0 || o.vz > 0) { o.z += o.vz * dt; o.vz -= 14 * dt; if (o.z <= 0) { o.z = 0; o.vz = Math.abs(o.vz) > 2 ? -o.vz * 0.35 : 0; } }
   }
   FA.gatherFloor(dt);
+  FA.absorbFloor();
   FA.autoPick(dt);
+  if (f.q) { f.q.age += dt; if ((f.q.t -= dt) <= 0) f.q = null; }
   for (let i = f.parts.length - 1; i >= 0; i--) {
     const p = f.parts[i];
     p.t -= dt; p.x += p.vx * dt * 0.5; p.y += p.vy * dt * 0.5; p.z += p.vz * dt; p.vz -= (p.g === undefined ? 9 : p.g) * dt;
@@ -811,6 +903,17 @@ FA.update = function (dt) {
   if (G.bd.squash > 0) G.bd.squash -= dt;
 };
 
+// anything resting on the Stockpile pad (or flung onto its edge) is taken back in
+FA.absorbFloor = function () {
+  const f = G.fac, z = FA.zone(), m = 0.15;
+  for (let i = f.floor.length - 1; i >= 0; i--) {
+    const o = f.floor[i];
+    if (o.z > 0.05 || !(RES[o.kind] || ELEM[o.kind])) continue;
+    if (o.x < z.x0 - m || o.x > z.x1 + 1 + m || o.y < z.y0 - m || o.y > z.y1 + 1 + m) continue;
+    f.floor.splice(i, 1);
+    G.stock[o.kind] = (G.stock[o.kind] || 0) + 1; FA.pileIn(o.kind); AU.sfx('drop'); UI.changed();
+  }
+};
 // a slight pickup range: a loose item that has settled within autoPick.r tiles of the Builder hops into his hands, one every autoPick.gap seconds
 FA.autoPick = function (dt) {
   const A = CFG.autoPick, bd = G.bd;
@@ -870,7 +973,7 @@ FA.updCell = function (b, dt) {
 
 // ---------- throwing ----------
 // will this receiver take a thrown item of kind k? (portal / belt / building / blueprint / the Stockpile Zone)
-FA.accepts = (o, k) => (o === 'zone' ? !!(RES[k] || ELEM[k]) : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item && FA.beltOk(k) : FA.canInsert(o, k) || FA.canOver(o, k));
+FA.accepts = (o, k) => (o === 'q' ? true : o === 'zone' ? !!(RES[k] || ELEM[k]) : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item && FA.beltOk(k) : FA.canInsert(o, k) || FA.canOver(o, k));
 // every receiver in throwing range that would take kind k, with a priority (lower = preferred)
 FA.throwList = function (k) {
   const bd = G.bd, out = [];
@@ -880,6 +983,7 @@ FA.throwList = function (k) {
     if (FA.canInsert(b, k)) add(b.x + 0.5, b.y + 0.5, b, b.done && FA.isLogi(b) ? 1.4 : 1);
     else if (FA.canOver(b, k)) add(b.x + 0.5, b.y + 0.5, b, 2.6);   // overcharging is on purpose: the portal stays the first choice for spells
   }
+  { const q = FA.qTile(); add(q.x + 0.5, q.y + 0.5, 'q', RES[k] || ELEM[k] ? 3 : 2.4); }
   if (RES[k] || ELEM[k]) { const z = FA.zone(); add((z.x0 + z.x1 + 1) / 2, (z.y0 + z.y1 + 1) / 2, 'zone', 1.1); }
   if (FA.beltOk(k)) for (const bl of G.fac.belts) if (!bl.item) add(bl.x + 0.5, bl.y + 0.5, bl, 2.2);
   return out;
@@ -930,6 +1034,7 @@ FA.throwTarget = function (aimX, aimY) {
     if (d > CFG.throwRange) { dx *= CFG.throwRange / d; dy *= CFG.throwRange / d; }
     const tx = bd.x + dx, ty = bd.y + dy, c = FA.cell(Math.floor(tx), Math.floor(ty));
     if (c && c.type !== 'belt') return { x: Math.floor(tx) + 0.5, y: Math.floor(ty) + 0.5, obj: c };
+    if (!c && FA.isQ(Math.floor(tx), Math.floor(ty))) { const q = FA.qTile(); return { x: q.x + 0.5, y: q.y + 0.5, obj: 'q' }; }
     if (!c && FA.reserved(Math.floor(tx), Math.floor(ty))) return { x: tx, y: ty, obj: 'zone' };
     return { x: tx, y: ty, obj: c || null };
   }
@@ -1025,6 +1130,7 @@ FA.land = function (o) {
     if (near()) return;   // it hit something that does not want it, but a neighbour that does is right there
     return bounce();
   }
+  if (FA.isQ(tx, ty)) { FA.qHit(o, bounce); return; }
   if (!FA.owned(tx, ty)) { bounce(); FA.ipop(o.x, o.y, [[o.kind], ['ic_x']]); return; }   // it came down off the edge of the floor
   if (FA.reserved(tx, ty) && (RES[o.kind] || ELEM[o.kind])) { G.stock[o.kind] = (G.stock[o.kind] || 0) + 1; FA.ipop(o.x, o.y, [[o.kind]]); AU.sfx('drop'); return; }
   if (!fell()) AU.sfx('thud');
@@ -1084,7 +1190,7 @@ FA.moveBuilder = function (dt, ix, iy) {
 };
 FA.distTo = function (t) {
   const bd = G.bd;
-  if (t.kind === 'pile') { const p = FA.piles()[t.o]; return Math.hypot(p.x - bd.x, p.y - bd.y); }
+  if (t.kind === 'pile') { const p = FA.pileSpot(t.o); return Math.hypot(p.x - bd.x, p.y - bd.y); }
   if (t.kind === 'shelf') return Math.hypot(t.x - bd.x, t.y - bd.y);
   if (t.kind === 'floor') return Math.hypot(t.o.x - bd.x, t.o.y - bd.y) + 0.4;
   return Math.hypot(t.o.x + 0.5 - bd.x, t.o.y + 0.5 - bd.y);
@@ -1124,7 +1230,7 @@ FA.updGather = function (dt) {
 FA.candidates = function () {
   const bd = G.bd, out = [], piles = FA.piles();
   for (const it of G.fac.floor) out.push({ kind: 'floor', o: it, x: it.x, y: it.y, r: 1.3 });
-  for (const k in piles) if (!(FA.isUnlockKind(k) && !G.stock[k])) out.push({ kind: 'pile', o: k, x: piles[k].x, y: piles[k].y, r: CFG.reach });
+  for (const k in piles) out.push({ kind: 'pile', o: k, x: piles[k].x, y: piles[k].y, r: CFG.reach });
   G.fac.shelf.forEach((id, i) => { const s = FA.shelfSlot(i); out.push({ kind: 'shelf', o: i, x: s.x + 0.5, y: s.y + 0.5, r: CFG.reach }); });
   for (const b of G.fac.bld) out.push({ kind: 'bld', o: b, x: b.x + 0.5, y: b.y + 0.5, r: CFG.reach });
   for (const p of FA.portalCells(G.fac.w, G.fac.h)) out.push({ kind: 'portal', o: FA.cell(p.x, p.y), x: p.x + 0.5, y: p.y + 0.5, r: CFG.reach });
@@ -1214,6 +1320,10 @@ FA.bldAction = function (b, pick) {
   if (pick) {
     if (d.kind === 'splitter') return h ? NONE : A('Set the split', () => UI.openSplit(b), false, ['ic_gear']);
     if (b.out.length) return FA.canHold(b.out[0].kind) ? A('Take ' + itemName(b.out[0].kind), () => FA.takeOut(b), true, [b.out[0].kind]) : FULL;
+    if (b.type === 'spawner' && !b.recipe && !(b.prog > 0) && !h) {   // a mix that names no creature yet: the Builder can take the packets back out
+      const k = FA.spawnerHave(b)[0];
+      if (k) return FA.canHold(k) ? A('Take back ' + itemName(k), () => { b.inv[k]--; FA.addHands(k, 1); b.pop = 0.2; AU.sfx('pickup'); }, true, [k]) : FULL;
+    }
     return NONE;
   }
   if (G.bd.gather && G.bd.gather.b === b) return A('Crank!', () => FA.crank(), false, [G.bd.gather.el]);
@@ -1223,7 +1333,7 @@ FA.bldAction = function (b, pick) {
     if (FA.growing(b)) return A('The crystal is still growing', null, false, ['ic_clock', b.el]);
     return FA.canHold(b.el) ? A('Hand-gather ' + ELEM[b.el].name + ' (tap to fill the meter)', () => FA.startGather(b), false, [b.el]) : FULL;
   }
-  if (d.kind === 'crafter') {
+  if (d.kind === 'crafter' && b.type !== 'spawner') {
     const list = FA.recipesFor(b.type);
     if (list.length > 1) {
       const nx = list[(list.indexOf(b.recipe) + 1) % list.length];
@@ -1293,7 +1403,7 @@ FA.thingAt = function (tx, ty, fx, fy) {
   for (const it of G.fac.floor) { const d = Math.hypot(it.x - fx, it.y - fy); if (d < bd) { bd = d; best = { kind: 'floor', o: it, x: it.x, y: it.y }; } }
   if (best) return best;
   const piles = FA.piles();
-  for (const k in piles) if (!(FA.isUnlockKind(k) && !G.stock[k]) && Math.hypot(piles[k].x - fx, piles[k].y - fy) < 0.8) return { kind: 'pile', o: k, x: piles[k].x, y: piles[k].y };
+  for (const k in piles) if (Math.hypot(piles[k].x - fx, piles[k].y - fy) < 0.8) return { kind: 'pile', o: k, x: piles[k].x, y: piles[k].y };
   for (let i = 0; i < G.fac.shelf.length; i++) { const s = FA.shelfSlot(i); if (Math.hypot(s.x + 0.5 - fx, s.y + 0.5 - fy) < 0.8) return { kind: 'shelf', o: i, x: s.x + 0.5, y: s.y + 0.5 }; }
   const c = FA.cell(tx, ty);
   if (!c) return null;
@@ -1314,6 +1424,7 @@ FA.status = function (b) {
     return n + ' (' + ELEM_WORD[b.el] + '): ' + b.out.length + '/' + CFG.buffer + ' ready, ' + st;
   }
   if (d.kind === 'crafter') {
+    if (b.type === 'spawner' && !b.recipe) return n + (FA.spawnerHave(b).length ? ': waiting for more elements to name a creature' : ': feed it element packets. One element hatches a basic creature, two a pair creature, three a triple');
     if (!b.recipe) return n + ': no recipe unlocked yet';
     const R = CFG.recipes[b.recipe];
     let s = n + ': ' + recipeName(b.recipe) + ' (' + recipeUse(b.recipe) + ') needs ' + Object.keys(R.in).map(k => itemName(k) + ' ' + (b.inv[k] || 0) + '/' + R.in[k]).join(', ');

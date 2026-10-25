@@ -20,6 +20,8 @@ const CFG = {
   chargeBonus: 0.10,          // every packet burns this much longer in a Battery (+10% charge)
   chargeThrowBonus: 0.20,     // ...and a packet thrown in by hand adds this much on top (+20%)
   batteryMax: 90, stationGen: 10,   // a Battery building holds batteryMax charge and gives stationGen power while it has any
+  spawnSettle: 1.5,           // a Creature Spawner waits this long after the last packet before hatching a creature that a bigger one could still grow out of
+  qShow: 6,                   // seconds the ? station's note about the last thing thrown at it stays up
   batteryLife: 60,            // seconds a Battery lasts at a full 10 power of draw; it drains in proportion to the load it carries
   chargeTipAt: 0.5,           // the first time a Battery falls below this fraction, hint that it can be fed packets, Wood or Stone
   chargeBase: 60, chargeBoost: 1.33,
@@ -343,7 +345,7 @@ const CFG = {
   },
   // ---- Cores: the components of the Wizard's garments, and the keys to shrines and keeps. A kill by a creature of an element can drop that element's Core
   // (a rare chance for normals, more for pairs and triples, a guaranteed chunk [min, max] from elites); Cores fly home to the Stockpile like shards.
-  cores: { wild: 0.08, basic: 0.12, pair: 0.2, triple: 0.3, elite: [2, 3], warden: 5, boss: 4 },   // chances per normal kill / elite chunk / Warden (of its element) / Chimera (of each)
+  cores: { wild: 0.022, basic: 0.033, pair: 0.055, triple: 0.085, elite: [1, 1], warden: 5, boss: 4 },   // chances per normal kill / elite chunk / Warden (of its element) / Chimera (of each)
   unlockR: 9,                 // a Core or Ward Key the Builder sends only goes through the portal when the Wizard is within this many tiles of the shrine / keep it opens
   // ---- Wizard augments (js/augments.js; the table of augments is AUGS below): garments the Builder forges at the Armory. They change what he can DO, never his numbers ----
   aug: {
@@ -543,7 +545,7 @@ const QUESTS = {
     { v5: 6,  icon: 'b:water', text: 'Switch a Harnesser to Water: press F beside it. The new crystal grows for 15 seconds', xp: 8, gift: { bank: { water: 4 } }, done: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
     { from: 11, v5: 8,  icon: 'potion', text: 'Unlock Alchemy (T), brew a Health Potion from Water and send it through the Spell Portal', xp: 12, done: g => g.flags.sent_potion, hint: { make: 'cauldron' } },
     { v5: 9,  icon: 'elixir', text: 'Keep the Wizard healthy: send 3 more Potions or Elixirs', xp: 10, gift: { stock: { wood: 12, stone: 9, iron: 6 } }, stat: g => sentN(g, 'potion', 'elixir'), n: 3, hint: { make: 'cauldron' } },
-    { icon: 'egg_puddle', text: 'Hatch a Puddle Slime: Water into a Spawner (E picks the recipe), then send the Egg', xp: 10, stat: g => (g.stats.sent || {}).egg_puddle || 0, n: 1, hint: { make: 'spawner' } },
+    { icon: 'egg_puddle', text: 'Hatch a Puddle Slime: feed Water to a Spawner, then send the Egg', xp: 10, stat: g => (g.stats.sent || {}).egg_puddle || 0, n: 1, hint: { make: 'spawner' } },
     { icon: 'egg_cinder', text: 'Hatch a Cinder Imp: set a Harnesser to Fire, feed a Spawner, send the Egg', xp: 10, gift: { bank: { fire: 4 } }, stat: g => (g.stats.sent || {}).egg_cinder || 0, n: 1, hint: { make: 'spawner' } },
     { from: 12, v5: 10, icon: 'b:forge', text: 'Unlock the Forge (T) and build it: it fuses element packets into combo spells', xp: 12, done: g => FA.count('forge') >= 1, hint: { make: 'forge' } },
     { v5: 11, icon: 'battery', text: 'Build a second Battery: press 5, click a tile, then throw Wood, Stone & Iron at it', xp: 8, done: g => FA.count('battery') + FA.count('heavybat') >= 2, hint: { build: 'battery' } },

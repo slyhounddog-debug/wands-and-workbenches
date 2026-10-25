@@ -286,6 +286,11 @@ task(() => {
     x.fillStyle = '#ff4a8a'; x.fillRect(cx - 3, cy - 13, 6, 1); x.fillRect(cx - 1, cy - 14, 2, 3);
     crystal(x, cx, cy - 17, '#c890ff');
   });
+  bsprite('b_qstation', (x, cx, cy) => {   // the ? station: a violet block with a gold question mark floating over it
+    isoBox(x, cx, cy, 9, 8, '#a98cf0', '#6a4cc0', '#523a98');
+    const Q = ['.XXXX.', 'XX..XX', '....XX', '...XX.', '..XX..', '..XX..', '......', '..XX..'];
+    Q.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === 'X') { x.fillStyle = '#1a0f28'; x.fillRect(cx - 4 + i - 1 + 1, cy - 24 + j + 1, 1, 1); x.fillStyle = '#ffd23a'; x.fillRect(cx - 3 + i - 1, cy - 25 + j, 1, 1); } });
+  });
   bsprite('b_ghost', () => {});
 });
 

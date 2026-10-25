@@ -5,8 +5,8 @@
 //    and through the Spell Portal into the factory (FA.pressure / FA.thump). Once it has landed it stands in that spot for good (G.altar.x / y).
 //  - LIT by spells: it has one socket per spell tier (a Single, a Pair, a Triple, the Nova). A player spell whose reach touches it lights the socket of its tier,
 //    for good (G.altar.lit, saved; no cooldown, no reset).
-//  - The Primal Chimera rises from it once all four sockets are lit AND all four Strongholds have been claimed (a Warden Core flag per keep, kept for good),
-//    and the Wizard is standing at the Altar.
+//  - It only answers spells once THE Warden is dead (G.flags.warden): before that a spell that reaches it just makes words rise off it ("THE WARDEN STILL LIVES").
+//  - The Primal Chimera rises from it once all four sockets are lit and the Wizard is standing at the Altar.
 WZ.altarFresh = () => ({ placed: false, x: 0, y: 0, lit: [false, false, false, false] });
 WZ.altarFix = function (a) {
   const f = WZ.altarFresh();
@@ -18,7 +18,7 @@ WZ.altarFix = function (a) {
 };
 WZ.altarLitN = () => (G.altar ? G.altar.lit.filter(Boolean).length : 0);
 WZ.altarOn = () => !!(G.altar && G.altar.placed);
-WZ.keepsOpen = () => ELEMS.every(el => !!G.flags['core_' + el]);   // every Stronghold has been claimed (the flag is set the first time each one falls, and kept)
+WZ.keepsOpen = () => !!G.flags.warden;   // the Warden has been killed (set the first time it falls, and kept)
 
 // ---------- where it lands ----------
 WZ.altarSpot = function () {
@@ -106,7 +106,13 @@ WZ.cineTick = function (dt) {
     }
   }
   c.front = c.front.filter(f => f.r < A.ring + 2);
-  if (c.wave >= A.waves.length && !c.front.length && !(w.quake > 0)) { w.cine = null; UI.toast('The Altar stands! Hit it with a Single, a Pair, a Triple and the Nova', 'R', 'b:altar'); UI.toast('The Altar has landed: send the Wizard one spell of each tier', 'L', 'b:altar'); }
+  if (c.wave >= A.waves.length && !c.front.length && !(w.quake > 0)) {
+    w.cine = null;
+    const ok = WZ.keepsOpen();
+    UI.toast(ok ? 'The Altar stands! Hit it with a Single, a Pair, a Triple and the Nova' : 'The Altar stands, but it will not answer while the Warden lives', 'R', 'b:altar');
+    UI.toast(ok ? 'The Altar has landed: send the Wizard one spell of each tier' : 'The Altar has landed: the Warden must die before it takes spells', 'L', 'b:altar');
+    if (!ok) WZ.altarSay('THE WARDEN STILL LIVES');
+  }
 };
 
 // ---------- hits ----------
@@ -117,10 +123,22 @@ WZ.altarTouch = function (x, y, r) {
   WZ.altarHit(WZ.ctx);
   return true;
 };
+// words rising off the Altar (a G.w.fx_ 'altarTxt'): what it says while it will not take a spell
+WZ.altarSay = function (text, col) {
+  const w = G.w, A = G.altar;
+  if (w.t - (w.altarSaidAt || -99) < 1.4) return;
+  w.altarSaidAt = w.t;
+  w.fx_.push({ type: 'altarTxt', x: A.x, y: A.y, text, col: col || '#ff7a8a', t: 0, dur: 2.6 });
+};
 WZ.altarHit = function (c) {
   const A = G.altar, w = G.w, tier = Math.max(1, Math.min(4, (c.el || []).length)), i = tier - 1;
   if (!c || c.altar || !WZ.altarOn()) return;
   c.altar = true;   // one cast lights it once
+  if (!WZ.keepsOpen()) {   // the Warden still lives: the spell splashes off and the Altar says so
+    w.altarFlash = 0.3; WZ.ring(A.x, A.y, 2, '#ff5a6e', 0.35); AU.sfx('error');
+    WZ.altarSay('THE WARDEN STILL LIVES');
+    return;
+  }
   const col = CFG.altar.cols[i];
   w.altarFlash = 0.45;
   if (A.lit[i]) { WZ.ring(A.x, A.y, 2.2, col, 0.3); AU.sfx('hit'); return; }   // this tier is already lit
@@ -139,7 +157,7 @@ WZ.altarBlocks = (x, y, r) => WZ.altarOn() && Math.hypot(G.altar.x - x, G.altar.
 // a chain of lightning arcs to the Altar too when it is in range and its tier is not lit yet (so Thunder / Tempest can light it)
 WZ.altarChainTarget = function (px, py, range) {
   const c = WZ.ctx;
-  if (!c || !WZ.altarOn() || c.altar) return null;
+  if (!c || !WZ.altarOn() || c.altar || !WZ.keepsOpen()) return null;
   const A = G.altar, tier = Math.max(1, Math.min(4, (c.el || []).length));
   if (A.lit[tier - 1] || Math.hypot(A.x - px, A.y - py) > range) return null;
   return A;
@@ -166,15 +184,7 @@ WZ.altarTick = function (dt) {
     return;
   }
   if (!lit || w.boss || G.flags.won || w.time < 12) { w.sealedT = 0; return; }
-  if (near && !open) {   // lit but sealed: say why, now and then
-    if (w.t - (w.sealedAt || -99) > 14) {
-      w.sealedAt = w.t;
-      const left = ELEMS.filter(el => !G.flags['core_' + el]);
-      WZ.ring(A.x, A.y, K.wakeR * 0.5, '#ff5a6e', 0.5); AU.sfx('error'); WZ.icon(A.x, A.y - 0.5, 'ic_lock');
-      UI.toast('The Altar is lit but sealed: ' + left.length + ' Stronghold' + (left.length > 1 ? 's' : '') + ' still stand', 'R', 'ic_keep'); UI.toast('The Altar is sealed until all four Strongholds are claimed', 'L', 'ic_keep');
-    }
-    return;
-  }
+  if (near && !open) { WZ.altarSay('THE WARDEN STILL LIVES'); return; }   // (an older save may have lit sockets before the Warden rule: it waits for the Warden too)
   if (near && open) {   // the ritual: the Altar gathers its power, then the Chimera steps out
     w.rit = K.ritual;
     AU.sfx('roar'); AU.sfx('warn'); FA.pressure(0.8, '#ff4a8a');

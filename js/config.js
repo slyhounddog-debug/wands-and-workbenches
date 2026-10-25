@@ -6,9 +6,12 @@ const CFG = {
   // Everything is drawn into a low-res buffer and scaled up by P, so the whole game shares one pixel grid.
   FT: { TW: 80, TH: 40, S: 4, P: 4 },   // factory iso tile (in screen px) + sprite scale + pixel size
   WT: { TW: 60, TH: 30, S: 3, P: 3 },   // wizard world
-  // the factory grid is fixed (w x h tiles); the floor starts as the base rectangle (12x8) and grows one placed Floor Tile at a time. The Stockpile Zone is the
-  // south-west 5x5 of the base rectangle and never moves. The first freeIron tiles cost wood + stone only, later ones add 1 Iron.
-  factory: { w: 48, h: 36, base: { x0: 18, y0: 14, w: 12, h: 8 }, freeIron: 28 },
+  // the factory grid is fixed (w x h tiles); the floor starts as the base rectangle (12x9) and grows one placed Floor Tile at a time. The Stockpile starts as the
+  // base rectangle's south-west pile.w x pile.h Stockpile tiles and grows by placed Stockpile Tiles. The first freeIron floor tiles cost wood + stone only, later ones add 1 Iron.
+  factory: { w: 48, h: 36, base: { x0: 18, y0: 14, w: 12, h: 9 }, pile: { w: 3, h: 2 }, freeIron: 28 },
+  stockCap: 50,               // items of ONE kind a Stockpile tile holds (a kind with more spreads over more tiles)
+  floorCap: 5,                // loose items a plain floor tile holds (more bounce on to the next tile with room)
+  stockReject: 2.5,           // seconds a drop the Stockpile had no room for lies still before the Wizard can try to pick it up again
   start: { wood: 10, stone: 6, iron: 0 },
   satchel: 5,
   autosave: 9,
@@ -57,7 +60,7 @@ const CFG = {
   // those screens, in the pause menu and while a skill tree is open (cutoff in Hz, seconds to glide there and back)
   music: { fadeIn: 0.5, fadeOut: 1, gain: 0.63, fade: 1.2, curve: 0.5, airFloor: 0.3, menu: 0.8, muffleHz: 2200, muffleT: 0.25 },
   weather: { tau: 30, min: 6, full: 30, ease: 0.035, shrine: 0.5 },   // wilds weather from the factory: packets/min of an element below min = clear, at full = full weather; ease = how fast it turns (per s); a claimed shrine / Portal Storm adds this much of its element
-  decalMax: 70,               // spell scorch / crack / frost marks on the ground at once (each spell's dec in CFG.spells)
+  decalMax: 140,              // spell scorch / crack / frost marks on the ground at once (each spell's dec in CFG.spells)
   bend: { r: 0.45, hold: 0.1, spring: 10, damp: 3.4, amp: 0.6, life: 1.5, bigRad: 0.45, tufts: 24000, shrubs: 1100 },   // grass and flowers lean away from the Wizard and big foes, then spring back; tufts = extra grass tufts sown over the wilds
   wizard: {
     hp: 100, speed: 6.5, accel: 48, friction: 40, radius: 0.3,
@@ -138,7 +141,6 @@ const CFG = {
   },
   overdrive: 0.15,           // a charged Battery right beside a Forge or Cauldron: +15% crafting speed
   heavyBattery: 0.5,          // a Heavy Battery drains this much slower than a Battery, so it lasts 50% longer
-  crateCap: 30,
   pickups: {
     potion: { heal: 35 }, elixir: { heal: 80 },
     armor: { armor: 35 }, plate: { armor: 70 },
@@ -152,17 +154,19 @@ const CFG = {
     forge:    { name: 'Elemental Forge', kind: 'crafter', cost: { wood: 13, stone: 10, iron: 4 }, unlock: 'forge',
                 desc: 'Fuses element packets into combo spells (each spell is unlocked separately). Press E at it to switch recipe.' },
     anvil:    { name: 'Armory', kind: 'crafter', cost: { wood: 6, stone: 8, iron: 4 }, unlock: 'armory',
-                desc: 'Forges the Wizard\'s garments (augments) and the Ward Keys that open the Strongholds, from the Cores he hunts, plus Iron Ore and an Aether Shard: throw them in, E picks the recipe. Send the finished garment through the Spell Portal: it lands in the wilds and he wears it by walking onto it. Each garment is made once; swapping puts the old one on the Wardrobe Shelf by the portal.' },
+                desc: 'Forges the Wizard\'s garments (augments) and the Warden Key that opens the Stronghold, from the Cores he hunts, plus Iron Ore and Aether Shards: throw them in, E picks the recipe. Send the finished garment through the Spell Portal: it lands in the wilds and he wears it by walking onto it. Each garment is made once; the one he takes off flies home to the Stockpile.' },
     battery:  { name: 'Battery', kind: 'cell', cost: { wood: 8, stone: 6, iron: 4 }, unlock: null,
                 desc: 'Gives +10 power to the whole factory while it has charge, and drains while anything needs power. Feed it element packets, Wood or Stone (belt or throw) and it burns them to charge itself (16.5s each, 19.5s when thrown in by hand; more kinds at once = faster). Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed. Throw a combo spell or an Elixir in to overcharge it (extra charge, +5 power for a while).' },
     heavybat: { name: 'Heavy Battery', kind: 'cell', cost: { wood: 14, stone: 10, iron: 8 }, unlock: 'heavy',
                 desc: 'A Battery with a heavy core: the same power and the same charging, but it drains 33% slower, so a charge lasts 50% longer. Unlocked by Heavy Batteries in the Skill Tree.' },
     expand:   { name: 'Floor Tile', kind: 'expand', cost: { wood: 1, stone: 1 }, unlock: null,
-                desc: 'Place it on the edge of the floor and throw its Wood and Stone at it (from the 29th tile on, 1 Iron too): when it is finished the tile becomes factory floor. The Stockpile never moves.' },
+                desc: 'Place it on the edge of the floor and throw its Wood and Stone at it (from the 29th tile on, 1 Iron too): when it is finished the tile becomes factory floor. A floor tile holds 5 loose items. Demolish an empty tile to take it back.' },
+    stockpile: { name: 'Stockpile Tile', kind: 'expand', cost: { wood: 4, stone: 2, iron: 1 }, unlock: null,
+                desc: 'Place it on an empty floor tile and throw its Wood, Stone and Iron at it: it becomes a Stockpile tile that holds 50 of ONE kind (resources, Cores, packets, garments). The Wizard can only send home what the Stockpile has room for. Demolish it to turn it back into floor (what it held bounces to the next tile).' },
     splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 2, stone: 1 }, unlock: 'logistics',
                 desc: 'Routes what comes in to up to 3 outputs: every side that has something to feed (the side items arrive from is the input). Share them out by %, or give an output element filters (Fire + Earth left, Water + Air right). Click it to set it up.' },
     crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 8, stone: 4 }, unlock: 'logistics',
-                desc: 'Holds up to 30 packets, spells or pickups (never raw resources) and feeds them out of its arrow side, one at a time.' },
+                desc: 'Holds any number of ONE kind of element packet or Egg. Belt them in (or throw them) and it feeds them out of its arrow side, one at a time; point it at nothing and it just stores.' },
     spawner:  { name: 'Creature Spawner', kind: 'crafter', cost: { wood: 10, stone: 8, iron: 3, shard: 1 }, unlock: null,
                 desc: 'Hatches a creature Egg from the element packets fed into it: one element = a basic creature, two = a pair, three = a triple. E switches recipe. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. Costs an Aether Shard to build (the starting one is free).' },
   },
@@ -174,8 +178,9 @@ const CFG = {
     power:   { name: 'Power',      members: ['battery', 'heavybat'] },
     logi:    { name: 'Logistics',  members: ['splitter', 'crate'] },
     spawn:   { name: 'Creature Spawner', members: ['spawner'] },
+    tiles:   { name: 'Tiles',      members: ['expand', 'stockpile'] },
   },
-  hotbar: ['hand', 'belt', 'harness', 'craft', 'power', 'logi', 'spawn', 'expand'],
+  hotbar: ['hand', 'belt', 'harness', 'craft', 'power', 'logi', 'spawn', 'tiles'],
   hotkeys: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'],
   recipes: {
     // machine, inputs (any mix of belt / hand / thrown), output, craft time, power draw, skill-tree node(s) that unlock it
@@ -203,10 +208,10 @@ const CFG = {
     // col 0: Factory unlocks
     { id: 'alchemy',   col: 0, icon: 'b:cauldron', name: 'Alchemy',         xp: 45, req: [], pay: { air: 10, water: 13 }, desc: 'Unlock the Alchemy Cauldron: Health Potions for the Wizard.' },
     { id: 'forge',     col: 0, icon: 'b:forge',    name: 'Elemental Forge', xp: 90, req: [], pay: { air: 15, water: 15, fire: 15 }, desc: 'Unlock the Elemental Forge. Each combo spell is then unlocked on its own.' },
-    { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 34, req: [], pay: { air: 9, fire: 15, earth: 10 }, desc: 'Unlock the Armory: it forges the Wizard\'s garments (augments) and the Ward Keys that open the Strongholds, from Cores, Iron and a Shard.' },
+    { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 34, req: [], pay: { air: 9, fire: 15, earth: 10 }, desc: 'Unlock the Armory: it forges the Wizard\'s garments (augments) and the Warden Key that opens the Stronghold, from Cores, Iron and Shards.' },
     { id: 'logistics', col: 0, icon: 'b:splitter', name: 'Logistics',       xp: 60, req: [], pay: { air: 20, water: 20, fire: 20 }, desc: 'Unlock the Splitter and the Storage Crate.' },
     { id: 'heavy',     col: 0, icon: 'battery',    name: 'Heavy Batteries', xp: 120, req: [], pay: { air: 25, water: 25, fire: 30, earth: 30, magma: 2 }, desc: 'Unlock the Heavy Battery: a Battery building that drains 33% slower, so each charge lasts 50% longer.' },
-    { id: 'summon',   col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: [], pay: { air: 40, water: 40, fire: 40, earth: 40 }, core: 1, desc: 'The Summoning Altar falls from the sky into the wilds beside the Wizard. Hit it with a Single, a Pair, a Triple and the Nova, with every Stronghold claimed, and the Primal Chimera rises. Costs 6 Aether Shards (send them into the Skill Portal) and a Warden Core.' },
+    { id: 'summon',   col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: [], pay: { air: 40, water: 40, fire: 40, earth: 40 }, desc: 'The Summoning Altar falls from the sky into the wilds beside the Wizard. Once the Warden is dead, hit it with a Single, a Pair, a Triple and the Nova and the Primal Chimera rises. Costs 6 Aether Shards (send them into the Skill Portal).' },
     // col 2: Upgrades — many small tiers, cheap first, steep last
     { id: 'swift',   col: 2, icon: 'ic_fast', name: 'Swift Harnessing', per: '+12.5% harnesser speed',
       tiers: [12, 18, 25, 33, 43, 54, 65, 80],
@@ -244,22 +249,38 @@ const CFG = {
   // recoil = tiles an aimed spell pushes the Wizard back. dec = the mark it leaves on the ground: k kind, r x the blast radius, t seconds, a strength
   // terrain spells: Mud raises an Earth Wall (len tiles, dist tiles toward the target, t s), the Blizzard freezes bog and water into ice
   // (t s, re-freezing every s while it rages), the Geyser launches the Wizard (up to dist tiles, at least min, T s in the air, h tiles high)
+  // trail = the smaller mark a moving spell leaves behind it every trailGap s (same fields as dec)
   spells: {
-    gust:         { drop: 0.45, r: 6, dmg: 3.6, push: 12.6, dec: { k: 'scuff', r: 0.45, t: 3, a: 0.35 } },
-    fireball:     { drop: 0.55, speed: 16, life: 1.6, dmg: 30, splash: 15, sr: 1.6, recoil: 0.22, dec: { k: 'burn', r: 0.7, t: 3.2, a: 0.55 } },
-    spray:        { drop: 0.5, n: 5, spread: 0.8, speed: 12, life: 0.9, dmg: 8, slow: 0.4, slowT: 2, heal: 2, recoil: 0.12, dec: { k: 'wet', r: 0.5, t: 3, a: 0.4 } },
-    boulder:      { drop: 0.6, speed: 7, life: 2.5, dmg: 45, splash: 22, sr: 2.1, recoil: 0.38, dec: { k: 'crack', r: 0.75, t: 4.5, a: 0.8 } },
-    flamethrower: { drop: 0.5, n: 8, spread: 0.9, speed: 14, life: 0.75, dmg: 11, recoil: 0.3, dec: { k: 'burn', r: 0.55, t: 3, a: 0.4 } },
-    steam:        { drop: 0.6, r: 5.5, dmg: 25, slow: 0.5, slowT: 2.5, dec: { k: 'wet', r: 0.55, t: 4, a: 0.55 } },
-    sandstorm:    { drop: 0.65, r: 5, t: 3, dps: 14, slow: 0.3, dec: { k: 'sand', r: 0.8, t: 4, a: 0.55 } },
-    magma:        { drop: 0.7, speed: 10, life: 1.2, dmg: 50, splash: 50, sr: 3, recoil: 0.55, dec: { k: 'burn', r: 0.8, t: 5, a: 0.95 } },
-    tempest:      { drop: 0.65, n: 5, dmg: 20, range: 12, slowR: 4, slow: 0.3, slowT: 2, dec: { k: 'scorch', r: 0.7, t: 3.5, a: 0.5 } },
-    mud:          { drop: 0.55, range: 30, r: 4, t: 3, dps: 6, slow: 0.8, dec: { k: 'mud', r: 1, t: 4.5, a: 0.7 }, wall: { len: 9, dist: 3, t: 10 } },
-    meteor:       { drop: 0.8, n: 8, gap: 0.22, range: 16, fall: 0.5, r: 2.2, dmg: 40, dec: { k: 'crater', r: 0.85, t: 5, a: 1 } },
-    thunder:      { drop: 0.6, n: 10, dmg: 30, range: 14, dec: { k: 'scorch', r: 0.9, t: 4, a: 0.75 } },
-    blizzard:     { drop: 0.7, r: 7, t: 4, dps: 16, slow: 0.6, dec: { k: 'frost', r: 0.8, t: 5, a: 0.85 }, frost: { t: 14, every: 0.1 } },
-    geyser:       { drop: 0.55, n: 6, delay: 0.55, gap: 0.08, r: 1.8, dmg: 45, dec: { k: 'wet', r: 0.9, t: 4.5, a: 0.85 }, jump: { dist: 8, min: 2.5, T: 0.8, h: 2.6 } },
-    nova:         { drop: 0.9, r: 8, dmg: 80, push: 30, slow: 0.5, slowT: 2, dec: { k: 'crack', r: 0.6, t: 5, a: 1 } },
+    // Cyclone Gust: three spinning pulses grow out of him (r x 1/3, 2/3, 1, gap s apart); foes thrown into each other bonk for bonk dmg
+    gust:         { drop: 0.45, r: 6, dmg: 1.4, push: 6.5, pulses: 3, gap: 0.12, bonk: 9, dec: { k: 'swirl', r: 0.5, t: 3.2, a: 0.45 } },
+    // Seeker Fireball: twice as fast as the old one, half the damage, and it homes: turns up to turn rad/s toward the nearest foe within seek tiles
+    fireball:     { drop: 0.55, speed: 32, life: 1.1, dmg: 15, splash: 7.5, sr: 1.3, turn: 11, seek: 10, recoil: 0.15, dec: { k: 'burn', r: 0.6, t: 3, a: 0.55 }, trail: { k: 'ember', r: 0.25, t: 1.4, a: 0.6 }, trailGap: 0.05 },
+    // Tidal Wave: a crescent of water w tiles wide rolls out; it carries every foe it catches (push), slows them and heals the Wizard a little
+    spray:        { drop: 0.5, speed: 10, life: 0.85, w: 3.4, dmg: 10, push: 10, slow: 0.45, slowT: 2.2, heal: 3, recoil: 0.12, dec: { k: 'wet', r: 0.5, t: 3, a: 0.4 }, trail: { k: 'wet', r: 0.6, t: 2.6, a: 0.35 }, trailGap: 0.08 },
+    // Bouncing Boulder: hops hops times along the aim (hop s per hop, a little shorter each time), crushing everything around each landing
+    boulder:      { drop: 0.6, speed: 7.5, hops: 4, hop: 0.42, dmg: 24, sr: 1.6, push: 7, recoil: 0.38, dec: { k: 'crack', r: 0.8, t: 4.5, a: 0.8 } },
+    // Flamethrower: a stream of fire blown out in front of him for t s (it follows his aim): dps to everything in a cone range tiles long, half rad wide
+    flamethrower: { drop: 0.5, t: 2.2, range: 5.5, half: 0.42, dps: 30, recoil: 0.3, dec: { k: 'scorch', r: 0.45, t: 3.2, a: 0.5 }, trailGap: 0.09 },
+    // Pressure Cooker: scalding steam swells round him for t s (dps, slow), then BLOWS: blast dmg and a big shove out to r
+    steam:        { drop: 0.6, r: 5.5, t: 1.1, dps: 12, slow: 0.5, blast: 26, push: 18, slowT: 2.5, dec: { k: 'wet', r: 0.6, t: 4, a: 0.6 } },
+    // Sand Twister: a tornado set loose along the aim; it hunts foes within seek tiles, drags them into its eye (pull) and grinds them (dps) for t s
+    sandstorm:    { drop: 0.65, speed: 3.6, t: 4, r: 2.6, pull: 8, dps: 16, slow: 0.35, seek: 8, dec: { k: 'swirl', c: '#d9b46a', r: 0.9, t: 3.5, a: 0.55 }, trailGap: 0.22 },
+    // Magma Bomb: lobbed high onto the thickest crowd within range (flight s), a big blast, a lava pool, and blobs of magma that splatter out and burst
+    magma:        { drop: 0.7, flight: 0.75, range: 12, dmg: 48, sr: 2.8, pool: { r: 2.3, t: 4, dps: 12 }, blobs: 5, blobDmg: 14, blobR: 1.2, blobDist: [2, 3.6], recoil: 0.55, dec: { k: 'lava', r: 0.9, t: 6, a: 1 } },
+    // Storm Orb: a crackling orb drifts out along the aim for t s, zapping the nearest foe within range every zap s (slows it)
+    tempest:      { drop: 0.65, speed: 2.4, t: 3.2, zap: 0.26, range: 4.4, dmg: 12, slow: 0.3, slowT: 1.2, dec: { k: 'glass', r: 0.55, t: 3.5, a: 0.6 } },
+    // Mudslide: a surge of mud races to the nearest foe (speed), rooting everything in its path (root s), then the sticky snare and an Earth Wall rise there
+    mud:          { drop: 0.55, range: 30, r: 4, t: 3.5, dps: 6, slow: 0.8, surge: { speed: 20, w: 1.7, dmg: 8, root: 1.4 }, dec: { k: 'mud', r: 1, t: 4.5, a: 0.7 }, trail: { k: 'mud', r: 0.6, t: 3.5, a: 0.55 }, trailGap: 0.04, wall: { len: 9, dist: 3, t: 10 } },
+    // Meteor Strike: ONE huge meteor on the thickest crowd within range (fall s, its shadow grows), then it shatters into frags burning fragments
+    meteor:       { drop: 0.8, range: 16, fall: 1.0, r: 3.4, dmg: 85, push: 14, frags: 6, fragR: 1.4, fragDmg: 22, fragDist: [2.4, 4.6], dec: { k: 'crater', r: 0.9, t: 6, a: 1 } },
+    // Thunderstorm: a storm cloud hangs over him for t s and calls a bolt every every s on a foe within range (warn s ahead), each bolt forking to chain more
+    thunder:      { drop: 0.6, t: 4, every: 0.32, range: 9, warn: 0.22, r: 1.3, dmg: 24, chain: 2, chainR: 4.5, chainDmg: 12, dec: { k: 'glass', r: 0.85, t: 4, a: 0.8 } },
+    // Blizzard: a storm round him for t s (dps, slow) raining icicles every icicle s; a foe hit chill times freezes solid for freeze s. Flash Frost turns bog / water to ice
+    blizzard:     { drop: 0.7, r: 7, t: 4, dps: 6, slow: 0.6, icicle: 0.09, iceDmg: 12, iceR: 1.1, chill: 3, freeze: 1.6, dec: { k: 'frost', r: 0.8, t: 5, a: 0.85 }, frost: { t: 14, every: 0.1 } },
+    // Geyser Eruption: erupts under the n nearest foes and throws them up for toss s (they take land dmg coming down); it launches the Wizard over water too
+    geyser:       { drop: 0.55, n: 6, delay: 0.45, gap: 0.1, r: 1.8, dmg: 26, toss: 0.85, land: 20, dec: { k: 'wet', r: 0.9, t: 4.5, a: 0.85 }, jump: { dist: 8, min: 2.5, T: 0.8, h: 2.6 } },
+    // Elemental Nova: four rings, one per element, gap s apart out to r: Air shoves, Water slows, Fire burns, Earth crushes and staggers (dmg split over the four)
+    nova:         { drop: 0.9, r: 8, dmg: 84, push: 30, slow: 0.5, slowT: 2.4, gap: 0.14, stagger: 0.7, dec: { k: 'nova', r: 0.7, t: 6, a: 1 } },
   },
   // what each upgrade tier is worth
   upgrade: { swift: 0.125, manual: 0.3, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125, magnet: 0.35 },   // gems: x(1+0.125) per tier on every gem drop chance (cap gemCap); magnet: tiles of extra pickup radius per tier
@@ -320,10 +341,11 @@ const CFG = {
     storm:     { name: 'Portal Storm',     dur: 90, gap: 9, n: 6, boost: 0.25, surge: 1.25 },
     brood:     { name: "Chimera's Brood",  size: 1.9, hp: 9, dmg: 1.6, slamEvery: 4.5, slamR: 2.4, slamDmg: 20, minions: 3 },
   },
-  // ---- Strongholds: four far-off keeps, one per element, each guarded by crafted creatures and a Warden ----
+  // ---- the Stronghold: one far-off keep (its element is picked by the world seed), guarded by crafted creatures and THE Warden. The Warden must fall
+  // before the Summoning Altar takes spells ----
   strong: {
     minDist: 70, reveal: 30, wake: 9, warnT: 10, shards: 8, gems: 12,   // warnT: seconds the Wizard must stand inside the wake radius before the guards and the Warden spawn (leaving resets it)
-    arenaR: 6.5,              // the door: the arena inside this radius only opens to a Wizard who has had the keep's Ward Key sent in through the portal (the key is shown at the door)
+    arenaR: 6.5,              // the door: the arena inside this radius only opens to a Wizard who has had the Warden Key sent in through the portal (the key is shown at the door)
     // the approach terrain around each keep (tiles from its centre), world-gen carves it: water = a lake moat (an island keep), fire = a scorched field,
     // earth = a ring of cracked rock, air = a chasm ring with a broken bridge. Each needs the augment of the element this keep's element is weak to
     gate: {
@@ -342,8 +364,8 @@ const CFG = {
   },
   // ---- Cores: the components of the Wizard's garments, and the keys to shrines and keeps. A kill by a creature of an element can drop that element's Core
   // (a rare chance for normals, more for pairs and triples, a guaranteed chunk [min, max] from elites); Cores fly home to the Stockpile like shards.
-  cores: { wild: 0.022, basic: 0.033, pair: 0.055, triple: 0.085, elite: [1, 1], warden: 5, boss: 4 },   // chances per normal kill / elite chunk / Warden (of its element) / Chimera (of each)
-  keyCost: { cores: 4, iron: 2, shard: 1, time: 18 },   // a Ward Key at the Armory: Cores of its own element, Iron Ore and an Aether Shard
+  cores: { wild: 0.022, basic: 0.033, pair: 0.055, triple: 0.085, elite: [1, 1], warden: 2, boss: 4 },   // chances per normal kill / elite chunk / Warden (of each element) / Chimera (of each)
+  keyCost: { cores: 3, iron: 3, shard: 3, time: 24 },   // the Warden Key at the Armory: this many Cores of EACH element, Iron Ore and Aether Shards
   altar: {   // the Summoning Altar (js/altar.js): bought in the tree, it falls out of the sky beside the Wizard and stands in the wilds from then on
     shards: 6,                  // Aether Shards the Summoning node costs (sent into the Skill Portal)
     r: 1.7, solid: 1.1,         // its body: spells that reach this far hit it; the Wizard cannot walk closer than this (+ his own radius)
@@ -360,7 +382,6 @@ const CFG = {
   unlockR: 9,                 // a Core or Ward Key the Builder sends only goes through the portal when the Wizard is within this many tiles of the shrine / keep it opens
   // ---- Wizard augments (js/augments.js; the table of augments is AUGS below): garments the Builder forges at the Armory. They change what he can DO, never his numbers ----
   aug: {
-    wardrobeMax: 8,   // the Wardrobe Shelf by the Spell Portal grows one slot per stored garment (there are only this many garments)
     phoenix: { cd: 900, hp: 0.5 },   // Phoenix Feather: seconds to recharge after it saves him (15 minutes of play), the share of max HP he comes back with
     blink: { dist: 5.5, min: 2, T: 0.16 },   // Gale Circlet: how far the roll jumps (tiles), the shortest jump it will make, seconds it takes
     stat: { r: 2.8, push: 12, cd: 0.9 },   // Static Cloak: radius of the burst, knockback, seconds between bursts
@@ -452,44 +473,41 @@ const AUG_ORDER = Object.keys(AUGS);
 // the element Cores (components): one per element, named for what the creatures of that line are made of
 const CORE_NAME = { earth: 'Stone Core', water: 'Tide Core', fire: 'Ember Core', air: 'Gale Core' };
 const CORE_FROM = { earth: 'golems', water: 'slimes and lurkers', fire: 'imps', air: 'wisps' };   // flavour for the Collection Book
-const KEY_NAME = el => ELEM_WORD[el] + ' Ward Key';
-const isCoreKind = k => /^core_(air|water|fire|earth)$/.test(k), isKeyKind = k => /^key_(air|water|fire|earth)$/.test(k);
+const KEY_NAME = () => 'Warden Key';
+const isCoreKind = k => /^core_(air|water|fire|earth)$/.test(k), isKeyKind = k => k === 'wardkey';
 const RES = {
   wood:  { name: 'Wood',     color: '#a8683a' },
   stone: { name: 'Stone',    color: '#a9b0b8' },
   iron:  { name: 'Iron Ore', color: '#c4703c' },
   shard: { name: 'Aether Shard', short: 'Shard', color: '#c890ff' },   // only from landmarks and elites
-  core:  { name: 'Warden Core', short: 'Core', color: '#ffd23a' },       // once per Stronghold per save; gates Spawner III and Summoning
+  wardkey: { name: 'Warden Key', short: 'Key', color: '#ffd23a' },     // forged at the Armory; sent through the portal at the Stronghold it opens the door
 };
-// the element Cores and Ward Keys are Stockpile resources too: they fly home through the portal like shards, the Builder takes them from their piles
-for (const el in ELEM) {
-  RES['core_' + el] = { name: CORE_NAME[el], short: CORE_NAME[el].split(' ')[0], color: ELEM[el].color };
-  RES['key_' + el] = { name: KEY_NAME(el), short: ELEM_WORD[el] + ' Key', color: ELEM[el].dark };
-}
+// the element Cores are Stockpile resources too: they fly home through the portal like shards, the Builder takes them from their piles
+for (const el in ELEM) RES['core_' + el] = { name: CORE_NAME[el], short: CORE_NAME[el].split(' ')[0], color: ELEM[el].color };
 const BASIC_SPELL = { air: 'gust', fire: 'fireball', water: 'spray', earth: 'boulder' };
 const SPELLS = {
-  gust: 'Air Gust', fireball: 'Fireball', spray: 'Water Spray', boulder: 'Boulder',
-  flamethrower: 'Flamethrower', steam: 'Steam Burst', sandstorm: 'Sandstorm', magma: 'Magma Bomb',
-  tempest: 'Tempest Chain', mud: 'Mud Snare', meteor: 'Meteor Shower', thunder: 'Thunderstorm',
+  gust: 'Cyclone Gust', fireball: 'Seeker Fireball', spray: 'Tidal Wave', boulder: 'Bouncing Boulder',
+  flamethrower: 'Flamethrower', steam: 'Pressure Cooker', sandstorm: 'Sand Twister', magma: 'Magma Bomb',
+  tempest: 'Storm Orb', mud: 'Mudslide', meteor: 'Meteor Strike', thunder: 'Thunderstorm',
   blizzard: 'Blizzard', geyser: 'Geyser Eruption', nova: 'Elemental Nova',
 };
 // the Collection Book's text for every spell (these used to be the skill-tree node descriptions)
 const SPELL_INFO = {
-  gust: { desc: 'Air: a push of wind that knocks foes back and chops trees and rocks.' },
-  fireball: { desc: 'Fire: a fast fireball that bursts on the first foe and burns what is near.' },
-  spray: { desc: 'Water: a fan of droplets that slow foes and patch the Wizard up a little.' },
-  boulder: { desc: 'Earth: a slow, heavy boulder with a big crushing burst.' },
-  flamethrower: { desc: 'Air + Fire: 8 fire bolts in a cone.' },
-  tempest: { desc: 'Air + Water: chain lightning to 5 foes, slows nearby.' },
-  steam: { desc: 'Fire + Water: scalding burst that slows.' },
-  sandstorm: { desc: 'Air + Earth: a grinding storm that follows the Wizard.' },
-  magma: { desc: 'Fire + Earth: big blast that leaves burning ground.' },
-  mud: { desc: 'Water + Earth: a sticky zone that nearly stops foes, behind an Earth Wall that channels them.' },
-  meteor: { desc: 'Air + Fire + Earth: 8 meteors on random foes.' },
-  thunder: { desc: 'Air + Fire + Water: chain lightning to 10 foes.' },
-  blizzard: { desc: 'Air + Water + Earth: a freezing storm around the Wizard. Freezes bog and water into ice he can run on.' },
-  geyser: { desc: 'Fire + Water + Earth: blasts under the 6 nearest foes and launches the Wizard over water and bog.' },
-  nova: { desc: 'All four: a huge radial blast.' },
+  gust: { desc: 'Air: a cyclone spins out of the Wizard in three pulses, flinging foes into each other (they bonk) and chopping trees and rocks.' },
+  fireball: { desc: 'Fire: a small, very fast fireball that homes in on the nearest foe and bursts, leaving a trail of embers.' },
+  spray: { desc: 'Water: a crescent wave rolls out and carries every foe it catches along with it, slowing them; it splashes the Wizard back to health a little.' },
+  boulder: { desc: 'Earth: a boulder that bounces along the ground, crushing everything around each landing.' },
+  flamethrower: { desc: 'Air + Fire: a roaring stream of fire blown out in front of the Wizard for two seconds, scorching the ground.' },
+  tempest: { desc: 'Air + Water: a crackling storm orb drifts out and keeps zapping the nearest foe.' },
+  steam: { desc: 'Fire + Water: scalding steam swells around the Wizard, then blows everything away.' },
+  sandstorm: { desc: 'Air + Earth: a sand twister hunts down foes, drags them into its eye and grinds them.' },
+  magma: { desc: 'Fire + Earth: lobbed onto the thickest crowd: a big blast, a lava pool and magma blobs splattering out.' },
+  mud: { desc: 'Water + Earth: a mudslide races to the nearest foe, rooting all in its path, then a sticky snare and an Earth Wall rise there.' },
+  meteor: { desc: 'Air + Fire + Earth: one huge meteor crashes onto the thickest crowd and shatters into burning fragments.' },
+  thunder: { desc: 'Air + Fire + Water: a storm cloud over the Wizard calls lightning down on foes for four seconds, each bolt forking on.' },
+  blizzard: { desc: 'Air + Water + Earth: a freezing storm rains icicles round the Wizard; foes hit three times freeze solid. Freezes bog and water into ice he can run on.' },
+  geyser: { desc: 'Fire + Water + Earth: geysers burst under the 6 nearest foes and throw them into the air; it launches the Wizard over water and bog too.' },
+  nova: { desc: 'All four: four rings in a row: Air shoves, Water slows, Fire burns, Earth crushes.' },
 };
 const SPELL_COL = {
   gust: '#e6f8ff', fireball: '#ff7a30', spray: '#4aa8ff', boulder: '#b58a4c',
@@ -511,8 +529,9 @@ const ITEMS = {};
     ITEMS['aug_' + id] = { name: a.name, aug: true, id, color: a.col };
     CFG.recipes['aug_' + id] = { machine: 'anvil', in: a.make.in, out: 'aug_' + id, time: a.make.time, power: 2, tier: 'armory', aug: id, use: a.verb };
   }
-  // the Ward Keys are forged at the Armory too, from Cores of their own element + Iron + a Shard (one per Stronghold; the recipe hides once its door is open)
-  for (const el in ELEM) CFG.recipes['key_' + el] = { machine: 'anvil', in: { ['core_' + el]: CFG.keyCost.cores, iron: CFG.keyCost.iron, shard: CFG.keyCost.shard }, out: 'key_' + el, time: CFG.keyCost.time, power: 2, tier: 'armory', key: el, use: 'Opens the ' + ELEM_WORD[el] + ' Stronghold door' };
+  // the Warden Key is forged at the Armory too, from Cores of every element + Iron + Shards (the recipe hides once the door is open or a key exists)
+  { const K = CFG.keyCost, inp = {}; for (const el in ELEM) inp['core_' + el] = K.cores; inp.iron = K.iron; inp.shard = K.shard;
+    CFG.recipes.wardkey = { machine: 'anvil', in: inp, out: 'wardkey', time: K.time, power: 2, tier: 'armory', key: true, use: 'Opens the Stronghold door, where the Warden waits' }; }
   for (const id in CFG.creatures) ITEMS['egg_' + id] = { name: CFG.creatures[id].name + ' Egg', egg: true, creature: id, color: CFG.creatures[id].col };
   for (const k in CFG.recipes) {
     const r = CFG.recipes[k];
@@ -576,7 +595,7 @@ const QUESTS = {
     { from: 19, v5: 21, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, done: g => g.flags.triple, hint: { combo: 3 } },
     { from: 20, v5: 22, icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, done: g => g.flags.sent_nova, hint: { combo: 4 } },
     { from: 23, v5: 23, icon: 'b:altar', text: 'Buy Summoning (6 Shards into the Skill Portal first): the Altar falls into the wilds', xp: 40, done: g => !!g.tree.summon, hint: { tree: 1 } },
-    { from: 24, v5: 24, icon: 'ic_crown', text: 'Light the Altar: send a Single, a Pair, a Triple and the Nova while the Wizard is by it', xp: 60, done: g => !!(g.altar && g.altar.placed && WZ.altarLitN() >= 4), hint: { altar: 1 } },
+    { from: 24, v5: 24, icon: 'ic_crown', text: 'Light the Altar (the Warden must be dead): send a Single, a Pair, a Triple and the Nova', xp: 60, done: g => !!(g.altar && g.altar.placed && WZ.altarLitN() >= 4), hint: { altar: 1 } },
   ],
   W: [
     { from: 1,  icon: 'ic_hat', text: 'Stand right next to a tree. The factory\'s Air Gusts will chop it down', xp: 4, done: g => g.stats.harvested >= 1, hint: { harv: 1 } },
@@ -597,10 +616,10 @@ const QUESTS = {
     { from: 18, icon: 'ic_skull', text: 'Defeat 300 monsters', xp: 40, done: g => g.stats.kills >= 300, prog: g => [g.stats.kills, 300] },
     { icon: 'ic_trophy', text: 'Survive a Wilds Event: check the card under the goals, then clear it', xp: 30, gift: { stock: { shard: 1 } }, stat: g => g.stats.events || 0, n: 1 },
     { icon: 'meteor', text: 'Wipe out 15 monsters with Triple spells (three elements)', xp: 30, gift: { pickup: ['elixir', 'plate'] }, stat: g => g.stats.k3 || 0, n: 15 },
-    { from: 21, icon: 'ic_keep', text: 'Scout a Stronghold, far out in the wilds (see the map): get near to reveal its guards', xp: 20, done: g => !!g.flags.scouted, hint: { keep: 'scout' } },
-    { from: 22, icon: 'core', text: 'Open a Stronghold: wear its terrain garment, have its Ward Key sent in, beat its Warden', xp: 40, done: g => (g.stats.keeps || 0) >= 1, hint: { keep: 'claim' } },
+    { from: 21, icon: 'ic_keep', text: 'Scout the Stronghold, far out in the wilds (see the map): get near to reveal its guards', xp: 20, done: g => !!g.flags.scouted, hint: { keep: 'scout' } },
+    { from: 22, icon: 'wardkey', text: 'Storm the Stronghold: wear its garment, have the Warden Key sent in, beat the Warden', xp: 40, done: g => (g.stats.keeps || 0) >= 1, hint: { keep: 'claim' } },
     { icon: 'nova', text: 'Blast 10 monsters with the Elemental Nova', xp: 40, gift: { pickup: ['elixir', 'plate'] }, stat: g => g.stats.k4 || 0, n: 10 },
-    { from: 24, icon: 'ic_crown', text: 'Claim all four Strongholds, light the Altar and defeat the Primal Chimera!', xp: 150, done: g => g.flags.won, hint: { boss: 1 } },
+    { from: 24, icon: 'ic_crown', text: 'Light the Altar with the Warden dead, then defeat the Primal Chimera!', xp: 150, done: g => g.flags.won, hint: { boss: 1 } },
   ],
 };
 

@@ -123,7 +123,7 @@ const DevBot = { on: null, st: null, stats: null };
     // 2. collect
     if (mode === 'idle') {
       let best = null, bt = 9, bd = c.seekR;
-      const tier = k => (k === 'xp' ? 0 : k === 'shard' || k === 'core' ? 2 : 1);
+      const tier = k => (k === 'xp' ? 0 : k === 'shard' || WZ.isLoot(k) ? 2 : 1);
       for (const dr of w.drops) {
         const d = Math.hypot(dr.x - w.x, dr.y - w.y), t = tier(dr.kind);
         if (d > c.seekR || (near && near.d < c.collectEnemyR && d > near.d)) continue;

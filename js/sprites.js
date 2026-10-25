@@ -271,6 +271,12 @@ task(() => {
     isoBox(x, cx, cy + 2, 9, 4, '#9be880', '#8a5c34', '#6a4426');
     x.fillStyle = '#c4f4a8'; x.fillRect(cx - 3, cy - 3, 2, 1); x.fillRect(cx + 2, cy - 2, 2, 1);
   });
+  bsprite('b_stockpile', (x, cx, cy) => {   // a Stockpile tile: a wooden pad with a little stack of goods on it
+    isoBox(x, cx, cy + 2, 9, 3, '#c49258', '#7a4a22', '#5a3418');
+    x.fillStyle = '#f4d898'; x.fillRect(cx - 6, cy - 1, 2, 1); x.fillRect(cx + 4, cy - 1, 2, 1);
+    isoBox(x, cx - 2, cy - 1, 3, 3, '#a8683a', '#8a5528', '#6e3f1c');
+    isoBox(x, cx + 3, cy, 2, 2, '#a9b0b8', '#7a8088', '#5e646c');
+  });
   bsprite('b_crate', (x, cx, cy) => {
     isoBox(x, cx, cy, 8, 10, '#d8a066', '#a8683a', '#8a5528');
     x.fillStyle = '#6e3f1c';
@@ -649,7 +655,10 @@ task(() => {
   for (const el of ELEMS) {   // a Core: a faceted orb in the element's colours; a Ward Key: a key with the element's gem for a bow
     const E = { o: '#2b1d3e', c: ELEM[el].color, C: ELEM[el].dark, w: '#ffffff', y: '#ffd23a', Y: '#c8921a' };
     reg('it_core_' + el, mapSprite(['..ooooo..', '.occccco.', 'ocwwcccCo', 'ocwcccCCo', 'occcccCCo', 'occcCCCCo', '.occCCCo.', '..ooooo..'], E), 4.5, 8);
-    reg('it_key_' + el, mapSprite(['.ooo........', 'occco.......', 'ocwcoyyyyyyy', 'occcoYYYYYYY', '.ooo...y.y.y', '.......Y.Y.Y'], E), 6, 6);
+  }
+  {   // the Warden Key: a heavy gold key whose bow holds a gem of each element
+    const E = { o: '#2b1d3e', a: ELEM.air.color, b: ELEM.water.color, f: ELEM.fire.color, e: ELEM.earth.color, w: '#ffffff', y: '#ffd23a', Y: '#c8921a' };
+    reg('it_wardkey', mapSprite(['.oooooo.......', 'oyywayyo......', 'oyabyfyoooooooo', 'oyyywyyyyyyyyyo', 'oyefyeyoYYYYYYo', 'oyyyyyyo.oYoYo.', '.oooooo..oYoYo.', '.........ooooo.'], E), 7, 8);
   }
   // worn overlays
   const OV = { s: '#dfe8f0', w: '#ffffff', c: '#7be0ff', M: '#3a2a30', e: '#ffb030', b: '#3a7ad0', h: '#bfe9ff', y: '#ffd23a', a: '#a9b0b8', A: '#6a7280',

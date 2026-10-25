@@ -494,7 +494,7 @@ WZ.evInfo = function () {
   return { plan: ev.plan, left: ev.left, active: ev.active, deferred: ev.left <= 0 && !ev.active && ev.clear > 0, clear: ev.clear };
 };
 
-// ---------- Strongholds: scouted from afar, defended by creatures and a Warden, claimed once the Warden falls ----------
+// ---------- the Stronghold: scouted from afar, defended by creatures and THE Warden, claimed once the Warden falls (the Summoning Altar needs that) ----------
 WZ.WARDEN_WEAK = el => WEAK_TO[WEAK_TO[el]];   // two steps round the cycle: never what the guards fear
 WZ.keepGuards = el => CFG.strong.guards[el];
 WZ.updKeep = function (m, s, d, dt) {
@@ -503,14 +503,14 @@ WZ.updKeep = function (m, s, d, dt) {
   if (d < K.reveal && !s.seen) {
     s.seen = true; G.flags.scouted = true;
     const gate = AUGS[AUG_ORDER.find(id => AUGS[id].gate === m.el)];
-    const msg = ELEM_WORD[m.el] + ' Stronghold scouted: the way in needs the ' + gate.name + ' and the ' + KEY_NAME(m.el) + '. Warden weak to ' + ELEM_WORD[WZ.WARDEN_WEAK(m.el)];
+    const msg = 'The Stronghold scouted: the way in needs the ' + gate.name + ' and the Warden Key. The Warden is weak to ' + ELEM_WORD[WZ.WARDEN_WEAK(m.el)];
     UI.toast(msg, 'L', WZ.WARDEN_WEAK(m.el)); UI.toast(msg, 'R', 'ic_keep');
     AU.sfx('alert'); UI.changed();
   }
   if (s.state === 'idle') {
     // standing inside the wake radius runs a countdown (warnT); the guards only spawn when it reaches warnT, and leaving (or dying) resets it.
-    // The arena only wakes for a Wizard who is allowed in: without the keep's Ward Key the door (WZ.doorTick) keeps him out, so no countdown starts
-    if (d >= K.wake || w.dead || !G.aug.key[m.el]) { s.warnT = 0; return; }
+    // The arena only wakes for a Wizard who is allowed in: without the Warden Key the door (WZ.doorTick) keeps him out, so no countdown starts
+    if (d >= K.wake || w.dead || !G.aug.door) { s.warnT = 0; return; }
     if (!(s.warnT > 0)) {
       s.warnT = 0;
       if (!(w.t - (s.toastAt || -99) < 8)) { s.toastAt = w.t; UI.toast('Stronghold area! The guards wake in ' + K.warnT + 's: leave to reset it', 'R', 'ic_warn'); UI.toast('The Wizard is in a Stronghold area', 'L', 'ic_warn'); }
@@ -532,22 +532,21 @@ WZ.updKeep = function (m, s, d, dt) {
     e.slam = { every: W.slamEvery, r: W.slamR, dmg: W.slamDmg }; e.slamT = 3; e.vol = { t: 5, every: W.volleyEvery, n: W.volleyN, dmg: W.volleyDmg };
     WZ.ring(m.x, m.y, 6, ELEM[m.el].color, 0.7); w.shake = 0.5; AU.sfx('roar');
     FA.pressure(1.2, ELEM[m.el].color);
-    UI.toast('The ' + ELEM_WORD[m.el] + ' Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'L', e.weak);
+    UI.toast('The Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'L', e.weak); UI.toast('The Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'R', e.weak);
   } else if (s.state === 'active' && !w.enemies.some(e => e.mark === m.id && !e.dead)) WZ.claimKeep(m);
 };
 WZ.claimKeep = function (m) {
-  const w = G.w, K = CFG.strong, s = w.lm[m.id], key = 'core_' + m.el;
+  const w = G.w, K = CFG.strong, s = w.lm[m.id], first = !G.flags.warden;
   s.state = 'done';
+  G.flags.warden = true;   // the Warden is dead for good: the Summoning Altar takes spells from now on
   for (let i = 0; i < K.shards; i++) WZ.drop('shard', m.x, m.y, 1);
-  const core = !G.flags[key];
-  if (core) { G.flags[key] = true; WZ.drop('core', m.x, m.y, 1); }   // one Core per Stronghold per save
   WZ.dropGems(m.x, m.y, K.gems);
-  WZ.dropCores(m.el, CFG.cores.warden, m.x, m.y);   // a chunk of its element's Cores
+  for (const el of ELEMS) WZ.dropCores(el, CFG.cores.warden, m.x, m.y);   // a chunk of Cores of every element
   G.stats.keeps = (G.stats.keeps || 0) + 1; G.stats.landmarks = (G.stats.landmarks || 0) + 1; w.run.marks++;
   WZ.ring(m.x, m.y, 5, ELEM[m.el].color, 0.7); WZ.puff(m.x, m.y, '#ffd23a', 24);
   AU.sfx('chest');
-  const msg = ELEM_WORD[m.el] + ' Stronghold claimed!' + (core ? ' A Warden Core!' : '');
-  UI.toast(msg, 'L', core ? 'core' : 'shard'); UI.toast(msg, 'R', core ? 'core' : 'shard');
+  const msg = first ? 'The Warden is dead! The Summoning Altar will answer spells now' : 'The Stronghold is cleared again';
+  UI.toast(msg, 'L', 'ic_crown'); UI.toast(msg, 'R', 'ic_crown');
   if (!G.flags.glow) WZ.glowUp(m);   // the first Warden to fall (per save): the Wizard glows for good and gains the held-spell slot
   UI.changed();
 };

@@ -96,7 +96,7 @@ UI.handsHtml = function () {
 UI.updateHud = function (dt) {
   const f = G.fac, w = G.w;
   const pulse = (id, v) => { if (cache['v' + id] !== undefined && v > cache['v' + id]) { const el = $(id); el.classList.remove('gain'); void el.offsetWidth; el.classList.add('gain'); } cache['v' + id] = v; };
-  for (const k of ['wood', 'stone', 'iron', 'shard', 'core']) {
+  for (const k of ['wood', 'stone', 'iron', 'shard']) {
     const id = 't' + k[0].toUpperCase() + k.slice(1);
     setHtml(id, UI.img(k, 24) + '<b>' + G.stock[k] + '</b>');
     pulse(id, G.stock[k]);
@@ -121,7 +121,7 @@ UI.updateHud = function (dt) {
   // the charge left in every Battery building, added up (an overcharged one counts past full), against what they could hold
   let bc = 0, bcap = 0;
   for (const b of f.bld) if (FA.isCell(b) && b.done) { bcap += CFG.batteryMax; bc += b.bat; }
-  // the Cores and Ward Keys waiting in the Stockpile (only the ones there are any of)
+  // the Cores and the Warden Key waiting in the Stockpile (only the ones there are any of)
   setHtml('tComp', Object.keys(RES).filter(k => (isCoreKind(k) || isKeyKind(k)) && G.stock[k] > 0).map(k => UI.img(k, 20) + '<b>' + G.stock[k] + '</b>').join(''));
   setTxt('batTxt', Math.round(bc) + (bcap ? ' / ' + bcap : ''));
   $('batFill').style.width = (bcap ? Math.min(100, bc / bcap * 100) : 0).toFixed(0) + '%';
@@ -308,8 +308,8 @@ UI.debugEvent = function () {
 // the Wizard's worn garments, the Wardrobe Shelf, open keeps, Cores and held spell (F3 overlay)
 UI.debugGear = function () {
   const A = G.aug, worn = AUG_SLOTS.map(s => s[1] + ' ' + (A.worn[s[0]] ? AUGS[A.worn[s[0]]].name : '-')).join(' | '), al = G.altar;
-  return '<div>Worn: <b>' + worn + '</b></div><div class="dim">Shelf ' + (G.fac.shelf.join(',') || '-') + '  Cores ' + ELEMS.map(e => e[0].toUpperCase() + (G.stock['core_' + e] || 0)).join(' ') +
-    '  Open keeps ' + (ELEMS.filter(e => A.key[e]).join(',') || '-') + '  Keeps claimed ' + (ELEMS.filter(e => G.flags['core_' + e]).join(',') || '-') + '  Altar ' + (al.placed ? 'lit ' + al.lit.map(l => (l ? 'X' : '.')).join('') : G.tree.summon ? 'landing' : 'not bought') + '  Held spell <b>' + (G.hold.on ? (G.hold.spell || 'empty') : 'locked') + '</b>  Feather ' + Math.ceil(A.cd.phoenix) + 's</div>';
+  return '<div>Worn: <b>' + worn + '</b></div><div class="dim">Stockpile ' + FA.pileList().filter(p => p.n > 0).length + '/' + FA.pileTiles().length + ' tiles  Cores ' + ELEMS.map(e => e[0].toUpperCase() + (G.stock['core_' + e] || 0)).join(' ') +
+    '  Door ' + (A.door ? 'open' : 'locked') + '  Warden ' + (G.flags.warden ? 'dead' : 'alive') + '  Altar ' + (al.placed ? 'lit ' + al.lit.map(l => (l ? 'X' : '.')).join('') : G.tree.summon ? 'landing' : 'not bought') + '  Held spell <b>' + (G.hold.on ? (G.hold.spell || 'empty') : 'locked') + '</b>  Feather ' + Math.ceil(A.cd.phoenix) + 's</div>';
 };
 UI.updateDebug = function (dt) {
   const el = $('debug');
@@ -451,7 +451,7 @@ UI.nodeMax = n => (n.tiers ? n.tiers.length : 1);
 UI.nodeCost = function (n) {
   const L = UI.nodeLevel(n);
   if (L >= UI.nodeMax(n)) return null;
-  if (!n.tiers) return { xp: n.xp, pay: n.pay, core: n.core || 0 };
+  if (!n.tiers) return { xp: n.xp, pay: n.pay };
   // packets per tier come from pk (the old XP basis, halved by the rebalance), split across the tier's kinds
   const xp = n.tiers[L], kinds = n.kinds[L], pay = {}, per = Math.max(1, Math.round((n.pk ? n.pk[L] : xp) / kinds.length * (L === 0 ? CFG.firstTierPay : 1)));
   kinds.forEach(k => { pay[k] = per; });
@@ -464,7 +464,7 @@ UI.nodeReqs = function (n) {   // tree ids still needed before this node (or its
   return need.filter(r => !G.tree[r]);
 };
 UI.canAfford = function (c) {
-  if (G.xp < c.xp || (c.core || 0) > G.stock.core) return false;
+  if (G.xp < c.xp) return false;
   for (const k in c.pay) if ((G.bank[k] || 0) < c.pay[k]) return false;
   return true;
 };
@@ -472,7 +472,6 @@ UI.anyAffordable = () => CFG.tree.some(n => { const c = UI.nodeCost(n); return c
 UI.costHtml = function (c) {
   let h = '<span class="c' + (G.xp >= c.xp ? '' : ' short') + '">' + UI.img('ic_xp', 14) + c.xp + '</span>';
   for (const k in c.pay) h += '<span class="c' + ((G.bank[k] || 0) >= c.pay[k] ? '' : ' short') + '">' + UI.img(k, 14) + c.pay[k] + '</span>';
-  if (c.core) h += '<span class="c' + (G.stock.core >= c.core ? '' : ' short') + '">' + UI.img('core', 14) + c.core + '</span>';
   return h;
 };
 UI.treeOpen = { L: false, R: false };
@@ -534,17 +533,17 @@ const fPct = v => '+' + Math.round(v * 1000) / 10 + '%';
 const fSec = v => v.toFixed(2) + 's';
 // one-line damage summaries for the hover card, built from CFG.spells so they never drift from WZ.cast
 const SPELL_DMG = {
-  flamethrower: s => s.n + ' bolts x ' + s.dmg + ' dmg',
-  tempest: s => s.dmg + ' dmg, chains to ' + s.n,
-  steam: s => s.dmg + ' dmg in a ' + s.r + ' tile ring, slows',
-  sandstorm: s => s.dps + ' dmg/s for ' + s.t + 's, follows',
-  magma: s => s.dmg + ' dmg + ' + s.splash + ' splash',
-  mud: s => s.dps + ' dmg/s for ' + s.t + 's, -' + Math.round(s.slow * 100) + '% speed, ' + s.wall.len + '-tile Earth Wall for ' + s.wall.t + 's',
-  meteor: s => s.n + ' meteors x ' + s.dmg + ' dmg',
-  thunder: s => s.dmg + ' dmg, chains to ' + s.n,
-  blizzard: s => s.dps + ' dmg/s for ' + s.t + 's, follows; ice for ' + s.frost.t + 's',
-  geyser: s => s.n + ' blasts x ' + s.dmg + ' dmg; jump up to ' + s.jump.dist + ' tiles',
-  nova: s => s.dmg + ' dmg in a ' + s.r + ' tile ring',
+  flamethrower: s => s.dps + ' dmg/s in a ' + s.range + ' tile cone for ' + s.t + 's, follows his aim',
+  tempest: s => s.dmg + ' dmg zap every ' + s.zap + 's for ' + s.t + 's, slows',
+  steam: s => s.dps + ' dmg/s while it swells, then a ' + s.blast + ' dmg blast that shoves (' + s.r + ' tiles)',
+  sandstorm: s => s.dps + ' dmg/s for ' + s.t + 's, hunts foes and drags them in',
+  magma: s => s.dmg + ' dmg blast, a lava pool (' + s.pool.dps + ' dmg/s), ' + s.blobs + ' blobs x ' + s.blobDmg,
+  mud: s => 'a mudslide that roots, then ' + s.dps + ' dmg/s for ' + s.t + 's, -' + Math.round(s.slow * 100) + '% speed, ' + s.wall.len + '-tile Earth Wall for ' + s.wall.t + 's',
+  meteor: s => s.dmg + ' dmg meteor (' + s.r + ' tiles), then ' + s.frags + ' fragments x ' + s.fragDmg,
+  thunder: s => 'a bolt every ' + s.every + 's for ' + s.t + 's: ' + s.dmg + ' dmg, forks to ' + s.chain + ' more x ' + s.chainDmg,
+  blizzard: s => 'icicles x ' + s.iceDmg + ' dmg, ' + s.chill + ' hits freeze a foe for ' + s.freeze + 's; ice for ' + s.frost.t + 's',
+  geyser: s => s.n + ' blasts x ' + s.dmg + ' dmg, foes thrown up (' + s.land + ' dmg landing); jump up to ' + s.jump.dist + ' tiles',
+  nova: s => '4 rings, ' + s.dmg + ' dmg in all, ' + s.r + ' tiles: shove, slow, burn, stagger',
 };
 UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a plain fact, null = maxed out
   const L = UI.nodeLevel(n), up = CFG.upgrade[n.id], nx = L < UI.nodeMax(n) ? L + 1 : null;
@@ -558,7 +557,7 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
     case 'hearty': return [row('Wizard max HP', l => '' + (CFG.wizard.hp + up * l))];
     case 'gems': return [row('Gem drop chance', l => 'x' + Math.pow(1 + up, l).toFixed(2)), row('Cinder Imp gem chance', l => Math.min(95, Math.round(CFG.creatures.cinder.gem[1] * 100 * Math.pow(1 + up, l))) + '%'), row('Wild Slime gem chance', l => Math.min(95, Math.round(CFG.enemies.slime.gem[1] * 100 * Math.pow(1 + up, l))) + '%')];
     case 'magnet': return [row('Pickup range', l => (CFG.world.vacuum + up * l).toFixed(2) + ' tiles'), row('Shard / Core range', l => ((CFG.world.vacuum + up * l) * 2.5).toFixed(2) + ' tiles')];
-    case 'summon': return [['Lands', 'in the wilds beside the Wizard'], ['Lit by', 'a Single, a Pair, a Triple, the Nova'], ['Wakes the Chimera', 'with all 4 Strongholds claimed']];
+    case 'summon': return [['Lands', 'in the wilds beside the Wizard'], ['Takes spells', 'once the Warden is dead'], ['Lit by', 'a Single, a Pair, a Triple, the Nova'], ['Wakes the Chimera', 'with all 4 sockets lit']];
     case 'heavy': {
       const life = k => Math.round(CFG.batteryLife * k) + 's';
       return [['Battery at full load lasts', life(1)], ['Heavy Battery at full load lasts', life(1 + CFG.heavyBattery)]];
@@ -616,11 +615,10 @@ UI.buy = function (id) {
     const short = [];
     if (G.xp < c.xp) short.push(Math.ceil(c.xp - G.xp) + ' XP');
     for (const k in c.pay) if ((G.bank[k] || 0) < c.pay[k]) short.push((c.pay[k] - (G.bank[k] || 0)) + ' ' + itemName(k));
-    if ((c.core || 0) > G.stock.core) short.push((c.core - G.stock.core) + ' Warden Core (from a Stronghold)');
+
     UI.toast('Still need ' + short.join(', '), 'L', 'ic_skill'); AU.sfx('error'); return;
   }
   G.xp -= c.xp;
-  G.stock.core -= c.core || 0;
   for (const k in c.pay) G.bank[k] -= c.pay[k];
   G.tree[id] = n.tiers ? UI.nodeLevel(n) + 1 : true;
   AU.sfx('buy');
@@ -697,7 +695,7 @@ UI.pinHtml = function (side, id) {
   const add = (k, need, rate) => rows.push({ k, need, rate, t: need <= 0 ? 0 : rate > 0 ? need / rate : Infinity });
   add('ic_xp', Math.ceil(c.xp - G.xp), r ? r.xpm : 0);
   for (const k in c.pay) add(k, c.pay[k] - (G.bank[k] || 0), r ? r.rateOf(k) : 0);
-  if (c.core) add('core', c.core - G.stock.core, 0);
+
   const short = rows.filter(x => x.need > 0), eta = short.reduce((a, x) => Math.max(a, x.t), 0);
   // missing amounts, each with its current income
   h += short.map(x => '<div class="pr">' + UI.img(x.k, 16) + '<b>' + x.need + '</b><i>' + (x.rate > 0 ? '+' + f1(x.rate) + '/m' : '+0') + '</i></div>').join('');
@@ -710,7 +708,7 @@ UI.pinHtml = function (side, id) {
   else {
     const worst = short.reduce((a, x) => (x.t > a.t ? x : a));
     if (worst.k === 'ic_xp') act = [UI.img('ic_hat', 16), UI.img('ic_skull', 16)];   // the Wizard fights for XP
-    else if (worst.k === 'core') act = [UI.img('ic_hat', 16), UI.img('ic_keep', 16)];   // the Wizard claims a Stronghold
+
     else if (ELEM[worst.k] && !G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === worst.k)) act = [UI.img('b:' + worst.k, 16)];   // set a Harnesser to that element first
     else if (ITEMS[worst.k].spell && !(G.fac.bld.some(b => b.type === 'forge' && b.recipe === worst.k))) act = [UI.img('b:forge', 16), UI.img('ic_swap', 14), UI.img(worst.k, 16)];   // set a Forge to it
     else act = [UI.img(worst.k, 16), '<em>&gt;</em>', UI.img('ic_skill', 16)];   // send it into the Skill Portal
@@ -838,7 +836,7 @@ const HOWTO = {
     ['The loop', 'The Wizard stands near trees, rocks and ore so delivered spells smash them. Drops vacuum into him and land in the factory <b>Stockpile</b>. The Builder carries them to blueprints to grow the factory, which makes stronger spells, potions, shield potions and garments.'],
     ['Two portals', 'The <b>Spell Portal</b> sends things to the Wizard. The <b>Skill Portal</b> banks element packets and spells as currency for the <b>Skill Tree</b>, together with XP from kills.'],
     ['Follow the goals', 'Each player has their own goal card (Builder on the left, Wizard on the right) and the two run at the same time. Every goal pays XP, and the bigger ones add a gift: spells for the skill tree, building materials, a free Battery, potions and shield potions. A gold arrow points at where to go, and the right hotbar slot or skill-tree button blinks.'],
-    ['Winning', 'Late on, claim a <b>Stronghold</b> for a <b>Warden Core</b> (Summoning costs one, plus 6 Aether Shards sent into the <b>Skill Portal</b>). Buying <b>Summoning</b> makes the <b>Summoning Altar</b> fall from the sky into the wilds beside the Wizard. He lights its four sockets by hitting it with one spell of each tier: a Single, a Pair, a Triple and the Elemental Nova (the Builder sends them; a socket stays lit for good). With <b>all four Strongholds</b> claimed, the Primal Chimera rises from the Altar when he stands by it. Beat it to win. You can keep playing afterwards.'],
+    ['Winning', 'Late on, storm the <b>Stronghold</b> and kill <b>the Warden</b>. Buying <b>Summoning</b> (it costs 6 Aether Shards sent into the <b>Skill Portal</b>) makes the <b>Summoning Altar</b> fall from the sky into the wilds beside the Wizard. While the Warden lives the Altar ignores every spell (words rise off it to say so). Once it is dead, the Wizard lights its four sockets by hitting it with one spell of each tier: a Single, a Pair, a Triple and the Elemental Nova (the Builder sends them; a socket stays lit for good). With all four lit, the Primal Chimera rises from the Altar when he stands by it. Beat it to win. You can keep playing afterwards.'],
   ],
   'FACTORY': [
     ['Hands', 'The Builder carries one stack (5 at first). <b>Left-click</b> (pad <b>A</b>) picks up <b>one item at a time</b>: hold it to keep grabbing. <b>Right-click</b> (pad <b>B</b>) throws one item along the dotted lead line: it aims at machines, blueprints, belts, portals or the Stockpile. Throwing is the only way to put things in. Nothing ever vanishes.'],
@@ -846,7 +844,8 @@ const HOWTO = {
     ['Machines', 'The <b>Harnesser</b> carries one of four element crystals: <b>F</b> (<b>LT + X</b> on a pad) switches it to the next element at any time. The old crystal bursts, the new one grows for 15 seconds, then the Harnesser shakes and starts making packets (nothing is made while it grows, and switching again restarts the 15 seconds). Every building shows what it holds as real items stacked on it: inputs, what it has made, a blueprint materials (faint copies = still missing), Battery fuel. Harnessers make packets by themselves, or stand next to one and press <b>E</b>, then <b>keep tapping E</b> to fill the meter and crank one out by hand (it never fills by itself; no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
     ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with one charged <b>Battery</b> just south of the Stockpile. A Battery is a building: it gives +10 power while it has charge and drains by itself while anything needs power. To refill it, throw element packets, Wood or Stone at it (or belt them in): it burns them into charge, more kinds at once = faster (hand-gathered packets are free). Every packet charges 10% more than its base, and a packet you throw in by hand adds another 20%. Build more Batteries like any building (place the blueprint, throw its materials at it). A charged Battery right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, the <b>Heavy Batteries</b> node unlocks the <b>Heavy Battery</b>, which drains slower so its charge lasts 50% longer.'],
     ['Creatures', 'The <b>Creature Spawner</b> turns element packets into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. There is only one Spawner and nothing to unlock: feed it one element for a basic creature, two for a pair, three for a triple (it works out the creature from the elements inside, no recipe to pick; a small icon shows which one it is hatching). At most 25 factory creatures live at once: extra Eggs wait beside the portal. Every creature is in the <b>Collection Book</b> (C) with a live demo. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
-    ['Growing', 'The floor starts small (12 x 8). Place <b>Floor Tiles</b> (slot 8) on empty ground beside it and throw them Wood and Stone (and Iron after the 28th) to turn them into floor. The Stockpile never moves.'],
+    ['Growing', 'The floor starts small (12 x 9). Place <b>Floor Tiles</b> (slot 8) on empty ground beside it and throw them Wood and Stone (and Iron after the 28th) to turn them into floor. A floor tile holds <b>5</b> loose items; more bounce on to the next tile.'],
+    ['Stockpile', 'The <b>Stockpile</b> is a real inventory: it starts as 3 x 2 wooden tiles, and every tile holds <b>50 of ONE kind</b> (Wood, Stone, Iron, Shards, Cores, the Warden Key, element packets, garments). Slot 8 swaps (<b>Q</b>) to the <b>Stockpile Tile</b> (4 Wood, 2 Stone, 1 Iron), placed on an empty floor tile. When the Stockpile has no room for something, the Wizard cannot send it home: the portal over his head spits it back out. <b>Demolish</b> takes a building first; on an empty tile it lifts the Stockpile tile (back to floor) or the floor tile itself, refunded, and whatever lay there bounces to the next tile with room. When the whole factory is full the extras go through the Spell Portal into the wilds.'],
     ['Spells', 'Spells need no unlocking: a pair is the two element packets fused at an Elemental Forge, a triple needs its two parent pairs to have been made once, and the Nova needs all four triples. The <b>Collection Book</b> (button beside the Skill Tree, or <b>C</b>) lists every spell and creature with a live demo, its recipe and its numbers.'],
     ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> routes what comes in to up to 3 outputs: every side that has a belt, machine or portal to feed (the side items arrive from is the input). Click it (<b>A</b> on a pad) to share the outputs out by percentage with a slider, and switch element toggles on an output to make it a <b>filter</b> (Fire + Earth left, Water + Air right). The starting Splitter sends 25% to the Spell Portal and 75% to the Spawner. The <b>Storage Crate</b> holds 30 packets or spells and feeds them out of its arrow. E turns a Crate.'],
     ['Reading the floor', 'Every machine shows its state the moment it changes, with an outline, an icon, how fast it animates and a little chirp: <b>green flowing dashes</b> working (up close), <b>yellow dashes</b> + a ghost of the missing ingredient, <b>grey dots</b> + <b>?</b> starved, <b>orange long dashes</b> + <b>!</b> output jammed, <b>thick red</b> + stacked bars output full (stopped), <b>purple dash-dot</b> + bolt no power. Each portal shows how many items it took in the last minute.'],
@@ -859,8 +858,8 @@ const HOWTO = {
     ['Terrain', 'Grass, dirt, sand and paths are normal speed. <b>Bog</b> (dark olive, reeds) slows everyone down. <b>Water</b> can\'t be crossed at all, except by the paths that bridge it. Monsters never spawn in water.'],
     ['XP gems', 'XP comes only as <b>gems</b>: each kill has a chance to drop one (1 gem = 1 XP; crafted pairs and triples always drop some, elites always drop 3). Gems lying close together merge into one <b>Big Gem</b>. <b>Gem Wisdom</b> raises the drop chances, <b>Loot Magnet</b> widens the pickup range.'],
     ['Events', 'Every 10 to 15 minutes of play something happens in the wilds: a <b>Migration</b>, a <b>Stampede</b>, an <b>Elite Hunt</b>, a <b>Mutation Bloom</b>, a <b>Portal Storm</b> or the <b>Chimera\'s Brood</b>, then the cycle starts again, harder. The card under the goal shows what and when from five minutes out, with the elements to stock up on; toasts warn at 5 min, 2 min and 30 s. Clearing one showers XP gems (and a Shard from Cycle 2). Nothing starts while the Chimera is out.'],
-    ['Strongholds', 'Four far-off keeps, one per element, marked on the map. Walk near one to <b>scout</b> it: its guards, its <b>Warden</b> and what the Warden is weak to show up. Each keep has a <b>two-step door</b>. First its approach terrain: the Water keep stands on an island, the Fire keep behind scorched ground, the Earth keep behind a ring of cracked rock, the Air keep across a broken bridge over a chasm. Then its <b>Ward Key</b>: the first elite of that element drops it, it flies home to the Stockpile, and the Builder sends it through the Spell Portal while the Wizard stands near the keep. It sails down onto the door and opens it for good (the Portal bounces it back if the Wizard is too far away). Beat the Warden and the guards to claim it: lots of Aether Shards and a <b>Warden Core</b> (each keep pays its Core once per save). The first Warden to fall also makes the Wizard <b>glow</b> for good and opens the <b>held-spell slot</b>.'],
-    ['Augments', 'The Wizard\'s own gear. <b>Augments</b> are garments in four slots (Hat, Robe, Boots, Charm) that give him a new <b>verb</b>, never a number: <b>Tide-Walking Boots</b> walk on water, the <b>Emberward Cloak</b> crosses scorched ground, the <b>Stonefist Charm</b> lets a Gust shove boulders and crack rock open, the <b>Gale Circlet</b> turns the roll into a blink across gaps. The <b>Bogwalker Shroud</b>, <b>Phoenix Feather</b>, <b>Static Cloak</b> and <b>Kilnsight Mask</b> mix two or three elements. The Wizard does not find them: the <b>Builder forges them at the Armory</b> from <b>Cores</b> (Stone, Tide, Ember and Gale Cores dropped by the creatures of that element: rare from normal kills, more from pairs and triples, a sure chunk from elites) plus Iron Ore and an Aether Shard. Cores fly home to the Stockpile like shards; the Collection Book\'s Wardrobe page shows every recipe and where each Core comes from. A finished garment goes through the Spell Portal and drops into the wilds like a creature: the Wizard puts it on by <b>walking onto it</b>. The garment he was wearing pops off and flies to the <b>Wardrobe Shelf</b> beside the Spell Portal (it grows a slot for every garment stored), where the Builder can take it and send it back whenever they want to swap.'],
+    ['The Stronghold', 'One far-off keep, marked on the map. Walk near it to <b>scout</b> it: its guards, <b>the Warden</b> and what the Warden is weak to show up. The keep has a <b>two-step door</b>. First its approach terrain (an island in a lake, scorched ground, a ring of cracked rock or a broken bridge over a chasm, depending on its element), which one garment opens. Then the <b>Warden Key</b>: the Builder forges it at the Armory from 3 Cores of every element, 3 Iron Ore and 3 Aether Shards, and sends it through the Spell Portal while the Wizard stands near the keep. It sails down onto the door and opens it for good (the Portal bounces it back if the Wizard is too far away). Kill the Warden and the guards: lots of Aether Shards and Cores, the Wizard <b>glows</b> for good and gets the <b>held-spell slot</b>, and the <b>Summoning Altar</b> starts taking spells.'],
+    ['Augments', 'The Wizard\'s own gear. <b>Augments</b> are garments in four slots (Hat, Robe, Boots, Charm) that give him a new <b>verb</b>, never a number: <b>Tide-Walking Boots</b> walk on water, the <b>Emberward Cloak</b> crosses scorched ground, the <b>Stonefist Charm</b> lets a Gust shove boulders and crack rock open, the <b>Gale Circlet</b> turns the roll into a blink across gaps. The <b>Bogwalker Shroud</b>, <b>Phoenix Feather</b>, <b>Static Cloak</b> and <b>Kilnsight Mask</b> mix two or three elements. The Wizard does not find them: the <b>Builder forges them at the Armory</b> from <b>Cores</b> (Stone, Tide, Ember and Gale Cores dropped by the creatures of that element: rare from normal kills, more from pairs and triples, a sure chunk from elites) plus Iron Ore and an Aether Shard. Cores fly home to the Stockpile like shards; the Collection Book\'s Wardrobe page shows every recipe and where each Core comes from. A finished garment goes through the Spell Portal and drops into the wilds like a creature: the Wizard puts it on by <b>walking onto it</b>. The garment he was wearing pops off and flies home to the <b>Stockpile</b> (a tile of its own), where the Builder can take it and send it back whenever they want to swap.'],
     ['Pickups', 'Potions and Shield Potions sent through the Spell Portal fall beside the Wizard. Walk over them to use them. They wait if HP or shield is already full.'],
     ['Weaknesses', 'Biome monsters take <b>double damage</b> from one element and half from another: <b>Ember Imps</b> (sand, dirt) hate Water, <b>Bog Lurkers</b> hate Fire, <b>Gale Wisps</b> (far meadows) hate Earth, <b>Stone Golems</b> (far dark woods) hate Air. Combo spells count every element in them. A small diamond over a foe shows its weakness, and yellow numbers with a ! mean a weak hit.'],
     ['Elites', 'Big gold-ringed monsters with a crown. Much tougher, but they drop <b>Aether Shards</b> and lots of XP. Each one is weak to one element.'],
@@ -885,9 +884,9 @@ UI.howPage = function (tab) {
     const uses = {
       wood: 'Every building, belts (1 each), fuel for a Battery',
       stone: 'Every building, fuel for a Battery',
-      iron: 'Forge, Armory, Battery, Heavy Battery, every garment and Ward Key, Floor Tiles after the 28th',
-      shard: 'Rare: only from landmarks and elites. Spawners, garments, Ward Keys; 6 go into the Skill Portal for Summoning',
-      core: 'Once per Stronghold per save. Costs of Summoning; all four Strongholds must be claimed to wake the Chimera',
+      iron: 'Forge, Armory, Battery, Heavy Battery, Stockpile Tiles, every garment and the Warden Key, Floor Tiles after the 28th',
+      shard: 'Rare: only from landmarks and elites. Spawners, garments, the Warden Key; 6 go into the Skill Portal for Summoning',
+      wardkey: 'Forged at the Armory. Sent through the Spell Portal while the Wizard stands at the Stronghold, it opens the door to the Warden',
       air: 'Spell Portal: Air Gust. Skill Portal: currency. Battery fuel, recipes',
       water: 'Spell Portal: Water Spray. Skill Portal: currency. Battery fuel, recipes',
       fire: 'Spell Portal: Fireball. Skill Portal: currency. Battery fuel, recipes',

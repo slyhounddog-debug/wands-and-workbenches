@@ -4,14 +4,14 @@
 //  - CORES (core_<el>): the components of his garments. Creatures of an element drop that element's Core (rare from normals, more from pairs / triples, a
 //    guaranteed chunk from elites); they fly home to the Stockpile like shards. The Builder forges garments (and Ward Keys) from them at the Armory. A shrine takes
 //    one Core of each of the THREE OTHER elements, sent through the Spell Portal one at a time while the Wizard stands near it (G.w.lm[id].fed).
-//  - WARD KEYS (key_<el>): forged at the Armory from Cores of their own element + Iron + a Shard (CFG.keyCost). Sent through the portal while he is near that
-//    element's Stronghold it flies down and opens the keep's door for good (G.aug.key[el]).
+//  - THE WARDEN KEY (wardkey): forged at the Armory from Cores of every element + Iron + Shards (CFG.keyCost). Sent through the portal while he is near the
+//    Stronghold it flies down and opens the keep's door for good (G.aug.door).
 //  - AUGMENTS (CFG AUGS): garments in four slots (hat, robe, boots, charm) that give him a new VERB, never a number. The Builder forges one at the Armory and
 //    sends it through the portal; it lands in the wilds like a creature drop and he wears it by walking onto it. The garment it replaces pops off and flies
-//    to the Wardrobe Shelf by the factory portal (G.fac.shelf), where the Builder can pick it up and send it back whenever he likes.
-//  - the held-spell slot (G.hold): unlocked by the first Warden to fall.
+//    home to the Stockpile (a tile of its own), where the Builder can pick it up and send it back whenever he likes.
+//  - the held-spell slot (G.hold): unlocked when the Warden falls.
 WZ.augFresh = () => ({
-  v: 2, worn: { hat: '', robe: '', boots: '', charm: '' }, key: { air: false, water: false, fire: false, earth: false },   // key[el]: that keep's door has been opened
+  v: 3, worn: { hat: '', robe: '', boots: '', charm: '' }, door: false,   // door: the Stronghold's door has been opened with the Warden Key
   cd: { phoenix: 0 },   // cd.phoenix: seconds until the Feather can save him again
 });
 // a save's augment state with every field defaulted and checked. An old save (before the Builder forged garments) also hands back what it owned:
@@ -22,7 +22,7 @@ WZ.augFix = function (a) {
   const own = {};
   for (const id in a.own || {}) if (AUGS[id] && a.own[id]) own[id] = true;
   for (const sl of AUG_SLOTS) { const id = a.worn && a.worn[sl[0]]; if (id && AUGS[id] && AUGS[id].slot === sl[0] && (a.v >= 2 || own[id])) f.worn[sl[0]] = id; }
-  for (const el of ELEMS) f.key[el] = !!(a.key && a.key[el]);
+  f.door = !!a.door || !!(a.key && ELEMS.some(el => a.key[el]));   // (older saves had one door per keep: any open one opens the one keep there is now)
   f.cd.phoenix = Math.max(0, +(a.cd && a.cd.phoenix) || 0);
   if (!(a.v >= 2)) {
     f.legacyOwn = Object.keys(own).filter(id => f.worn[AUGS[id].slot] !== id);
@@ -72,7 +72,7 @@ WZ.collect = function (dr) {   // the Wizard reached a Core or a Ward Key: it fl
   G.stats.cores = (G.stats.cores || 0) + (isCoreKind(k) ? n : 0);
   WZ.icon(w.x, w.y, k); AU.sfx('chest');
   WZ.puff(w.x, w.y, ELEM[el].color, 6);
-  if (!G.flags['core_seen_' + el]) { G.flags['core_seen_' + el] = true; UI.toast(CORE_NAME[el] + '! The Builder forges garments and Ward Keys from Cores (the Armory); the other three elements\' Shrines take it', 'R', k); UI.toast('The Wizard found a ' + CORE_NAME[el] + ': it is in the Stockpile', 'L', k); }
+  if (!G.flags['core_seen_' + el]) { G.flags['core_seen_' + el] = true; UI.toast(CORE_NAME[el] + '! The Builder forges garments and the Warden Key from Cores (the Armory); the other three elements\' Shrines take it', 'R', k); UI.toast('The Wizard found a ' + CORE_NAME[el] + ': it is in the Stockpile', 'L', k); }
   UI.changed();
 };
 // Cores and Ward Keys still lying in the wilds when the run ends (or the game is saved) are the Stockpile's anyway, like shards; so is a garment nobody walked onto
@@ -86,7 +86,7 @@ WZ.looseGarments = function () {   // garments delivered but not worn yet: in th
   for (const p of w.pickups) if (ITEMS[p.kind] && ITEMS[p.kind].aug) out.push(ITEMS[p.kind].id);
   return out;
 };
-// he walked onto a garment: it goes on, and whatever it replaces pops off and flies to the Wardrobe Shelf
+// he walked onto a garment: it goes on, and whatever it replaces pops off and flies home to the Stockpile
 WZ.wearGarment = function (id) {
   const A = G.aug, a = AUGS[id], w = G.w, old = A.worn[a.slot];
   A.worn[a.slot] = id;
@@ -98,10 +98,11 @@ WZ.wearGarment = function (id) {
   G.stats.garments = (G.stats.garments || 0) + 1;
   UI.changed();
 };
-WZ.garmentOff = function (id) {   // pops off in a ring of sparks and flies through the portal to the Wardrobe Shelf (the factory side takes it from here)
+WZ.garmentOff = function (id) {   // pops off in a ring of sparks, up through the portal over his head and home to the Stockpile (it spills onto the floor if there is no room)
   const w = G.w, a = AUGS[id];
-  WZ.ring(w.x, w.y, 1.8, a.col, 0.45); WZ.puff(w.x, w.y, a.col, 10); WZ.icon(w.x, w.y - 0.6, 'aug_' + id);
-  FA.toShelf(id, 0.35);
+  WZ.ring(w.x, w.y, 1.8, a.col, 0.45); WZ.puff(w.x, w.y, a.col, 10);
+  WZ.hsuck('aug_' + id, w.x, w.y, false);
+  FA.toStock('aug_' + id, 1);
   AU.sfx('whoosh');
 };
 
@@ -120,7 +121,7 @@ WZ.unlockTarget = function (k) {
   const el = k.slice(k.indexOf('_') + 1);
   if (isCoreKind(k)) return WZ.marks.find(m => m.type === 'shrine' && w.lm[m.id].state !== 'done' && WZ.shrineNeeds(m).indexOf(el) >= 0 && !w.arcs.some(a => a.mark === m.id && a.kind === k) &&
     Math.hypot(w.x - m.x, w.y - m.y) < CFG.unlockR) || null;
-  return WZ.marks.find(m => m.el === el && m.type === 'stronghold' && w.lm[m.id].state !== 'done' && !G.aug.key[el] && !w.arcs.some(a => a.mark === m.id) &&
+  return WZ.marks.find(m => m.type === 'stronghold' && w.lm[m.id].state !== 'done' && !G.aug.door && !w.arcs.some(a => a.mark === m.id) &&
     Math.hypot(w.x - m.x, w.y - m.y) < CFG.unlockR) || null;
 };
 WZ.unlockLand = function (a) {   // the Core / key has come down on its shrine / keep
@@ -142,15 +143,15 @@ WZ.unlockLand = function (a) {   // the Core / key has come down on its shrine /
     AU.sfx('shrine');
     WZ.claim(m);
   } else {
-    G.aug.key[el] = true; AU.sfx('chest'); w.shake = Math.max(w.shake, 0.3);
-    UI.toast('The ' + KEY_NAME(el) + ' opened the ' + ELEM_WORD[el] + ' Stronghold!', 'R', a.kind); UI.toast('The ' + ELEM_WORD[el] + ' Stronghold is open', 'L', a.kind);
+    G.aug.door = true; AU.sfx('chest'); w.shake = Math.max(w.shake, 0.3);
+    UI.toast('The Warden Key opened the Stronghold! The Warden waits inside', 'R', a.kind); UI.toast('The Stronghold is open', 'L', a.kind);
     G.stats.unlocked = (G.stats.unlocked || 0) + 1;
     UI.changed();
   }
 };
 
 // ---------- the keeps' doors ----------
-WZ.doorLocked = m => G.w.lm[m.id].state !== 'done' && !G.aug.key[m.el];
+WZ.doorLocked = m => G.w.lm[m.id].state !== 'done' && !G.aug.door;
 WZ.doorTick = function (dt) {   // an invisible wall round a locked arena: until its Ward Key has been sent in he cannot walk in
   const w = G.w, K = CFG.strong;
   for (const m of WZ.marks) {
@@ -164,8 +165,8 @@ WZ.doorTick = function (dt) {   // an invisible wall round a locked arena: until
     w.x = d ? m.x + dx * k : m.x + K.arenaR + 0.03; w.y = d ? m.y + dy * k : m.y;
     w.vx = 0; w.vy = 0; w.target = null;
     if (!(s.lockT > 0)) {
-      s.lockT = 0.9; WZ.ring(m.x, m.y, K.arenaR, ELEM[m.el].color, 0.4); WZ.icon(w.x, w.y, 'key_' + m.el); AU.sfx('error');
-      if (w.t - (s.toastAt2 || -99) > 8) { s.toastAt2 = w.t; UI.toast('The ' + ELEM_WORD[m.el] + ' Stronghold is locked: the Builder must send the ' + KEY_NAME(m.el) + ' through the portal', 'R', 'key_' + m.el); UI.toast('The Wizard stands at a locked ' + ELEM_WORD[m.el] + ' Stronghold: send the ' + KEY_NAME(m.el), 'L', 'key_' + m.el); }
+      s.lockT = 0.9; WZ.ring(m.x, m.y, K.arenaR, ELEM[m.el].color, 0.4); WZ.icon(w.x, w.y, 'wardkey'); AU.sfx('error');
+      if (w.t - (s.toastAt2 || -99) > 8) { s.toastAt2 = w.t; UI.toast('The Stronghold is locked: the Builder must send the Warden Key through the portal', 'R', 'wardkey'); UI.toast('The Wizard stands at the locked Stronghold: forge and send the Warden Key', 'L', 'wardkey'); }
     }
   }
 };
@@ -291,7 +292,7 @@ WZ.boulderTick = function (dt) {
   }
 };
 
-// ---------- the held-spell slot and the first Warden's glow-up ----------
+// ---------- the held-spell slot and the Warden's glow-up ----------
 WZ.glowUp = function (m) {
   const w = G.w;
   G.flags.glow = true; G.hold.on = true;

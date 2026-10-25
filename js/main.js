@@ -66,7 +66,12 @@ Main.applySave = function (slot, s) {
   // the Wizard's gear: an old save has none (everything defaults to empty). A save that already captured a Stronghold gets the glow-up and the spell slot silently (no animation)
   G.aug = WZ.augFix(s.aug);
   G.altar = WZ.altarFix(s.altar);
-  const captured = (G.stats.keeps || 0) > 0 || ELEMS.some(el => G.flags['core_' + el]);
+  // there is one Stronghold and one Warden now: an older save that claimed any keep has killed the Warden. Warden Cores are gone (no longer a currency), and each
+  // old per-element Ward Key comes back as what it was forged from
+  if (ELEMS.some(el => G.flags['core_' + el])) G.flags.warden = true;
+  for (const el of ELEMS) { delete G.flags['core_' + el]; const n = G.stock['key_' + el] | 0; if (n > 0) { G.stock['core_' + el] = (G.stock['core_' + el] || 0) + 4 * n; G.stock.iron += 2 * n; G.stock.shard += n; } delete G.stock['key_' + el]; }
+  delete G.stock.core;
+  const captured = (G.stats.keeps || 0) > 0 || !!G.flags.warden;
   if (captured) G.flags.glow = true;
   G.hold = { on: !!(G.flags.glow || (s.hold && s.hold.on)), spell: s.hold && SPELL_COL[s.hold.spell] ? s.hold.spell : null };
   if (G.hold.on) G.flags.glow = true;
@@ -85,7 +90,7 @@ Main.applySave = function (slot, s) {
   FA.fromJSON(s.fac || {});
   if (G.flags.recharged) G.flags.fed = true;   // the old "recharge the spare Battery" goal is the new "feed the Battery" one
   // an old save's wardrobe: garments he owned but was not wearing go on the Wardrobe Shelf, Offerings he carried come back as Cores
-  if (G.aug.legacyOwn) { for (const id of G.aug.legacyOwn) FA.shelfAdd(id); delete G.aug.legacyOwn; }
+  if (G.aug.legacyOwn) { for (const id of G.aug.legacyOwn) G.stock['aug_' + id] = Math.max(1, G.stock['aug_' + id] || 0); delete G.aug.legacyOwn; }
   if (G.aug.legacyOff) { for (const el in G.aug.legacyOff) G.stock['core_' + el] += G.aug.legacyOff[el]; delete G.aug.legacyOff; }
   looseBat += FA.lostBat;
   if (looseBat) G.credits.battery += looseBat;
@@ -119,7 +124,7 @@ Main.refundTree = function () {
     else if (id === 'expand') { for (let i = 0; i < Math.min(REMOVED_EXPAND.length, +G.tree.expand || 0); i++) give(...REMOVED_EXPAND[i]); delete G.tree.expand; }
   }
   if (!back.xp && !back.core && !Object.keys(back.bank).length) return null;
-  G.xp += back.xp; G.stock.core += back.core;
+  G.xp += back.xp;   // (Warden Cores are no longer a currency: the one a removed node cost is not handed back)
   for (const k in back.bank) G.bank[k] = (G.bank[k] || 0) + back.bank[k];
   return back;
 };
@@ -142,20 +147,17 @@ Main.questOf = function (s) {
 };
 // a save that parses and has the essentials (used to decide what's safe to keep as the backup)
 Main.saveOk = s => !!s && s.v >= 4 && !!s.fac && !!s.stock && isFinite(s.xp);
-// the Stockpile for a save: shards, Cores and Ward Keys still lying in the wilds count as banked, and so does whatever is still flying home
+// the Stockpile for a save: shards, Cores, the Warden Key, garments and the factory's overflow still lying in the wilds count as banked, and so does whatever is still
+// flying home (a save with more than the Stockpile holds spills the rest onto the floor when it loads: FA.pileSync)
 Main.stockSaved = function () {
   const st = Object.assign({}, G.stock), add = (k, n) => { st[k] = (st[k] || 0) + n; };
-  if (G.w) for (const d of G.w.drops) if (d.kind === 'shard' || d.kind === 'core' || WZ.isLoot(d.kind)) add(d.kind, d.val || 1);
+  if (G.w) for (const d of G.w.drops) if (WZ.keepDrop(d) && FA.storable(d.kind)) add(d.kind, d.val || 1);
+  for (const id of WZ.looseGarments()) add('aug_' + id, 1);
   const fl = FA.inFlight();
   for (const k in fl) add(k, fl[k]);
   return st;
 };
-// the factory for a save: a garment still in the air or lying in the wilds comes back on the Wardrobe Shelf
-Main.facSaved = function () {
-  const j = FA.toJSON();
-  for (const id of WZ.looseGarments()) if (j.shelf.indexOf(id) < 0) j.shelf.push(id);
-  return j;
-};
+Main.facSaved = () => FA.toJSON();
 Main.save = function () {
   if (!G) return;
   const key = 'wands2_save_slot' + G.slot;
@@ -268,7 +270,7 @@ function handleMouseFactory(dt) {
       FA.placeBelt(tx, ty, G.placeDir);
       G.drag = { x: tx, y: ty };
     } else if (!FA.place(sel, tx, ty, G.placeDir) && FA.inb(tx, ty) && FA.unlocked(sel)) {
-      UI.toast(sel === 'expand' ? 'Floor Tiles go on empty ground right beside the floor.' : FA.reserved(tx, ty) ? 'The Stockpile Zone has to stay clear.' : !FA.owned(tx, ty) ? 'There is no floor there: add Floor Tiles first.' : 'That tile is taken.', 'L', 'ic_x'); AU.sfx('error');
+      UI.toast(sel === 'expand' ? 'Floor Tiles go on empty ground right beside the floor.' : sel === 'stockpile' ? 'Stockpile Tiles go on an empty floor tile.' : FA.isPile(tx, ty) ? 'Nothing can be built on a Stockpile tile (demolish it first).' : !FA.owned(tx, ty) ? 'There is no floor there: add Floor Tiles first.' : 'That tile is taken.', 'L', 'ic_x'); AU.sfx('error');
     }
   } else if (m.l && sel === 'hand' && !G.demolish && !bd.target) {   // hold to keep taking
     G.mRepeat -= dt;
@@ -375,7 +377,7 @@ Main.controls = function (dt) {
   if (IN.wheel && IN.mouse.x < CFG.HALF && !UI.treeOpen.L) rot = IN.wheel > 0 ? 1 : -1;
   if (rot && !(UI.treeOpen.L || UI.treeOpen.R)) UI.cycle(rot);
   if (!(UI.treeOpen.L || UI.treeOpen.R) && Main.graceT <= 0 && (IN.hit('KeyQ') || (p0 && p0.rt))) UI.cycleFam(IN.shift() ? -1 : 1);   // next member of a family slot
-  if (IN.hit('KeyB') || IN.hit('Delete') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt (full refund). Esc cancels.', 'L', 'ic_bomb'); }
+  if (IN.hit('KeyB') || IN.hit('Delete') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt, or an empty tile to lift it (full refund). Esc cancels.', 'L', 'ic_bomb'); }
   if (IN.hit('KeyR') && !frozenNow()) {
     // R turns whatever is already placed under the cursor (or in front / in reach); only with nothing there does it turn the next placement
     const at = rotateTile();
@@ -689,11 +691,14 @@ Main.updateFocus = function () {
     if (c && c.type !== 'portal') {
       const cost = c.type === 'belt' ? { wood: 1 } : c.done ? FA.def(c).cost : c.got;
       R.demo = { x: gx, y: gy, refund: c.free && c.done ? [['ic_gift']] : Object.keys(cost).filter(k => cost[k] > 0).map(k => [k, cost[k]]) };
+    } else if (!c && FA.canLift(gx, gy)) {   // no building: the tile itself would go (a Stockpile tile back to floor, a floor tile back to empty ground)
+      const cost = FA.liftCost(gx, gy);
+      R.demo = { x: gx, y: gy, tile: true, refund: Object.keys(cost).map(k => [k, cost[k]]) };
     }
     else R.demo = { x: gx, y: gy };
   } else if (G.selected !== 'hand' && FA.inb(gx, gy)) {
     const c = FA.cell(gx, gy);
-    const ok = G.selected === 'belt' ? (FA.canPlace(gx, gy) || (c && c.type === 'belt')) : G.selected === 'expand' ? FA.canExpand(gx, gy) : FA.canPlace(gx, gy) && FA.unlocked(G.selected);
+    const ok = G.selected === 'belt' ? (FA.canPlace(gx, gy) || (c && c.type === 'belt')) : FA.isTile(G.selected) ? FA.canPut(G.selected, gx, gy) : FA.canPlace(gx, gy) && FA.unlocked(G.selected);
     R.ghost = { type: G.selected, x: gx, y: gy, ok: !!ok, dir: G.placeDir };
   }
 };

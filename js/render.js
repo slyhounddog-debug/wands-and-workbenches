@@ -228,13 +228,13 @@ R.drawFactory = function (main, dt) {
   }
   ctx.restore();
 
-  // stockpile pad
-  {
-    const z = FA.zone();
-    const a = R.toScreen(v, z.x0, z.y0), b = R.toScreen(v, z.x1 + 1, z.y0), c = R.toScreen(v, z.x1 + 1, z.y1 + 1), d = R.toScreen(v, z.x0, z.y1 + 1);
-    ctx.fillStyle = '#c49258';
-    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#f4d898'; ctx.lineWidth = 8; ctx.setLineDash([16, 16]); ctx.lineDashOffset = -Math.floor(t * 4) * 8; ctx.stroke(); ctx.setLineDash([]);
+  // the Stockpile tiles: wooden pads, each with its own dashed edge (one kind of thing per tile)
+  for (const i of FA.pileTiles()) {
+    const q = FA.tileXY(i), p = R.toScreen(v, q.x + 0.5, q.y + 0.5);
+    if (!vis(p[0], p[1])) continue;
+    ctx.fillStyle = (q.x + q.y) & 1 ? '#c49258' : '#b98a50'; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill();
+    ctx.fillStyle = '#a87a44'; ctx.fillRect(Math.round((p[0] - v.hw * 0.5) / 4) * 4, Math.round(p[1] / 4) * 4, Math.round(v.hw / 4) * 4, 4);   // a plank seam
+    ctx.strokeStyle = '#f4d898'; ctx.lineWidth = 4; ctx.setLineDash([12, 12]); ctx.lineDashOffset = -Math.floor(t * 4) * 8; diamond(ctx, p[0], p[1], v.hw - 4, v.hh - 2); ctx.stroke(); ctx.setLineDash([]);
   }
   // shockwaves rolling out of the Spell Portal across the floor (FA.pressure); the machines they pass jitter (FA.quake)
   if (f.waves.length) {
@@ -251,14 +251,13 @@ R.drawFactory = function (main, dt) {
     ctx.globalAlpha = 1;
   }
 
-  const piles = FA.piles();
   const list = [];
   for (const b of f.belts) list.push({ d: b.x + b.y + 0.4, o: b, t: 'belt' });
   for (const b of f.bld) list.push({ d: b.x + b.y + 1, o: b, t: 'bld' });
   const ps = FA.portal('spell'), pk = FA.portal('skill');
   list.push({ d: ps.x + ps.y + 2, t: 'portal', o: 'spell' });
   list.push({ d: pk.x + pk.y + 2, t: 'portal', o: 'skill' });
-  for (const k2 in piles) list.push({ d: piles[k2].x + piles[k2].y, o: k2, t: 'pile' });   // only the kinds that are in the Stockpile have a stack
+  for (const pl of FA.pileList()) if (pl.n > 0) list.push({ d: pl.x + pl.y - 0.5, o: pl, t: 'pile' });   // one stack per Stockpile tile that holds something
   const piles2 = [];
   list.push({ d: FA.qTile().x + FA.qTile().y + 1, t: 'q' });
   for (const o of f.floor) {
@@ -282,7 +281,6 @@ R.drawFactory = function (main, dt) {
     }
   }
   if (R.ghost) R.drawGhostGround(ctx, v, R.ghost, t);
-  R.drawShelf(ctx, v, t);
   for (const b of f.bld) {
     const k = b.done && FA.def(b).kind;
     if (!k || k === 'cell') continue;
@@ -295,7 +293,7 @@ R.drawFactory = function (main, dt) {
       case 'belt': R.drawBelt(ctx, v, it.o, t); break;
       case 'bld': R.drawBuilding(ctx, v, it.o, t); break;
       case 'portal': R.drawPortal(ctx, v, t, it.o); break;
-      case 'pile': R.drawPile(ctx, v, it.o, piles[it.o]); break;
+      case 'pile': R.drawPile(ctx, v, it.o); break;
       case 'q': R.drawQ(ctx, v, t); break;
       case 'floor': R.drawFloor(ctx, v, it.o.items[0], t); break;
       case 'floorG': R.drawFloorPile(ctx, v, it.o, t); break;
@@ -503,9 +501,9 @@ R.drawBuilding = function (ctx, v, b, t) {
   const th = b.thump > 0 ? 1 - b.thump / CFG.thump : 1, tq = th < 1 ? 1 - 0.24 * Math.cos(th * Math.PI * 2.5) * (1 - th) : 1;
   const top = p[1] - 128;
   if (!b.done) {
-    if (b.type === 'expand') {   // a Floor Tile waiting for its materials: a slab of floor that rises as it is paid for
+    if (FA.isTile(b.type)) {   // a Floor / Stockpile Tile waiting for its materials: a slab that rises as it is paid for
       const need = Object.values(FA.costOf(b)).reduce((a2, c2) => a2 + c2, 0), gt = Object.values(b.got).reduce((a2, c2) => a2 + c2, 0);
-      R.drawTileSlab(ctx, v, p, 4 + Math.round(gt / need * 8) + (b.pop > 0 ? 4 : 0), 0.6 + 0.3 * gt / need);
+      R.drawTileSlab(ctx, v, p, 4 + Math.round(gt / need * 8) + (b.pop > 0 ? 4 : 0), 0.6 + 0.3 * gt / need, b.type === 'stockpile');
       ctx.strokeStyle = '#d6eeff'; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw - 3, v.hh - 1.5); ctx.stroke();
     } else {
     dsprSq(ctx, spr, p[0], base, S, 1, sq, 0.45);
@@ -652,7 +650,10 @@ R.drawBuilding = function (ctx, v, b, t) {
       for (let i = 0; i < 5; i++) ctx.fillRect(Math.round((p[0] - 20 + i * 10) / 4) * 4, Math.round((base - 60 + (i % 2 ? -8 : 8)) / 4) * 4, 8, 4);
     }
   }
-  if (d.kind === 'crate') R.pile(ctx, b.out.slice(0, 9).map(o => o.kind), p[0], base - 36, t, b.id);   // the crate shows what is inside, in the order it will come out (bottom first)
+  if (d.kind === 'crate' && b.cn > 0) {   // the crate shows the kind inside (a short stack) and how many there are
+    R.pile(ctx, R.rep(b.ck, Math.min(4, b.cn)), p[0], base - 36, t, b.id);
+    txt(ctx, '' + b.cn, p[0] + 34, base - 40, 12, '#ffffff', 'center', 'd');
+  }
   // throughput: a building stuck for a moment shows why (orange ! = output blocked, grey ? = waiting on inputs)
   R.drawState(ctx, v, b, t, p, top);
 };
@@ -698,7 +699,7 @@ R.outlineObj = function (ctx, v, o, col, t, k) {
     const pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(q => { const sp = R.toScreen(v, q[0], q[1]); return [c[0] + (sp[0] - c[0]) * k, c[1] + (sp[1] - c[1]) * k]; });
     ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.closePath(); ctx.stroke();
   };
-  if (o === 'zone') { const z = FA.zone(); quad(z.x0, z.y0, z.x1 + 1, z.y1 + 1); }
+  if (o === 'zone') { const hk = FA.topKind(), z = hk ? FA.pileSpot(hk) : null; if (z) quad(Math.floor(z.x), Math.floor(z.y), Math.floor(z.x) + 1, Math.floor(z.y) + 1); }   // the Stockpile tile that kind goes on
   else if (o === 'q') { const q = FA.qTile(); quad(q.x, q.y, q.x + 1, q.y + 1); }
   else if (o.type === 'portal') { const q = FA.portal(o.which); quad(q.x, q.y, q.x + 1, q.y + 2); }
   else quad(o.x, o.y, o.x + 1, o.y + 1);
@@ -906,29 +907,17 @@ R.drawSuck = function (ctx, v, s, base) {
   }
 };
 
-// the Wardrobe Shelf: one wooden plinth per stored garment along the factory's back edge beside the Spell Portal (nothing until the first one comes home)
-R.drawShelf = function (ctx, v, t) {
-  const sh = G.fac.shelf;
-  for (let i = 0; i < sh.length; i++) {
-    const s = FA.shelfSlot(i), p = R.toScreen(v, s.x + 0.5, s.y + 0.5), hw = v.hw * 0.9, hh = v.hh * 0.9, th = 20;
-    ctx.fillStyle = '#7a4a22'; ctx.beginPath(); ctx.moveTo(p[0] - hw, p[1] - th); ctx.lineTo(p[0], p[1] + hh - th); ctx.lineTo(p[0], p[1] + hh); ctx.lineTo(p[0] - hw, p[1]); ctx.fill();
-    ctx.fillStyle = '#5a3418'; ctx.beginPath(); ctx.moveTo(p[0], p[1] + hh - th); ctx.lineTo(p[0] + hw, p[1] - th); ctx.lineTo(p[0] + hw, p[1]); ctx.lineTo(p[0], p[1] + hh); ctx.fill();
-    ctx.fillStyle = '#c28a52'; diamond(ctx, p[0], p[1] - th, hw, hh); ctx.fill();
-    ctx.fillStyle = '#e0aa6c'; diamond(ctx, p[0], p[1] - th, hw * 0.7, hh * 0.7); ctx.fill();
-    if (R.pickOf(i)) R.pickFx(ctx, p[0], p[1] - th, t, 1.4);
-    R.item(ctx, 'aug_' + sh[i], p[0], p[1] - th + 4 - (Math.sin(t * 2.4 + i * 1.7) > 0 ? 4 : 0), 4, t, R.pickOf(i));
-  }
-};
-R.drawPile = function (ctx, v, k, pos) {
-  const p = R.toScreen(v, pos.x, pos.y), n = G.stock[k];
-  const cnt = Math.min(15, Math.ceil(n / 2));
-  if (R.pickOf(k)) R.pickFx(ctx, p[0], p[1], G.fac.t, 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(Math.round((p[0] - 36) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 72, 12);
+// one Stockpile tile's stack: the items piled up (two leaning columns, at most 8 drawn: past that only the number keeps climbing), the count under it
+R.drawPile = function (ctx, v, pl) {
+  const p = R.toScreen(v, pl.x, pl.y), n = pl.n, k = pl.kind, cnt = Math.min(8, n), t = G.fac.t;
+  const pk = !!R.focus && R.focus.list.some(e => e.key === 'pick' && e.t.kind === 'pile' && e.t.o === k && e.t.x === pl.x && e.t.y === pl.y);
+  if (pk) R.pickFx(ctx, p[0], p[1], t, 1.3);
+  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(Math.round((p[0] - 24) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 48, 12);
   for (let i = 0; i < cnt; i++) {
-    const row = Math.floor(i / 5), col = i % 5;
-    dspr(ctx, itemSprite(k), p[0] + (col - 2) * 12 + (row % 2) * 6, p[1] - row * 12 + ((col * 7) % 5) - 2, 4);
+    const col = i % 2, row = Math.floor(i / 2), hop = pk && i === cnt - 1 && Math.sin(t * 10) > 0 ? 8 : 0;
+    dspr(ctx, itemSprite(k), p[0] + (col ? 8 : -8) + (row % 2 ? 4 : 0), p[1] - 2 - row * 14 - col * 4 - hop, 4);
   }
-  txt(ctx, '' + n, p[0], p[1] + 30, 12, k === 'shard' ? '#e0b8ff' : '#ffffff', 'center', 'd');
+  if (n > 1) txt(ctx, '' + n, p[0], p[1] + 26, 12, n >= CFG.stockCap ? '#ffd23a' : k === 'shard' ? '#e0b8ff' : '#ffffff', 'center', 'd');   // gold = the tile is full
 };
 // goal pointer in the factory: a bouncing arrow over the target, or an arrow on the edge pointing toward it
 R.drawHint = function (ctx, v, h, t) {
@@ -1068,16 +1057,16 @@ R.drawGhostLinks = function (ctx, v, g, t) {
 R.drawGhost = function (ctx, v, g, t) {
   const p = R.toScreen(v, g.x + 0.5, g.y + 0.5), hov = Math.sin(t * 4) > 0 ? 8 : 4;
   if (g.type === 'belt') { ctx.globalAlpha = g.ok ? 0.75 : 0.4; R.drawBelt(ctx, v, { x: g.x, y: g.y, dir: g.dir, item: null }, t); ctx.globalAlpha = 1; }   // the real belt, see-through: its chevrons show the way it will run
-  if (g.type === 'expand') R.drawTileSlab(ctx, v, p, hov + 4, g.ok ? 0.75 : 0.4);
+  if (FA.isTile(g.type)) R.drawTileSlab(ctx, v, p, hov + 4, g.ok ? 0.75 : 0.4, g.type === 'stockpile');
   ctx.strokeStyle = g.ok ? '#d6eeff' : '#ffd0d0'; ctx.lineWidth = 8; diamond(ctx, p[0], p[1], v.hw - 4, v.hh - 2); ctx.stroke();   // the tile's edge stays clear whatever stands on it
   const dd = DIRS[g.dir], sdx = (dd[0] - dd[1]) * v.hw * 0.45, sdy = (dd[0] + dd[1]) * v.hh * 0.45;
-  if (g.type !== 'belt' && g.type !== 'expand') dspr(ctx, R.bldSprite({ type: g.type }), p[0], p[1] + v.hh * 0.9 - 2 - hov, 4, 0.85);
+  if (g.type !== 'belt' && !FA.isTile(g.type)) dspr(ctx, R.bldSprite({ type: g.type }), p[0], p[1] + v.hh * 0.9 - 2 - hov, 4, 0.85);
   if (g.type === 'belt') {   // the tile it will feed is washed gold, so the way the belt runs reads from the cursor to the next tile
     const q = R.toScreen(v, g.x + 0.5 + dd[0], g.y + 0.5 + dd[1]);
     ctx.fillStyle = Math.sin(t * 8) > 0 ? 'rgba(255,224,110,0.6)' : 'rgba(255,224,110,0.3)';
     diamond(ctx, q[0], q[1], v.hw - 4, v.hh - 2); ctx.fill();
   }
-  if (g.type !== 'splitter' && g.type !== 'expand') {   // a Splitter has no front: it routes to whatever its sides touch
+  if (g.type !== 'splitter' && !FA.isTile(g.type)) {   // a Splitter has no front: it routes to whatever its sides touch
     const belt = g.type === 'belt', k = belt ? 1.5 : 1.2;   // a belt's arrow is longer, so its head reaches over into the next tile
     const ex = p[0] + sdx * k, ey = p[1] + sdy * k, sx0 = p[0] - sdx * 0.8, sy0 = p[1] - sdy * 0.8;
     const m = Math.hypot(sdx, sdy), nx = sdx / m, ny = sdy / m;
@@ -1096,13 +1085,14 @@ R.drawGhost = function (ctx, v, g, t) {
     if (Math.sin(t * 10) > 0) dspr(ctx, SP.ic_bolt, p[0], p[1] - 120, 4);   // it will overdrive its neighbour
   }
 };
-// a floor tile as a slab of grass with a dirt rim, lifted by lift px (used by the Floor Tile ghost and blueprint)
-R.drawTileSlab = function (ctx, v, p, lift, alpha) {
+// a floor tile as a slab of grass with a dirt rim, lifted by lift px (used by the Floor Tile ghost and blueprint); pile = a Stockpile tile's wooden pad
+R.drawTileSlab = function (ctx, v, p, lift, alpha, pile) {
   const hw = v.hw * 0.96, hh = v.hh * 0.96, th = 14;
   ctx.globalAlpha = alpha;
-  ctx.fillStyle = '#8a5c34'; ctx.beginPath(); ctx.moveTo(p[0] - hw, p[1] - lift); ctx.lineTo(p[0], p[1] + hh - lift); ctx.lineTo(p[0], p[1] + hh - lift + th); ctx.lineTo(p[0] - hw, p[1] - lift + th); ctx.fill();
-  ctx.fillStyle = '#6a4426'; ctx.beginPath(); ctx.moveTo(p[0], p[1] + hh - lift); ctx.lineTo(p[0] + hw, p[1] - lift); ctx.lineTo(p[0] + hw, p[1] - lift + th); ctx.lineTo(p[0], p[1] + hh - lift + th); ctx.fill();
-  ctx.fillStyle = '#9be880'; diamond(ctx, p[0], p[1] - lift, hw, hh); ctx.fill();
+  ctx.fillStyle = pile ? '#7a4a22' : '#8a5c34'; ctx.beginPath(); ctx.moveTo(p[0] - hw, p[1] - lift); ctx.lineTo(p[0], p[1] + hh - lift); ctx.lineTo(p[0], p[1] + hh - lift + th); ctx.lineTo(p[0] - hw, p[1] - lift + th); ctx.fill();
+  ctx.fillStyle = pile ? '#5a3418' : '#6a4426'; ctx.beginPath(); ctx.moveTo(p[0], p[1] + hh - lift); ctx.lineTo(p[0] + hw, p[1] - lift); ctx.lineTo(p[0] + hw, p[1] - lift + th); ctx.lineTo(p[0], p[1] + hh - lift + th); ctx.fill();
+  ctx.fillStyle = pile ? '#c49258' : '#9be880'; diamond(ctx, p[0], p[1] - lift, hw, hh); ctx.fill();
+  if (pile) { ctx.strokeStyle = '#f4d898'; ctx.lineWidth = 4; ctx.setLineDash([12, 12]); diamond(ctx, p[0], p[1] - lift, hw - 6, hh - 3); ctx.stroke(); ctx.setLineDash([]); }
   ctx.globalAlpha = 1;
 };
 R.drawDemo = function (ctx, v, g, t) {
@@ -1146,7 +1136,7 @@ R.drawFocus = function (ctx, v, f, t) {
   let row = 0;
   f.list.forEach(e => {
     const tg = e.t, a = e.a;
-    if (tg.kind === 'floor' || tg.kind === 'pile' || tg.kind === 'shelf') return;   // no prompt for loose items, the Stockpile or the shelf: the item itself lights up (R.pickFx)
+    if (tg.kind === 'floor' || tg.kind === 'pile') return;   // no prompt for loose items or the Stockpile: the item itself lights up (R.pickFx)
     const y = CFG.H - 134 - (f.inspH ? f.inspH + 2 : 0) - row * 46;   // the building note sits under the prompts, just above the hotbar
     if (a.ic) R.iprompt(ctx, 0, y, e.key ? R.key(e.key) : null, a.ic, CFG.HALF, 16, e.key === 'use' && !!G.bd.gather);
     else R.prompt(ctx, 0, y, e.key ? R.key(e.key) : null, a.label, CFG.HALF, 16);
@@ -1227,7 +1217,7 @@ R.drawWorld = function (main, dt) {
     }
   }
   for (const dc of w.decals) R.drawDecal(ctx, v, dc);
-  for (const z of w.zones) R.drawZone(ctx, v, z);
+  for (const z of w.zones) if (!TALL_ZONES[z.kind]) R.drawZone(ctx, v, z);
   for (const m of WZ.marks) if (m.type === 'stronghold') { R.drawKeepArea(ctx, v, m); R.drawKeepDoor(ctx, v, m); }
   const alt = G.altar && (G.altar.placed || w.cine) ? G.altar : null, airborne = !!(alt && w.cine && !w.cine.landed);   // the Summoning Altar (still in the air while it lands)
   if (alt) R.drawAltarGround(ctx, v, w);
@@ -1264,6 +1254,7 @@ R.drawWorld = function (main, dt) {
       if (o.flash > 0) dspr(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, p[0] + shake, p[1], S, 0.5);
       if (o.hp < o.maxHp) R.hpBar(ctx, p[0], p[1] - spr.c.height * S - 9, 42, o.hp / o.maxHp, '#7be07b');
     } else if (it.t === 'drop') {
+      if (o.hide > 0) continue;   // the portal over his head is spitting it back out (the fx draws it meanwhile)
       const p = R.toScreen(v, o.x, o.y);
       const bob = (Math.sin(o.t * 6) > 0 ? 3 : 0) - (o.t < 0.45 ? Math.sin(o.t / 0.45 * 3.14) * 21 : 0);
       ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(snap(p[0] - 6), Math.round(p[1] / 3) * 3 - 3, 12, 6);
@@ -1277,6 +1268,7 @@ R.drawWorld = function (main, dt) {
     else if (it.t === 'enemy') R.drawEnemy(ctx, v, o);
     else if (it.t === 'wiz') R.drawWizard(ctx, v, o);
   }
+  for (const z of w.zones) if (TALL_ZONES[z.kind]) R.drawZone(ctx, v, z);   // fire streams, steam clouds, twisters, storm orbs and clouds stand up over the bodies
   for (const p of w.proj) R.drawProj(ctx, v, p);
   for (const p of w.eproj) R.drawProj(ctx, v, p);
   if (airborne) R.drawAltar(ctx, v, w);
@@ -1333,7 +1325,8 @@ R.drawEnemy = function (ctx, v, e) {
   const fk = e.fall > 0 ? e.fall / (e.fallT0 || CFG.crafted.fall) : 0, hidden = e.fall > 0 && e.fall > (e.fallT0 || 0) - 0.2;   // dropping out of the Egg's portal
   if (hidden) return;
   const hop = e.boss ? (Math.sin(t * 3) > 0 ? 3 : 0) : Math.abs(Math.sin(t * 6 + e.bob)) > 0.5 ? (fly ? 9 : 6) : 0;
-  const lift = (fly ? 12 : 0) + fk * 300, sc = (e.elite ? 1.4 : 1) * (e.sz || 1);
+  const toss = e.air > 0 ? Math.sin((1 - e.air / (e.airT || 1)) * Math.PI) * 120 : 0;   // thrown up by a geyser
+  const lift = (fly ? 12 : 0) + fk * 300 + toss, sc = (e.elite ? 1.4 : 1) * (e.sz || 1);
   const k = e.land > 0 ? e.land / 0.22 : 0, qx = sc * (1 + 0.28 * k), qy = sc * (1 - 0.28 * k);   // squashes on landing
   const sw = e.boss ? 66 : 24 * sc;
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(snap(p[0] - sw / 2), Math.round(p[1] / 3) * 3 - 3, Math.round(sw / 3) * 3, e.boss ? 12 : 6);
@@ -1365,7 +1358,11 @@ R.drawEnemy = function (ctx, v, e) {
   const top = y - spr.c.height * S * sc;
   if (e.warden) { ctx.fillStyle = e.weakCol; ctx.fillRect(snap(p[0] - 6), Math.round((y - 30 * sc) / 3) * 3, 12, 12); }   // the keep's element in its chest
   if (e.ai === 'titan' && e.crack) { ctx.fillStyle = '#2a1410'; for (let i = 0; i < e.crack; i++) ctx.fillRect(snap(p[0] - 24 + i * 21), Math.round((y - 60 * sc + i * 9) / 3) * 3, 3, 24); }
-  if (e.dazeT > 0) { ctx.fillStyle = '#ffe36b'; for (let i = 0; i < 3; i++) ctx.fillRect(snap(p[0] + Math.cos(t * 8 + i * 2.1) * 15 - 3), Math.round((top - 6 + Math.sin(t * 8 + i * 2.1) * 4) / 3) * 3, 6, 6); }
+  if (e.frozen > 0) {   // frozen solid by the Blizzard: a block of ice round it, cracking just before it breaks
+    ctx.globalAlpha = 0.55; ctx.fillStyle = '#bfe9ff'; ctx.fillRect(snap(p[0] - 21 * sc), Math.round((top - 6) / 3) * 3, Math.round(42 * sc / 3) * 3, Math.round((y - top + 9) / 3) * 3);
+    ctx.globalAlpha = 1; ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(p[0] - 18 * sc), Math.round((top - 3) / 3) * 3, 6, Math.round((y - top) / 3) * 3);
+    if (e.frozen < 0.4) { ctx.fillStyle = '#5a8ab0'; ctx.fillRect(snap(p[0] - 3), Math.round((top + 6) / 3) * 3, 3, 21); ctx.fillRect(snap(p[0] + 3), Math.round((top + 24) / 3) * 3, 9, 3); }
+  } else if (e.dazeT > 0) { ctx.fillStyle = '#ffe36b'; for (let i = 0; i < 3; i++) ctx.fillRect(snap(p[0] + Math.cos(t * 8 + i * 2.1) * 15 - 3), Math.round((top - 6 + Math.sin(t * 8 + i * 2.1) * 4) / 3) * 3, 6, 6); }
   if (e.tele) dspr(ctx, SP.ic_warn, p[0], top - 22, S);
   if (e.hp < e.maxHp) R.hpBar(ctx, p[0], top - 9, e.elite ? 42 : 30, e.hp / e.maxHp, e.elite ? '#ffd23a' : e.crafted ? '#46e0c8' : '#ff6a6a');
   if (e.elite) dspr(ctx, SP.ic_crown, p[0], top - 15, S);
@@ -1438,7 +1435,7 @@ R.drawMark = function (ctx, v, m) {
     ctx.fillStyle = '#1a0f28'; ctx.fillRect(snap(p[0] + 3), Math.round((p[1] - 84) / 3) * 3, 12, 6);
     if (done) { if (d < 10) ic = [['ic_check']]; }
     else if (s.state === 'active') ic = [['ic_skull', w.enemies.filter(e => e.mark === m.id).length], ['wk_' + WZ.WARDEN_WEAK(m.el)]];
-    else if (s.seen && d < K.reveal + 6) { const g = K.guards[m.el]; ic = Object.keys(g).map(k => ['egg_' + k, g[k]]).concat([['ic_crown'], ['wk_' + WZ.WARDEN_WEAK(m.el)], ['aug_' + AUG_ORDER.find(id => AUGS[id].gate === m.el)], ['key_' + m.el]]); }   // scouted: guards, Warden, its weakness, the augment and key it wants
+    else if (s.seen && d < K.reveal + 6) { const g = K.guards[m.el]; ic = Object.keys(g).map(k => ['egg_' + k, g[k]]).concat([['ic_crown'], ['wk_' + WZ.WARDEN_WEAK(m.el)], ['aug_' + AUG_ORDER.find(id => AUGS[id].gate === m.el)], ['wardkey']]); }   // scouted: guards, Warden, its weakness, the augment and key it wants
     else if (d < K.reveal + 6 && Math.sin(t * 3) > 0) ic = [['ic_keep']];
   } else {
     dspr(ctx, SP.lm_crypt, p[0], p[1], S, done ? 0.6 : 1);
@@ -1587,7 +1584,7 @@ R.drawAltar = function (ctx, v, w) {
   if (Math.hypot(w.x - A.x, w.y - A.y) < 16 && !w.dead) {   // what it wants: one spell of each tier, then (once lit) the Strongholds
     const gy = p[1] - 164;
     for (let i = 0; i < 4; i++) { const k = CFG.altar.keys[i], on = lit[i]; R.defer.push(c => R.iconRow(c, p[0] + (i - 1.5) * 54, gy, [[k]], on ? 1 : 0.4)); if (on) R.defer.push(c => R.iconRow(c, p[0] + (i - 1.5) * 54 + 22, gy + 4, [['ic_check']])); }
-    if (WZ.altarLitN() >= 4 && !w.boss) { const left = ELEMS.filter(e => !G.flags['core_' + e]).length; R.defer.push(c => R.iconRow(c, p[0], gy - 34, left ? [['ic_keep', left], ['ic_lock']] : [['ic_keep'], ['ic_check']])); }
+    if (!WZ.keepsOpen() && !w.boss) R.defer.push(c => R.iconRow(c, p[0], gy - 34, [['ic_skull'], ['ic_keep'], ['ic_lock']]));   // the Warden still lives: the Altar is sealed
   }
 };
 // the particles that gather the Altar out of the air: they leave the wilds' top-left (where deliveries from the Spell Portal come in) and fly to where it hangs
@@ -1641,9 +1638,9 @@ R.drawWizard = function (ctx, v, w) {
     ctx.globalAlpha = 0.55; dspr(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, p[0], p[1] - 12, S, 0.8, (w.fx - w.fy) < -0.05); ctx.globalAlpha = 1;
     return;
   }
-  if (w.armor > 0) { ctx.strokeStyle = Math.sin(w.t * 4) > 0 ? '#9fc4ff' : '#6a90e0'; ctx.lineWidth = 3; ctx.strokeRect(snap(p[0] - 27), Math.round((p[1] - 60) / 3) * 3, 54, 63); }
   const bob = w.moving ? (Math.abs(Math.sin(w.bob)) > 0.5 ? 3 : 0) : 0;
   const flip = (w.fx - w.fy) < -0.05;
+  if (w.armor > 0 && !(w.roll > 0) && !w.jump && !w.dead) R.drawShield(ctx, p[0] + (flip ? 18 : -18), p[1] - 30 - bob, w.armor / CFG.wizard.armorMax, tt, true);   // behind him: the far edge of the shield on his off arm
   if (w.dead) { ctx.save(); ctx.translate(snap(p[0]), p[1]); ctx.rotate(Math.PI / 2); ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S, spr.c.width * S, spr.c.height * S); ctx.restore(); return; }
   if (w.roll > 0) {
     const fr = 1 - w.roll / CFG.wizard.rollTime, step = Math.floor(fr * 8) / 8;   // somersault in 8 chunky frames
@@ -1674,10 +1671,105 @@ R.drawWizard = function (ctx, v, w) {
   } else if (w.mashT > 0) { dsprSq(ctx, spr, p[0], p[1] - bob, S, 1.15, 0.85, blink ? 0.4 : 1, flip); for (const l of layers) dsprSq(ctx, l.s, p[0], p[1] - bob, S, 1.15, 0.85, (blink ? 0.4 : 1) * l.a, flip); }   // squashed while digging
   else { dspr(ctx, spr, p[0], p[1] - bob, S, blink ? 0.4 : 1, flip); wearAll(blink ? 0.4 : 1, flip, p[0], p[1] - bob); }
   if (Math.sin(G.w.t * 6) > 0) { ctx.fillStyle = '#fff07a'; ctx.fillRect(snap(p[0] + (flip ? -27 : 21)), Math.round((p[1] - 48 - bob) / 3) * 3, 6, 6); }
+  if (w.armor > 0) R.drawShield(ctx, p[0] + (flip ? 15 : -15), p[1] - 27 - bob, w.armor / CFG.wizard.armorMax, tt, false);   // the shield itself, strapped on his off arm in front of him
   if (w.rollCd > 0) R.hpBar(ctx, p[0], p[1] + 9, 27, 1 - w.rollCd / CFG.wizard.rollCd, '#ffffff');
 };
+// the Shield Potion's armor: a heater shield on his off arm (steel rim, blue field, a gold cross), its field filled from the bottom by how much armor is left;
+// back = only the dark edge behind him, so it reads as a solid thing he carries. A glint runs down it now and then; nearly spent, it blinks
+R.drawShield = function (ctx, x, y, fr, t, back) {
+  const u = 3, W = 6, H = 14, X = n => snap(x + n * u), Yp = n => Math.round((y + n * u) / u) * u;
+  const half = r => (r < H * 0.5 ? W : Math.max(0, Math.round(W * (1 - (r - H * 0.5) / (H * 0.5)) + 0.4)));   // flat top half, then it tapers to a point
+  if (back) { ctx.fillStyle = '#2a3a5a'; for (let r = 0; r <= H; r++) { const h = half(r); if (h > 0) ctx.fillRect(X(-h + 1), Yp(r - H / 2 + 1), (2 * h) * u, u); } return; }
+  if (fr < 0.2 && Math.floor(t * 6) % 2) return;
+  for (let r = 0; r <= H; r++) {
+    const h = half(r), ry = Yp(r - H / 2);
+    if (h <= 0) { ctx.fillStyle = '#e6eef8'; ctx.fillRect(X(-0.5), ry, u, u); continue; }
+    ctx.fillStyle = '#e6eef8'; ctx.fillRect(X(-h), ry, (2 * h + 1) * u, u);   // steel rim
+    if (r === 0 || h < 2) continue;
+    const filled = (H - r) / H <= fr + 0.02;
+    ctx.fillStyle = filled ? (r < 3 ? '#7ab4ff' : '#3a78e0') : '#1c2a48'; ctx.fillRect(X(-h + 1), ry, (2 * h - 1) * u, u);
+    if (filled && h >= 3) { ctx.fillStyle = '#ffd23a'; if (r === 5) ctx.fillRect(X(-2), ry, 5 * u, u); else if (r > 1 && r < 11) ctx.fillRect(X(0), ry, u, u); }   // the cross
+  }
+  const g = (t * 0.7) % 1.6;   // a glint sliding down the steel
+  if (g < 1) { ctx.fillStyle = '#ffffff'; ctx.fillRect(X(-W + 1), Yp(-H / 2 + 1 + Math.floor(g * (H - 3))), u, 2 * u); }
+};
+// everything the Wizard picks up spirals up into a little portal over his head (WZ.hsuck). A rejected one (no room in the Stockpile) is spat back out:
+// the portal flashes red, the item drops to where it lay and bounces twice
+R.drawHsuck = function (ctx, v, f, s, fr) {
+  const w = G.w, q = R.toScreenLocked(v, w.x, w.y), px = q[0], py = q[1] - 108, Y = n => Math.round(n / 3) * 3;
+  const sp = f.kind === 'xp' ? SP.gem : itemSprite(f.kind), sc0 = f.kind === 'xp' ? 3 + WZ.gemTier(f.val || 1) : 3;
+  const sx = s[0], sy = s[1] - 9;
+  // the portal: opens fast, spins, closes once the item is through (a rejected one flashes red while it spits)
+  const T = f.rej ? 0.5 : 1, open = Math.min(1, fr / 0.12) * Math.min(1, Math.max(0, (T - fr) / 0.12)), spit = f.rej && fr > 0.32 && fr < 0.46;
+  if (open > 0) {
+    const rw = Y(30 * open), rh = Y(12 * open);
+    ctx.fillStyle = spit ? '#5a1020' : '#2a1050'; diamond(ctx, px, py, rw, rh); ctx.fill();
+    ctx.strokeStyle = spit ? (Math.floor(f.t * 30) % 2 ? '#ff5a6e' : '#ffffff') : '#b58cff'; ctx.lineWidth = 6; ctx.stroke();
+    ctx.fillStyle = '#e6d8ff';
+    for (let i = 0; i < 4; i++) { const a = f.t * 9 + i * 1.571 + f.seed; ctx.fillRect(snap(px + Math.cos(a) * rw * 0.75 - 1), Y(py + Math.sin(a) * rh * 0.75 - 1), 3, 3); }
+    if (spit) dspr(ctx, SP.ic_x, px, py - 15, 3);
+  }
+  let x, y, sc = sc0, a = 1;
+  if (!f.rej) {   // up and in, spiralling and shrinking
+    const k = fr * fr, sw = Math.sin(fr * 9 + f.seed) * 24 * (1 - fr);
+    x = sx + (px - sx) * k + sw; y = sy + (py - sy) * k; sc = Math.max(1, Math.round(sc0 * (1 - 0.6 * fr))); a = fr > 0.85 ? (1 - fr) / 0.15 : 1;
+  } else if (fr < 0.32) {   // up toward it...
+    const k = fr / 0.32, e = 1 - (1 - k) * (1 - k);
+    x = sx + (px - sx) * e; y = sy + (py + 24 - sy) * e;
+  } else if (fr < 0.46) { x = px + (Math.floor(f.t * 40) % 2 ? 3 : -3); y = py + 24; }   // ...it rattles at the mouth...
+  else {   // ...and is spat back down onto its spot, bouncing twice
+    const k = (fr - 0.46) / 0.54, fall = Math.min(1, k / 0.5), b = k < 0.5 ? 0 : k < 0.8 ? Math.sin((k - 0.5) / 0.3 * Math.PI) * 30 : Math.sin((k - 0.8) / 0.2 * Math.PI) * 12;
+    x = px + (sx - px) * fall; y = (py + 24) + (sy - py - 24) * fall * fall - b;
+  }
+  if (!sp) return;
+  ctx.globalAlpha = a; dspr(ctx, sp, x, Y(y), sc); ctx.globalAlpha = 1;
+};
 R.drawProj = function (ctx, v, p) {
-  const s = R.toScreen(v, p.x, p.y), sz = Math.max(6, Math.round(p.size * 1.4 / 3) * 3);
+  if (p.kind === 'strike') return;   // a bolt still on its way down: its warning ring is the fx
+  const s = R.toScreen(v, p.x, p.y), sz = Math.max(6, Math.round(p.size * 1.4 / 3) * 3), Y = n => Math.round(n / 3) * 3, t = G.w.t;
+  if (p.kind === 'icicle') {   // a shard of ice dropping out of the blizzard
+    const h = p.life / 0.3 * 150;
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(snap(s[0] - 6), Y(s[1]) - 3, 12, 6);
+    ctx.fillStyle = '#e6f8ff'; ctx.fillRect(snap(s[0] - 3), Y(s[1] - h - 24), 6, 21); ctx.fillStyle = '#9fd4ff'; ctx.fillRect(snap(s[0]), Y(s[1] - h - 18), 3, 18); ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(s[0] - 3), Y(s[1] - h - 27), 3, 6);
+    return;
+  }
+  if (p.kind === 'lob' || p.kind === 'boulder') {   // up in the air: a shadow on the ground, the thing above it
+    const z = p.kind === 'boulder' ? Math.sin(Math.min(1, p.ht / p.hop) * Math.PI) * (1.8 - p.n * 0.3) : p.z || 0, lift = z * 30, big = p.sub === 'meteor';
+    const sw = Math.max(9, Math.round((sz * (big ? 2.6 : 1.4) - (big ? -lift * 0.1 : lift * 0.05)) / 3) * 3);
+    ctx.fillStyle = 'rgba(0,0,0,' + (big ? 0.35 : 0.25) + ')'; ctx.fillRect(snap(s[0] - sw / 2), Y(s[1]) - 3, sw, big ? 12 : 6);
+    if (big) { ctx.globalAlpha = 0.3 + 0.4 * (1 - z / p.h); ctx.strokeStyle = Math.floor(t * 12) % 2 ? '#ff7a30' : '#ffe36b'; ctx.lineWidth = 6; diamond(ctx, s[0], s[1], 3.4 * v.hw * 1.414, 3.4 * v.hh * 1.414); ctx.stroke(); ctx.globalAlpha = 1; }
+    const cx = snap(s[0]), cy = Y(s[1] - lift - sz / 2), r0 = big ? 27 : p.kind === 'boulder' ? 15 : p.sub === 'magma' ? 12 : 6;
+    if (p.kind === 'boulder') {   // a tumbling rock: its highlight turns as it flies
+      const sp = Math.floor((p.ht / p.hop + p.n) * 4) % 4;
+      ctx.fillStyle = '#5a4428'; ctx.fillRect(cx - r0, cy - r0 + 3, r0 * 2, r0 * 2 - 6); ctx.fillRect(cx - r0 + 3, cy - r0, r0 * 2 - 6, r0 * 2);
+      ctx.fillStyle = '#8a6a3c'; ctx.fillRect(cx - r0 + 3, cy - r0 + 3, r0 * 2 - 6, r0 * 2 - 9);
+      ctx.fillStyle = '#b8945c'; ctx.fillRect(cx + [-9, 3, 3, -9][sp], cy + [-9, -9, 0, 0][sp], 6, 6);
+      return;
+    }
+    if (big || p.sub === 'magma') for (let i = 1; i < 6; i++) { ctx.globalAlpha = 0.6 - i * 0.1; ctx.fillStyle = i % 2 ? '#ffd23a' : p.col; const q = big ? i * 15 : i * 6; ctx.fillRect(snap(cx + q * (big ? 0.6 : 0) - r0 / 2), Y(cy - q * (big ? 1.4 : 0.2) - (big ? 0 : 0) + (big ? 0 : 0)), Math.round(r0 / 3) * 3, Math.round(r0 / 3) * 3); }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = big ? '#5a2a14' : '#3a1408'; ctx.fillRect(cx - r0, cy - r0 + 3, r0 * 2, r0 * 2 - 6); ctx.fillRect(cx - r0 + 3, cy - r0, r0 * 2 - 6, r0 * 2);
+    ctx.fillStyle = p.col; ctx.fillRect(cx - r0 + 3, cy - r0 + 6, r0 * 2 - 6, r0 * 2 - 12);
+    ctx.fillStyle = Math.floor(t * 10) % 2 ? '#ffe36b' : '#ffffff'; ctx.fillRect(cx - 3, cy - 3, 6, 6);
+    return;
+  }
+  if (p.kind === 'wave' || p.kind === 'surge') {   // a crescent of water (or a wall of mud) w tiles wide, rolling out
+    const sp = Math.hypot(p.vx, p.vy) || 1, ux = p.vx / sp, uy = p.vy / sp, n = Math.max(4, Math.round(p.w * 3)), wave = p.kind === 'wave';
+    for (let i = 0; i <= n; i++) {
+      const k = i / n - 0.5, bend = (1 - 4 * k * k) * (wave ? 0.5 : 0.2), qx = p.x - uy * k * p.w + ux * bend, qy = p.y + ux * k * p.w + uy * bend, q = R.toScreen(v, qx, qy);
+      const h = Math.round(((wave ? 24 : 15) * (1 - 2 * Math.abs(k)) + 9 + (Math.sin(t * 20 + i) > 0 ? 3 : 0)) / 3) * 3;
+      ctx.fillStyle = wave ? '#2a72c8' : '#4a3018'; ctx.fillRect(snap(q[0] - 6), Y(q[1] - h), 12, h);
+      ctx.fillStyle = wave ? '#4aa8ff' : '#6e4a2a'; ctx.fillRect(snap(q[0] - 6), Y(q[1] - h), 12, Math.round(h * 0.6 / 3) * 3);
+      ctx.fillStyle = wave ? '#ffffff' : '#8a6a3c'; ctx.fillRect(snap(q[0] - 6), Y(q[1] - h - 3), 12, 6);   // foam / a crest of mud
+    }
+    return;
+  }
+  if (p.kind === 'fire') {   // a small, very fast fireball: a flickering core and a long hot streak
+    for (let i = 1; i <= 4; i++) { ctx.globalAlpha = 0.6 - i * 0.12; ctx.fillStyle = i % 2 ? '#ffd23a' : '#ff5a1a'; ctx.fillRect(snap(s[0] - p.vx * i * 0.9 - 4), Y(s[1] - 15 - p.vy * i * 0.45 - 4), 9, 9); }
+    ctx.globalAlpha = 1; ctx.fillStyle = '#ff7a30'; ctx.fillRect(snap(s[0] - 6), Y(s[1] - 21), 12, 12);
+    ctx.fillStyle = Math.floor(t * 20) % 2 ? '#fff0a0' : '#ffffff'; ctx.fillRect(snap(s[0] - 3), Y(s[1] - 18), 6, 6);
+    return;
+  }
   const x = snap(s[0] - sz / 2), y = Math.round((s[1] - 15 - sz / 2) / 3) * 3;
   ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(x, Math.round(s[1] / 3) * 3 - 3, sz, 6);
   ctx.fillStyle = p.col; ctx.globalAlpha = 0.45;
@@ -1686,8 +1778,75 @@ R.drawProj = function (ctx, v, p) {
   ctx.fillRect(x - 3, y, sz + 6, sz); ctx.fillRect(x, y - 3, sz, sz + 6);
   ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, 6, 6);
 };
+const TALL_ZONES = { flame: 1, steam: 1, twister: 1, orb: 1, storm: 1 };   // zones that stand up: drawn over the bodies
 R.drawZone = function (ctx, v, z) {
-  const s = R.toScreen(v, z.x, z.y), fr = Math.min(1, z.t / z.dur);
+  const s = R.toScreen(v, z.x, z.y), fr = Math.min(1, z.t / z.dur), t = G.w.t, Y = n => Math.round(n / 3) * 3;
+  if (z.kind === 'flame') {   // the stream of fire: tongues of flame fanning out along his aim, flickering
+    const am = Math.hypot(z.ax, z.ay) || 1, ux = z.ax / am, uy = z.ay / am, base = Math.atan2(uy, ux), fade = Math.min(1, z.t / 0.25);
+    for (let i = 0; i < 44; i++) {
+      const k = ((i * 0.091 + t * 2.6) % 1), an = base + (Math.sin(i * 7.3 + t * 9) * 0.5) * z.half * 2 * k, d = 0.5 + k * z.r;
+      const q = R.toScreen(v, z.x + Math.cos(an) * d, z.y + Math.sin(an) * d), sz = Math.round((6 + k * 18) / 3) * 3;
+      ctx.globalAlpha = fade * (1 - k * 0.7); ctx.fillStyle = k < 0.25 ? '#fff0a0' : k < 0.55 ? '#ffb030' : k < 0.8 ? '#ff6a1a' : '#9a2a1a';
+      ctx.fillRect(snap(q[0] - sz / 2), Y(q[1] - 24 - k * 18 - sz / 2), sz, sz);
+    }
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (z.kind === 'steam') {   // a swelling cloud of scalding steam
+    const r = z.rr || z.r * 0.35, rx = r * v.hw * 1.414, ry = r * v.hh * 1.414;
+    ctx.globalAlpha = 0.28 + 0.2 * (1 - fr); ctx.fillStyle = '#f4f4f8'; diamond(ctx, s[0], s[1] - 12, rx, ry * 1.3); ctx.fill();
+    ctx.globalAlpha = 0.8; ctx.strokeStyle = Math.floor(t * 14) % 2 ? '#ffffff' : '#bfe0ff'; ctx.lineWidth = 6; diamond(ctx, s[0], s[1] - 12, rx, ry * 1.3); ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 10; i++) { const an = i * 0.628 + t * 1.5, q = R.toScreen(v, z.x + Math.cos(an) * r * 0.7, z.y + Math.sin(an) * r * 0.7); ctx.globalAlpha = 0.6; ctx.fillRect(snap(q[0] - 9), Y(q[1] - 30 - (i % 3) * 9), 18, 12); }
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (z.kind === 'twister') {   // a pixel tornado: stacked rings that widen as they rise, spinning, sand whipping round its foot
+    const fade = Math.min(1, z.t / 0.3, (z.dur - z.t) / 0.2 + 0.2);
+    ctx.globalAlpha = 0.25 * fade; ctx.fillStyle = '#d9b46a'; diamond(ctx, s[0], s[1], z.r * v.hw, z.r * v.hh); ctx.fill();
+    for (let i = 0; i < 9; i++) {
+      const k = i / 8, w2 = Math.round((15 + k * 66) / 3) * 3, h = Math.round((6 + k * 12) / 3) * 3, y = s[1] - 9 - i * 21, sw = Math.sin(t * 5 + i * 0.7) * (6 + k * 12);
+      ctx.globalAlpha = fade * (0.85 - k * 0.3); ctx.strokeStyle = i % 2 ? '#d9b46a' : '#a8844a'; ctx.lineWidth = 6;
+      diamond(ctx, snap(s[0] + sw), Y(y), w2 / 2, h / 2); ctx.stroke();
+      ctx.fillStyle = '#fff0c8'; const a2 = t * 9 + i; ctx.fillRect(snap(s[0] + sw + Math.cos(a2) * w2 / 2 - 3), Y(y + Math.sin(a2) * h / 2 - 3), 6, 6);
+    }
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (z.kind === 'orb') {   // the storm orb: a crackling ball hovering over the ground
+    const fade = Math.min(1, z.t / 0.2), y = s[1] - 54 + (Math.sin(t * 4) > 0 ? 3 : 0);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(snap(s[0] - 15), Y(s[1]) - 3, 30, 9);
+    ctx.globalAlpha = 0.35 * fade; ctx.strokeStyle = '#bfe9ff'; ctx.lineWidth = 3; ctx.setLineDash([9, 9]); ctx.lineDashOffset = -Math.floor(t * 12) * 3;
+    diamond(ctx, s[0], s[1], z.r * v.hw * 1.414, z.r * v.hh * 1.414); ctx.stroke(); ctx.setLineDash([]);
+    ctx.globalAlpha = fade; ctx.fillStyle = '#2a4a8a'; ctx.fillRect(snap(s[0] - 18), Y(y - 18), 36, 36);
+    ctx.fillStyle = '#7ab4ff'; ctx.fillRect(snap(s[0] - 15), Y(y - 15), 30, 30);
+    ctx.fillStyle = '#e6f8ff'; ctx.fillRect(snap(s[0] - 9), Y(y - 9), 18, 18);
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i++) { const an = t * 13 + i * 2.1; ctx.beginPath(); ctx.moveTo(s[0], y); ctx.lineTo(snap(s[0] + Math.cos(an) * 24), Y(y + Math.sin(an) * 18)); ctx.lineTo(snap(s[0] + Math.cos(an + 0.4) * 33), Y(y + Math.sin(an + 0.4) * 24)); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (z.kind === 'storm') {   // a dark cloud hanging over him, rain streaking down
+    const q = R.toScreenLocked(v, G.w.x, G.w.y), cy = q[1] - 165, fade = Math.min(1, z.t / 0.3, (z.dur - z.t) / 0.3 + 0.3);
+    ctx.globalAlpha = 0.25 * fade; ctx.fillStyle = '#1a1830'; diamond(ctx, q[0], q[1], 9 * v.hw, 9 * v.hh); ctx.fill();   // the storm darkens the ground under it
+    ctx.globalAlpha = fade;
+    for (let i = 0; i < 9; i++) { const ox = (i - 4) * 27 + Math.sin(t * 2 + i) * 6, oy = (i % 3) * 9 - 9; ctx.fillStyle = i % 2 ? '#3a3a5a' : '#55557a'; ctx.fillRect(snap(q[0] + ox - 27), Y(cy + oy - 18), 54, 36); }
+    ctx.fillStyle = '#6a6a90'; for (let i = 0; i < 5; i++) ctx.fillRect(snap(q[0] + (i - 2) * 33 - 18), Y(cy - 30), 36, 12);
+    ctx.fillStyle = '#fff27a'; if (Math.floor(t * 9) % 4 === 0) ctx.fillRect(snap(q[0] - 60), Y(cy + 12), 120, 3);
+    ctx.globalAlpha = 0.5 * fade; ctx.fillStyle = '#9ab8e8';
+    for (let i = 0; i < 14; i++) { const x = q[0] + ((i * 37) % 180) - 90, y = cy + 24 + ((t * 600 + i * 53) % 150); ctx.fillRect(snap(x), Y(y), 3, 12); }
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (z.kind === 'lava') {   // a pool of lava: bright at first, its crust darkening as it cools, bubbles popping
+    const rx = z.r * v.hw * 1.414, ry = z.r * v.hh * 1.414, hot = fr;
+    ctx.globalAlpha = 0.85; ctx.fillStyle = hot > 0.5 ? '#ff6a1a' : '#c8401a'; diamond(ctx, s[0], s[1], rx, ry); ctx.fill();
+    ctx.fillStyle = hot > 0.5 ? '#ffd23a' : '#ff8a3a'; diamond(ctx, s[0], s[1], rx * 0.55, ry * 0.55); ctx.fill();
+    ctx.fillStyle = '#3a1408'; ctx.globalAlpha = 0.6 * (1 - hot); diamond(ctx, s[0], s[1], rx * 0.9, ry * 0.9); ctx.fill();
+    ctx.globalAlpha = 1; ctx.fillStyle = '#fff0a0';
+    for (let i = 0; i < 5; i++) if (Math.sin(t * 7 + i * 2.3) > 0.6) ctx.fillRect(snap(s[0] + Math.cos(i * 2.4) * rx * 0.5 - 3), Y(s[1] + Math.sin(i * 2.4) * ry * 0.5 - 6), 6, 6);
+    return;
+  }
   const rx = z.r * v.hw * 1.414, ry = z.r * v.hh * 1.414;
   ctx.globalAlpha = Math.min(0.35, fr * 0.6);
   ctx.fillStyle = z.col; diamond(ctx, s[0], s[1], rx, ry); ctx.fill();
@@ -1745,7 +1904,7 @@ R.drawBoulder = function (ctx, v, b) {
 R.drawKeepDoor = function (ctx, v, m) {
   const w = G.w, s = w.lm[m.id], K = CFG.strong, d = Math.hypot(w.x - m.x, w.y - m.y);
   if (w.dead || (!s.seen && d > K.reveal)) return;
-  const open = s.state === 'done' || G.aug.key[m.el], col = open ? '#6aff8a' : '#ff5a6e', t = w.t;
+  const open = s.state === 'done' || G.aug.door, col = open ? '#6aff8a' : '#ff5a6e', t = w.t;
   const p = R.toScreen(v, m.x, m.y);
   if (s.lockT > 0 && Math.floor(t * 16) % 2) { ctx.globalAlpha = 0.35; ctx.fillStyle = '#ff3a3a'; ctx.beginPath(); ctx.ellipse(p[0], p[1], K.arenaR * v.hw * 1.414, K.arenaR * v.hh * 1.414, 0, 0, 6.283); ctx.fill(); ctx.globalAlpha = 1; }
   ctx.beginPath(); ctx.ellipse(p[0], p[1], K.arenaR * v.hw * 1.414, K.arenaR * v.hh * 1.414, 0, 0, 6.283);
@@ -1756,7 +1915,7 @@ R.drawKeepDoor = function (ctx, v, m) {
   ctx.fillStyle = '#6e6a7c'; ctx.fillRect(snap(dp[0] - 30), Math.round((dp[1] - 54) / 3) * 3, 12, 54); ctx.fillRect(snap(dp[0] + 21), Math.round((dp[1] - 54) / 3) * 3, 12, 54);
   ctx.fillStyle = '#9a96ac'; ctx.fillRect(snap(dp[0] - 36), Math.round((dp[1] - 63) / 3) * 3, 78, 12);
   ctx.fillStyle = col; ctx.globalAlpha = open ? 0.35 : 0.6 + 0.25 * Math.sin(t * 6); ctx.fillRect(snap(dp[0] - 18), Math.round((dp[1] - 51) / 3) * 3, 36, 51); ctx.globalAlpha = 1;
-  if (d < K.reveal + 6) R.defer.push(c => R.iconRow(c, dp[0], dp[1] - 72 - (Math.sin(t * 3) > 0 ? 3 : 0), [['key_' + m.el], [open ? 'ic_check' : 'ic_lock']]));
+  if (d < K.reveal + 6) R.defer.push(c => R.iconRow(c, dp[0], dp[1] - 72 - (Math.sin(t * 3) > 0 ? 3 : 0), [['wardkey'], [open ? 'ic_check' : 'ic_lock']]));
 };
 // a buried cache: only a Wizard in the Kilnsight Mask can see it glinting; the roll button digs it like a mound
 R.drawCache = function (ctx, v, o, p) {
@@ -1864,6 +2023,30 @@ R.drawDecal = function (ctx, v, dc) {
     case 'sand': blot('#d9b46a', 1, 0.45); break;
     case 'mud': blot('#4a3018', 1, 0.5); blot('#6e4a2a', 0.5, 0.5); break;
     case 'scuff': blot('#c8e890', 1, 0.28); break;
+    case 'ember': blot('#2a160c', 1, 0.5); break;
+    case 'swirl': {   // a spiral swept into the grass (wind) or the sand a twister left
+      ctx.globalAlpha = a * 0.7; ctx.fillStyle = dc.c || '#d8f0b0';
+      for (let i = 0; i < 22; i++) { const an = H(1) * 6.283 + i * 0.55, d = i / 22; ctx.fillRect(snap(s[0] + Math.cos(an) * rx * d), Y(s[1] + Math.sin(an) * ry * d), 6, 3); }
+      break;
+    }
+    case 'lava': {   // a splash of lava: it glows, then cools to a black crust with cracks
+      if (k < 0.55) { blot('#ff6a1a', 1, 0.75 * (1 - k / 0.55)); blot('#ffd23a', 0.45, 0.8 * (1 - k / 0.55)); }
+      blot('#1a0c08', 1, 0.6 * Math.min(1, k * 2)); rays('#ff7a30', 5, 0.9, 3);
+      break;
+    }
+    case 'glass': {   // lightning fused the ground: a pale star of glassy rays with a bright heart
+      blot('#1a1830', 0.5, 0.45); rays('#bfe9ff', 7, 1.05, 3); blot('#e6f8ff', 0.25, 0.8);
+      if (k < 0.3 && Math.floor(G.w.t * 12) % 2) { ctx.globalAlpha = a; ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(s[0] - 3), Y(s[1] - 3), 6, 6); }
+      break;
+    }
+    case 'nova': {   // the Nova's mark: a cracked crater with rays in all four elements' colours
+      blot('#1a120c', 0.8, 0.55); rays('#c8efff', 3, 1.15, 6); rays('#4aa8ff', 3, 1.05, 6); rays('#ff7a30', 3, 0.95, 6); rays('#b58a4c', 3, 1.1, 6); blot('#fff6c0', 0.3, 0.6);
+      break;
+    }
+  }
+  if (dc.k === 'ember' && k < 0.6) {   // a fireball's trail still smoulders
+    ctx.fillStyle = Math.sin(G.w.t * 14 + dc.s * 9) > 0 ? '#ffb030' : '#ff6a1a'; ctx.globalAlpha = a * (1 - k / 0.6);
+    ctx.fillRect(snap(s[0] - 3), Y(s[1] - 3), 6, 3);
   }
   // fresh burns still glow: a few embers blinking in the black
   if ((dc.k === 'burn' || dc.k === 'crater') && k < 0.45) {
@@ -2023,6 +2206,33 @@ R.drawFx = function (ctx, v, f) {
     }
     if (fr < 0.14) { ctx.globalAlpha = (0.14 - fr) / 0.14 * 0.55; ctx.fillStyle = '#ffffff'; ctx.fillRect(L, 0, L, CFG.H); }
     ctx.globalAlpha = 1;
+  } else if (f.type === 'hsuck') R.drawHsuck(ctx, v, f, s, fr);
+  else if (f.type === 'swirl') {   // a Cyclone Gust pulse: curved wind streaks spinning outward
+    ctx.globalAlpha = 1 - fr; ctx.fillStyle = f.col;
+    for (let i = 0; i < 12; i++) for (let j = 0; j < 4; j++) {
+      const an = i / 12 * 6.283 + fr * 4 + j * 0.12, rr = f.r * (0.55 + fr * 0.45) * (0.85 + j * 0.05), q = R.toScreen(v, f.x + Math.cos(an) * rr, f.y + Math.sin(an) * rr);
+      ctx.fillRect(snap(q[0] - 3), Math.round((q[1] - 12 - j * 3) / 3) * 3, 9 - j * 2, 3);
+    }
+    ctx.globalAlpha = 1;
+  } else if (f.type === 'skybolt') {   // a Thunderstorm bolt: a jagged line from far above, a white flash at the bottom
+    ctx.globalAlpha = 1 - fr; ctx.strokeStyle = f.col; ctx.lineWidth = 9;
+    ctx.beginPath(); ctx.moveTo(s[0] + 30, s[1] - 420);
+    for (let i = 1; i <= 7; i++) ctx.lineTo(snap(s[0] + (i < 7 ? (Math.sin(i * 2.7 + f.t * 40) * 18) : 0) + 30 * (1 - i / 7)), Math.round((s[1] - 420 + i * 60) / 3) * 3);
+    ctx.stroke(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#ffffff'; diamond(ctx, s[0], s[1], 36 * (1 - fr), 18 * (1 - fr)); ctx.fill();
+    ctx.globalAlpha = 1;
+  } else if (f.type === 'column') {   // a geyser eruption: a column of water bursting up, spray at its top
+    const h = 180 * Math.sin(Math.min(1, fr * 1.6) * Math.PI * 0.5), wd = Math.round(f.r * v.hw * 0.9 / 3) * 3;
+    ctx.globalAlpha = 1 - fr * 0.7; ctx.fillStyle = '#4aa8ff'; ctx.fillRect(snap(s[0] - wd / 2), Math.round((s[1] - h) / 3) * 3, wd, Math.round(h / 3) * 3);
+    ctx.fillStyle = '#d8f2ff'; ctx.fillRect(snap(s[0] - wd / 4), Math.round((s[1] - h) / 3) * 3, Math.round(wd / 2 / 3) * 3, Math.round(h / 3) * 3);
+    ctx.fillStyle = '#ffffff'; for (let i = 0; i < 6; i++) ctx.fillRect(snap(s[0] + Math.cos(i * 1.05 + fr * 3) * wd * 0.8), Math.round((s[1] - h - 9 + Math.sin(i * 2.1) * 12) / 3) * 3, 9, 9);
+    ctx.globalAlpha = 1;
+  } else if (f.type === 'flash') {   // the Nova: a flash of white over the wilds
+    ctx.globalAlpha = (1 - fr) * 0.55; ctx.fillStyle = f.col; ctx.fillRect(CFG.HALF, 0, CFG.HALF, CFG.H); ctx.globalAlpha = 1;
+  } else if (f.type === 'altarTxt') {   // words rising off the Summoning Altar (it will not take spells while the Warden lives)
+    const a = fr < 0.1 ? fr / 0.1 : 1 - Math.max(0, fr - 0.65) / 0.35, y = s[1] - 186 - Math.floor(fr * 12) * 6, jx = fr < 0.15 ? (Math.floor(f.t * 40) % 2 ? 3 : -3) : 0;
+    ctx.globalAlpha = Math.max(0, a); txt(ctx, f.text, s[0] + jx, y, 16, f.col, 'center', 'd'); ctx.globalAlpha = 1;
+    if (Math.floor(f.t * 6) % 2 === 0) { ctx.globalAlpha = Math.max(0, a); dspr(ctx, SP.ic_skull, s[0], y + 30, 3); ctx.globalAlpha = 1; }
   } else if (f.type === 'title') {
     const q = R.toScreen(v, G.w.x, G.w.y);
     ctx.globalAlpha = 1 - Math.max(0, fr - 0.6) / 0.4;

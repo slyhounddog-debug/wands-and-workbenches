@@ -136,7 +136,7 @@ Players.ACH = [
   A('triple', 'W', 'Triple Threat', 'meteor', 'Defeat 30 monsters with Triple spells', 30, st('k3')),
   A('novakill', 'W', 'Nova Blaster', 'nova', 'Defeat 15 monsters with the Nova', 15, st('k4')),
   A('events', 'W', 'Storm Chaser', 'ic_warn', 'Beat 3 world events', 3, st('events')),
-  A('keep', 'W', 'Keep Conqueror', 'core', 'Claim a Stronghold', 1, st('keeps')),
+  A('keep', 'W', 'Keep Conqueror', 'wardkey', 'Kill the Warden', 1, st('keeps')),
   A('harvest', 'W', 'Lumberjack', 'wood', 'Harvest 200 trees and rocks', 200, st('harvested')),
   A('shards', 'W', 'Shard Collector', 'shard', 'Collect 10 Aether Shards', 10, st('shards')),
   A('goalsW', 'W', 'Adventurer', 'ic_hat', 'Finish 12 Wizard goals', 12, g => g.quest.W),

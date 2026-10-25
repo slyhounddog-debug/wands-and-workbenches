@@ -15,8 +15,8 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     slime: 'Wanders in from anywhere. Slow and weak: a gem now and then.', shroom: 'Anywhere in the wilds. Slow, but tougher than a slime.', sprite: 'Anywhere in the wilds. Fast and fragile.',
     imp: 'Lives on sand and dirt. Weak to Water, resists Fire. Its element is Fire.', lurker: 'Lives in the bogs. Weak to Fire, resists Water. Its element is Water.',
     wisp: 'Drifts over the far meadows and flower fields. Weak to Earth, resists Air. Its element is Air.', golem: 'Walks the dark woods far from the start. Weak to Air, resists Earth. Its element is Earth.',
-    warden: 'Guards a Stronghold: an elite with slams and orb volleys. It wakes only once its keep\'s Ward Key has been sent in through the portal.',
-    boss: 'The Primal Chimera, called out of the Summoning Altar once it is lit and every Stronghold is claimed. Only its current weakness hurts it, and the weakness changes every quarter of its health.',
+    warden: 'Guards the Stronghold: an elite with slams and orb volleys. It wakes only once the Warden Key has been sent in through the portal. Until it dies the Summoning Altar takes no spells.',
+    boss: 'The Primal Chimera, called out of the Summoning Altar once the Warden is dead and all four sockets are lit. Only its current weakness hurts it, and the weakness changes every quarter of its health.',
   };
   const BASIC_EL = { gust: 'air', fireball: 'fire', spray: 'water', boulder: 'earth' };
   const spellIcon = id => BASIC_EL[id] || id;
@@ -28,10 +28,10 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
 
   // numbers a spell shows, built from CFG.spells so they never drift from WZ.cast
   const BASIC_DMG = {
-    gust: s => s.dmg + ' dmg, knocks foes back ' + s.push + ', ' + s.r + ' tile burst; chops trees and rocks',
-    fireball: s => s.dmg + ' dmg + ' + s.splash + ' splash in ' + s.sr + ' tiles',
-    spray: s => s.n + ' droplets x ' + s.dmg + ' dmg, -' + pct(s.slow) + ' speed for ' + s.slowT + 's, heals ' + s.heal,
-    boulder: s => s.dmg + ' dmg + ' + s.splash + ' splash in ' + s.sr + ' tiles',
+    gust: s => s.pulses + ' pulses x ' + s.dmg + ' dmg out to ' + s.r + ' tiles; foes flung into each other bonk for ' + s.bonk + '; chops trees and rocks',
+    fireball: s => s.dmg + ' dmg + ' + s.splash + ' splash, ' + s.speed + ' tiles/s, homes in on foes',
+    spray: s => s.dmg + ' dmg, carries foes ' + s.w + ' tiles wide, -' + pct(s.slow) + ' speed for ' + s.slowT + 's, heals ' + s.heal,
+    boulder: s => s.hops + ' bounces x ' + s.dmg + ' dmg in ' + s.sr + ' tiles',
   };
   function spellRows(id) {
     const S = CFG.spells[id], r = CFG.recipes[id], n = spellEls(id).length, rows = [];
@@ -71,7 +71,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     const coreIcons = els => els.map(e => UI.img('core_' + e, 16)).join('');
     let s = '<div class="bkdc"><h4>NORMAL DROPS</h4>';
     if (id === 'boss') s += line(UI.img('ic_xp', 16), D.gem[0] + ' XP gems') + line(UI.img('shard', 16), CFG.boss.shards + ' Aether Shards') + line(coreIcons(ELEMS), C.boss + ' of every Core');
-    else if (id === 'warden') s += line(UI.img('shard', 16), 'keep claimed: ' + CFG.strong.shards + ' Shards, ' + CFG.strong.gems + ' gems, a Warden Core (once per keep)') + line(UI.img('core_earth', 16), C.warden + ' Cores of the keep\'s element') + line(UI.img('ic_crown', 16), 'first Warden ever: the glow-up and the held-spell slot');
+    else if (id === 'warden') s += line(UI.img('shard', 16), 'keep claimed: ' + CFG.strong.shards + ' Shards, ' + CFG.strong.gems + ' gems') + line(coreIcons(ELEMS), C.warden + ' Cores of every element') + line(UI.img('b:altar', 16), 'its death opens the Summoning Altar to spells') + line(UI.img('ic_crown', 16), 'the glow-up and the held-spell slot');
     else {
       s += line(UI.img('ic_xp', 16), (D.gem[0] ? D.gem[0] + ' XP gem' + (D.gem[0] > 1 ? 's' : '') + (D.gem[1] ? ' + ' + pct(D.gem[1]) + ' for one more' : '') : pct(D.gem[1]) + ' chance of an XP gem'));
       if (I.els.length) s += line(coreIcons(I.els), pct(I.core) + ' chance of a ' + I.els.map(e => CORE_NAME[e]).join(' or ') + ' (rides home to the Stockpile)');
@@ -91,7 +91,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
       s += '</div>';
     }
     s += '<div class="bkdc"><h4>CORES GO INTO</h4>';
-    s += I.els.map(e => line(UI.img('key_' + e, 16), KEY_NAME(e) + ': ' + CFG.keyCost.cores + ' ' + CORE_NAME[e] + ' + Iron + Shard (Armory)', have(A.key[e], 'DOOR OPEN', 'NOT YET'))).join('');
+    s += I.els.length ? line(UI.img('wardkey', 16), 'the Warden Key: ' + CFG.keyCost.cores + ' of every Core + ' + CFG.keyCost.iron + ' Iron + ' + CFG.keyCost.shard + ' Shards (Armory)', have(A.door, 'DOOR OPEN', 'NOT YET')) : '';
     s += I.els.length ? line(coreIcons(I.els), 'a Shrine of any OTHER element takes one') : '';
     s += I.garments.length ? I.garments.map(a => line(UI.img('aug_' + a, 16), AUGS[a].name + ': ' + Object.keys(AUGS[a].make.in).filter(isCoreKind).map(k => AUGS[a].make.in[k] + ' ' + CORE_NAME[k.slice(5)]).join(' + '), have(FA.augMade(a), 'MADE', 'NOT YET'))).join('') : I.els.length ? '' : line(UI.img('ic_x', 16), 'nothing: it drops no Cores');
     return s + '</div>';
@@ -101,7 +101,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   const USES = { bog: 'Pass the vine tangles knotted over the bogs; no more slow walking in bog.', phoenix: 'A second life: the Feather recharges while you play.',
     static: 'Takes the sting out of being swarmed: every hit that lands throws the attackers back.', kiln: 'Buried caches glint through the grass; edge glints point at landmarks you have not claimed.' };
   const useText = id => (AUGS[id].gate ? 'Opens the way to the ' + ELEM_WORD[AUGS[id].gate] + ' Stronghold: ' + GATE_TEXT[AUGS[id].gate] + '. Works anywhere else in the wilds too.' : USES[id]);
-  const augState = id => (G.aug.worn[AUGS[id].slot] === id ? 'WORN' : G.fac.shelf.indexOf(id) >= 0 ? 'ON THE SHELF' : FA.augMade(id) ? 'MADE' : '');
+  const augState = id => (G.aug.worn[AUGS[id].slot] === id ? 'WORN' : G.stock['aug_' + id] > 0 ? 'IN THE STOCKPILE' : FA.augMade(id) ? 'MADE' : '');
   function garmentRows(id) {
     const a = AUGS[id], R = CFG.recipes['aug_' + id];
     return [row('Slot', a.slot.toUpperCase()), row('What it does', a.verb), row('Uses', useText(id)),

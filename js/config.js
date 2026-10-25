@@ -29,7 +29,7 @@ const CFG = {
   chargeTipAt: 0.5,           // the first time a Battery falls below this fraction, hint that it can be fed packets, Wood or Stone
   chargeBase: 60, chargeBoost: 1.33,
   swapHold: 1.5, swapCooldown: 5,
-  builder: { speed: 5.5, accel: 42, friction: 34, radius: 0.24 },
+  builder: { speed: 5.5, accel: 42, friction: 34, radius: 0.24, roll: { time: 0.4, speed: 2.2, cd: 1.4 } },   // roll = the Tumble track's dodge roll: seconds, speed multiple, cooldown (the Wizard's own is wizard.rollTime / rollSpeed / rollCd)
   reach: 1.75, pickRepeat: 0.2,
   autoPick: { r: 1.0, delay: 0.7, gap: 0.12 },   // a slight pickup range: loose items that have settled within r tiles hop into the hands, one every gap seconds (r 0 = off); delay = seconds after landing
   tipRadius: 3.5,            // building info panels only show within this many tiles of the Builder (or when hovered)
@@ -168,7 +168,7 @@ const CFG = {
     crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 8, stone: 4 }, unlock: 'logistics',
                 desc: 'Holds any number of ONE kind of element packet or Egg. Belt them in (or throw them) and it feeds them out of its arrow side, one at a time; point it at nothing and it just stores.' },
     spawner:  { name: 'Creature Spawner', kind: 'crafter', cost: { wood: 10, stone: 8, iron: 3, shard: 1 }, unlock: null,
-                desc: 'Hatches a creature Egg from the element packets fed into it: one element = a basic creature, two = a pair, three = a triple. E switches recipe. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. Costs an Aether Shard to build (the starting one is free).' },
+                desc: 'Hatches a creature Egg from ONE thing fed into it: an element packet = that element\'s basic creature; a Flamethrower, Tempest, Magma Bomb, Mud Snare, Meteor Shower, Thunderstorm or Geyser Eruption spell = the pair or triple creature of its elements. Steam Burst, Sandstorm and Blizzard are not seeds: they bounce back. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. Costs an Aether Shard to build (the starting one is free).' },
   },
   // the one Harnesser carries any of the four elements (a crystal grows growT seconds after every switch, then shakes shakeT seconds before it starts making packets)
   harness: { growT: 15, shakeT: 1.2, order: ['air', 'water', 'fire', 'earth'], air: { cycle: 3.41, power: 2 }, water: { cycle: 5.11, power: 2 }, fire: { cycle: 5.11, power: 2 }, earth: { cycle: 6.25, power: 2 } },
@@ -206,41 +206,41 @@ const CFG = {
   // — an upgrade tier asks for about as many element packets as XP, split across that tier's kinds.
   tree: [
     // col 0: Factory unlocks
-    { id: 'alchemy',   col: 0, icon: 'b:cauldron', name: 'Alchemy',         xp: 45, req: [], pay: { air: 10, water: 13 }, desc: 'Unlock the Alchemy Cauldron: Health Potions for the Wizard.' },
-    { id: 'forge',     col: 0, icon: 'b:forge',    name: 'Elemental Forge', xp: 90, req: [], pay: { air: 15, water: 15, fire: 15 }, desc: 'Unlock the Elemental Forge. Each combo spell is then unlocked on its own.' },
-    { id: 'armory',    col: 0, icon: 'b:anvil',    name: 'Armory',          xp: 34, req: [], pay: { air: 9, fire: 15, earth: 10 }, desc: 'Unlock the Armory: it forges the Wizard\'s garments (augments) and the Warden Key that opens the Stronghold, from Cores, Iron and Shards.' },
-    { id: 'logistics', col: 0, icon: 'b:splitter', name: 'Logistics',       xp: 60, req: [], pay: { air: 20, water: 20, fire: 20 }, desc: 'Unlock the Splitter and the Storage Crate.' },
-    { id: 'heavy',     col: 0, icon: 'battery',    name: 'Heavy Batteries', xp: 120, req: [], pay: { air: 25, water: 25, fire: 30, earth: 30, magma: 2 }, desc: 'Unlock the Heavy Battery: a Battery building that drains 33% slower, so each charge lasts 50% longer.' },
-    { id: 'summon',   col: 0, icon: 'b:altar',    name: 'Summoning',       xp: 150, req: [], pay: { air: 40, water: 40, fire: 40, earth: 40 }, desc: 'The Summoning Altar falls from the sky into the wilds beside the Wizard. Once the Warden is dead, hit it with a Single, a Pair, a Triple and the Nova and the Primal Chimera rises. Costs 6 Aether Shards (send them into the Skill Portal).' },
+    { id: 'alchemy',   col: 0, br: 'bld', icon: 'b:cauldron', name: 'Alchemy',         xp: 45, req: [], pay: { air: 10, water: 13 }, desc: 'Unlock the Alchemy Cauldron: Health Potions for the Wizard.' },
+    { id: 'forge',     col: 0, br: 'bld', icon: 'b:forge',    name: 'Elemental Forge', xp: 90, req: [], pay: { air: 15, water: 15, fire: 15 }, desc: 'Unlock the Elemental Forge. Each combo spell is then unlocked on its own.' },
+    { id: 'armory',    col: 0, br: 'bld', icon: 'b:anvil',    name: 'Armory',          xp: 34, req: [], pay: { air: 9, fire: 15, earth: 10, flamethrower: 2 }, desc: 'Unlock the Armory: it forges the Wizard\'s garments (augments) and the Warden Key that opens the Stronghold, from Cores, Iron and Shards.' },
+    { id: 'logistics', col: 0, br: 'bld', icon: 'b:splitter', name: 'Logistics',       xp: 60, req: [], pay: { air: 20, water: 20, fire: 20, tempest: 2 }, desc: 'Unlock the Splitter and the Storage Crate.' },
+    { id: 'heavy',     col: 0, br: 'bld', icon: 'battery',    name: 'Heavy Batteries', xp: 120, req: [], pay: { air: 25, water: 25, fire: 30, earth: 30, magma: 2 }, desc: 'Unlock the Heavy Battery: a Battery building that drains 33% slower, so each charge lasts 50% longer.' },
+    { id: 'summon',   col: 0, br: 'bld', icon: 'b:altar',    name: 'Summoning',       xp: 150, req: [], pay: { air: 40, water: 40, fire: 40, earth: 40 }, desc: 'The Summoning Altar falls from the sky into the wilds beside the Wizard. Once the Warden is dead, hit it with a Single, a Pair, a Triple and the Nova and the Primal Chimera rises. Costs 6 Aether Shards (send them into the Skill Portal).' },
     // col 2: Upgrades — many small tiers, cheap first, steep last
-    { id: 'swift',   col: 2, icon: 'ic_fast', name: 'Swift Harnessing', per: '+12.5% harnesser speed',
+    { id: 'swift',   col: 2, br: 'bld', icon: 'ic_fast', name: 'Swift Harnessing', per: '+12.5% harnesser speed',
       tiers: [12, 18, 25, 33, 43, 54, 65, 80],
       kinds: [['air'], ['fire', 'earth'], ['air', 'fire'], ['water', 'earth'], ['air', 'earth'], ['water', 'fire'], ['water', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']],
-      combos: { 6: { steam: 1 }, 7: { steam: 1, sandstorm: 1 } } },
-    { id: 'manual',  col: 2, icon: 'ic_hand', name: 'Quick Hands', per: '+30% hand-harnessing speed',
+      combos: {} },
+    { id: 'manual',  col: 2, br: 'bldr', icon: 'ic_hand', name: 'Quick Hands', per: '+30% hand-harnessing speed',
       tiers: [4, 14, 28],
       kinds: [['air'], ['water', 'fire'], ['air', 'earth']],
       combos: {} },
-    { id: 'belts',   col: 2, icon: 'belt', name: 'Swift Belts', per: '+15% belt speed',
+    { id: 'belts',   col: 2, br: 'bld', icon: 'belt', name: 'Swift Belts', per: '+15% belt speed',
       tiers: [15, 24, 35, 48, 62, 76],
       kinds: [['water'], ['air', 'earth'], ['water', 'fire'], ['air', 'water'], ['fire', 'earth'], ['air', 'water', 'fire', 'earth']],
-      combos: { 5: { flamethrower: 2 } } },
-    { id: 'satchel', col: 2, icon: 'ic_bag', name: 'Bigger Satchel', per: '+1 carry space',
+      combos: {} },
+    { id: 'satchel', col: 2, br: 'bldr', icon: 'ic_bag', name: 'Bigger Satchel', per: '+1 carry space',
       tiers: [16, 26, 38, 52, 68],
       kinds: [['earth'], ['air', 'water'], ['fire', 'earth'], ['air', 'fire'], ['air', 'water', 'fire', 'earth']],
-      combos: { 4: { mud: 1, magma: 1 } } },
-    { id: 'zoomies', col: 2, icon: 'ic_boot', name: 'Wizard Zoomies', per: '+6% Wizard speed',
+      combos: {} },
+    { id: 'zoomies', col: 2, br: 'wiz', icon: 'ic_boot', name: 'Wizard Zoomies', per: '+6% Wizard speed',
       tiers: [12, 18, 26, 36, 48, 60],
       kinds: [['air'], ['water', 'earth'], ['air', 'fire'], ['fire', 'earth'], ['air', 'water'], ['water', 'fire', 'earth']],
-      combos: { 4: { tempest: 1 }, 5: { tempest: 2, thunder: 1 } } },
-    { id: 'hearty',  col: 2, icon: 'ic_heart', name: 'Hearty Hat', per: '+12 max HP (and heal 12)',
+      combos: {} },
+    { id: 'hearty',  col: 2, br: 'wiz', icon: 'ic_heart', name: 'Hearty Hat', per: '+12 max HP (and heal 12)',
       tiers: [12, 17, 23, 30, 38, 47, 60, 73],
       kinds: [['air'], ['water', 'fire'], ['air', 'earth'], ['water', 'earth'], ['air', 'fire'], ['water', 'fire', 'earth'], ['air', 'water', 'earth'], ['air', 'water', 'fire', 'earth']],
-      combos: { 5: { steam: 1 }, 6: { mud: 2 }, 7: { geyser: 1, blizzard: 1 } } },
-    { id: 'gems',    col: 2, icon: 'ic_xp', name: 'Gem Wisdom', per: 'x1.125 on every XP gem drop chance',
+      combos: {} },
+    { id: 'gems',    col: 2, br: 'wiz', icon: 'ic_xp', name: 'Gem Wisdom', per: 'x1.125 on every XP gem drop chance',
       tiers: [14, 20, 27, 35, 44, 54, 62, 74],
       kinds: [['fire'], ['air', 'water'], ['fire', 'earth'], ['water', 'earth'], ['air', 'water'], ['air', 'earth'], ['air', 'water', 'fire'], ['air', 'water', 'fire', 'earth']],
-      combos: { 5: { flamethrower: 1 }, 6: { magma: 2 }, 7: { meteor: 1 } } },
+      combos: {} },
   ],
   // every number a delivered spell uses (WZ.cast; the skill-tree hover card reads them too).
   // dmg per hit, r radius (tiles), speed (tiles/s), life (s), splash + sr = splash damage + radius,
@@ -283,7 +283,19 @@ const CFG = {
     nova:         { drop: 0.9, r: 8, dmg: 84, push: 30, slow: 0.5, slowT: 2.4, gap: 0.14, stagger: 0.7, dec: { k: 'nova', r: 0.7, t: 6, a: 1 } },
   },
   // what each upgrade tier is worth
-  upgrade: { swift: 0.125, manual: 0.3, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125, magnet: 0.35 },   // gems: x(1+0.125) per tier on every gem drop chance (cap gemCap); magnet: tiles of extra pickup radius per tier
+  upgrade: { swift: 0.125, manual: 0.3, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125, magnet: 0.35,   // gems: x(1+0.125) per tier on every gem drop chance (cap gemCap); magnet: tiles of extra pickup radius per tier
+    crafting: 0.06,    // Swift Crafting: every crafter's cycle takes this much less per tier (Forge, Cauldron, Armory, Spawner growth)
+    remedies: 0.12,    // Health Potions and Elixirs heal this much more per tier
+    wardwoven: 0.10,   // Shield Potions grant this much more armor per tier
+    slippery: 0.07,    // the Wizard's roll cooldown is this much shorter per tier
+    mighty: 0.08,      // the four basic spells: damage, knockback and (through the damage) harvest strength, per tier
+    harvest: 0.20,     // every spell: this much more damage to trees, rocks and ore, per tier
+    forager: 0.12,     // foraging is this much faster per tier, and every dug spot has this chance (per tier) of a double yield
+    longarm: 0.10,     // the Builder's throw distance, per tier
+    tumble: 0.10,      // tier 1 gives the Builder a roll; each later tier shortens its cooldown by this much
+    hustle: 0.07,      // the Builder's move speed, per tier
+    rapid: 0.08,       // the Builder's throw cooldown (and the gap between a stack's throws), shorter per tier
+  },
   firstTierPay: 0.5,          // tier 1 of every upgrade track asks for half the usual spells
   costScale: { xp: 0.7, pay: 0.5, unlock: 0.9 },   // the skill-tree rebalance: XP costs x0.7, banked spell costs x0.5 (applied once below, after the dev-tool overrides); unlock: the Factory unlock nodes are a further 10% cheaper now that spells and creatures left the tree
   gemCap: 0.95,               // no gem chance ever goes above this, whatever Gem Wisdom says
@@ -296,13 +308,13 @@ const CFG = {
     puddle:      { name: 'Puddle Slime',    tier: 1, order: ['water'],                hp: 18,  speed: 1.5, dmg: 6,  rad: 0.36, gem: [0, 0.40], ai: 'slime',  col: '#4aa8ff', n: 2, cost: { water: 1 },                     time: 12, power: 1, splash: { r: 2.1, t: 4, slow: 0.45 } },
     cinder:      { name: 'Cinder Imp',      tier: 1, order: ['fire'],                 hp: 14,  speed: 2.2, dmg: 5,  rad: 0.32, gem: [0, 0.50], ai: 'imp',    col: '#ff7a30', n: 2, cost: { fire: 1 },                      time: 14, power: 1, shot: { every: 2.1, dmg: 6, speed: 7, near: 4.2, far: 7.2 } },
     pebble:      { name: 'Pebble Golem',    tier: 1, order: ['earth'],                hp: 42,  speed: 1.1, dmg: 9,  rad: 0.42, gem: [0, 0.65], ai: 'golem',  col: '#b58a4c', n: 1, cost: { earth: 1 },                     time: 16, power: 1, dr: 0.55, kb: 0.1 },
-    phoenix:     { name: 'Cinder Phoenix',  tier: 2, order: ['fire', 'air'],          hp: 30,  speed: 2.8, dmg: 9,  rad: 0.40, gem: [1, 0.25], fly: true, ai: 'phoenix', col: '#ff9a3a', n: 2, cost: { fire: 1, air: 1 },          time: 22, power: 4, dive: { every: 4.2, wind: 0.55, time: 0.6, mul: 4, dmg: 14 }, reborn: 0.3 },
-    thunderhead: { name: 'Thunderhead',     tier: 2, order: ['air', 'water'],         hp: 34,  speed: 1.0, dmg: 6,  rad: 0.45, gem: [1, 0.25], fly: true, ai: 'storm',  col: '#9aa8d8', n: 2, cost: { air: 1, water: 1 },             time: 22, power: 4, zap: { every: 4.5, n: 3, delay: 0.9, r: 1.3, dmg: 12 } },
-    lavagolem:   { name: 'Lava Golem',      tier: 2, order: ['fire', 'earth'],        hp: 90,  speed: 0.8, dmg: 14, rad: 0.55, gem: [1, 0.25], ai: 'lava',   col: '#ff5a2a', n: 1, cost: { fire: 1, earth: 1 },            time: 26, power: 4, trail: { every: 0.7, r: 1.0, t: 3, dps: 9 }, blast: { r: 3.2, delay: 0.9, dmg: 24 } },
-    shambler:    { name: 'Swamp Shambler',  tier: 2, order: ['earth', 'water'],       hp: 70,  speed: 1.1, dmg: 11, rad: 0.50, gem: [1, 0.25], ai: 'shambler', col: '#6a8a4a', n: 1, cost: { water: 1, earth: 1 },         time: 26, power: 4, snare: { every: 3.4, r: 1.7, t: 5, slow: 0.5 }, regen: 0.04 },
-    dragon:      { name: 'Ember Dragon',    tier: 3, order: ['fire', 'air', 'earth'], hp: 220, speed: 1.6, dmg: 18, rad: 0.70, gem: [2, 0.50], ai: 'dragon', col: '#e0482a', n: 1, cost: { air: 1, fire: 1, earth: 1 },    time: 40, power: 6, breath: { every: 5.5, delay: 0.8, range: 6.5, half: 0.6, n: 9, dmg: 8, speed: 11 }, gust: { every: 8, r: 3.6, push: 10, dmg: 8 } },
-    leviathan:   { name: 'Storm Leviathan', tier: 3, order: ['water', 'fire', 'air'], hp: 130, speed: 3.0, dmg: 12, rad: 0.55, gem: [2, 0.50], fly: true, ai: 'serpent', col: '#6ad0e8', n: 1, cost: { air: 1, fire: 1, water: 1 }, time: 36, power: 6, zap: { every: 4, n: 4, delay: 0.8, r: 1.3, dmg: 12 }, dive: { every: 6, wind: 0.6, time: 0.7, mul: 3.4, dmg: 12, burst: { r: 2.4, dmg: 12, slow: 0.45, slowT: 2 } } },
-    titan:       { name: 'Kiln Titan',      tier: 3, order: ['fire', 'water', 'earth'], hp: 280, speed: 0.9, dmg: 20, rad: 0.75, gem: [2, 0.50], ai: 'titan', col: '#c8704a', n: 1, cost: { fire: 1, water: 1, earth: 1 },  time: 42, power: 6, cracks: [0.75, 0.5, 0.25], dr: [0.35, 0.5, 0.7, 0.9], vent: { r: 3, delay: 1.0, dmg: 18 } },
+    phoenix:     { name: 'Cinder Phoenix',  tier: 2, order: ['fire', 'air'],          hp: 30,  speed: 2.8, dmg: 9,  rad: 0.40, gem: [1, 0.25], fly: true, ai: 'phoenix', col: '#ff9a3a', n: 2, cost: { flamethrower: 1 },          time: 22, power: 4, dive: { every: 4.2, wind: 0.55, time: 0.6, mul: 4, dmg: 14 }, reborn: 0.3 },
+    thunderhead: { name: 'Thunderhead',     tier: 2, order: ['air', 'water'],         hp: 34,  speed: 1.0, dmg: 6,  rad: 0.45, gem: [1, 0.25], fly: true, ai: 'storm',  col: '#9aa8d8', n: 2, cost: { tempest: 1 },             time: 22, power: 4, zap: { every: 4.5, n: 3, delay: 0.9, r: 1.3, dmg: 12 } },
+    lavagolem:   { name: 'Lava Golem',      tier: 2, order: ['fire', 'earth'],        hp: 90,  speed: 0.8, dmg: 14, rad: 0.55, gem: [1, 0.25], ai: 'lava',   col: '#ff5a2a', n: 1, cost: { magma: 1 },            time: 26, power: 4, trail: { every: 0.7, r: 1.0, t: 3, dps: 9 }, blast: { r: 3.2, delay: 0.9, dmg: 24 } },
+    shambler:    { name: 'Swamp Shambler',  tier: 2, order: ['earth', 'water'],       hp: 70,  speed: 1.1, dmg: 11, rad: 0.50, gem: [1, 0.25], ai: 'shambler', col: '#6a8a4a', n: 1, cost: { mud: 1 },         time: 26, power: 4, snare: { every: 3.4, r: 1.7, t: 5, slow: 0.5 }, regen: 0.04 },
+    dragon:      { name: 'Ember Dragon',    tier: 3, order: ['fire', 'air', 'earth'], hp: 220, speed: 1.6, dmg: 18, rad: 0.70, gem: [2, 0.50], ai: 'dragon', col: '#e0482a', n: 1, cost: { meteor: 1 },    time: 40, power: 6, breath: { every: 5.5, delay: 0.8, range: 6.5, half: 0.6, n: 9, dmg: 8, speed: 11 }, gust: { every: 8, r: 3.6, push: 10, dmg: 8 } },
+    leviathan:   { name: 'Storm Leviathan', tier: 3, order: ['water', 'fire', 'air'], hp: 130, speed: 3.0, dmg: 12, rad: 0.55, gem: [2, 0.50], fly: true, ai: 'serpent', col: '#6ad0e8', n: 1, cost: { thunder: 1 }, time: 36, power: 6, zap: { every: 4, n: 4, delay: 0.8, r: 1.3, dmg: 12 }, dive: { every: 6, wind: 0.6, time: 0.7, mul: 3.4, dmg: 12, burst: { r: 2.4, dmg: 12, slow: 0.45, slowT: 2 } } },
+    titan:       { name: 'Kiln Titan',      tier: 3, order: ['fire', 'water', 'earth'], hp: 280, speed: 0.9, dmg: 20, rad: 0.75, gem: [2, 0.50], ai: 'titan', col: '#c8704a', n: 1, cost: { geyser: 1 },  time: 42, power: 6, cracks: [0.75, 0.5, 0.25], dr: [0.35, 0.5, 0.7, 0.9], vent: { r: 3, delay: 1.0, dmg: 18 } },
   },
   crafted: {
     cap: 25,                  // crafted creatures alive at once (inside world.cap); extra Eggs wait in the portal queue
@@ -315,7 +327,8 @@ const CFG = {
     variants: 3,
     eliteChance: 0.05, eliteHp: 3, eliteDmg: 1.5, eliteShards: true,   // elites keep the usual elite rewards (3 gems + shard rules)
     mutChance: 0.08,
-    recycle: 0.3,             // chance a crafted creature drops one packet of its primary element on death
+    recycle: 0.3,             // chance a crafted BASIC creature drops one packet of its element on death
+    recycleSpell: { 2: 0.25, 3: 0.2 },   // chance a crafted double / triple drops the combo spell it was hatched from (it flies home to the Stockpile like a packet)
   },
   // at most one per creature; ic is the icon popped on both halves at spawn
   mutations: {
@@ -435,9 +448,73 @@ const WEAK_TO = { fire: 'water', water: 'earth', earth: 'air', air: 'fire' };
   const W = CFG.strong.warden;
   CFG.enemies.warden = { name: W.name, hp: W.hp, speed: W.speed, dmg: W.dmg, gem: [3, 0], w: 0, col: '#ffd23a', rad: W.rad };
   // the Loot Magnet track (spells and creatures are not in the tree: the Collection Book lists them and production gates them)
-  CFG.tree.push({ id: 'magnet', col: 2, icon: 'ic_magnet', name: 'Loot Magnet', per: '+0.35 tiles of pickup range',
+  CFG.tree.push({ id: 'magnet', col: 2, br: 'wiz', icon: 'ic_magnet', name: 'Loot Magnet', per: '+0.35 tiles of pickup range',
     tiers: [8, 12, 18, 25, 34], pk: [6, 9, 13, 18, 24],
     kinds: [['water'], ['air', 'earth'], ['water', 'fire'], ['air', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']], combos: {} });
+// the new tracks are priced straight in the rebalanced scale (they are not scaled again); xpFirst = tier 1 costs XP only; fullFirst = tier 1 pays full packets (no half-price first tier)
+  CFG.tree.push({ id: 'crafting', col: 2, br: 'bld', icon: 'b:forge', name: 'Swift Crafting', per: '-6% craft time: Forge, Cauldron, Armory, Spawner growth',
+    tiers: [10,16,23,31,40,50], pk: [7.5,12,17.5,24,31,39],
+    kinds: [['fire'], ['water', 'earth'], ['air', 'fire'], ['air', 'water'], ['air', 'earth'], ['air', 'water', 'fire', 'earth']], combos: {} });
+  CFG.tree.push({ id: 'remedies', col: 2, br: 'wiz', icon: 'potion', name: 'Remedies', per: '+12% healing from Potions and Elixirs',
+    tiers: [9,15,22,30,40], pk: [0,11,17,23.5,31],
+    kinds: [[], ['water'], ['air', 'earth'], ['water', 'fire'], ['air', 'water', 'earth']], xpFirst: true, combos: {} });
+  CFG.tree.push({ id: 'wardwoven', col: 2, br: 'wiz', icon: 'armor', name: 'Wardwoven', per: '+10% armor from Shield Potions',
+    tiers: [9,16,25,36], pk: [0,12,19.5,28],
+    kinds: [[], ['earth'], ['fire', 'water'], ['air', 'fire', 'earth']], xpFirst: true, combos: {} });
+  CFG.tree.push({ id: 'slippery', col: 2, br: 'wiz', icon: 'ic_rotate', name: 'Slippery', per: '-7% roll cooldown',
+    tiers: [10,16,23,31,41], pk: [0,12,18,24,32],
+    kinds: [[], ['air'], ['water', 'earth'], ['air', 'fire'], ['water', 'fire', 'earth']], xpFirst: true, combos: {} });
+  CFG.tree.push({ id: 'mighty', col: 2, br: 'wiz', icon: 'ic_bolt', name: 'Mighty Elements', per: '+8% damage, knockback and harvest strength for the four basic spells',
+    tiers: [11,18,26,36,48], pk: [0,14,20,28,37],
+    kinds: [[], ['fire'], ['air', 'earth'], ['water', 'fire'], ['air', 'water', 'fire', 'earth']], xpFirst: true, combos: {} });
+  CFG.tree.push({ id: 'harvest', col: 2, br: 'wiz', icon: 'ic_tree', name: 'Harvest Strength', per: '+20% spell damage to trees, rocks and ore',
+    tiers: [8,14,21,30], pk: [0,11,16.5,23],
+    kinds: [[], ['earth'], ['air', 'fire'], ['water', 'earth']], xpFirst: true, combos: {} });
+  CFG.tree.push({ id: 'forager', col: 2, br: 'wiz', icon: 'ic_flag', name: 'Keen Forager', per: '+12% faster foraging and +12% chance of a double yield',
+    tiers: [8,14,22,31], pk: [0,11,17,24],
+    kinds: [[], ['air'], ['water', 'fire'], ['air', 'earth']], xpFirst: true, combos: {} });
+  CFG.tree.push({ id: 'longarm', col: 2, br: 'bldr', icon: 'ic_target', name: 'Long Arm', per: '+10% throw distance',
+    tiers: [9,15,22,30,40], pk: [7,11.5,17,23,31],
+    kinds: [['earth'], ['air', 'water'], ['fire', 'earth'], ['water', 'fire'], ['air', 'water', 'fire', 'earth']], combos: {} });
+  CFG.tree.push({ id: 'tumble', col: 2, br: 'bldr', icon: 'ic_swap', name: 'Tumble', per: 'tier 1 gives the Builder a dodge roll; then -10% roll cooldown',
+    tiers: [32,14,21,30], pk: [24,11,16.5,23],
+    kinds: [['air', 'water', 'fire', 'earth'], ['air', 'earth'], ['water', 'fire'], ['air', 'water', 'earth']], fullFirst: true, combos: {} });
+  CFG.tree.push({ id: 'hustle', col: 2, br: 'bldr', icon: 'ic_fast', name: 'Hustle', per: '+7% Builder move speed',
+    tiers: [9,15,22,30,40], pk: [7,11.5,17,23,31],
+    kinds: [['water'], ['air', 'fire'], ['water', 'earth'], ['air', 'earth'], ['air', 'water', 'fire']], combos: {} });
+  CFG.tree.push({ id: 'rapid', col: 2, br: 'bldr', icon: 'ic_hand', name: 'Rapid Throws', per: '-8% throw cooldown',
+    tiers: [8,14,21,30], pk: [6,11,16.5,23],
+    kinds: [['air'], ['water', 'fire'], ['air', 'earth'], ['water', 'fire', 'earth']], combos: {} });
+  // The tier pattern for EVERY track (old and new): combo spells price the top end. Mid-to-late tiers add a double spell, the last tier of a 6+ tier track a triple too
+  // (3 tiers: the last; 4: the last two; 5: the last two; 6: tiers 4-6; 8: tiers 5-8). Nova is never a tree cost. Final numbers (not scaled again).
+  CFG.trackCombos = {
+crafting: { 3: { flamethrower: 1 }, 4: { steam: 1 }, 5: { sandstorm: 1, meteor: 1 } },
+    swift: { 4: { magma: 1 }, 5: { tempest: 1 }, 6: { mud: 1 }, 7: { flamethrower: 1, thunder: 1 } },
+    belts: { 3: { steam: 1 }, 4: { sandstorm: 1 }, 5: { magma: 1, blizzard: 1 } },
+    zoomies: { 3: { tempest: 1 }, 4: { mud: 1 }, 5: { flamethrower: 1, geyser: 1 } },
+    hearty: { 4: { steam: 1 }, 5: { sandstorm: 1 }, 6: { magma: 1 }, 7: { tempest: 1, meteor: 1 } },
+    gems: { 4: { mud: 1 }, 5: { flamethrower: 1 }, 6: { steam: 1 }, 7: { sandstorm: 1, thunder: 1 } },
+    magnet: { 3: { magma: 1 }, 4: { tempest: 1 } },
+    remedies: { 3: { mud: 1 }, 4: { flamethrower: 1 } },
+    wardwoven: { 2: { steam: 1 }, 3: { sandstorm: 1 } },
+    slippery: { 3: { magma: 1 }, 4: { tempest: 1 } },
+    mighty: { 3: { mud: 1 }, 4: { flamethrower: 1 } },
+    harvest: { 2: { steam: 1 }, 3: { sandstorm: 1 } },
+    forager: { 2: { magma: 1 }, 3: { tempest: 1 } },
+    manual: { 2: { mud: 1 } },
+    satchel: { 3: { flamethrower: 1 }, 4: { steam: 1 } },
+    longarm: { 3: { sandstorm: 1 }, 4: { magma: 1 } },
+    tumble: { 0: { tempest: 1 }, 2: { tempest: 1 }, 3: { mud: 1 } },
+    hustle: { 3: { flamethrower: 1 }, 4: { steam: 1 } },
+    rapid: { 2: { sandstorm: 1 }, 3: { magma: 1 } },
+  };
+  for (const n of CFG.tree) if (n.tiers) n.combos = CFG.trackCombos[n.id] || {};
+  // the three branches of the tree, with every node in the order it is shown (the machine tracks first, so they stay put as the unlocks below them change)
+  CFG.branches = [
+    { id: 'bld', name: 'BUILDINGS', icon: 'ic_factory', nodes: ['crafting', 'swift', 'belts', 'alchemy', 'forge', 'armory', 'logistics', 'heavy', 'summon'] },
+    { id: 'wiz', name: 'WIZARD', icon: 'ic_hat', nodes: ['zoomies', 'hearty', 'remedies', 'wardwoven', 'slippery', 'mighty', 'harvest', 'forager', 'gems', 'magnet'] },
+    { id: 'bldr', name: 'BUILDER', icon: 'ic_wrench', nodes: ['manual', 'satchel', 'longarm', 'tumble', 'hustle', 'rapid'] },
+  ];
 })();
 
 const ELEM = {
@@ -551,6 +628,9 @@ const BANK_KINDS = SPELL_KINDS.concat(['shard']);   // ...and Aether Shards (the
 // the elements each spell carries (for weaknesses, and its tier: how hard it lands back at the Spell Portal)
 const SPELL_EL = { gust: ['air'], fireball: ['fire'], spray: ['water'], boulder: ['earth'] };
 for (const k in CFG.recipes) { const r = CFG.recipes[k]; if (ITEMS[r.out] && ITEMS[r.out].spell) SPELL_EL[r.out] = Object.keys(r.in); }
+// the Creature Spawner's seeds: a combo spell -> the creature (pair or triple) it hatches. A spell with no creature (Steam Burst, Sandstorm, Blizzard) is no seed
+const SEED_SPELL = {};
+for (const id in CFG.creatures) { const ks = Object.keys(CFG.creatures[id].cost); if (ks.length === 1 && ITEMS[ks[0]] && ITEMS[ks[0]].spell) SEED_SPELL[ks[0]] = id; }
 
 // Guided goals: TWO tracks that run at the same time, one for each player (`B` = the Builder, `W` = the Wizard). Each goal
 // pays `xp` and, for the bigger steps, a `gift` ({ bank: {kind: n} spells for the skill tree, stock: {res: n} materials,
@@ -586,9 +666,9 @@ const QUESTS = {
     { from: 13, v5: 13, icon: 'flamethrower', text: 'Craft a combo spell at the Forge (press E to pick Air + Fire, Air + Water...) and deliver it', xp: 15, gift: { bank: { air: 3, fire: 3 } }, done: g => g.flags.combo, hint: { combo: 2 } },
     { v5: 14, icon: 'ic_fast', text: 'Overdrive: put a charged Battery right beside a Forge or Cauldron', xp: 12, done: g => G.fac.bld.some(b => b.done && b.od), hint: { make: 'battery' } },
     { v5: 15, icon: 'steam', text: 'Deliver 6 combo spells to the Wizard (two or more elements each)', xp: 15, gift: { stock: { shard: 1 } }, stat: g => g.stats.combos || 0, n: 6, hint: { combo: 2 } },
-    { from: 15, v5: 16, icon: 'b:splitter', text: 'Unlock Logistics, then build a Splitter to route packets', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && b.type === 'splitter'), hint: { make: 'splitter' } },
+    { from: 15, v5: 16, icon: 'b:splitter', text: 'Unlock Logistics (a Tempest Chain is part of the price), build a Splitter', xp: 15, done: g => !!g.tree.logistics && G.fac.bld.some(b => b.done && !b.free && b.type === 'splitter'), hint: { make: 'splitter' } },
     { from: 16, v5: 17, icon: 'armor', text: 'Brew a Shield Potion at the Cauldron (Earth + Fire packets) and send it to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'cauldron' } },
-    { v5: 18, icon: 'plate', text: 'Unlock the Armory: forge a garment from the Wizard\'s Cores and send it through the portal', xp: 20, gift: { stock: { iron: 6 } }, done: g => !!g.flags.sent_aug, hint: { make: 'anvil' } },
+    { v5: 18, icon: 'plate', text: 'Unlock the Armory (costs a Flamethrower): forge a garment from Cores, send it', xp: 20, gift: { stock: { iron: 6 } }, done: g => !!g.flags.sent_aug, hint: { make: 'anvil' } },
     { icon: 'egg_pebble', text: 'Hatch a Pebble Golem: set a Harnesser to Earth, feed a Spawner, send the Egg', xp: 12, stat: g => (g.stats.sent || {}).egg_pebble || 0, n: 1, hint: { make: 'spawner' } },
     { from: 17, v5: 19, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 8) and throw 1 Wood + 1 Stone at it', xp: 15, done: g => (g.stats.tiles || 0) >= 1, hint: { make: 'expand' } },
     { v5: 20, icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner' } },

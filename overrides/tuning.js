@@ -18,6 +18,6 @@ window.TUNING = {
  "harvest.tree.n": 5,
  "forage.mound.drop.stone": 3,
  "forage.cache.drop.stone": 3,
- "music.fadeOut": 3,
+ "music.fadeOut": 7,
  "music.airFloor": 0.05
 };

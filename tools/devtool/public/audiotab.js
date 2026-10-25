@@ -3,10 +3,12 @@
 // speed, reverse, loop) that the game applies at playback with the same OV.playClip this page previews with.
 // Saved to overrides/audio/<name>.js (the file, base64, so the game can load it from file://) + overrides/audio.json.
 import { $, h, say, api, autosaver } from './common.js';
+import * as music from './musictab.js';
 
 const view = $('#view-audio');
 const savedEl = h('span', { class: 'saved' });
 export const tools = h('span', {});
+const MUSIC = 'game_music';   // not an AU sound name: the layered soundtrack, trimmed in musictab.js
 const LOOPS = AU.names.loops, SFX = AU.names.sfx.slice().sort();
 const ABOUT = {
   music: 'The background music (replaces the synth loop and its reactive layers).',
@@ -36,14 +38,15 @@ function drawList() {
   const row = name => {
     if (q && !name.includes(q)) return null;
     return h('div', { class: 'arow' + (name === sel ? ' sel' : ''), onclick: () => select(name) },
-      h('code', {}, name), h('span', { class: 'badge' + (clips[name] ? ' custom' : '') }, clips[name] ? 'custom' : 'synth'),
+      h('code', {}, name), h('span', { class: 'badge' + (clips[name] || name === MUSIC ? ' custom' : '') }, name === MUSIC ? 'in game' : clips[name] ? 'custom' : 'synth'),
       h('button', { title: 'Play what the game plays now', onclick: e => { e.stopPropagation(); playCurrent(name); } }, 'play'));
   };
-  list.append(h('h3', {}, 'Music & loops'), ...LOOPS.map(row), h('h3', {}, 'Sound effects (' + SFX.length + ')'), ...SFX.map(row));
+  list.append(h('h3', {}, 'Music & loops'), row(MUSIC), ...LOOPS.map(row), h('h3', {}, 'Sound effects (' + SFX.length + ')'), ...SFX.map(row));
 }
 
 // ---------- playback ----------
 function stopAll() {
+  music.stopMusic();
   if (playing) { try { playing.node.src.stop(); } catch (e) { /* done */ } playing = null; }
   if (synthStop) { synthStop(); synthStop = null; }
 }
@@ -62,7 +65,7 @@ async function playEdited(name) {
   playing = { name, node: OV.playClip(ensureCtx(), c, p, ctx.destination), t0: ctx.currentTime, p: Object.assign({}, p), dur: c.buf.duration };
   playing.node.src.onended = () => { if (playing && playing.name === name) playing = null; };
 }
-const playCurrent = name => (clips[name] ? playEdited(name) : playSynth(name));
+const playCurrent = name => (name === MUSIC ? (stopAll(), music.playLoop()) : clips[name] ? playEdited(name) : playSynth(name));
 async function loadClip(name) {
   if (cache[name]) return cache[name];
   try {
@@ -121,6 +124,8 @@ async function select(name) {
   drawList();
   editor.textContent = '';
   fields = []; wave = null;
+  stopAll();
+  if (name === MUSIC) { const box = h('div', {}); editor.append(box); music.mount(box); return; }   // a fresh box per visit, so a slow load can't draw into a later page
   const isLoop = LOOPS.includes(name);
   const fileIn = h('input', { type: 'file', accept: 'audio/*,.wav,.mp3,.ogg,.m4a,.flac,.webm', hidden: true });
   fileIn.addEventListener('change', () => { if (fileIn.files[0]) upload(name, fileIn.files[0]); });

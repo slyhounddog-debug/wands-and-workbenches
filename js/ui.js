@@ -453,8 +453,9 @@ UI.nodeCost = function (n) {
   if (L >= UI.nodeMax(n)) return null;
   if (!n.tiers) return { xp: n.xp, pay: n.pay };
   // packets per tier come from pk (the old XP basis, halved by the rebalance), split across the tier's kinds
-  const xp = n.tiers[L], kinds = n.kinds[L], pay = {}, per = Math.max(1, Math.round((n.pk ? n.pk[L] : xp) / kinds.length * (L === 0 ? CFG.firstTierPay : 1)));
-  kinds.forEach(k => { pay[k] = per; });
+  // tier 1 of a track is half price in packets (CFG.firstTierPay), except Tumble's ability tier (fullFirst); a track with xpFirst costs XP only at tier 1, no packets or spells at all
+  const xp = n.tiers[L], kinds = n.kinds[L], pay = {}, per = Math.max(1, Math.round((n.pk ? n.pk[L] : xp) / Math.max(1, kinds.length) * (L === 0 && !n.fullFirst ? CFG.firstTierPay : 1)));
+  if (!(n.xpFirst && L === 0)) kinds.forEach(k => { pay[k] = per; });
   Object.assign(pay, (n.combos && n.combos[L]) || {});
   return { xp, pay };
 };
@@ -485,17 +486,18 @@ UI.openTree = function (side, open) {
   if (open) { UI.renderTree(side); UI.help(false); }
   else if (UI.tipNode && UI.tipNode.side === side) UI.showNodeTip(side, null);
 };
+UI.nodeOf = id => CFG.tree.find(t => t.id === id);
 UI.renderTree = function (side) {
   const el = $(side === 'L' ? 'treeL' : 'treeR');
-  const cols = [['ic_factory', 'FACTORY', 0], ['ic_up', 'UPGRADES', 2]];   // spells and creatures live in the Collection Book now
+  const cols = CFG.branches;   // three branches: Buildings, Wizard, Builder (spells and creatures live in the Collection Book)
   const bank = BANK_KINDS.filter(k => G.bank[k] > 0).map(k => '<span class="bk">' + UI.img(k, 16) + G.bank[k] + '</span>').join('') || '<span class="dim">empty: send spells into the Skill Portal</span>';
   let h = '<div class="treeHead"><h2>' + UI.img(side === 'L' ? 'ic_wrench' : 'ic_hat', 32) + 'SKILL TREE</h2><div class="xpbig">' + UI.img('ic_xp', 24) + Math.floor(G.xp) + '</div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>';
   const un = UI.undoKind();
   h += '<div class="bankRow">' + UI.img('ic_skill', 24) + '<span class="lbl">BANK</span>' + bank +
     (un ? '<span class="undo" data-undo="1"><kbd>Q</kbd><kbd>X</kbd>' + UI.img('ic_rotate', 14) + UI.img(un, 16) + '</span>' : '') + '</div><div class="cols">';
   cols.forEach(c => {
-    h += '<div class="col"><h4>' + UI.img(c[0], 16) + c[1] + '</h4>';
-    for (const n of CFG.tree.filter(t => t.col === c[2])) {
+    h += '<div class="col"><h4>' + UI.img(c.icon, 16) + c.name + '</h4>';
+    for (const n of c.nodes.map(UI.nodeOf)) {
       const L = UI.nodeLevel(n), max = UI.nodeMax(n), cost = UI.nodeCost(n), reqs = UI.nodeReqs(n);
       const cls = !cost ? 'owned' : reqs.length ? 'reqd' : UI.canAfford(cost) ? 'can' : 'cant';
       const pips = n.tiers ? '<div class="pips">' + n.tiers.map((_, i) => '<i class="' + (i < L ? 'on' : '') + '"></i>').join('') + '</div>' : '';
@@ -557,6 +559,17 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
     case 'hearty': return [row('Wizard max HP', l => '' + (CFG.wizard.hp + up * l))];
     case 'gems': return [row('Gem drop chance', l => 'x' + Math.pow(1 + up, l).toFixed(2)), row('Cinder Imp gem chance', l => Math.min(95, Math.round(CFG.creatures.cinder.gem[1] * 100 * Math.pow(1 + up, l))) + '%'), row('Wild Slime gem chance', l => Math.min(95, Math.round(CFG.enemies.slime.gem[1] * 100 * Math.pow(1 + up, l))) + '%')];
     case 'magnet': return [row('Pickup range', l => (CFG.world.vacuum + up * l).toFixed(2) + ' tiles'), row('Shard / Core range', l => ((CFG.world.vacuum + up * l) * 2.5).toFixed(2) + ' tiles')];
+    case 'crafting': return [row('Craft time', l => '-' + Math.round(up * l * 100) + '%'), row('A 10s Forge craft takes', l => fSec(10 * (1 - up * l))), row('A 20s Nova takes', l => fSec(20 * (1 - up * l)))];
+    case 'remedies': return [row('Health Potion heals', l => Math.round(CFG.pickups.potion.heal * (1 + up * l))), row('Greater Elixir heals', l => Math.round(CFG.pickups.elixir.heal * (1 + up * l)))];
+    case 'wardwoven': return [row('Shield Potion armor', l => Math.round(CFG.pickups.armor.armor * (1 + up * l))), row('Greater Shield Potion armor', l => Math.round(CFG.pickups.plate.armor * (1 + up * l)))];
+    case 'slippery': return [row('Roll cooldown', l => fSec(CFG.wizard.rollCd * (1 - up * l)))];
+    case 'mighty': return [row('Basic spell damage', l => fPct(up * l)), row('Knockback', l => fPct(up * l)), row('Fireball damage', l => Math.round(CFG.spells.fireball.dmg * (1 + up * l))), row('Boulder damage per bounce', l => Math.round(CFG.spells.boulder.dmg * (1 + up * l)))];
+    case 'harvest': return [row('Spell damage to trees, rocks, ore', l => fPct(up * l))];
+    case 'forager': return [row('Foraging speed', l => fPct(up * l)), row('Taps to dig a Dirt Mound', l => (CFG.forage.mound.taps / (1 + up * l)).toFixed(1)), row('Chance of a double yield', l => Math.round(up * l * 100) + '%')];
+    case 'longarm': return [row('Throw distance', l => (CFG.throwRange * (1 + up * l)).toFixed(1) + ' tiles')];
+    case 'tumble': return [row('Builder roll', l => (l ? 'YES' : 'no')), row('Roll cooldown', l => (l ? fSec(CFG.builder.roll.cd * (1 - up * (l - 1))) : '--'))];
+    case 'hustle': return [row('Builder move speed', l => fPct(up * l)), row('Speed', l => (CFG.builder.speed * (1 + up * l)).toFixed(2) + ' tiles/s')];
+    case 'rapid': return [row('Throw cooldown', l => fSec(CFG.throwRepeat * (1 - up * l))), row('Throws per second', l => (1 / (CFG.throwRepeat * (1 - up * l))).toFixed(1))];
     case 'summon': return [['Lands', 'in the wilds beside the Wizard'], ['Takes spells', 'once the Warden is dead'], ['Lit by', 'a Single, a Pair, a Triple, the Nova'], ['Wakes the Chimera', 'with all 4 sockets lit']];
     case 'heavy': {
       const life = k => Math.round(CFG.batteryLife * k) + 's';
@@ -577,7 +590,7 @@ UI.nodeTipHtml = function (n) {
   const L = UI.nodeLevel(n), max = UI.nodeMax(n), cost = UI.nodeCost(n), reqs = UI.nodeReqs(n);
   const state = n.tiers ? 'TIER ' + L + '/' + max : G.tree[n.id] ? 'OWNED' : 'LOCKED';
   let h = '<div class="tth">' + UI.img(n.icon, 32) + '<div><b>' + n.name + '</b><small>' + state + '</small></div></div>';
-  h += '<p>' + (n.tiers ? 'Each tier: ' + n.per + '.' : n.desc) + '</p>';
+  h += '<p>' + (n.tiers ? (n.fullFirst ? 'Tier ' + 1 + ' gives the Builder a new move. After that, each tier: ' : 'Each tier: ') + n.per + '.' : n.desc) + '</p>';
   const rows = UI.nodeStats(n);
   if (rows.length) {
     if (n.tiers) h += '<div class="ttr ttc"><span></span><em>NOW</em><em>' + (cost ? 'NEXT' : '') + '</em></div>';
@@ -587,7 +600,7 @@ UI.nodeTipHtml = function (n) {
   }
   if (!cost) h += '<div class="ttf done">' + UI.img('ic_check', 12) + (n.tiers ? 'MAXED' : 'OWNED') + '</div>';
   else if (reqs.length) h += '<div class="ttf req">' + UI.img('ic_lock', 12) + 'Needs ' + reqs.map(r => CFG.tree.find(t => t.id === r).name).join(', ') + '</div>';
-  else h += '<div class="ttf">' + UI.costHtml(cost) + '</div><div class="ttn">' + (n.tiers && L === 0 ? 'First tier: half the usual spells. ' : '') + (UI.canAfford(cost) ? 'Click to buy.' : 'Not enough yet.') + ' Right-click to pin.</div>';
+  else h += '<div class="ttf">' + UI.costHtml(cost) + '</div><div class="ttn">' + (n.tiers && L === 0 ? (n.xpFirst ? 'First tier: XP only. ' : n.fullFirst ? 'Full price: it is a new ability. ' : 'First tier: half the usual spells. ') : '') + (UI.canAfford(cost) ? 'Click to buy.' : 'Not enough yet.') + ' Right-click to pin.</div>';
   return h;
 };
 UI.tipNode = null;
@@ -843,7 +856,7 @@ const HOWTO = {
     ['Building', 'Pick a slot (keys <b>1</b> to <b>8</b> or the wheel; slot 8 is Floor Tiles). Slots with a pip row are <b>families</b> (Crafters, Power, Logistics, Creature Spawners): <b>Q</b>, the wheel over the slot or <b>RT</b> on a pad cycles the member (locked ones are skipped). <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
     ['Machines', 'The <b>Harnesser</b> carries one of four element crystals: <b>F</b> (<b>LT + X</b> on a pad) switches it to the next element at any time. The old crystal bursts, the new one grows for 15 seconds, then the Harnesser shakes and starts making packets (nothing is made while it grows, and switching again restarts the 15 seconds). Every building shows what it holds as real items stacked on it: inputs, what it has made, a blueprint materials (faint copies = still missing), Battery fuel. Harnessers make packets by themselves, or stand next to one and press <b>E</b>, then <b>keep tapping E</b> to fill the meter and crank one out by hand (it never fills by itself; no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
     ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with one charged <b>Battery</b> just south of the Stockpile. A Battery is a building: it gives +10 power while it has charge and drains by itself while anything needs power. To refill it, throw element packets, Wood or Stone at it (or belt them in): it burns them into charge, more kinds at once = faster (hand-gathered packets are free). Every packet charges 10% more than its base, and a packet you throw in by hand adds another 20%. Build more Batteries like any building (place the blueprint, throw its materials at it). A charged Battery right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, the <b>Heavy Batteries</b> node unlocks the <b>Heavy Battery</b>, which drains slower so its charge lasts 50% longer.'],
-    ['Creatures', 'The <b>Creature Spawner</b> turns element packets into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. There is only one Spawner and nothing to unlock: feed it one element for a basic creature, two for a pair, three for a triple (it works out the creature from the elements inside, no recipe to pick; a small icon shows which one it is hatching). At most 25 factory creatures live at once: extra Eggs wait beside the portal. Every creature is in the <b>Collection Book</b> (C) with a live demo. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
+    ['Creatures', 'The <b>Creature Spawner</b> turns element packets into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. There is only one Spawner and nothing to unlock: feed it ONE thing at a time. An element packet hatches the basic creature of its element. A forged combo spell hatches the pair or triple creature of its elements: Flamethrower (Cinder Phoenix), Tempest Chain (Thunderhead), Magma Bomb (Lava Golem), Mud Snare (Swamp Shambler), Meteor Shower (Ember Dragon), Thunderstorm (Storm Leviathan), Geyser Eruption (Kiln Titan). Steam Burst, Sandstorm and Blizzard are no seeds: the Spawner bounces them back. A small icon shows which creature it is hatching; when one dies it sometimes gives back what it was hatched from. At most 25 factory creatures live at once: extra Eggs wait beside the portal. Every creature is in the <b>Collection Book</b> (C) with a live demo. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
     ['Growing', 'The floor starts small (12 x 9). Place <b>Floor Tiles</b> (slot 8) on empty ground beside it and throw them Wood and Stone (and Iron after the 28th) to turn them into floor. A floor tile holds <b>5</b> loose items; more bounce on to the next tile.'],
     ['Stockpile', 'The <b>Stockpile</b> is a real inventory: it starts as 3 x 2 wooden tiles, and every tile holds <b>50 of ONE kind</b> (Wood, Stone, Iron, Shards, Cores, the Warden Key, element packets, garments). Slot 8 swaps (<b>Q</b>) to the <b>Stockpile Tile</b> (4 Wood, 2 Stone, 1 Iron), placed on an empty floor tile. When the Stockpile has no room for something, the Wizard cannot send it home: the portal over his head spits it back out. <b>Demolish</b> takes a building first; on an empty tile it lifts the Stockpile tile (back to floor) or the floor tile itself, refunded, and whatever lay there bounces to the next tile with room. When the whole factory is full the extras go through the Spell Portal into the wilds.'],
     ['Spells', 'Spells need no unlocking: a pair is the two element packets fused at an Elemental Forge, a triple needs its two parent pairs to have been made once, and the Nova needs all four triples. The <b>Collection Book</b> (button beside the Skill Tree, or <b>C</b>) lists every spell and creature with a live demo, its recipe and its numbers.'],
@@ -938,6 +951,7 @@ const CONTROLS = [
     [K('LEFT-CLICK'), 'Pick up one item (hold to keep taking, it walks there first). On a Splitter: open its settings'],
     [K('RIGHT-CLICK'), 'Throw one item along the dotted line (hold = rapid). While hand-gathering: cancel the gather'],
     [K('SHIFT') + ' + ' + K('RIGHT-CLICK'), 'Throw the whole stack'],
+    [K('SPACE') + ' &nbsp;/&nbsp; pad LT + A', 'Builder roll (the Tumble skill, BUILDER branch of the tree): a quick somersault along the way he walks. With a swapped keyboard it is Right Shift'],
     [K('E'), 'Use: hand-gather a Harnesser (tap again and again to fill the meter), turn a belt or machine, switch recipe'],
     [K('F') + ' &nbsp;(' + K('SHIFT') + ' + ' + K('F') + ' = back)', 'Switch the element of the Harnesser in reach (the new crystal grows for 15 seconds)'],
     [K('1') + ' - ' + K('8') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, the building families, then Floor Tiles)'],
@@ -988,6 +1002,7 @@ const CONTROLS = [
     [K('B') + ' &nbsp;/&nbsp; ' + K('LT') + ' + ' + K('B'), 'Throw (hold = rapid) / throw the whole stack. Cancels hand-gathering'],
     [K('X'), 'Use'],
     [K('LT') + ' + ' + K('X'), 'Switch the element of the Harnesser in reach'],
+    [K('LT') + ' + ' + K('A'), 'Builder roll (the Tumble skill in the tree)'],
     [K('RIGHT STICK') + ' &nbsp;or ' + K('R3'), 'Flick to cycle targets'],
     [K('LB') + ' ' + K('RB'), 'Previous / next hotbar slot'],
     [K('RT'), 'Next member of a family slot'],

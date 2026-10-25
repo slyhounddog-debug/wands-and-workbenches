@@ -342,8 +342,10 @@ Main.controls = function (dt) {
   // F (Shift + F = backwards) / LT + X on a pad switches the element of the Harnesser in reach
   const swapEl = (c.kbB && IN.hit('KeyF')) || (p0 && p0.x && p0.ltHeld);
   let use = (c.kbB && !(sh && G.swapped) && IN.hit('KeyE')) || (altB && IN.hit('Slash')) || (p0 && p0.x && !p0.ltHeld);
-  let pick = (altB && IN.hit('Period')) || (p0 && p0.a);
-  const pickHeld = (altB && IN.down('Period')) || (p0 && p0.aHeld);
+  let pick = (altB && IN.hit('Period')) || (p0 && p0.a && !p0.ltHeld);
+  const pickHeld = (altB && IN.down('Period')) || (p0 && p0.aHeld && !p0.ltHeld);
+  // Tumble (a skill-tree track): the Builder's dodge roll, in the Wizard's input language: Space (Right Shift when the keyboard is swapped, Space is the Wizard's then), LT + A on a pad
+  let broll = (c.kbB && ((sh && !G.swapped) || !c.kbW) && IN.hit('Space')) || (c.kbB && sh && G.swapped && IN.hit('ShiftRight')) || (p0 && p0.a && p0.ltHeld);
   const throwHeld = (altB && IN.down('Comma')) || (p0 && p0.bHeld);
   // a Wizard keyboard: arrows + . when it is shared and not swapped, WASD + Space when swapped; alone on the keyboard it takes both
   let roll = (c.kbW && !(sh && G.swapped) && IN.hit('Period')) || (c.kbW && (!sh || G.swapped) && IN.hit('Space')) || (c.kbW && sh && G.swapped && IN.hit('KeyE')) || (p1 && p1.a);
@@ -411,7 +413,7 @@ Main.controls = function (dt) {
   const inTree = UI.treeOpen.L || UI.treeOpen.R, frozen = inTree || Main.graceT > 0;
   if (inTree && (IN.hit('KeyQ') || (p0 && p0.x) || (p1 && p1.x))) UI.undoBank();   // Q / pad X: take the last deposit back out
   if (inTree) Main.treePads(dt, p0, p1);
-  if (frozen) { bix = 0; biy = 0; use = false; pick = false; wix = 0; wiy = 0; roll = false; hold = false; }
+  if (frozen) { bix = 0; biy = 0; use = false; pick = false; wix = 0; wiy = 0; roll = false; hold = false; broll = false; }
   // a demolish question is open: E / Enter / A confirms, Esc / B backs out
   if (UI.askB && !frozen) {
     if (use || IN.hit('Enter') || (p0 && p0.a)) UI.askClose(true);
@@ -501,7 +503,7 @@ Main.controls = function (dt) {
       }
     } else G.lastFeet = null;
   }
-  return { bix, biy, wix, wiy, roll, hold: !!hold };
+  return { bix, biy, wix, wiy, roll, hold: !!hold, broll: !!broll };
 };
 // the name of the key that fires the held spell, for the toast
 Main.holdKeyName = () => (Main.padW() ? 'X' : 'Z');
@@ -515,6 +517,7 @@ Main.step = function (dt, ctl) {
   const frozen = inTree || Main.graceT > 0;
   const facHalt = frozen || G.w.dead;   // the factory waits while the Wizard is down (the wilds keep running for the death effects)
   if (!facHalt) {
+    if (ctl.broll) FA.builderRoll(ctl.bix, ctl.biy);
     FA.moveBuilder(dt, ctl.bix, ctl.biy);
     FA.update(dt);
   }

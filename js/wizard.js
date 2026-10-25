@@ -249,6 +249,19 @@ WZ.generate = function () {
 
 // ---------- run state ----------
 WZ.maxHp = () => CFG.wizard.hp + CFG.upgrade.hearty * lvl('hearty');
+// the tree's WIZARD branch (numbers only: his verbs come from garments)
+WZ.rollCd = () => CFG.wizard.rollCd * (1 - CFG.upgrade.slippery * lvl('slippery'));   // Slippery: shorter roll cooldown
+WZ.harvMul = () => 1 + CFG.upgrade.harvest * lvl('harvest');   // Harvest Strength: every spell hits trees, rocks and ore harder
+WZ.remedy = k => (k === 'potion' || k === 'elixir' ? 1 + CFG.upgrade.remedies * lvl('remedies') : k === 'armor' || k === 'plate' ? 1 + CFG.upgrade.wardwoven * lvl('wardwoven') : 1);   // Remedies (healing) / Wardwoven (armor)
+// a spell's numbers as cast: the four basic spells get Mighty Elements' bonus on damage and knockback
+WZ.spellS = function (spell) {
+  const S = CFG.spells[spell], m = 1 + CFG.upgrade.mighty * lvl('mighty');
+  if (BASICS.indexOf(spell) < 0 || m === 1) return S;
+  const o = Object.assign({}, S);
+  for (const k of ['dmg', 'splash', 'push', 'bonk']) if (o[k]) o[k] = S[k] * m;
+  o.mk = m;
+  return o;
+};
 WZ.speed = () => CFG.wizard.speed * (1 + CFG.upgrade.zoomies * lvl('zoomies'));
 WZ.tile = (x, y) => {
   if (x < 0 || y < 0 || x >= CFG.WW || y >= CFG.WH) return T_POND;
@@ -439,18 +452,23 @@ WZ.forageAt = function (x, y) {
 WZ.forageName = k => (k === 'mound' ? 'Dirt Mound' : k === 'sticks' ? 'Stick Pile' : k === 'cache' ? 'Buried Cache' : 'Berry Bush');
 WZ.mash = function (o) {
   const F = CFG.forage, def = F[o.kind], w = G.w;
-  o.prog += 1; o.lastT = w.t; o.shake = 0.12; w.mashT = 0.14;
+  o.prog += 1 + CFG.upgrade.forager * lvl('forager'); o.lastT = w.t; o.shake = 0.12; w.mashT = 0.14;   // Keen Forager: each press digs this much more
   WZ.puff(o.x, o.y, o.kind === 'mound' ? '#8a6a3c' : o.kind === 'sticks' ? '#c98a52' : o.kind === 'cache' ? '#ffd23a' : '#46b452', 3);
   AU.sfx(o.kind === 'bush' ? 'rustle' : 'dig');
   if (o.prog < def.taps) return;
   o.broken = true; o.prog = 0; o.respawn = o.kind === 'bush' ? F.bushRespawn : F.respawn;
-  if (o.kind === 'cache') { const s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y]; w.pickups.push({ kind: Math.random() < def.pickup ? 'elixir' : 'plate', x: s[0], y: s[1], z: 1.6, t: 0 }); }   // a pickup tumbles out of the cache as well
-  if (o.kind === 'bush') {   // a pickup tumbles out of the bush: walk over it to use it
-    const kind = Math.random() < def.potion ? 'potion' : 'armor', s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y];
-    w.pickups.push({ kind, x: s[0], y: s[1], z: 1.6, t: 0 });
-  } else {
-    for (const k in def.drop) for (let i = 0; i < def.drop[k]; i++) WZ.drop(k, o.x, o.y, 1);
-    for (const k in def.bonus) if (Math.random() < def.bonus[k]) WZ.drop(k, o.x, o.y, 1);
+  // Keen Forager: each tier is a +12% chance that the spot gives everything twice
+  const twice = Math.random() < CFG.upgrade.forager * lvl('forager'), rounds = twice ? 2 : 1;
+  if (twice) { WZ.icon(o.x, o.y - 0.4, 'ic_check'); WZ.puff(o.x, o.y, '#ffd23a', 8); }
+  for (let r = 0; r < rounds; r++) {
+    if (o.kind === 'cache') { const s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y]; w.pickups.push({ kind: Math.random() < def.pickup ? 'elixir' : 'plate', x: s[0], y: s[1], z: 1.6, t: 0 }); }   // a pickup tumbles out of the cache as well
+    if (o.kind === 'bush') {   // a pickup tumbles out of the bush: walk over it to use it
+      const kind = Math.random() < def.potion ? 'potion' : 'armor', s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y];
+      w.pickups.push({ kind, x: s[0], y: s[1], z: 1.6, t: 0 });
+    } else {
+      for (const k in def.drop) for (let i = 0; i < def.drop[k]; i++) WZ.drop(k, o.x, o.y, 1);
+      for (const k in def.bonus) if (Math.random() < def.bonus[k]) WZ.drop(k, o.x, o.y, 1);
+    }
   }
   G.stats.foraged = (G.stats.foraged || 0) + 1;
   WZ.puff(o.x, o.y, '#ffe9b8', 12);
@@ -467,7 +485,7 @@ WZ.dropPickup = function (kind) {
 };
 WZ.hurtH = function (h, d) {
   if (h.broken) return;
-  h.hp -= d; h.flash = 0.1;
+  h.hp -= d * WZ.harvMul(); h.flash = 0.1;
   if (h.hp <= 0) {
     h.broken = true; h.respawn = CFG.world.respawn;
     const def = CFG.harvest[h.kind];
@@ -676,7 +694,7 @@ WZ.cast = function (spell) {
   FA.thump(Math.max(1, ctx.el.length), SPELL_COL[spell] || '#ffffff');
   ctx.el.forEach(el => WZ.epuff(px, py, el, combo ? 6 : 8));
   WZ.ctx = ctx;
-  const S = CFG.spells[spell], a = WZ.aim(), sid = Math.floor(Math.random() * 1e9);
+  const S = WZ.spellS(spell), a = WZ.aim(), sid = Math.floor(Math.random() * 1e9);
   switch (spell) {
     case 'gust':   // a cyclone: three spinning pulses grow out of him; foes flung into each other bonk
       AU.sfx('zap_air');
@@ -690,7 +708,7 @@ WZ.cast = function (spell) {
     case 'spray':   // a crescent wave that rolls out and carries what it catches
       AU.sfx('zap_water');
       w.hp = Math.min(WZ.maxHp(), w.hp + S.heal);
-      WZ.proj({ x: px + a[0] * 0.6, y: py + a[1] * 0.6, vx: a[0] * S.speed, vy: a[1] * S.speed, life: S.life, dmg: S.dmg, slow: S.slow, slowT: S.slowT, push: S.push, w: S.w, col: '#4aa8ff', kind: 'wave', size: 6, r: 0.7, sid, trT: 0 });
+      WZ.proj({ x: px + a[0] * 0.6, y: py + a[1] * 0.6, vx: a[0] * S.speed, vy: a[1] * S.speed, life: S.life, dmg: S.dmg, slow: S.slow, slowT: S.slowT, push: S.push, mk: S.mk, w: S.w, col: '#4aa8ff', kind: 'wave', size: 6, r: 0.7, sid, trT: 0 });
       WZ.recoil(a, S.recoil);
       break;
     case 'boulder':   // it bounces: every landing crushes what is round it
@@ -923,7 +941,7 @@ WZ.projSpecial = function (p, dt) {
         WZ.hurtE(e, p.dmg, 0, 0);
         if (p.kind === 'wave') WZ.slowE(e, p.slow, p.slowT); else { WZ.slowE(e, 0.92, p.root); WZ.puff(e.x, e.y, '#6e4a2a', 4); }
       }
-      if (p.kind === 'wave' && !e.boss) { const kb = e.kb !== undefined ? e.kb : e.elite ? 0.4 : 1; e.kx = p.vx * 1.1 * kb; e.ky = p.vy * 1.1 * kb; }   // it surfs the wave
+      if (p.kind === 'wave' && !e.boss) { const kb = e.kb !== undefined ? e.kb : e.elite ? 0.4 : 1, mk = p.mk || 1; e.kx = p.vx * 1.1 * kb * mk; e.ky = p.vy * 1.1 * kb * mk; }   // it surfs the wave
     }
     for (const h of WZ.harv) if (!h.broken && h.surf !== p.sid && Math.hypot(h.x - p.x, h.y - p.y) < p.w / 2 + 0.4) { h.surf = p.sid; WZ.hurtH(h, p.dmg); }
     if (p.kind === 'wave' && Math.random() < dt * 40) { const s = (Math.random() - 0.5) * p.w; w.fx_.push({ type: 'spark', x: p.x - uy * s, y: p.y + ux * s, vx: ux * 3, vy: uy * 3, z: 0.4, vz: rand(2, 4), g: 16, col: Math.random() < 0.4 ? '#ffffff' : '#7ad0ff', t: 0, dur: 0.5, el: 'water' }); }
@@ -975,7 +993,7 @@ WZ.zoneSpecial = function (z, dt) {
     const am = Math.hypot(z.ax, z.ay) || 1, ux = z.ax / am, uy = z.ay / am, cos = Math.cos(z.half);
     const inCone = (x, y, rad) => { const dx = x - z.x, dy = y - z.y, d = Math.hypot(dx, dy); return d < z.r + rad && (d < 0.6 || (dx * ux + dy * uy) / d > cos); };
     for (const e of w.enemies) if (!e.dead && !(e.fall > 0) && inCone(e.x, e.y, e.rad)) { WZ.hurtE(e, z.dps * dt, 0, 0, true); e.flash = 0.06; }
-    for (const h of WZ.harv) if (!h.broken && inCone(h.x, h.y, 0.4)) { h.hp -= z.dps * dt; h.flash = 0.05; if (h.hp <= 0) { h.hp = 0.0001; WZ.hurtH(h, 1); } }
+    for (const h of WZ.harv) if (!h.broken && inCone(h.x, h.y, 0.4)) { h.hp -= z.dps * dt * WZ.harvMul(); h.flash = 0.05; if (h.hp <= 0) { h.hp = 0.0001; WZ.hurtH(h, 1); } }
     WZ.altarTouch(z.x + ux * z.r * 0.5, z.y + uy * z.r * 0.5, z.r * 0.4);
     if ((z.trT -= dt) <= 0) { z.trT = S.trailGap; const d = 1 + Math.random() * (z.r - 1), an = Math.atan2(uy, ux) + (Math.random() - 0.5) * z.half * 1.6; WZ.trail(z.x + Math.cos(an) * d, z.y + Math.sin(an) * d); }
     for (let i = 0; i < 3; i++) {   // the flames themselves
@@ -1008,7 +1026,7 @@ WZ.zoneSpecial = function (z, dt) {
     WZ.bendAt(z.x, z.y, z.vx * 3 + 4, z.vy * 3 - 4, 1.2);
     if ((z.trT -= dt) <= 0) { z.trT = S.trailGap; WZ.trail(z.x, z.y); }
     WZ.ctx = z.ctx;
-    for (const h of WZ.harv) if (!h.broken && Math.hypot(h.x - z.x, h.y - z.y) < z.r * 0.7) { h.hp -= z.dps * dt; h.flash = 0.05; if (h.hp <= 0) { h.hp = 0.0001; WZ.hurtH(h, 1); } }
+    for (const h of WZ.harv) if (!h.broken && Math.hypot(h.x - z.x, h.y - z.y) < z.r * 0.7) { h.hp -= z.dps * dt * WZ.harvMul(); h.flash = 0.05; if (h.hp <= 0) { h.hp = 0.0001; WZ.hurtH(h, 1); } }
     WZ.altarTouch(z.x, z.y, z.r * 0.6);
     return true;
   }
@@ -1364,7 +1382,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
   if (rollPressed && (w.rollCd > 0 || w.roll > 0)) { w.rollBuf = CFG.inputBuffer; rollPressed = false; }
   else if (w.rollBuf > 0) { w.rollBuf -= dt; if (w.rollCd <= 0 && w.roll <= 0) { rollPressed = true; w.rollBuf = 0; } }
   if (rollPressed && w.rollCd <= 0 && w.roll <= 0) {
-    w.roll = CFG.wizard.rollTime; w.rollCd = CFG.wizard.rollCd;
+    w.roll = CFG.wizard.rollTime; w.rollCd = WZ.rollCd();
     w.rdx = m > 0 ? dx : w.fx; w.rdy = m > 0 ? dy : w.fy;
     const rm = Math.hypot(w.rdx, w.rdy) || 1; w.rdx /= rm; w.rdy /= rm;
     AU.sfx(WZ.has('gale') && WZ.blinkStart() ? 'dodge' : 'roll');   // the Gale Circlet: the roll is a short blink instead
@@ -1442,11 +1460,11 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     const def = CFG.pickups[p.kind];
     if (def.heal) {
       if (w.hp >= WZ.maxHp()) { p.full = true; continue; }
-      const got = Math.min(def.heal, WZ.maxHp() - w.hp);
+      const got = Math.min(Math.round(def.heal * WZ.remedy(p.kind)), WZ.maxHp() - w.hp);   // Remedies
       w.hp += got; WZ.num(w.x, w.y, '+' + Math.round(got), '#6aff8a');
     } else {
       if (w.armor >= CFG.wizard.armorMax) { p.full = true; continue; }
-      const got = Math.min(def.armor, CFG.wizard.armorMax - w.armor);
+      const got = Math.min(Math.round(def.armor * WZ.remedy(p.kind)), CFG.wizard.armorMax - w.armor);   // Wardwoven
       w.armor += got; WZ.num(w.x, w.y, '+' + Math.round(got), '#9fc4ff');
     }
     G.stats.used = (G.stats.used || 0) + 1;
@@ -1613,7 +1631,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
     if (z.frost && (z.fk -= dt) <= 0) { z.fk = z.frost; WZ.freeze(z.x, z.y, z.r, CFG.spells.blizzard.frost.t); }   // the Blizzard freezes the ground it passes over
     WZ.ctx = z.ctx;
     if (!WZ.zoneSpecial(z, dt)) WZ.each(z.x, z.y, z.r, (t, d, isE) => {   // (a flame cone, the swelling steam, a twister, the storm orb and cloud do their own thing)
-      if (z.dps) { if (isE) WZ.hurtE(t, z.dps * dt, 0, 0, true); else { t.hp -= z.dps * dt; t.flash = 0.05; if (t.hp <= 0) { t.hp = 0.0001; WZ.hurtH(t, 1); } } }
+      if (z.dps) { if (isE) WZ.hurtE(t, z.dps * dt, 0, 0, true); else { t.hp -= z.dps * dt * WZ.harvMul(); t.flash = 0.05; if (t.hp <= 0) { t.hp = 0.0001; WZ.hurtH(t, 1); } } }
       if (isE && z.slow) WZ.slowE(t, z.slow, 0.25);
     });
     WZ.ctx = null;
@@ -1652,6 +1670,7 @@ WZ.update = function (dt, ix, iy, rollPressed) {
       else if (ELEM[dr.kind]) {   // a recycled packet flies out of the Spell Portal onto its Stockpile tile
         FA.toStock(dr.kind, dr.val); AU.sfx('el_' + dr.kind);
       }
+      else if (ITEMS[dr.kind] && ITEMS[dr.kind].spell) { FA.toStock(dr.kind, dr.val); AU.sfx('chest'); }   // a recycled combo spell does the same, as spell stock
       else if (dr.kind === 'shard') { FA.toStock('shard', dr.val); w.run.shards += dr.val; G.stats.shards = (G.stats.shards || 0) + dr.val; AU.sfx('shard'); }
       else if (dr.home) { FA.toStock(dr.kind, dr.val); AU.sfx('pickup'); }   // the factory's overflow going back home
       else { FA.toStock(dr.kind, dr.val); w.run.harvested += dr.val; G.stats.harvested += dr.val; AU.sfx('pickup'); }

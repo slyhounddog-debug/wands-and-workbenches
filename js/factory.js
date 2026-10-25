@@ -19,7 +19,7 @@ FA.portal = which => { const p = G.fac.pp; return { x: p.x, y: which === 'skill'
 // spreads over more tiles. G.stock[kind] is the count, the tiles each kind sits on are worked out from it (G.fac.slots: kind -> [tile index], kept by FA.pileSync).
 // Whatever no longer fits (a tile was demolished, a gift was too big) spills out onto the nearest floor, CFG.floorCap items a tile; when the floor is full
 // too, it goes through the Spell Portal into the wilds (FA.toWild). -----
-FA.storable = k => !!(RES[k] || ELEM[k] || (ITEMS[k] && ITEMS[k].aug));   // resources, Cores, the Warden Key, element packets and garments
+FA.storable = k => !!(RES[k] || ELEM[k] || (ITEMS[k] && (ITEMS[k].aug || ITEMS[k].spell)));   // resources, Cores, the Warden Key, element packets, garments and forged combo spells
 FA.isPile = (x, y) => FA.inb(x, y) && G.fac.land[y * G.fac.w + x] === 2;
 FA.pileTiles = () => { const f = G.fac, out = []; for (let i = 0; i < f.land.length; i++) if (f.land[i] === 2) out.push(i); return out; };
 FA.tileXY = i => ({ x: i % G.fac.w, y: Math.floor(i / G.fac.w) });
@@ -124,7 +124,7 @@ FA.qInfo = function (k) {
   else if (isCoreKind(k)) use = 'Forges garments and the Warden Key. Opens other Shrines.';
   else if (isKeyKind(k)) use = 'Spell Portal: opens the Stronghold door.';
   else if (ELEM[k]) use = 'Feeds Forge, Spawner, Battery.';
-  else if (ITEMS[k] && ITEMS[k].spell) use = 'Cast it: Spell Portal. Bank it: Skill.';
+  else if (ITEMS[k] && ITEMS[k].spell) use = SEED_SPELL[k] ? 'Cast it, bank it, or hatch a ' + CFG.creatures[SEED_SPELL[k]].name + ' at the Spawner.' : 'Cast it: Spell Portal. Bank it: Skill.';
   else if (k === 'potion' || k === 'elixir') use = 'Heals the Wizard via the Spell Portal.';
   else if (k === 'armor' || k === 'plate') use = 'Armors the Wizard via the Spell Portal.';
   else if (ITEMS[k] && ITEMS[k].egg) use = 'Spell Portal: hatches beside the Wizard.';
@@ -149,6 +149,13 @@ FA.setCell = (x, y, v) => { G.fac.grid[y * G.fac.w + x] = v; };
 // ----- upgrade effects -----
 FA.cap = () => CFG.satchel + lvl('satchel') * CFG.upgrade.satchel;
 FA.beltTime = () => CFG.beltTime / (1 + CFG.upgrade.belts * lvl('belts'));
+// the Builder's tracks (tree branch BUILDER) and Swift Crafting (BUILDINGS)
+FA.craftMul = () => 1 / (1 - CFG.upgrade.crafting * lvl('crafting'));   // every crafter (Forge, Cauldron, Armory, Spawner): -6% cycle time a tier, so progress runs this much faster
+FA.range = () => CFG.throwRange * (1 + CFG.upgrade.longarm * lvl('longarm'));   // Long Arm: how far a throw reaches
+FA.throwGap = base => base * (1 - CFG.upgrade.rapid * lvl('rapid'));   // Rapid Throws: the cooldown between throws (and between a stack's throws)
+FA.builderSpeed = () => CFG.builder.speed * (1 + CFG.upgrade.hustle * lvl('hustle'));   // Hustle
+FA.hasRoll = () => lvl('tumble') >= 1;
+FA.rollCd = () => CFG.builder.roll.cd * (1 - CFG.upgrade.tumble * Math.max(0, lvl('tumble') - 1));   // Tumble: tier 1 is the roll, tiers 2-4 shorten its cooldown
 // the Wizard standing at a shrine speeds up that element's harnessers (G.w.shrine, set by WZ.updMarks)
 FA.shrineBoost = b => {
   const el = b.el, w = G.w;
@@ -222,7 +229,7 @@ FA.initial = function () {
   G.bd = FA.freshBuilder();
 };
 FA.freshBuilder = () => { const B = CFG.factory.base; return { x: B.x0 + 6.5, y: B.y0 + 4.5, vx: 0, vy: 0, fx: 1, fy: 0, target: null, then: null, stuckT: 0, gather: null, apT: 0,
-  bob: 0, moving: false, squash: 0, throwCd: 0, dustT: 0 }; };
+  bob: 0, moving: false, squash: 0, throwCd: 0, dustT: 0, roll: 0, rollCd: 0, rdx: 1, rdy: 0, ghosts: [] }; };
 
 // Floor Tiles: a blueprint placed just outside the floor; thrown its materials like any building, it turns into floor when finished.
 // The Iron cost only starts after the first CFG.factory.freeIron tiles were placed.
@@ -483,29 +490,31 @@ FA.recipesFor = type => Object.keys(CFG.recipes).filter(id => CFG.recipes[id].ma
 // absorbed so far (b.inv, one of each) names the creature (Air = Zephyr Wisp, Fire + Air = Cinder Phoenix ...). Another element before the egg is grown changes it into
 // the bigger creature's egg; b.prog (seconds already grown) carries over, so only the difference in grow time is left to wait.
 FA.spawnerHave = b => Object.keys(b.inv).filter(k => b.inv[k] > 0);
-FA.spawnerFor = function (have) {   // the creature recipe whose elements are exactly this set
-  if (!have.length) return null;
-  return FA.recipesFor('spawner').find(id => { const ks = Object.keys(CFG.recipes[id].in); return ks.length === have.length && have.every(k => ks.indexOf(k) >= 0); }) || null;
+FA.spawnerFor = function (have) {   // the egg recipe whose one input is this (an element packet = a basic creature, a seed spell = its pair / triple creature)
+  if (have.length !== 1) return null;
+  return FA.recipesFor('spawner').find(id => { const ks = Object.keys(CFG.recipes[id].in); return ks.length === 1 && ks[0] === have[0]; }) || null;
 };
 FA.spawnerPick = b => FA.spawnerFor(FA.spawnerHave(b));
 FA.eggOf = rid => CFG.creatures[ITEMS[CFG.recipes[rid].out].creature];   // the creature an egg recipe hatches
-// a new element is only taken if the set it makes still names a creature (and the finished eggs are not backed up)
+// It takes ONE thing at a time, only while it is empty (and the finished eggs are not backed up): an element packet, or a seed spell (SEED_SPELL). Anything else is refused
+// and boings back (Steam Burst, Sandstorm, Blizzard, a second thing while an egg grows).
 FA.spawnerTakes = function (b, kind) {
-  if (!ELEM[kind] || (b.inv[kind] || 0) > 0 || b.out.length >= CFG.buffer) return false;
-  return !!FA.spawnerFor(FA.spawnerHave(b).concat(kind));
+  if (!(ELEM[kind] || SEED_SPELL[kind]) || FA.spawnerHave(b).length || b.out.length >= CFG.buffer) return false;
+  return !!FA.spawnerFor([kind]);
 };
-// an older save's Spawner may hold spare packets or a mix that names no creature: one of each element stays (the egg), everything else is set down beside it
+// an older save's Spawner may hold spare packets or a pair egg grown from two elements (no longer a thing): the first thing that names an egg stays (a basic one), everything else is set down beside it
 FA.spawnerFix = function (b) {
-  const drop = k => FA.dropAt(k, b.x + 0.5, b.y + 0.5);
-  for (const k in b.inv) {
-    if (!ELEM[k]) { b.inv[k] = 0; continue; }
-    for (let i = 1; i < b.inv[k]; i++) drop(k);
-    b.inv[k] = Math.min(1, b.inv[k]);
+  const have = FA.spawnerHave(b), keep = have.find(k => FA.spawnerFor([k]));
+  for (const k of have) {
+    const n = k === keep ? 1 : 0;
+    if (ITEMS[k]) for (let i = n; i < b.inv[k]; i++) FA.dropAt(k, b.x + 0.5, b.y + 0.5);
+    b.inv[k] = n;
   }
+  if (have.length > 1) b.prog = 0;
   b.recipe = FA.spawnerPick(b);
-  if (!b.recipe) { for (const k of FA.spawnerHave(b)) drop(k); b.inv = {}; b.prog = 0; }
+  if (!b.recipe) { b.inv = {}; b.prog = 0; }
 };
-// the elements that would change the egg it is growing now (or, empty, start one): shown as hollow lamps on its front
+// what it would take now (an empty Spawner takes any of the four packets): shown as blinking lamps on its front
 FA.spawnerCan = b => ELEMS.filter(k => FA.spawnerTakes(b, k));
 FA.refreshRecipes = function () {
   for (const b of G.fac.bld) if (b.done && FA.def(b).kind === 'crafter' && b.type !== 'spawner' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
@@ -554,9 +563,10 @@ FA.insert = function (b, kind, thrown) {
   const d = FA.def(b);
   if (d.kind === 'crafter') {
     b.inv[kind] = (b.inv[kind] || 0) + 1;
-    if (b.type === 'spawner') {   // absorbed at once: the egg starts (or turns into the bigger creature's, keeping the growth it already has)
+    if (b.type === 'spawner') {   // absorbed whole at once: the egg starts growing
       b.recipe = FA.spawnerPick(b);
-      FA.eburst(b.x + 0.5, b.y + 0.5, kind, 8); AU.sfx('el_' + kind);
+      if (ELEM[kind]) { FA.eburst(b.x + 0.5, b.y + 0.5, kind, 8); AU.sfx('el_' + kind); }
+      else { FA.burst(b.x + 0.5, b.y + 0.5, ITEMS[kind].color, 14); (SPELL_EL[kind] || []).forEach(el => FA.eburst(b.x + 0.5, b.y + 0.5, el, 4)); AU.sfx('complete'); }   // a seed spell
     }
   }
   else if (d.kind === 'crate') { b.ck = kind; b.cn = (b.cn || 0) + 1; }
@@ -917,7 +927,7 @@ FA.update = function (dt) {
       if (w !== 0) {
         if (b.powered) {
           const R = CFG.recipes[b.recipe];
-          b.prog += dt * (b.od ? 1 + CFG.overdrive : 1); f.working++;
+          b.prog += dt * (b.od ? 1 + CFG.overdrive : 1) * FA.craftMul(); f.working++;
           if (b.prog >= R.time) {
             b.prog = 0;
             for (const k in R.in) b.inv[k] -= R.in[k];
@@ -1072,7 +1082,7 @@ FA.accepts = (o, k) => (o === 'q' ? true : o === 'zone' ? FA.room(k) > 0 : !o ? 
 // every receiver in throwing range that would take kind k, with a priority (lower = preferred)
 FA.throwList = function (k) {
   const bd = G.bd, out = [];
-  const add = (x, y, obj, prio) => { const d = Math.hypot(x - bd.x, y - bd.y); if (d >= 0.4 && d <= CFG.throwRange) out.push({ x, y, obj, prio, d }); };
+  const add = (x, y, obj, prio) => { const d = Math.hypot(x - bd.x, y - bd.y); if (d >= 0.4 && d <= FA.range()) out.push({ x, y, obj, prio, d }); };
   for (const p of FA.portalCells(G.fac.w, G.fac.h)) { const c = FA.cell(p.x, p.y); if (FA.portalTakes(c, k)) add(p.x + 0.5, p.y + 0.5, c, 0.8); }
   for (const b of G.fac.bld) {
     if (FA.canInsert(b, k)) add(b.x + 0.5, b.y + 0.5, b, b.done && FA.isLogi(b) ? 1.4 : 1);
@@ -1110,7 +1120,7 @@ FA.lockValid = function (mode) {
   const l = G.lock, h = FA.top();
   if (!l) return null;
   if (l.thr) {
-    if (mode !== 'throw' || !h || h.kind !== l.held || !FA.accepts(l.obj, h.kind) || Math.hypot(l.x - G.bd.x, l.y - G.bd.y) > CFG.throwRange) return null;
+    if (mode !== 'throw' || !h || h.kind !== l.held || !FA.accepts(l.obj, h.kind) || Math.hypot(l.x - G.bd.x, l.y - G.bd.y) > FA.range()) return null;
     return l;
   }
   if (mode === 'throw') return null;
@@ -1126,7 +1136,7 @@ FA.throwTarget = function (aimX, aimY) {
   if (aimX !== undefined) {   // mouse aim: land exactly there (clamped to range)
     let dx = aimX - bd.x, dy = aimY - bd.y;
     const d = Math.hypot(dx, dy) || 1;
-    if (d > CFG.throwRange) { dx *= CFG.throwRange / d; dy *= CFG.throwRange / d; }
+    if (d > FA.range()) { dx *= FA.range() / d; dy *= FA.range() / d; }
     const tx = bd.x + dx, ty = bd.y + dy, c = FA.cell(Math.floor(tx), Math.floor(ty));
     if (c && c.type !== 'belt') return { x: Math.floor(tx) + 0.5, y: Math.floor(ty) + 0.5, obj: c };
     if (!c && FA.isQ(Math.floor(tx), Math.floor(ty))) { const q = FA.qTile(); return { x: q.x + 0.5, y: q.y + 0.5, obj: 'q' }; }
@@ -1153,7 +1163,7 @@ FA.throwOne = function (aimX, aimY, cd) {
   const it = FA.takeOne();
   const d = Math.hypot(tg.x - bd.x, tg.y - bd.y);
   G.fac.flying.push({ kind: it.kind, sx: bd.x, sy: bd.y, x: bd.x, y: bd.y, z: 0.8, tx: tg.x, ty: tg.y, t: 0, T: 0.28 + d * 0.045, h: 0.9 + d * 0.22, fromBuilder: true });
-  bd.throwCd = cd || CFG.throwRepeat; bd.squash = 0.18;
+  bd.throwCd = FA.throwGap(cd || CFG.throwRepeat); bd.squash = 0.18;
   bd.fx = tg.x - bd.x || bd.fx; bd.fy = tg.y - bd.y || bd.fy;
   AU.sfx('throw');
   return true;
@@ -1247,6 +1257,7 @@ FA.blockedAt = function (px, py) {
 FA.moveBuilder = function (dt, ix, iy) {
   const bd = G.bd, C = CFG.builder;
   if (bd.throwCd > 0) bd.throwCd -= dt;
+  if (bd.rollCd > 0) bd.rollCd -= dt;
   let dx = 0, dy = 0;
   if (ix || iy) { bd.target = null; bd.then = null; dx = ix + iy; dy = iy - ix; if (bd.gather) bd.gather = null; }
   else if (bd.target) {
@@ -1259,10 +1270,17 @@ FA.moveBuilder = function (dt, ix, iy) {
   }
   const m = Math.hypot(dx, dy);
   let wx = 0, wy = 0;
-  if (m > 0) { const s = Math.min(1, m) / m; wx = dx * s * C.speed; wy = dy * s * C.speed; bd.fx = dx / m; bd.fy = dy / m; }
+  const spd = FA.builderSpeed();
+  if (m > 0) { const s = Math.min(1, m) / m; wx = dx * s * spd; wy = dy * s * spd; bd.fx = dx / m; bd.fy = dy / m; }
   const ex = wx - bd.vx, ey = wy - bd.vy, el = Math.hypot(ex, ey);
   const rate = (m > 0 ? C.accel : C.friction) * dt;
-  if (el <= rate) { bd.vx = wx; bd.vy = wy; } else { bd.vx += ex / el * rate; bd.vy += ey / el * rate; }
+  if (bd.roll > 0) {   // Tumble: a committed somersault burst along the way he was heading (no steering, no acceleration), dust and afterimages
+    bd.roll -= dt; bd.vx = bd.rdx * spd * C.roll.speed; bd.vy = bd.rdy * spd * C.roll.speed;
+    bd.ghostT = (bd.ghostT || 0) - dt;
+    if (bd.ghostT <= 0) { bd.ghostT = 0.06; (bd.ghosts || (bd.ghosts = [])).push({ x: bd.x, y: bd.y, t: 0 }); }
+    bd.target = null; bd.then = null;
+  } else if (el <= rate) { bd.vx = wx; bd.vy = wy; } else { bd.vx += ex / el * rate; bd.vy += ey / el * rate; }
+  if (bd.ghosts) { for (const g of bd.ghosts) g.t += dt; bd.ghosts = bd.ghosts.filter(g => g.t < 0.25); }
   const inside = FA.blockedAt(bd.x, bd.y);
   const ox = bd.x, oy = bd.y;
   const nx = Math.max(0.3, Math.min(G.fac.w - 0.3, bd.x + bd.vx * dt));
@@ -1284,6 +1302,19 @@ FA.moveBuilder = function (dt, ix, iy) {
   if (bd.target) {
     if (moved < 0.0005 && m > 0) { bd.stuckT += dt; if (bd.stuckT > 0.35) { bd.target = null; bd.then = null; bd.stuckT = 0; } } else bd.stuckT = 0;
   }
+};
+// Tumble: the Builder's dodge roll (same input language as the Wizard's roll: Space / LT + A, Enter when swapped). (ix, iy) = his input, else the way he faces
+FA.builderRoll = function (ix, iy) {
+  const bd = G.bd, C = CFG.builder.roll;
+  if (!FA.hasRoll() || bd.roll > 0 || bd.rollCd > 0) return false;
+  let dx = ix + iy, dy = iy - ix;   // screen directions -> grid directions, as in moveBuilder
+  if (!dx && !dy) { dx = bd.fx; dy = bd.fy; }
+  const m = Math.hypot(dx, dy) || 1;
+  bd.rdx = dx / m; bd.rdy = dy / m; bd.fx = bd.rdx; bd.fy = bd.rdy;
+  bd.roll = C.time; bd.rollT0 = C.time; bd.rollCd = FA.rollCd(); bd.rollCdMax = bd.rollCd; bd.gather = null; bd.target = null; bd.then = null;
+  AU.sfx('roll');
+  G.fac.parts.push({ x: bd.x, y: bd.y, z: 0.05, vx: -bd.rdx * 0.6, vy: -bd.rdy * 0.6, vz: 0.8, t: 0.5, col: '#ffffff', dust: true });
+  return true;
 };
 FA.distTo = function (t) {
   const bd = G.bd;
@@ -1517,12 +1548,10 @@ FA.statusText = function (b) {
   }
   if (d.kind === 'crafter') {
     if (b.type === 'spawner') {
-      if (!b.recipe) return n + ': feed it an element packet and an egg starts to grow. Another element before it hatches turns it into a bigger creature';
-      const R = CFG.recipes[b.recipe], c = FA.eggOf(b.recipe);
-      let s = n + ': growing ' + c.name + ' (' + c.order.map(k => ELEM_WORD[k]).join(' + ') + ') ' + Math.min(99, Math.floor(b.prog / R.time * 100)) + '%';
+      if (!b.recipe) return n + ': feed it ONE thing: a packet = its basic creature, or a seed spell: ' + Object.keys(SEED_SPELL).map(k => itemName(k) + ' = ' + CFG.creatures[SEED_SPELL[k]].name).join(', ');
+      const R = CFG.recipes[b.recipe], c = FA.eggOf(b.recipe), seed = FA.spawnerHave(b)[0];
+      let s = n + ': growing ' + c.name + ' from ' + itemName(seed) + ' ' + Math.min(99, Math.floor(b.prog / R.time * 100)) + '%';
       if (b.draw > 0 && !b.powered) s += '. NO POWER';
-      const up = FA.spawnerCan(b).map(k => ELEM_WORD[k] + ' = ' + FA.eggOf(FA.spawnerFor(FA.spawnerHave(b).concat(k))).name);
-      if (up.length) s += '. Add ' + up.join(', ');
       if (b.out.length) s += '. ' + b.out.length + ' ready (click to take)';
       return s;
     }

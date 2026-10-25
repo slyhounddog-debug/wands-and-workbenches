@@ -76,7 +76,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
       s += line(UI.img('ic_xp', 16), (D.gem[0] ? D.gem[0] + ' XP gem' + (D.gem[0] > 1 ? 's' : '') + (D.gem[1] ? ' + ' + pct(D.gem[1]) + ' for one more' : '') : pct(D.gem[1]) + ' chance of an XP gem'));
       if (I.els.length) s += line(coreIcons(I.els), pct(I.core) + ' chance of a ' + I.els.map(e => CORE_NAME[e]).join(' or ') + ' (rides home to the Stockpile)');
       else s += line(UI.img('ic_x', 16), 'no element: no Cores');
-      if (kind === 'crafted') s += line(UI.img(CFG.creatures[id].order[0], 16), pct(CFG.crafted.recycle) + ' chance of a ' + ELEM_WORD[CFG.creatures[id].order[0]] + ' packet (rides home)');
+      if (kind === 'crafted') { const cd = CFG.creatures[id], tier = cd.order.length; s += tier === 1 ? line(UI.img(cd.order[0], 16), pct(CFG.crafted.recycle) + ' chance of a ' + ELEM_WORD[cd.order[0]] + ' packet (rides home)') : line(UI.img(Object.keys(cd.cost)[0], 16), pct(CFG.crafted.recycleSpell[tier]) + ' chance of a ' + itemName(Object.keys(cd.cost)[0]) + ' (the spell it hatched from; rides home)'); }
     }
     s += '</div>';
     if (id !== 'boss') {

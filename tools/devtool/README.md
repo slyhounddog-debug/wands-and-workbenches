@@ -39,6 +39,7 @@ The preview is not for playing seriously: it is muted, starts from a fixture, an
 | `public/var-help.js` | Plain-language explanation shown under every Variables row (regex rules over the CFG path). Add a rule when you add a CFG number. |
 | `public/formulas.js`, `fcharts.js` | Formulas tab (nine sections) and its canvas chart / table helpers. |
 | `public/audiotab.js` | Audio tab. |
+| `public/musictab.js` | Audio tab > Game music: the loop trimmer for the layered soundtrack. |
 
 | API | |
 |---|---|
@@ -47,6 +48,9 @@ The preview is not for playing seriously: it is muted, starts from a fixture, an
 | `GET/POST /api/audio` | `{clips: {name: params}}` -> `overrides/audio.{json,js}` |
 | `PUT /api/audio/<name>` | raw audio bytes (Content-Type = the file's audio type) -> `overrides/audio/<name>.js` |
 | `GET` / `DELETE /api/audio/<name>` | the stored clip's bytes / remove it (back to the synth) |
+| `GET /api/music` | the layered soundtrack's loop span (defaults + saved), the stem -> layer map, the stem list |
+| `GET /api/music/stem/<n>` | stem n of `audio/Breath of the Waltz Stems` (what the tab previews from) |
+| `POST` / `DELETE /api/music` | save `{startSample, lengthSamples, xfade}` to `overrides/music.json` and rebuild the four layer files with `tools/musicbuild/build.js` (needs ffmpeg on the PATH; about 10 s) / go back to the original loop |
 
 ## What the game loads (`overrides/`)
 
@@ -111,6 +115,25 @@ own `OV.playClip`, so it sounds exactly like the game. Music and the hum always 
 the synth loop and its reactive layers, `music_boss` plays while the Chimera is out, and the hum clip's volume follows
 the factory's activity. Remove a clip to go back to the synth. The studio intro's `audio/playStudioIntro.wav` is not
 handled here (`js/intro.js` is generated from the handoff).
+
+### Game music (the layered soundtrack)
+
+The first entry in the Audio list. The game's music is four looping files (one per element) cut from the song's stems; where
+the loop starts and ends is baked into them, so it can only be changed by rebuilding. This page decodes the stems, mixes
+them into the same four layers (balance is approximate, the loop is exact) and plays the loop the way the game does: the
+tail after END rings on under the start, and the loop fades in / out by `music.fadeIn` / `music.fadeOut` (your saved Variables
+values, drawn as the yellow line). **Play loop** / **Play the wrap** (the last 6 s into the first 6 s, repeating) / **Play song
+from marker**; tick layers off to hear one element. Drag the orange START / END lines in the three waveforms, or use the
+boxes and +-bar / beat / 10 ms nudges; "snap drags to" keeps the end a whole number of bars from the start (the game's
+loop is 68 bars of a 118.4 BPM waltz). Nothing changes until **Save & rebuild game music**: it writes `overrides/music.json`
+(`startSample`, `lengthSamples`, `xfade`; build.js merges it over its defaults) and rewrites `audio/music/music_<element>.js`
+(all four, or none if ffmpeg fails). **Reset to original loop** deletes the file and rebuilds. Reload the game to hear it.
+The stems are the source of this: keep `audio/Breath of the Waltz Stems`.
+
+## Commit & push
+
+The message box is filled in from the changed files ("Update game code (...), dev tool" and a line per file with +/-
+counts). Edit it or leave it; an empty box commits with the same text, so there is never an error asking for one.
 
 ## Adding a screen preset
 

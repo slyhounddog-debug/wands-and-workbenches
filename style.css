@@ -278,7 +278,7 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 .bankRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 12px; padding: 8px 10px; background: var(--panel-lo); font: 10px var(--display); }
 .bankRow .lbl { color: var(--gold); margin-right: 4px; }
 .bankRow .bk { display: inline-flex; align-items: center; gap: 4px; }
-.cols { display: grid; grid-template-columns: 1fr 1fr 1.1fr 1fr; gap: 8px; margin-top: 14px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 14px; }
 .col h4 { margin: 0 0 10px; font: 10px var(--display); color: var(--gold); display: flex; gap: 6px; align-items: center; }
 .node { display: flex; gap: 8px; align-items: flex-start; background: var(--panel); padding: 7px 8px; margin-bottom: 10px; cursor: pointer;
   box-shadow: 0 -2px 0 0 var(--ink), 0 2px 0 0 var(--ink), -2px 0 0 0 var(--ink), 2px 0 0 0 var(--ink), inset 0 -3px 0 0 var(--panel-lo); }

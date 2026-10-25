@@ -86,7 +86,9 @@ WZ.onDeath = function (e) {
   if (def && def.ai === 'lava' && !e.mini) { const x = e.x, y = e.y, B = def.blast; WZ.telegraph(x, y, B.r, B.delay, '#ff5a2a', () => WZ.strike(x, y, B.r, B.dmg)); }
   if (e.crafted) {
     G.stats.craftedKills = (G.stats.craftedKills || 0) + 1;
-    if (Math.random() < CFG.crafted.recycle) WZ.drop(CFG.creatures[e.type].order[0], e.x, e.y, 1);   // a packet of its primary element comes back
+    // what it was hatched from comes back some of the time: a basic its element packet, a double / triple the combo spell that seeded it (it flies home like a packet)
+    const cd = CFG.creatures[e.type], tier = cd.order.length;
+    if (tier === 1 ? Math.random() < CFG.crafted.recycle : Math.random() < CFG.crafted.recycleSpell[tier]) WZ.drop(tier === 1 ? cd.order[0] : Object.keys(cd.cost)[0], e.x, e.y, 1);
   }
   if (e.evt) w.evKills = (w.evKills || 0) + 1;
   WZ.lootDrops(e);   // Cores and Ward Keys (augments.js)

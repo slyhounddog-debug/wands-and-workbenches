@@ -46,10 +46,10 @@ function readBody(req, limit) {
   });
 }
 const readJsonBody = async (req, limit) => JSON.parse((await readBody(req, limit || 4e6)).toString('utf8') || 'null');
-function serveFile(res, file) {
+function serveFile(res, file, type) {
   fs.readFile(file, (err, data) => {
     if (err) return send(res, 404, 'not found', 'text/plain');
-    send(res, 200, data, MIME[path.extname(file).toLowerCase()] || 'application/octet-stream');
+    send(res, 200, data, type || MIME[path.extname(file).toLowerCase()] || 'application/octet-stream');
   });
 }
 const inside = (base, rel) => { const f = path.resolve(base, rel); return f.startsWith(base + path.sep) ? f : null; };
@@ -124,6 +124,51 @@ function clipData(name) {   // the stored data: URL inside overrides/audio/<name
   return m ? m[1] : null;
 }
 
+// ---------- game music (the layered soundtrack: trim the loop, rebuild the four layer files from the stems) ----------
+// The loop span lives in overrides/music.json; tools/musicbuild/build.js merges it over its defaults and re-encodes
+// audio/music/music_<element>.js (an ffmpeg job of a minute or so). The tab previews the loop from the stems themselves.
+const MB = createRequire(import.meta.url)('../musicbuild/build.js');
+let musicBusy = false;
+const stemFiles = () => { try { return fs.readdirSync(MB.STEMS).filter(f => /\.mp3$/i.test(f)).sort((a, b) => parseInt(a) - parseInt(b)); } catch (e) { return []; } };
+function musicInfo() {
+  const D = MB.CONFIG, saved = MB.loopOverride();
+  const cfg = Object.assign({ startSample: D.startSample, lengthSamples: D.lengthSamples, xfade: D.xfade }, saved);
+  return { sr: MB.SR, defaults: { startSample: D.startSample, lengthSamples: D.lengthSamples, xfade: D.xfade }, config: cfg, custom: Object.keys(saved).length > 0,
+    layers: D.layers, stems: stemFiles().map((f, i) => ({ i, name: f.replace(/^\d+ /, '').replace(/\.mp3$/i, '') })), limit: D.limit };
+}
+function musicBuild() {
+  return new Promise(resolve => execFile(process.execPath, [path.join(ROOT, 'tools', 'musicbuild', 'build.js')], { cwd: ROOT, maxBuffer: 32e6, timeout: 600000, windowsHide: true },
+    (err, out, errOut) => resolve({ ok: !err, log: String(out || '').trim().split('\n').filter(Boolean), error: err ? String(errOut || err.message).trim().split('\n').slice(-6).join('\n') : null })));
+}
+async function saveMusic(body) {
+  if (musicBusy) throw new Error('A music build is already running.');
+  const b = body || {}, SR = MB.SR;
+  const loop = {
+    startSample: Math.round(num(b.startSample, 0, SR * 3600, 0)), lengthSamples: Math.round(num(b.lengthSamples, SR * 2, SR * 3600, 0)),
+    xfade: num(b.xfade, 0, 9, 0.5),
+  };
+  if (!loop.lengthSamples) throw new Error('The loop needs a length.');
+  const file = path.join(OVR, 'music.json'), before = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+  musicBusy = true;
+  try {
+    writeAtomic(file, JSON.stringify(loop, null, 2) + '\n');
+    const r = await musicBuild();
+    if (!r.ok) { if (before == null) fs.rmSync(file, { force: true }); else writeAtomic(file, before); return { ok: false, error: 'The build failed (is ffmpeg on the PATH?): ' + r.error, log: r.log }; }
+    return { ok: true, log: r.log, info: musicInfo() };
+  } finally { musicBusy = false; }
+}
+async function resetMusic() {
+  if (musicBusy) throw new Error('A music build is already running.');
+  musicBusy = true;
+  try {
+    const file = path.join(OVR, 'music.json'), before = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+    fs.rmSync(file, { force: true });
+    const r = await musicBuild();
+    if (!r.ok) { if (before != null) writeAtomic(file, before); return { ok: false, error: 'The build failed: ' + r.error, log: r.log }; }
+    return { ok: true, log: r.log, info: musicInfo() };
+  } finally { musicBusy = false; }
+}
+
 // ---------- git (Commit & push / Reset buttons) ----------
 // Both actions are two-step: GET /api/git shows exactly what would happen and carries a signature (HEAD + status +
 // unpushed commits); the POST must send that signature back, and is refused if the repo changed in between.
@@ -136,6 +181,27 @@ function git(args, input) {
   });
 }
 let gitBusy = false;
+// A commit message written from the file list, so the Commit window never needs one typed: "Update dev tool, audio" plus a line per file.
+const AREAS = [[/^tools\/devtool\//, 'dev tool'], [/^tools\/musicbuild\//, 'music build'], [/^tools\//, 'tools'], [/^overrides\//, 'dev tool overrides'], [/^audio\//, 'audio'],
+  [/^fonts\//, 'fonts'], [/^js\/([^/]+)\.js$/, null], [/^js\//, 'game code'], [/^style\.css$/, 'styles'], [/^index\.html$/, 'page'], [/^CLAUDE\.md$/, 'notes'], [/\.md$/, 'docs']];
+function suggestMessage(files) {
+  if (!files.length) return '';
+  const areas = [];
+  for (const f of files) {
+    let a = 'project files';
+    for (const [re, name] of AREAS) { const m = re.exec(f.path); if (m) { a = name || 'js/' + m[1]; break; } }
+    if (!areas.includes(a)) areas.push(a);
+  }
+  const code = areas.filter(a => a.startsWith('js/')).map(a => a.slice(3)), rest = areas.filter(a => !a.startsWith('js/'));
+  const parts = (code.length ? ['game code (' + (code.length > 4 ? code.slice(0, 4).join(', ') + ' +' + (code.length - 4) : code.join(', ')) + ')'] : []).concat(rest);
+  const kinds = new Set(files.map(f => f.st)), verb = kinds.size === 1 && kinds.has('D') ? 'Remove' : kinds.size === 1 && (kinds.has('?') || kinds.has('A')) ? 'Add' : 'Update';
+  let subject = verb + ' ' + parts.join(', ');
+  if (subject.length > 72) { const cut = parts.slice(0, 3).join(', '); subject = verb + ' ' + cut + ' and more'; }
+  const lines = files.slice(0, 30).map(f => '- ' + ({ M: 'modified', A: 'added', D: 'deleted', R: 'renamed', '?': 'added' }[f.st] || 'changed') + ' ' + (f.from ? f.from + ' -> ' : '') + f.path
+    + (f.add != null || f.del != null ? ' (+' + (f.add ?? '?') + ' -' + (f.del ?? '?') + ')' : ''));
+  if (files.length > 30) lines.push('- ...and ' + (files.length - 30) + ' more files');
+  return subject + '\n\n' + lines.join('\n');
+}
 async function gitInfo() {
   const [branch, head, up, stat, nums] = await Promise.all([git(['rev-parse', '--abbrev-ref', 'HEAD']), git(['rev-parse', 'HEAD']), git(['rev-parse', '--abbrev-ref', '@{u}']),
     git(['status', '--porcelain', '-z', '-uall']), git(['diff', 'HEAD', '--numstat'])]);
@@ -160,16 +226,16 @@ async function gitInfo() {
   }
   const last = await git(['log', '-1', '--format=%h%x09%s']);
   const info = { branch: branch.out.trim(), head: head.out.trim(), upstream, remote: (await git(['remote', 'get-url', 'origin'])).out.trim(), files, ahead, behind, last: last.out.trim() };
+  info.suggest = suggestMessage(files);
   info.sig = sha1(JSON.stringify([info.head, stat.out, ahead.map(c => c.hash)]));
   return info;
 }
 async function gitCommit(body) {
   const info = await gitInfo();
   if (!body || body.sig !== info.sig) throw new Error('The repository changed since the window opened. Close it and try again.');
-  const msg = String(body.message || '').trim();
+  const msg = String(body.message || '').trim() || info.suggest;   // an empty box commits with the generated summary
   const log = [];
   if (info.files.length) {
-    if (!msg) throw new Error('Write a commit message.');
     const add = await git(['add', '-A']); if (!add.ok) throw new Error('git add failed: ' + add.err);
     const c = await git(['commit', '-F', '-'], msg + '\n');
     if (!c.ok) throw new Error('git commit failed: ' + (c.err || c.out));
@@ -243,6 +309,14 @@ const server = http.createServer(async (req, res) => {
         try { fs.unlinkSync(path.join(OVR, 'audio', name + '.js')); } catch (e) { /* already gone */ }
         return send(res, 200, { ok: true, clips: writeAudio(all) });
       }
+    }
+    if (p === '/api/music' && req.method === 'GET') return send(res, 200, musicInfo());
+    if (p === '/api/music' && req.method === 'POST') return send(res, 200, await saveMusic(await readJsonBody(req)));
+    if (p === '/api/music' && req.method === 'DELETE') return send(res, 200, await resetMusic());
+    const sm = /^\/api\/music\/stem\/(\d+)$/.exec(p);
+    if (sm && req.method === 'GET') {
+      const f = stemFiles()[+sm[1]];
+      return f ? serveFile(res, path.join(MB.STEMS, f), 'audio/mpeg') : send(res, 404, { error: 'no such stem' });
     }
     if (p === '/api/git' && req.method === 'GET') return send(res, 200, await gitInfo());
     if ((p === '/api/git/commit' || p === '/api/git/reset') && req.method === 'POST') {

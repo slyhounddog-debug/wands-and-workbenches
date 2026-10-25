@@ -585,7 +585,7 @@ R.drawBuilding = function (ctx, v, b, t) {
         dsprSq(ctx, itemSprite(R2.out), p[0] + wob, base - 28 - bob, S, ks, ks * (1 + pop * 0.4), 0.55 + 0.45 * fr);
         if (b.prog > 0 && b.powered) have.forEach((k, i) => {   // element sparks drift in toward the egg while it grows
           const q = (t * 0.6 + i / have.length) % 1, an = t * 2 + i * 2.1, r = (1 - q) * 48;
-          ctx.fillStyle = i % 2 ? '#ffffff' : ELEM[k].color;
+          ctx.fillStyle = i % 2 ? '#ffffff' : R.kcol(k);
           ctx.fillRect(Math.round((p[0] + Math.cos(an) * r) / 4) * 4, Math.round((base - 56 + Math.sin(an) * r * 0.5) / 4) * 4, 8, 8);
         });
         R.rim(ctx, v, p, b.prog / R2.time, ITEMS[R2.out].color, 0.88);
@@ -593,7 +593,7 @@ R.drawBuilding = function (ctx, v, b, t) {
       }
       if (have.length || R.inTip(b)) {
         const can = FA.spawnerCan(b);
-        R.pips(ctx, p[0], base - 20, ELEMS.map(k => ({ col: ELEM[k].color, on: have.indexOf(k) >= 0, blink: can.indexOf(k) >= 0, dim: have.indexOf(k) < 0 && can.indexOf(k) < 0 })), t);
+        R.pips(ctx, p[0], base - 20, have.length && !ELEM[have[0]] ? [{ col: R.kcol(have[0]), on: true }] : ELEMS.map(k => ({ col: ELEM[k].color, on: have.indexOf(k) >= 0, blink: can.indexOf(k) >= 0, dim: have.indexOf(k) < 0 && can.indexOf(k) < 0 })), t);   // a seed spell inside = one lamp in its colour
       }
     } else if (b.recipe) {
       const R2 = CFG.recipes[b.recipe], keys = Object.keys(R2.in);
@@ -984,6 +984,17 @@ R.drawBuilder = function (ctx, v, bd, t) {
   const p = R.toScreenLocked(v, bd.x, bd.y), S = 4;
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(Math.round((p[0] - 20) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 40, 12);
   const carrying = G.hands.length > 0;
+  for (const gh of bd.ghosts || []) { const q = R.toScreen(v, gh.x, gh.y); dspr(ctx, { c: SP.builder.white, ax: SP.builder.ax, ay: SP.builder.ay }, q[0], q[1], S, 0.35 * (1 - gh.t / 0.25)); }   // Tumble's afterimages
+  if (bd.roll > 0) {   // Tumble: a somersault in 8 chunky frames, strobing see-through / white like the Wizard's roll
+    const fr = 1 - bd.roll / (bd.rollT0 || CFG.builder.roll.time), step = Math.floor(fr * 8) / 8, ghost = Math.floor(bd.roll * 30) % 2 === 0, spr0 = carrying ? SP.builderC : SP.builder;
+    const fl = (bd.fx - bd.fy) < -0.05;
+    ctx.save(); ctx.translate(snap(p[0]), p[1] - 40); ctx.rotate(step * 6.283 * (fl ? -1 : 1));
+    ctx.globalAlpha = ghost ? 0.5 : 0.95;
+    ctx.drawImage(ghost ? spr0.c : spr0.white, -spr0.ax * S, -spr0.ay * S + 40, spr0.c.width * S, spr0.c.height * S);
+    ctx.restore(); ctx.globalAlpha = 1;
+    return;
+  }
+  if (bd.rollCd > 0 && FA.hasRoll()) R.bar(ctx, p[0], p[1] + 14, 36, 1 - bd.rollCd / (bd.rollCdMax || FA.rollCd()), '#ffffff', 4);   // the roll recharging
   const step = Math.sin(bd.bob);
   const hop = Math.round((bd.gather ? Math.abs(Math.sin(bd.bob)) * 12 : (bd.moving ? Math.abs(step) * 5 : 0)) / 4) * 4;
   const spr = carrying ? (bd.moving && step > 0 ? SP.builderC2 : SP.builderC) : (bd.moving && step > 0 ? SP.builder2 : SP.builder);
@@ -1672,7 +1683,7 @@ R.drawWizard = function (ctx, v, w) {
   else { dspr(ctx, spr, p[0], p[1] - bob, S, blink ? 0.4 : 1, flip); wearAll(blink ? 0.4 : 1, flip, p[0], p[1] - bob); }
   if (Math.sin(G.w.t * 6) > 0) { ctx.fillStyle = '#fff07a'; ctx.fillRect(snap(p[0] + (flip ? -27 : 21)), Math.round((p[1] - 48 - bob) / 3) * 3, 6, 6); }
   if (w.armor > 0) R.drawShield(ctx, p[0] + (flip ? 15 : -15), p[1] - 27 - bob, w.armor / CFG.wizard.armorMax, tt, false);   // the shield itself, strapped on his off arm in front of him
-  if (w.rollCd > 0) R.hpBar(ctx, p[0], p[1] + 9, 27, 1 - w.rollCd / CFG.wizard.rollCd, '#ffffff');
+  if (w.rollCd > 0) R.hpBar(ctx, p[0], p[1] + 9, 27, 1 - w.rollCd / WZ.rollCd(), '#ffffff');
 };
 // the Shield Potion's armor: a heater shield on his off arm (steel rim, blue field, a gold cross), its field filled from the bottom by how much armor is left;
 // back = only the dark edge behind him, so it reads as a solid thing he carries. A glint runs down it now and then; nearly spent, it blinks

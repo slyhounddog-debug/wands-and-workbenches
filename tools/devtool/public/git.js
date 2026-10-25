@@ -41,9 +41,9 @@ async function openCommit() {
   spinner('Commit & push'); await settle();
   let info; try { info = await api('/api/git'); } catch (e) { return result('Commit & push', null, e.message); }
   const n = info.files.length, up = info.upstream;
-  const msg = h('textarea', { class: 'gmsg', rows: 3, placeholder: 'Commit message', 'aria-label': 'Commit message' });
+  const msg = h('textarea', { class: 'gmsg', rows: 8, placeholder: 'Commit message', 'aria-label': 'Commit message' });
+  msg.value = info.suggest || '';   // written from the file list; edit it or leave it (an empty box uses it too)
   const go = h('button', { class: 'primary', onclick: async () => {
-    if (n && !msg.value.trim()) { msg.focus(); return say('Write a commit message.', true); }
     busy = true; go.disabled = true; go.textContent = 'Working...';
     try { result('Commit & push', await postJson('/api/git/commit', { sig: info.sig, message: msg.value })); } catch (e) { result('Commit & push', null, e.message); } finally { busy = false; }
   } }, n ? 'Commit ' + n + ' file' + (n > 1 ? 's' : '') + ' and push' : 'Push ' + info.ahead.length + ' commit' + (info.ahead.length > 1 ? 's' : ''));
@@ -51,10 +51,9 @@ async function openCommit() {
   modal('Commit & push', [
     h('p', { class: 'gline' }, 'Branch ', h('b', null, info.branch), ' -> ', h('b', null, up || 'origin/' + info.branch + ' (new upstream)'), ' · ', info.remote),
     info.behind ? h('p', { class: 'warn' }, 'The remote is ' + info.behind + ' commit(s) ahead of your last fetch: the push will be rejected until you pull.') : null,
-    n ? [h('h3', null, 'Will be committed (' + n + ')'), fileList(info.files), overrideWarn(info.files), msg] : null,
+    n ? [h('h3', null, 'Will be committed (' + n + ')'), fileList(info.files), overrideWarn(info.files), h('h3', null, 'Commit message (filled in for you, edit if you like)'), msg] : null,
     info.ahead.length ? [h('h3', null, 'Already committed, will be pushed (' + info.ahead.length + ')'), commitList(info.ahead)] : null,
   ], [h('button', { onclick: close }, 'Cancel'), go]);
-  if (n) msg.focus();
 }
 
 async function openReset() {

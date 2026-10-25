@@ -14,12 +14,21 @@
     "harness.water.cycle": 4.25,
     "harness.fire.cycle": 4.75,
     "harness.earth.cycle": 5,
-    "upgrade.gems": 0.12,
-    "gemCap": 3.5,
+    "upgrade.gems": 0.11,
+    "gemCap": 2.2,
     "harvest.tree.n": 5,
     "forage.mound.drop.stone": 3,
     "forage.cache.drop.stone": 3,
     "music.fadeOut": 7,
-    "music.airFloor": 0.05
+    "music.airFloor": 0.05,
+    "events.reward.perCycle": 3,
+    "enemies.slime.gem.1": 0.2,
+    "enemies.shroom.gem.1": 0.3,
+    "enemies.sprite.gem.1": 0.25,
+    "enemies.imp.gem.1": 0.45,
+    "enemies.lurker.gem.1": 0.5,
+    "enemies.wisp.gem.1": 0.48,
+    "enemies.golem.gem.1": 0.55,
+    "events.reward.gems": 8
   }
 }

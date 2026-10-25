@@ -20,7 +20,7 @@ const CFG = {
   chargeBonus: 0.10,          // every packet burns this much longer in a Battery (+10% charge)
   chargeThrowBonus: 0.20,     // ...and a packet thrown in by hand adds this much on top (+20%)
   batteryMax: 90, stationGen: 10,   // a Battery building holds batteryMax charge and gives stationGen power while it has any
-  spawnSettle: 1.5,           // a Creature Spawner waits this long after the last packet before hatching a creature that a bigger one could still grow out of
+  treeNudge: { every: 18, time: 2.4 },   // while something in the skill tree is affordable its two buttons flash for `time` s, then rest until `every` s have passed since the last flash began
   qShow: 6,                   // seconds the ? station's note about the last thing thrown at it stays up
   batteryLife: 60,            // seconds a Battery lasts at a full 10 power of draw; it drains in proportion to the load it carries
   chargeTipAt: 0.5,           // the first time a Battery falls below this fraction, hint that it can be fed packets, Wood or Stone

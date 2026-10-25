@@ -673,7 +673,8 @@ Main.updateFocus = function () {
     let bs = CFG.reach;
     for (const c of G.fac.bld) { if (!c.done || FA.def(c).kind !== 'cell') continue; const d = Math.hypot(c.x + 0.5 - bd.x, c.y + 0.5 - bd.y); if (d <= bs) { bs = d; b = c; } }
   }
-  UI.setInspect(b ? FA.status(b) : null, R.focus ? R.focus.list.filter(e => e.t.kind !== 'floor' && e.t.kind !== 'pile' && e.t.kind !== 'shelf').length : 0);
+  UI.setInspect(b ? FA.status(b) : null);
+  if (R.focus) R.focus.inspH = UI.inspectH;   // the prompts are drawn above the note
   const qh = Main.questHint();
   R.hint = qh.f; R.whint = qh.w;
   UI.setHint(qh.slot && G.selected !== qh.slot ? qh.slot : null, qh.treeL, qh.treeR);

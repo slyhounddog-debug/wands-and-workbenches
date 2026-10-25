@@ -103,7 +103,13 @@ UI.updateHud = function (dt) {
   }
   const xp = Math.floor(G.xp);
   setHtml('tXp', UI.img('ic_xp', 24) + '<b>' + xp + '</b><span class="lbl">XP</span>');
-  $('tXp').classList.toggle('ready', UI.anyAffordable());
+  const can = UI.anyAffordable();
+  $('tXp').classList.toggle('ready', can);
+  // something in the tree can be bought: its two buttons flash for a moment now and then (not while that tree is open)
+  const N = CFG.treeNudge;
+  UI.nudgeT = can ? (UI.nudgeT === undefined ? 0 : (UI.nudgeT + dt) % (N.every + N.time)) : undefined;
+  const flash = can && UI.nudgeT < N.time;
+  $('btnTree').classList.toggle('nudge', flash && !UI.treeOpen.L); $('btnTreeR').classList.toggle('nudge', flash && !UI.treeOpen.R);
   pulse('tXp', xp);
   // the Skill Portal bank: four element packets + how many combo spells are banked
   const combos = SPELL_KINDS.filter(k => ITEMS[k].spell).reduce((a, k) => a + (G.bank[k] || 0), 0);
@@ -168,12 +174,13 @@ UI.updateGear = function () {
   else s += '<span class="gs lockd" title="The held-spell slot opens when the first Warden falls">' + UI.img('ic_lock', 24) + '</span>';
   setHtml('gearCard', s);
 };
-UI.setInspect = function (s, lift) {   // lift = how many button prompts are stacked above the hotbar (the note sits over them)
-  const el = $('inspect'), bottom = (112 + 46 * (lift || 0)) + 'px';
-  if (el.style.bottom !== bottom) el.style.bottom = bottom;
-  if (!s) { el.classList.add('hidden'); return; }
+// The building note sits right above the hotbar and the button prompts (drawn by R.drawFocus) stack above it; UI.inspectH is how tall the note is, so they can clear it.
+UI.inspectH = 0;
+UI.setInspect = function (s) {
+  const el = $('inspect');
+  if (!s) { el.classList.add('hidden'); UI.inspectH = 0; return; }
   el.classList.remove('hidden');
-  setTxt('inspect', s);
+  if (cache.inspect !== s || !UI.inspectH) { setTxt('inspect', s); UI.inspectH = el.offsetHeight; }
 };
 
 // ---------- goals: one card per player, the two tracks run at the same time ----------

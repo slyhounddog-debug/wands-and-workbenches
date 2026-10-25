@@ -180,7 +180,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   const f = G.fac, d = CFG.buildings[type];
   const b = { id: f.nextId++, type, x, y, dir: dir || 0, done: !!done, free: !!free, got: {}, out: [], timer: 0,
     powered: true, draw: 0, pop: 0, anim: Math.random() * 6 };
-  if (d.kind === 'crafter') { b.recipe = null; b.inv = {}; b.prog = 0; if (type === 'spawner') { b.settle = 0; b.hold = false; b.goal = null; } }
+  if (d.kind === 'crafter') { b.recipe = null; b.inv = {}; b.prog = 0; }
   if (d.kind === 'cell') { b.bat = 0; b.over = 0; b.top = false; b.fuel = { air: 0, water: 0, fire: 0, earth: 0, wood: 0, stone: 0 }; b.types = []; }   // bat = charge, fuel = what is waiting to burn, top = it was topped up lately (counts once per charge)
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
   if (d.kind === 'harness') { b.hand = 0; b.el = 'air'; b.grow = CFG.harness.growT; b.shake = 0; }   // hand: how far the Builder has cranked the next packet (it stays when he walks away); el / grow: the element crystal and how far it has grown
@@ -383,27 +383,34 @@ FA.demolish = function (x, y, force) {
 // and a Triple / the Nova needs its parent spells to have been MADE at least once (G.stats.made, counted from crafter output)
 FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (!r.aug || !FA.augMade(r.aug)) && (!r.key || (!G.aug.key[r.key] && !(G.stock['key_' + r.key] > 0))) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
 FA.recipesFor = type => Object.keys(CFG.recipes).filter(id => CFG.recipes[id].machine === type && FA.recipeOk(id));
-// The Creature Spawner has no recipe to choose: the elements it is holding decide. Each creature is one packet of each of its elements, so the SET of elements
-// inside names the creature (Air = Zephyr Wisp, Fire + Air = Cinder Phoenix ...). A set that is also part of a bigger creature waits CFG.spawnSettle seconds
-// after the last packet arrived, in case that bigger one is coming.
+// The Creature Spawner has no recipe to choose and holds no spare packets: a packet is absorbed the moment it arrives and starts growing an egg, and the SET of elements
+// absorbed so far (b.inv, one of each) names the creature (Air = Zephyr Wisp, Fire + Air = Cinder Phoenix ...). Another element before the egg is grown changes it into
+// the bigger creature's egg; b.prog (seconds already grown) carries over, so only the difference in grow time is left to wait.
 FA.spawnerHave = b => Object.keys(b.inv).filter(k => b.inv[k] > 0);
-FA.spawnerPick = function (b) {
-  const have = FA.spawnerHave(b);
-  let rid = null, goal = null, bigger = false;
-  for (const id of FA.recipesFor('spawner')) {
-    const ks = Object.keys(CFG.recipes[id].in), within = have.every(k => ks.indexOf(k) >= 0);
-    if (!within) continue;
-    if (ks.length === have.length) rid = id; else { bigger = true; if (!goal) goal = id; }
-  }
-  return { rid, goal, bigger };
+FA.spawnerFor = function (have) {   // the creature recipe whose elements are exactly this set
+  if (!have.length) return null;
+  return FA.recipesFor('spawner').find(id => { const ks = Object.keys(CFG.recipes[id].in); return ks.length === have.length && have.every(k => ks.indexOf(k) >= 0); }) || null;
 };
-// would a Spawner holding b.inv still be on the way to some creature if it also took one of kind?
+FA.spawnerPick = b => FA.spawnerFor(FA.spawnerHave(b));
+FA.eggOf = rid => CFG.creatures[ITEMS[CFG.recipes[rid].out].creature];   // the creature an egg recipe hatches
+// a new element is only taken if the set it makes still names a creature (and the finished eggs are not backed up)
 FA.spawnerTakes = function (b, kind) {
-  if (!ELEM[kind] || (b.inv[kind] || 0) >= 3) return false;
-  const have = FA.spawnerHave(b);
-  if (have.indexOf(kind) < 0) have.push(kind);
-  return FA.recipesFor('spawner').some(id => { const ks = Object.keys(CFG.recipes[id].in); return have.every(k => ks.indexOf(k) >= 0); });
+  if (!ELEM[kind] || (b.inv[kind] || 0) > 0 || b.out.length >= CFG.buffer) return false;
+  return !!FA.spawnerFor(FA.spawnerHave(b).concat(kind));
 };
+// an older save's Spawner may hold spare packets or a mix that names no creature: one of each element stays (the egg), everything else is set down beside it
+FA.spawnerFix = function (b) {
+  const drop = k => FA.dropAt(k, b.x + 0.5, b.y + 0.5);
+  for (const k in b.inv) {
+    if (!ELEM[k]) { b.inv[k] = 0; continue; }
+    for (let i = 1; i < b.inv[k]; i++) drop(k);
+    b.inv[k] = Math.min(1, b.inv[k]);
+  }
+  b.recipe = FA.spawnerPick(b);
+  if (!b.recipe) { for (const k of FA.spawnerHave(b)) drop(k); b.inv = {}; b.prog = 0; }
+};
+// the elements that would change the egg it is growing now (or, empty, start one): shown as hollow lamps on its front
+FA.spawnerCan = b => ELEMS.filter(k => FA.spawnerTakes(b, k));
 FA.refreshRecipes = function () {
   for (const b of G.fac.bld) if (b.done && FA.def(b).kind === 'crafter' && b.type !== 'spawner' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
 };
@@ -421,7 +428,6 @@ FA.crafterReady = function (b) {   // power draw wanted (or -1 = ready with no p
   if (!b.done || !b.recipe) return 0;
   const R = CFG.recipes[b.recipe];
   if (b.out.length >= CFG.buffer) return 0;
-  if (b.type === 'spawner' && b.hold && b.settle > 0) return 0;   // a bigger creature may still be coming
   for (const k in R.in) if ((b.inv[k] || 0) < R.in[k]) return 0;
   return R.power || -1;
 };
@@ -450,7 +456,13 @@ FA.insert = function (b, kind, thrown) {
     return;
   }
   const d = FA.def(b);
-  if (d.kind === 'crafter') { b.inv[kind] = (b.inv[kind] || 0) + 1; if (b.type === 'spawner') b.settle = CFG.spawnSettle; }
+  if (d.kind === 'crafter') {
+    b.inv[kind] = (b.inv[kind] || 0) + 1;
+    if (b.type === 'spawner') {   // absorbed at once: the egg starts (or turns into the bigger creature's, keeping the growth it already has)
+      b.recipe = FA.spawnerPick(b);
+      FA.eburst(b.x + 0.5, b.y + 0.5, kind, 8); AU.sfx('el_' + kind);
+    }
+  }
   else if (FA.isLogi(b)) b.out.push({ kind });
   if (d.kind === 'cell') {   // fuel waits in the Battery and burns into charge (FA.updCell)
     if (ELEM[kind]) FA.elTick(kind);   // the weather feels it, and the packet below still fuels the Battery
@@ -714,7 +726,7 @@ FA.state = function (b) {
   if (k === 'crafter') {
     if (b.out.length >= CFG.buffer) return 'full';
     if (b.out.length && b.blocked) return 'jam';
-    if (!b.recipe) return b.type === 'spawner' && FA.spawnerHave(b).length ? 'missing' : 'starve';
+    if (!b.recipe) return 'starve';
     if (b.draw > 0 && !b.powered) return 'off';
     if (FA.crafterReady(b) !== 0) return 'work';
     return Object.keys(CFG.recipes[b.recipe].in).some(i => (b.inv[i] || 0) > 0) ? 'missing' : 'starve';
@@ -731,11 +743,6 @@ FA.state = function (b) {
 FA.stateSpeed = { work: 1, missing: 0.45, starve: 0.15, jam: 0.6, full: 0, off: 0 };
 // the first ingredient a crafter is still short of (shown as a ghost over it)
 FA.missingOf = function (b) {
-  if (b.type === 'spawner' && !b.recipe) {   // heading for a bigger creature: an element it does not hold yet
-    const g = b.goal && CFG.recipes[b.goal];
-    if (g) for (const k in g.in) if (!(b.inv[k] > 0)) return k;
-    return null;
-  }
   if (!b.recipe) return null;
   const R = CFG.recipes[b.recipe];
   for (const k in R.in) if ((b.inv[k] || 0) < R.in[k]) return k;
@@ -812,10 +819,7 @@ FA.update = function (dt) {
     } else if (d.kind === 'crafter') {
       b.blocked = b.out.length > 0 && !FA.tryOut(b);
       b.od = FA.overdrive(b);
-      if (b.type === 'spawner') {   // the creature follows from what is inside (a craft under way keeps its recipe)
-        if (b.settle > 0) b.settle -= dt;
-        if (!(b.prog > 0)) { const pk = FA.spawnerPick(b); b.recipe = pk.rid; b.goal = pk.goal; b.hold = pk.bigger; }
-      }
+      if (b.type === 'spawner') b.recipe = FA.spawnerPick(b);   // the egg follows from the elements absorbed so far
       const w = FA.crafterReady(b);
       if (w !== 0) {
         if (b.powered) {
@@ -1317,10 +1321,6 @@ FA.bldAction = function (b, pick) {
   if (pick) {
     if (d.kind === 'splitter') return h ? NONE : A('Set the split', () => UI.openSplit(b), false, ['ic_gear']);
     if (b.out.length) return FA.canHold(b.out[0].kind) ? A('Take ' + itemName(b.out[0].kind), () => FA.takeOut(b), true, [b.out[0].kind]) : FULL;
-    if (b.type === 'spawner' && !b.recipe && !(b.prog > 0) && !h) {   // a mix that names no creature yet: the Builder can take the packets back out
-      const k = FA.spawnerHave(b)[0];
-      if (k) return FA.canHold(k) ? A('Take back ' + itemName(k), () => { b.inv[k]--; FA.addHands(k, 1); b.pop = 0.2; AU.sfx('pickup'); }, true, [k]) : FULL;
-    }
     return NONE;
   }
   if (G.bd.gather && G.bd.gather.b === b) return A('Crank!', () => FA.crank(), false, [G.bd.gather.el]);
@@ -1410,7 +1410,14 @@ FA.thingAt = function (tx, ty, fx, fy) {
 };
 
 // ---------- inspector text ----------
-FA.status = function (b) {
+// shorthand power use for the note: what a Harnesser / crafter is drawing right now (0 while idle, "0/n" when it wants power and has none)
+FA.powerNote = function (b) {
+  const k = FA.def(b).kind;
+  if (!b.done || (k !== 'harness' && k !== 'crafter')) return '';
+  return ' | PWR ' + (b.draw > 0 && !b.powered ? '0/' + b.draw : b.draw > 0 ? b.draw : 0);
+};
+FA.status = b => FA.statusText(b) + FA.powerNote(b);
+FA.statusText = function (b) {
   const d = FA.def(b), n = d.name;
   if (!b.done) return n + ': blueprint, needs ' + (FA.needText(FA.needOf(b)) || 'nothing');
   if (d.kind === 'harness') {
@@ -1421,11 +1428,20 @@ FA.status = function (b) {
     return n + ' (' + ELEM_WORD[b.el] + '): ' + b.out.length + '/' + CFG.buffer + ' ready, ' + st;
   }
   if (d.kind === 'crafter') {
-    if (b.type === 'spawner' && !b.recipe) return n + (FA.spawnerHave(b).length ? ': waiting for more elements to name a creature' : ': feed it element packets. One element hatches a basic creature, two a pair creature, three a triple');
+    if (b.type === 'spawner') {
+      if (!b.recipe) return n + ': feed it an element packet and an egg starts to grow. Another element before it hatches turns it into a bigger creature';
+      const R = CFG.recipes[b.recipe], c = FA.eggOf(b.recipe);
+      let s = n + ': growing ' + c.name + ' (' + c.order.map(k => ELEM_WORD[k]).join(' + ') + ') ' + Math.min(99, Math.floor(b.prog / R.time * 100)) + '%';
+      if (b.draw > 0 && !b.powered) s += '. NO POWER';
+      const up = FA.spawnerCan(b).map(k => ELEM_WORD[k] + ' = ' + FA.eggOf(FA.spawnerFor(FA.spawnerHave(b).concat(k))).name);
+      if (up.length) s += '. Add ' + up.join(', ');
+      if (b.out.length) s += '. ' + b.out.length + ' ready (click to take)';
+      return s;
+    }
     if (!b.recipe) return n + ': no recipe unlocked yet';
     const R = CFG.recipes[b.recipe];
     let s = n + ': ' + recipeName(b.recipe) + ' (' + recipeUse(b.recipe) + ') needs ' + Object.keys(R.in).map(k => itemName(k) + ' ' + (b.inv[k] || 0) + '/' + R.in[k]).join(', ');
-    if (b.draw > 0 && !b.powered) s += '. NO POWER (' + R.power + ')';
+    if (b.draw > 0 && !b.powered) s += '. NO POWER';
     else if (b.prog > 0) s += '. Crafting ' + Math.floor(b.prog / R.time * 100) + '%';
     else if (b.out.length >= CFG.buffer) s += '. BLOCKED: output full';
     else s += '. STARVED: waiting for inputs';
@@ -1521,6 +1537,7 @@ FA.fromJSON = function (j) {
     if (b.inv) {
       b.recipe = o.recipe && CFG.recipes[o.recipe] && CFG.recipes[o.recipe].machine === b.type ? o.recipe : null; b.inv = o.inv || {}; b.prog = o.prog || 0;   // (the Battery recipe was dropped: an old Forge / Bench on it falls back)
       if (o.recipe && !b.recipe) for (const k in b.inv) { for (let i = 0; i < b.inv[k]; i++) if (ITEMS[k]) b.out.push({ kind: k }); b.inv[k] = 0; }   // what it was holding is set out for the Builder to take
+      if (b.type === 'spawner') FA.spawnerFix(b);
     }
     if (b.bat !== undefined) { b.bat = o.bat > 0 ? Math.min(+o.bat, CFG.batteryMax * CFG.overcharge.max) : 0; b.top = b.bat >= CFG.batteryMax; }
     if (b.fuel) { b.fuel = Object.assign(b.fuel, o.fuel || {}); b.types = o.types || []; }

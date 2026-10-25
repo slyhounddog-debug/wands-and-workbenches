@@ -618,15 +618,12 @@ task(() => {
     x.fillStyle = '#2b1d3e'; for (let i = 0; i < 4; i++) x.fillRect(5 + i * 12, 44 - (i % 2 ? 2 : 0), 3, 1);   // socket studs on the lowest step
     x.fillStyle = '#6a8a56'; x.fillRect(6, 45, 3, 2); x.fillRect(38, 44, 2, 3);
   }), 23, 47);
-  // the Creature Spawner: a hatchery base and a clutch of eggs, three coloured pips on the front (one, two or three elements per Egg)
+  // the Creature Spawner: a hatchery pedestal with a nest on top; the egg it is growing is drawn live out of the nest (R.drawBuilding), its element lamps on the front
   bsprite('b_spawner', (x, cx, cy) => {
     isoBox(x, cx, cy, 9, 5, '#d8c6a0', '#a8956a', '#867552');
     isoBox(x, cx, cy - 5, 6, 3, '#c8b88c', '#988660', '#76684a');
-    x.fillStyle = '#fff5d8'; x.beginPath(); x.ellipse(cx, cy - 13, 4, 5.2, 0, 0, Math.PI * 2); x.fill();
-    x.fillStyle = '#d8c6a0'; x.fillRect(cx - 1, cy - 12, 3, 6); x.fillStyle = '#ffffff'; x.fillRect(cx - 3, cy - 16, 1, 2);
-    ['#7bff9a', '#ffe36b', '#ff6a4a'].forEach((pip, i) => { x.fillStyle = pip; x.fillRect(cx - 8 + i * 3, cy - 3, 2, 2); });
-    x.fillStyle = '#fff5d8'; x.beginPath(); x.ellipse(cx - 6, cy - 9, 2, 2.6, 0, 0, Math.PI * 2); x.fill();
-    x.beginPath(); x.ellipse(cx + 6, cy - 9, 2, 2.6, 0, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#76684a'; x.beginPath(); x.ellipse(cx, cy - 8, 4, 2, 0, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#a8956a'; x.beginPath(); x.ellipse(cx, cy - 8, 2.5, 1.2, 0, 0, Math.PI * 2); x.fill();
   });
   const ipal = { o: '#2b1d3e', w: '#ffffff', r: '#e8384a', R: '#a82a3a', y: '#ffd23a', b: '#4a8aff', B: '#2a5ac8', a: '#a8b0b8', A: '#6a7280' };
   const icn = (name, rows) => reg('ic_' + name, mapSprite(rows, ipal), Math.max.apply(null, rows.map(r => r.length)) / 2, rows.length);

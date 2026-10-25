@@ -17,5 +17,7 @@ window.TUNING = {
  "gemCap": 3.5,
  "harvest.tree.n": 5,
  "forage.mound.drop.stone": 3,
- "forage.cache.drop.stone": 3
+ "forage.cache.drop.stone": 3,
+ "music.fadeOut": 3,
+ "music.airFloor": 0.05
 };

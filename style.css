@@ -171,7 +171,7 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 #hotbar .slot:hover { background: var(--panel-hi); }
 #hotbar .slot.hint { animation: hintBlink .5s steps(2) infinite; }
 @keyframes hintBlink { 50% { background: #8a6a10; box-shadow: 0 0 0 4px var(--gold); } }
-.iconbtns button.hint { animation: hintBlink .5s steps(2) infinite; }
+.iconbtns button.hint, .iconbtns button.nudge { animation: hintBlink .5s steps(2) infinite; }
 #hotbar .slot kbd { position: absolute; top: -6px; left: -6px; font-size: 8px; min-width: 14px; padding: 3px 3px 2px; z-index: 2; }
 #hotbar .slot.sel { background: #6a4a20; box-shadow: 0 0 0 4px var(--gold); transform: translateY(-6px); }
 #hotbar .slot i { position: absolute; font-style: normal; display: none; }

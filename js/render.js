@@ -475,6 +475,21 @@ R.pile = function (ctx, kinds, x, y, t, seed, alpha) {
   }
 };
 R.rep = (kind, n) => new Array(Math.max(0, n)).fill(kind);
+R.kcol = k => (ELEM[k] || ITEMS[k] || {}).color || '#d6d0e0';
+// A building never stacks spare items on itself; what it holds is a segmented bar of lamps set into its front. list = [{ col, on, blink?, dim? }]:
+// lit = held / ready, faint = still wanted, blinking = an element that could be added now, dim = not an option.
+R.pips = function (ctx, x, y, list, t) {
+  const x0 = Math.round((x - list.length * 8) / 4) * 4, y0 = Math.round(y / 4) * 4;
+  list.forEach((q, i) => {
+    const px = x0 + i * 16;
+    ctx.fillStyle = '#1a0f28'; ctx.fillRect(px, y0, 16, 16);
+    ctx.fillStyle = '#3a2a52'; ctx.fillRect(px + 4, y0 + 4, 8, 8);
+    ctx.globalAlpha = q.on ? 1 : q.dim ? 0.18 : q.blink ? (Math.sin(t * 8) > 0 ? 0.8 : 0.3) : 0.4;
+    ctx.fillStyle = q.col; ctx.fillRect(px + 4, y0 + 4, 8, 8);
+    ctx.globalAlpha = 1;
+    if (q.on) { ctx.fillStyle = '#ffffff'; ctx.fillRect(px + 4, y0 + 4, 4, 4); }
+  });
+};
 R.drawBuilding = function (ctx, v, b, t) {
   const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), S = 4, d = FA.def(b);
   const qk = FA.quake(b.x, b.y);   // a shockwave from the Spell Portal passing through: it rattles sideways and flickers
@@ -534,10 +549,7 @@ R.drawBuilding = function (ctx, v, b, t) {
     } else if (b.shake > 0 && Math.floor(t * 20) % 2) {
       ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.round((p[0] + Math.cos(t * 17) * 28) / 4) * 4, Math.round((cy - 30 + Math.sin(t * 13) * 20) / 4) * 4, 8, 8);
     }
-    for (let i = 0; i < b.out.length; i++) {   // the packets it has made swirl round the crystal until they are taken
-      const a = b.anim * 2 + i * 2.094;
-      R.item(ctx, b.out[i].kind, p[0] + Math.cos(a) * 32, cy - 34 + Math.sin(a) * 12, 4, t, false);
-    }
+    if (b.out.length) R.pips(ctx, p[0], base - 20, b.out.map(o => ({ col: R.kcol(o.kind), on: true })), t);   // the packets it has made wait as lit lamps on its front until they are taken
     if (growing) R.rim(ctx, v, p, grow, ELEM[el].color, 0.88);   // the crystal growing back
     else if (b.shake <= 0 && b.out.length < CFG.buffer) R.rim(ctx, v, p, b.timer / FA.cycle(b), ELEM[el].color, 0.88);
     // a half-cranked packet stays on the Harnesser when the Builder walks away: a second, white-edged bar keeps what he put in
@@ -565,25 +577,45 @@ R.drawBuilding = function (ctx, v, b, t) {
       ctx.fillStyle = '#5a5a66'; ctx.fillRect(p[0] + 4, base - 68 + hy, 24, 12); ctx.fillStyle = '#8a5a30'; ctx.fillRect(p[0] + 12, base - 56 + hy, 8, 28);
       if (hit > 0.45 && hit < 0.6) for (let i = 0; i < 6; i++) { ctx.fillStyle = '#ffd23a'; ctx.fillRect(Math.round((p[0] + 8 + Math.cos(i) * 28) / 4) * 4, Math.round((base - 52 - Math.abs(Math.sin(i * 2)) * 24) / 4) * 4, 4, 4); }
     }
-    if (b.recipe) {
+    if (b.type === 'spawner') {
+      // the egg it is growing rises out of the nest on top, like the Harnesser's crystal: it takes the creature's colours, grows in steps with the craft, and
+      // turns into the bigger creature's egg (keeping its growth) when another element is absorbed. Lamps on the front show which elements are inside.
+      const have = FA.spawnerHave(b);
+      if (b.recipe) {
+        const R2 = CFG.recipes[b.recipe], fr = Math.min(1, b.prog / R2.time), ks = Math.max(0.2, Math.round(fr * 8) / 8) * 1.4;
+        const wob = fr > 0.8 && b.powered && Math.floor(t * 20) % 2 ? 4 : 0, bob = Math.round(Math.sin(b.anim * 2) * 1.2) * 4;
+        dsprSq(ctx, itemSprite(R2.out), p[0] + wob, base - 28 - bob, S, ks, ks * (1 + pop * 0.4), 0.55 + 0.45 * fr);
+        if (b.prog > 0 && b.powered) have.forEach((k, i) => {   // element sparks drift in toward the egg while it grows
+          const q = (t * 0.6 + i / have.length) % 1, an = t * 2 + i * 2.1, r = (1 - q) * 48;
+          ctx.fillStyle = i % 2 ? '#ffffff' : ELEM[k].color;
+          ctx.fillRect(Math.round((p[0] + Math.cos(an) * r) / 4) * 4, Math.round((base - 56 + Math.sin(an) * r * 0.5) / 4) * 4, 8, 8);
+        });
+        R.rim(ctx, v, p, b.prog / R2.time, ITEMS[R2.out].color, 0.88);
+        if (b.draw > 0 && !b.powered) R.noPower(ctx, p[0], top - 16, t);
+      }
+      if (have.length || R.inTip(b)) {
+        const can = FA.spawnerCan(b);
+        R.pips(ctx, p[0], base - 20, ELEMS.map(k => ({ col: ELEM[k].color, on: have.indexOf(k) >= 0, blink: can.indexOf(k) >= 0, dim: have.indexOf(k) < 0 && can.indexOf(k) < 0 })), t);
+      }
+    } else if (b.recipe) {
       const R2 = CFG.recipes[b.recipe], keys = Object.keys(R2.in);
       // a faded ghost of the product waits in the empty output slot
       if (!b.out.length && b.prog <= 0) dspr(ctx, itemSprite(R2.out), p[0] + 44, base - 28 + (Math.sin(t * 3) > 0 ? 0 : 4), 4, 0.35);
-      // the inputs it holds are stacked on top of it (the top item hops), with faint copies of what is still missing: no numbers
-      keys.forEach((k, i) => {
-        const x = p[0] + (i - (keys.length - 1) / 2) * 30, have = b.inv[k] || 0;
-        R.pile(ctx, R.rep(k, have), x, base - 70, t, i + b.id);
-        R.pile(ctx, R.rep(k, R2.in[k] - have), x, base - 70 - have * 8, t, 0, 0.35);
-      });
+      // what it holds is a bar of lamps on its front, one per item the recipe needs: lit = in, hollow = still missing (no piles of spare items)
+      const lamps = [];
+      keys.forEach(k => { const have = b.inv[k] || 0; for (let i = 0; i < R2.in[k]; i++) lamps.push({ col: R.kcol(k), on: i < have }); });
+      R.pips(ctx, p[0], base - 20, lamps, t);
       if (b.prog > 0) R.rim(ctx, v, p, b.prog / R2.time, ITEMS[R2.out].color, 0.88);
-      if (b.type === 'spawner' && b.prog > 0) {   // the creature being hatched looks out of a little window set into the building's own face (nothing while it idles)
-        const cs = SP[ITEMS[R2.out].creature], k = Math.max(1, Math.floor(24 / Math.max(cs.c.width, cs.c.height)));
-        pbox(ctx, p[0] - 20, base - 68, 40, 36, '#2b1d48');   // sits over the clutch's big egg, inside the building's own outline
-        dspr(ctx, cs, p[0], base - 38 + (Math.sin(t * 5) > 0 ? 0 : 4), k);
-      }
       if (b.draw > 0 && !b.powered) R.noPower(ctx, p[0], top - 16, t);
     } else dspr(ctx, SP.ic_lock, p[0], top + 44, 4);
-    R.pile(ctx, b.out.map(o => o.kind), p[0] + 44, base - 24, t, b.id + 3);   // what it has made, waiting to be taken
+    if (b.out.length) {   // what it has made waits beside it to be taken: one item, a dot for each one behind it
+      const ok = b.out[b.out.length - 1].kind;
+      R.item(ctx, ok, p[0] + 44, base - 24 - (Math.sin(t * 4 + b.id) > 0.5 ? 8 : 0), 3, t, false);
+      for (let i = 1; i < b.out.length; i++) {
+        const dx = Math.round((p[0] + 32 + (i - 1) * 12) / 4) * 4, dy = Math.round((base - 4) / 4) * 4;
+        ctx.fillStyle = '#1a0f28'; ctx.fillRect(dx, dy, 12, 12); ctx.fillStyle = R.kcol(b.out[i].kind); ctx.fillRect(dx + 4, dy + 4, 4, 4);
+      }
+    }
     if (b.od) {   // Adjacency Overdrive: sparks jump across from the charged Battery beside it
       for (const dd of DIRS) {
         const c = FA.cell(b.x + dd[0], b.y + dd[1]);
@@ -620,7 +652,6 @@ R.drawBuilding = function (ctx, v, b, t) {
       for (let i = 0; i < 5; i++) ctx.fillRect(Math.round((p[0] - 20 + i * 10) / 4) * 4, Math.round((base - 60 + (i % 2 ? -8 : 8)) / 4) * 4, 8, 4);
     }
   }
-  if (d.kind === 'splitter') R.pile(ctx, b.out.map(o => o.kind), p[0], base - 40, t, b.id);
   if (d.kind === 'crate') R.pile(ctx, b.out.slice(0, 9).map(o => o.kind), p[0], base - 36, t, b.id);   // the crate shows what is inside, in the order it will come out (bottom first)
   // throughput: a building stuck for a moment shows why (orange ! = output blocked, grey ? = waiting on inputs)
   R.drawState(ctx, v, b, t, p, top);
@@ -1041,13 +1072,21 @@ R.drawGhost = function (ctx, v, g, t) {
   ctx.strokeStyle = g.ok ? '#d6eeff' : '#ffd0d0'; ctx.lineWidth = 8; diamond(ctx, p[0], p[1], v.hw - 4, v.hh - 2); ctx.stroke();   // the tile's edge stays clear whatever stands on it
   const dd = DIRS[g.dir], sdx = (dd[0] - dd[1]) * v.hw * 0.45, sdy = (dd[0] + dd[1]) * v.hh * 0.45;
   if (g.type !== 'belt' && g.type !== 'expand') dspr(ctx, R.bldSprite({ type: g.type }), p[0], p[1] + v.hh * 0.9 - 2 - hov, 4, 0.85);
-  if (g.type !== 'splitter' && g.type !== 'belt' && g.type !== 'expand') {   // a Splitter has no front: it routes to whatever its sides touch
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8;
-    const ex = p[0] + sdx * 1.2, ey = p[1] + sdy * 1.2;
-    ctx.beginPath(); ctx.moveTo(p[0] - sdx * 0.6, p[1] - sdy * 0.6); ctx.lineTo(ex, ey); ctx.stroke();
+  if (g.type === 'belt') {   // the tile it will feed is washed gold, so the way the belt runs reads from the cursor to the next tile
+    const q = R.toScreen(v, g.x + 0.5 + dd[0], g.y + 0.5 + dd[1]);
+    ctx.fillStyle = Math.sin(t * 8) > 0 ? 'rgba(255,224,110,0.6)' : 'rgba(255,224,110,0.3)';
+    diamond(ctx, q[0], q[1], v.hw - 4, v.hh - 2); ctx.fill();
+  }
+  if (g.type !== 'splitter' && g.type !== 'expand') {   // a Splitter has no front: it routes to whatever its sides touch
+    const belt = g.type === 'belt', k = belt ? 1.5 : 1.2;   // a belt's arrow is longer, so its head reaches over into the next tile
+    const ex = p[0] + sdx * k, ey = p[1] + sdy * k, sx0 = p[0] - sdx * 0.8, sy0 = p[1] - sdy * 0.8;
     const m = Math.hypot(sdx, sdy), nx = sdx / m, ny = sdy / m;
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.moveTo(ex + nx * 8, ey + ny * 8); ctx.lineTo(ex - nx * 12 - ny * 14, ey - ny * 12 + nx * 14); ctx.lineTo(ex - nx * 12 + ny * 14, ey - ny * 12 - nx * 14); ctx.fill();
+    for (const [col, w, g2] of belt ? [['#1a0f28', 16, 4], ['#ffffff', 8, 0]] : [['#ffffff', 8, 0]]) {   // belts get a dark outline so the arrow stands out from the chevrons beneath
+      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(ex, ey); ctx.stroke();
+      const hl = belt ? 16 : 12, hs = belt ? 18 : 14;
+      ctx.beginPath(); ctx.moveTo(ex + nx * (8 + g2 * 2), ey + ny * (8 + g2 * 2)); ctx.lineTo(ex - nx * (hl + g2) - ny * (hs + g2), ey - ny * (hl + g2) + nx * (hs + g2)); ctx.lineTo(ex - nx * (hl + g2) + ny * (hs + g2), ey - ny * (hl + g2) - nx * (hs + g2)); ctx.fill();
+    }
   }
   if (g.type !== 'belt' && g.type !== 'hand' && G.credits[g.type] > 0) dspr(ctx, SP.ic_gift, p[0], p[1] - 100 + (Math.sin(t * 6) > 0 ? 0 : 4), 4);
   // a Battery beside a Forge / Cauldron (or the other way round) will overdrive it
@@ -1108,7 +1147,7 @@ R.drawFocus = function (ctx, v, f, t) {
   f.list.forEach(e => {
     const tg = e.t, a = e.a;
     if (tg.kind === 'floor' || tg.kind === 'pile' || tg.kind === 'shelf') return;   // no prompt for loose items, the Stockpile or the shelf: the item itself lights up (R.pickFx)
-    const y = CFG.H - 134 - row * 46;
+    const y = CFG.H - 134 - (f.inspH ? f.inspH + 2 : 0) - row * 46;   // the building note sits under the prompts, just above the hotbar
     if (a.ic) R.iprompt(ctx, 0, y, e.key ? R.key(e.key) : null, a.ic, CFG.HALF, 16, e.key === 'use' && !!G.bd.gather);
     else R.prompt(ctx, 0, y, e.key ? R.key(e.key) : null, a.label, CFG.HALF, 16);
     row++;

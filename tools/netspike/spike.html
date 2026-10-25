@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Net spike</title></head>
+<body style="font:14px monospace;background:#111;color:#eee;padding:12px">
+<h3>Wands &amp; Workbenches - Step 0 connectivity spike</h3>
+<p>Open this page on machine A and press HOST. Open it on machine B (a different network) and type the code, press JOIN.</p>
+<button id="host">HOST</button> <input id="code" placeholder="CODE" size="8"> <button id="join">JOIN</button>
+<pre id="log"></pre>
+<script src="../../js/vendor/peerjs.min.js"></script>
+<script>
+const ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // no 0/O/1/I/L
+const log = s => { document.getElementById('log').textContent += (performance.now() / 1000).toFixed(2) + 's  ' + s + '\n'; window.__log = (window.__log || []).concat(s); };
+const CFG = { debug: 1, config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }] } };   // STUN only, no TURN
+function wire(conn, role) {
+  const t0 = performance.now();
+  conn.on('open', () => { log(role + ': data channel OPEN'); if (role === 'guest') conn.send({ t: 'ping', n: 1, at: Date.now() }); });
+  conn.on('data', m => {
+    if (m.t === 'ping') { log('host got ping ' + m.n); conn.send({ t: 'pong', n: m.n, at: m.at }); }
+    else if (m.t === 'pong') {
+      const rtt = Date.now() - m.at; log('guest got pong ' + m.n + ' rtt ' + rtt + ' ms');
+      if (m.n < 20) conn.send({ t: 'ping', n: m.n + 1, at: Date.now() }); else { log('RESULT: round-trip OK (20 pings)'); window.__done = true; }
+    }
+  });
+  conn.on('close', () => log(role + ': closed'));
+  conn.on('error', e => log(role + ': conn error ' + e));
+  // which candidate pair was chosen: host = direct, srflx = via STUN, relay = TURN
+  setTimeout(async () => { try { const pc = conn.peerConnection, st = await pc.getStats(); st.forEach(r => { if (r.type === 'candidate-pair' && r.nominated) { const l = st.get(r.localCandidateId), rm = st.get(r.remoteCandidateId); log(role + ': selected pair local=' + l.candidateType + ' remote=' + rm.candidateType); } }); } catch (e) { log('stats: ' + e); } }, 3000);
+}
+document.getElementById('host').onclick = () => {
+  const code = Array.from({ length: 6 }, () => ALPHA[Math.floor(Math.random() * ALPHA.length)]).join('');
+  const peer = new Peer('ww-spike-' + code, CFG);
+  peer.on('open', id => log('HOST ready. CODE = ' + code));
+  peer.on('connection', c => wire(c, 'host'));
+  peer.on('error', e => log('host peer error ' + e.type));
+  window.__code = code;
+};
+document.getElementById('join').onclick = () => {
+  const code = document.getElementById('code').value.trim().toUpperCase();
+  const peer = new Peer(CFG);
+  peer.on('open', () => { log('guest signaling ok, dialing ' + code); wire(peer.connect('ww-spike-' + code, { reliable: true, serialization: 'json' }), 'guest'); });
+  peer.on('error', e => log('guest peer error ' + e.type));
+};
+</script></body></html>

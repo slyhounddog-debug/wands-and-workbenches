@@ -146,6 +146,7 @@
     <div id="pause" class="overlay hidden">
       <div id="pauseMain" class="panel px">
         <h2>PAUSED</h2>
+        <div id="pCode" class="netCode hidden"></div>
         <button id="pResume" class="big">RESUME</button>
         <button id="pBook" class="big ghost">COLLECTION BOOK</button>
         <button id="pSet" class="big ghost">SETTINGS</button>
@@ -154,6 +155,9 @@
       <div id="pauseSet" class="panel px hidden"></div>
     </div>
   </div>
+
+  <!-- online: the host is waiting for a dropped guest / the guest lost the connection / the host ended the game -->
+  <div id="netBanner" class="overlay hidden"></div>
 
   <!-- never fail silently: caught errors count up here (click for the list) -->
   <div id="errBadge" class="px hidden" onclick="this.classList.toggle('open')"><span>!</span><b>0</b><div id="errList"></div></div>
@@ -172,12 +176,17 @@
       <button class="big" id="mContinue"><i data-ic="ic_play" data-s="20"></i>CONTINUE</button>
       <button class="big" id="mNew"><i data-ic="ic_tree" data-s="20"></i>NEW GAME</button>
       <button class="big ghost" id="mLoad"><i data-ic="ic_folder" data-s="20"></i>LOAD GAME</button>
+      <button class="big ghost" id="mOnline"><i data-ic="ic_portal" data-s="20"></i>ONLINE</button>
       <button class="big ghost" id="mHow"><i data-ic="ic_book" data-s="20"></i>HOW TO PLAY</button>
       <button class="big ghost" id="mSet"><i data-ic="ic_gear" data-s="20"></i>SETTINGS</button>
     </div>
     <div id="menuSlots" class="menuBox sheet px hidden"></div>
     <div id="menuHow" class="menuBox sheet wide px hidden"></div>
     <div id="menuSet" class="menuBox sheet px hidden"></div>
+    <!-- online co-op (js/online.js): the host creates a room and gets a code, the guest joins with it -->
+    <div id="menuOnline" class="menuBox sheet px hidden"></div>
+    <div id="menuHost" class="menuBox sheet px hidden"></div>
+    <div id="menuJoin" class="menuBox sheet px hidden"></div>
   </div>
 
   <!-- who is playing: controller -> job, then cosmetics (js/players.js) -->
@@ -204,6 +213,7 @@
 <script src="js/creatures.js"></script>
 <script src="js/augments.js"></script>
 <script src="js/altar.js"></script>
+<script src="js/net.js"></script>
 <script src="js/render.js"></script>
 <script src="js/spellpreview.js"></script>
 <script src="js/creaturepreview.js"></script>
@@ -214,5 +224,6 @@
 <script src="js/snapshot.js"></script>
 <script src="js/intro.js"></script>
 <script src="js/main.js"></script>
+<script src="js/online.js"></script>
 </body>
 </html>

@@ -236,8 +236,8 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   // open over the (paused) game: from play it pauses the game itself; from the pause menu it hides the menu and brings it back on close
   Book.open = function (fromPause) {
     if (Book.isOpen || !G) return;
-    Book.from = fromPause || G.paused ? 'pause' : 'play';
-    if (!G.paused) Main.pause(true);
+    Book.from = fromPause || Main.isPaused() ? 'pause' : 'play';
+    if (!Main.isPaused()) Main.pause(true);
     UI.show('pause', false);
     Book.isOpen = true; UI.show('book', true); Book.render(); AU.sfx('menu_open');
   };
@@ -252,7 +252,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   // called every frame while the game is up: keys / pad for the open book
   Book.tick = function (dt) {
     if (!Book.isOpen) return;
-    const p0 = IN.pad[0], p1 = IN.pad[1], pad = (f) => (p0 && p0[f]) || (p1 && p1[f]);
+    const p0 = IN.pad[0], p1 = Net.on ? null : IN.pad[1], pad = (f) => (p0 && p0[f]) || (p1 && p1[f]);
     if (IN.hit('Escape') || IN.hit('KeyC') || pad('b') || pad('back')) {
       Book.close();
       IN.pressed.delete('Escape'); IN.pressed.delete('KeyC');   // the same press must not also pause (Esc) or reopen (C) in this frame's controls

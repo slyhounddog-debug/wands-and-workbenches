@@ -17,7 +17,7 @@ const AU = (() => {
     g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
     g.linearRampToValueAtTime(depth, t + 0.03); g.linearRampToValueAtTime(1, t + 0.7);
   }
-  const settings = { sfx: 0.7, music: 0.5 };
+  const settings = { sfx: 0.7, music: 0.5, pip: 28 };   // pip: the online partner viewport, % of the screen width (0 = off, 45 = biggest); a per-player local preference, never synced
   const lastPlay = {};
 
   // ----- custom clips (the dev tool's Audio tab) -----
@@ -65,7 +65,7 @@ const AU = (() => {
 
   try {
     const s = JSON.parse(localStorage.getItem('wands_settings'));
-    if (s) { settings.sfx = clamp01(s.sfx, 0.7); settings.music = clamp01(s.music, 0.5); }
+    if (s) { settings.sfx = clamp01(s.sfx, 0.7); settings.music = clamp01(s.music, 0.5); if (typeof s.pip === 'number' && isFinite(s.pip)) settings.pip = Math.max(0, Math.min(45, Math.round(s.pip))); }
   } catch (e) { /* ignore */ }
   function clamp01(v, d) { return typeof v === 'number' && isFinite(v) ? Math.max(0, Math.min(1, v)) : d; }
 
@@ -393,5 +393,6 @@ const AU = (() => {
     names: { sfx: SFX_NAMES, loops: ['music', 'music_boss', 'hum'] },
     setSfx(v) { settings.sfx = v; applyVol(); saveSettings(); },
     setMusic(v) { settings.music = v; applyVol(); saveSettings(); },
+    setPip(v) { settings.pip = Math.max(0, Math.min(45, Math.round(v))); saveSettings(); },
   };
 })();

@@ -8,6 +8,10 @@ const R = {
   ghost: null, aim: null, focus: null, demo: null, padMode: false,
   hint: null, whint: null, hoverB: null, mapC: null,   // goal pointers (factory / wilds), hovered building, minimap image
   defer: null, px: 1, org: 0, bufs: {},
+  // The rectangle (in stage px) the world being drawn fills: set at the start of drawFactory / drawWorld, read by everything they call. Local split-screen: the factory is
+  // 0..800 and the wilds 800..1600. Online a player's own world fills the stage (0..1600) and the partner's is drawn to its natural size on a scratch canvas (x0 0, w 800)
+  // that is shown as a small picture-in-picture (R.drawPip).
+  rect: { x0: 0, w: CFG.HALF },
 };
 // digits always come from Silkscreen (the 'Digits' faces in style.css): no 5 that reads as 8, no 6 that reads as G
 const FONT_D = '"Digits", "Press Start 2P", "Courier New", monospace';   // display: numbers, short labels
@@ -139,7 +143,7 @@ R.iprompt = function (ctx, x, y, key, ic, maxX, minX, mash) {
     const sprs = (ic || []).map(R.spr).filter(Boolean);
     const iw = sprs.reduce((a, s) => a + s.c.width * R.icS(s) + 6, 0);
     const w = Math.round(kb + 16 + iw + (key && sprs.length ? 8 : 0)), h = 40, p = 4;
-    const x0 = Math.round(Math.max((minX || 0) + 8, Math.min((maxX || CFG.HALF) - w - 8, x - w / 2))), y0 = Math.round(y - h / 2);
+    const x0 = Math.round(Math.max((minX || 0) + 8, Math.min((maxX || R.rect.x0 + R.rect.w) - w - 8, x - w / 2))), y0 = Math.round(y - h / 2);
     c.fillStyle = '#1a0f28'; c.fillRect(x0 + p, y0, w - 2 * p, h); c.fillRect(x0, y0 + p, w, h - 2 * p);
     c.fillStyle = '#fff6e0'; c.fillRect(x0 + p, y0 + p, w - 2 * p, h - 2 * p);
     let cx = x0 + 8;
@@ -159,16 +163,17 @@ R.iprompt = function (ctx, x, y, key, ic, maxX, minX, mash) {
 R.inTip = b => R.isNear(b) || Math.hypot(G.bd.x - b.x - 0.5, G.bd.y - b.y - 0.5) < CFG.tipRadius;
 R.flush = function (main, x0) {
   main.save();
-  main.beginPath(); main.rect(x0, 0, CFG.HALF, CFG.H); main.clip();
+  main.beginPath(); main.rect(x0, 0, R.rect.w, CFG.H); main.clip();
   for (const fn of R.defer) fn(main);
   main.restore();
   R.defer = null;
 };
 
 // ===================== FACTORY =====================
-R.drawFactory = function (main, dt) {
+R.drawFactory = function (main, dt, rect) {
   const T = CFG.FT, S = T.S, P = T.P, f = G.fac, bd = G.bd;
-  const buf = lowBuffer('f', CFG.HALF / P, CFG.H / P), ctx = buf.x;
+  const rc = R.rect = rect || { x0: 0, w: CFG.HALF }, RW = rc.w;
+  const buf = lowBuffer('f' + RW, RW / P, CFG.H / P), ctx = buf.x;
   ctx.setTransform(1 / P, 0, 0, 1 / P, 0, 0);
   R.px = P; R.org = 0; R.defer = [];
   const cam = R.fcam;
@@ -176,20 +181,20 @@ R.drawFactory = function (main, dt) {
   cam.x += (bd.x + bd.vx * 0.18 - cam.x) * k; cam.y += (bd.y + bd.vy * 0.18 - cam.y) * k;
   // a spell landing in the wilds bumps the factory view (sideways shake too for triples and the Nova)
   const bmp = f.bumpAmp > 0 ? f.bumpAmp * Math.cos(f.bump * 40) * (1 - f.bump / 0.4) : 0;
-  const v = R.fv; setView(v, cam, f.bumpAmp >= 18 ? (Math.random() - 0.5) * bmp : 0, bmp);
+  const v = R.fv; v.cx = rc.x0 + RW / 2; setView(v, cam, f.bumpAmp >= 18 ? (Math.random() - 0.5) * bmp : 0, bmp);
   const t = f.t, W = f.w, H = f.h;
 
   // sky
   const bands = ['#8fd0ec', '#a2daea', '#b4e4e4', '#c6ecd8', '#b4e2c0', '#a8dcae'];
-  for (let i = 0; i < bands.length; i++) { ctx.fillStyle = bands[i]; ctx.fillRect(0, i * 150, CFG.HALF, 152); }
+  for (let i = 0; i < bands.length; i++) { ctx.fillStyle = bands[i]; ctx.fillRect(0, i * 150, RW, 152); }
   for (let i = 0; i < 5; i++) {
-    const cx = ((i * 260 + t * (8 + i * 3)) % 1200) - 200, cy = 60 + i * 70 + Math.sin(i * 3) * 30;
+    const cx = ((i * 260 + t * (8 + i * 3)) % (RW + 400)) - 200, cy = 60 + i * 70 + Math.sin(i * 3) * 30;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(Math.round(cx / P) * P, Math.round(cy / P) * P, 96, 16); ctx.fillRect(Math.round(cx / P) * P + 16, Math.round(cy / P) * P - 12, 56, 12);
   }
 
   // the floor is just the owned tiles (f.land): a dirt rim hangs under every edge where the floor ends, then each tile's grass, then a sheen and twinkles clipped to the floor
-  const rim = 32, vis = (sx, sy) => sx > -90 && sx < CFG.HALF + 90 && sy > -60 && sy < CFG.H + 60;
+  const rim = 32, vis = (sx, sy) => sx > -90 && sx < RW + 90 && sy > -60 && sy < CFG.H + 60;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (!FA.owned(x, y)) continue;
     const sx = (x - y) * v.hw + v.ox, sy = (x + y + 1) * v.hh + v.oy;
@@ -345,7 +350,7 @@ R.drawFactory = function (main, dt) {
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   main.imageSmoothingEnabled = false;
-  main.drawImage(buf.c, 0, 0, CFG.HALF, CFG.H);
+  main.drawImage(buf.c, 0, 0, RW, CFG.H);
   R.flush(main, 0);
 };
 
@@ -739,7 +744,7 @@ R.drawQ = function (ctx, v, t) {
   const w = f && f.age < 0.3 ? Math.sin(f.age / 0.3 * Math.PI) * 0.18 : 0;   // a thump when something hits it
   dsprSq(ctx, SP.b_qstation, p[0], base, S, 1 + w, 1 - w);
   if (!f) return;
-  const info = FA.qInfo(f.kind), W = 372, H = 112, cx = Math.max(W / 2 + 12, Math.min(CFG.HALF - W / 2 - 12, p[0])), x0 = Math.round(cx - W / 2), y0 = Math.max(176, Math.round(base - 112 - H)), tail = y0 + H < base - 110;   // never up under the top bar
+  const info = FA.qInfo(f.kind), W = 372, H = 112, cx = Math.max(W / 2 + 12, Math.min(R.rect.w - W / 2 - 12, p[0])), x0 = Math.round(cx - W / 2), y0 = Math.max(176, Math.round(base - 112 - H)), tail = y0 + H < base - 110;   // never up under the top bar
   ctx.globalAlpha = Math.min(1, f.t * 3, f.age * 6 + 0.2);
   pbox(ctx, x0, y0, W, H, '#2b1d48', '#1a0f28');
   if (tail) { ctx.fillStyle = '#2b1d48'; ctx.fillRect(Math.round(p[0] / 4) * 4 - 8, y0 + H, 16, 8); ctx.fillRect(Math.round(p[0] / 4) * 4 - 4, y0 + H + 8, 8, 4); }   // the tail pointing down at the station
@@ -890,7 +895,7 @@ R.drawSuck = function (ctx, v, s, base) {
     const kk = Math.min(1, k * 2.2);
     if (kk < 1) { ring(0.45 + 0.85 * Math.ceil(kk * 4) / 4, '#ffffff', 1 - kk, 0.12); ring(0.3 + 0.7 * Math.ceil(kk * 4) / 4, col, 1 - kk, 0.16); }
     // then it shoots up and out over the top-right corner of the factory, toward the wilds (they pick it up at their top-left: R.drawArc)
-    const ex = CFG.HALF + 70, ey = -90;
+    const ex = R.rect.w + 70, ey = -90;
     const at = u => [cx + (ex - cx) * u * u, cy + (ey - cy) * u - Math.sin(u * Math.PI) * CFG.arc.h];
     if (k < 0.3) { const w0 = Math.round(30 * (1 - k / 0.3) / P) * P; if (w0 > 0) { ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.6; ctx.fillRect(snap(cx - w0 / 2), cy - 90, w0, 90); ctx.globalAlpha = 1; } }   // the launch flash
     for (let i = 6; i >= 1; i--) {   // its trail
@@ -922,7 +927,7 @@ R.drawPile = function (ctx, v, pl) {
 // goal pointer in the factory: a bouncing arrow over the target, or an arrow on the edge pointing toward it
 R.drawHint = function (ctx, v, h, t) {
   const p = R.toScreen(v, h.x, h.y), lift = h.lift || 150;
-  const x0 = 40, x1 = CFG.HALF - 40, y0 = 140, y1 = CFG.H - 130;
+  const x0 = 40, x1 = R.rect.w - 40, y0 = 140, y1 = CFG.H - 130;
   const on = p[0] > x0 && p[0] < x1 && p[1] - lift > y0 - 60 && p[1] < y1 + 60;
   const bob = Math.sin(t * 6) > 0 ? 0 : 8;
   if (on) {
@@ -999,10 +1004,7 @@ R.drawBuilder = function (ctx, v, bd, t) {
   const hop = Math.round((bd.gather ? Math.abs(Math.sin(bd.bob)) * 12 : (bd.moving ? Math.abs(step) * 5 : 0)) / 4) * 4;
   const spr = carrying ? (bd.moving && step > 0 ? SP.builderC2 : SP.builderC) : (bd.moving && step > 0 ? SP.builder2 : SP.builder);
   const sq = bd.squash > 0 ? Math.sin(bd.squash * 25) * 0.12 : 0;
-  // facing flips with hysteresis: moving straight up or down the screen sits right on the threshold and used to flicker
-  const fd = bd.fx - bd.fy;
-  if (fd < -0.3) bd.flipS = true; else if (fd > 0.3) bd.flipS = false;
-  const flip = !!bd.flipS;
+  const flip = !!bd.flipS;   // the facing (with hysteresis) is worked out in FA.moveBuilder
   // playful walk: the body pivots at the hips and leans back and forth with each step, stretching taller on the
   // push-off and skewing off-axis, so it reads as if his legs were swinging
   const ph = bd.bob, wk = bd.moving ? 1 : 0, g = bd.gather ? 1 : 0;
@@ -1165,7 +1167,7 @@ R.prompt = function (ctx, x, y, key, label, maxX, minX) {
     const kb = key ? Math.max(24, Math.ceil(c.measureText(key).width) + 12) : 0, kw = key ? kb + 12 : 0;
     c.font = '700 22px ' + FONT_B;
     const tw = c.measureText(label).width, w = Math.round(tw + kw + 28), h = 40;
-    const x0 = Math.round(Math.max((minX || 0) + 8, Math.min((maxX || CFG.HALF) - w - 8, x - w / 2))), y0 = Math.round(y - h / 2);
+    const x0 = Math.round(Math.max((minX || 0) + 8, Math.min((maxX || R.rect.x0 + R.rect.w) - w - 8, x - w / 2))), y0 = Math.round(y - h / 2);
     const p = 4;
     c.fillStyle = '#1a0f28';
     c.fillRect(x0 + p, y0, w - 2 * p, h); c.fillRect(x0, y0 + p, w, h - 2 * p);
@@ -1184,20 +1186,21 @@ R.prompt = function (ctx, x, y, key, label, maxX, minX) {
 };
 
 // ===================== WIZARD WORLD =====================
-R.drawWorld = function (main, dt) {
+R.drawWorld = function (main, dt, rect) {
   const T = CFG.WT, S = T.S, P = T.P, w = G.w;
-  const bw = Math.ceil(CFG.HALF / P), bh = CFG.H / P;
-  const buf = lowBuffer('w', bw, bh), ctx = buf.x;
-  ctx.setTransform(1 / P, 0, 0, 1 / P, -CFG.HALF / P, 0);
-  R.px = P; R.org = CFG.HALF; R.defer = [];
+  const rc = R.rect = rect || { x0: CFG.HALF, w: CFG.HALF }, X0 = rc.x0, RW = rc.w;
+  const bw = Math.ceil(RW / P), bh = CFG.H / P;
+  const buf = lowBuffer('w' + X0 + '_' + RW, bw, bh), ctx = buf.x;
+  ctx.setTransform(1 / P, 0, 0, 1 / P, -X0 / P, 0);
+  R.px = P; R.org = X0; R.defer = [];
   const cam = R.wcam;
   const k = Math.min(1, dt * 8);
   cam.x += (w.x + w.vx * 0.12 - cam.x) * k; cam.y += (w.y + w.vy * 0.12 - cam.y) * k;
   const sh = w.shake > 0 ? w.shake * 24 : 0;
-  const v = R.wv; setView(v, cam, (Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh);
+  const v = R.wv; v.org = X0; v.cx = X0 + RW / 2; setView(v, cam, (Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh);
 
-  ctx.fillStyle = '#2d4a2a'; ctx.fillRect(CFG.HALF, 0, CFG.HALF + P, CFG.H);
-  const left = CFG.HALF, right = CFG.W;
+  ctx.fillStyle = '#2d4a2a'; ctx.fillRect(X0, 0, RW + P, CFG.H);
+  const left = X0, right = X0 + RW;
   const d0 = Math.floor((-v.oy) / v.hh) - 2, d1 = Math.ceil((CFG.H - v.oy) / v.hh) + 6;
   const uMin = Math.floor((left - v.ox) / v.hw) - 2, uMax = Math.ceil((right - v.ox) / v.hw) + 2;
   const WW = CFG.WW, WH = CFG.WH;
@@ -1299,21 +1302,57 @@ R.drawWorld = function (main, dt) {
   }
   if (w.hurtT > 0) {
     ctx.fillStyle = 'rgba(255,40,40,' + Math.min(0.35, w.hurtT) + ')';
-    ctx.fillRect(left, 0, 30, CFG.H); ctx.fillRect(right - 30, 0, 30, CFG.H); ctx.fillRect(left, 0, CFG.HALF, 30); ctx.fillRect(left, CFG.H - 30, CFG.HALF, 30);
+    ctx.fillRect(left, 0, 30, CFG.H); ctx.fillRect(right - 30, 0, 30, CFG.H); ctx.fillRect(left, 0, RW, 30); ctx.fillRect(left, CFG.H - 30, RW, 30);
   }
   if (w.hp > 0 && w.hp < WZ.maxHp() * 0.3 && Math.sin(wt * 6) > 0) {
-    ctx.strokeStyle = 'rgba(200,0,30,0.5)'; ctx.lineWidth = 24; ctx.strokeRect(left + 12, 12, CFG.HALF - 24, CFG.H - 24);
+    ctx.strokeStyle = 'rgba(200,0,30,0.5)'; ctx.lineWidth = 24; ctx.strokeRect(left + 12, 12, RW - 24, CFG.H - 24);
   }
   if (R.whint && !w.dead) R.drawWHint(ctx, v, R.whint, wt);
-  if (R.mapC) R.defer.push(c => R.drawMinimap(c));
+  if (R.mapC && !rc.pip) R.defer.push(c => R.drawMinimap(c));
   // the wilds are frozen while anyone is in the skill tree (the DOM banner says so in words)
-  if (UI.treeOpen.L || UI.treeOpen.R) { ctx.fillStyle = 'rgba(20,10,40,0.45)'; ctx.fillRect(left, 0, CFG.HALF, CFG.H); }
+  if (!Net.on && (UI.treeOpen.L || UI.treeOpen.R)) { ctx.fillStyle = 'rgba(20,10,40,0.45)'; ctx.fillRect(left, 0, RW, CFG.H); }   // (online nothing freezes, so nothing dims)
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  main.save(); main.beginPath(); main.rect(CFG.HALF, 0, CFG.HALF, CFG.H); main.clip();
+  main.save(); main.beginPath(); main.rect(X0, 0, RW, CFG.H); main.clip();
   main.imageSmoothingEnabled = false;
-  main.drawImage(buf.c, CFG.HALF, 0, bw * P, CFG.H);
+  main.drawImage(buf.c, X0, 0, bw * P, CFG.H);
   main.restore();
-  R.flush(main, CFG.HALF);
+  R.flush(main, X0);
+};
+
+// ===================== ONLINE: the partner's world in the corner =====================
+// The partner's world is drawn by the very same renderer (host: the Wizard's wilds from the live G; guest: the Builder's factory from the snapshot clone) at its natural
+// size onto a scratch canvas, and a 800 x 500 crop of it around the character is shown scaled down in the bottom-right corner. The size is the player's own setting
+// (AU.settings.pip, % of the stage width: 0 = off, up to 45; never synced). R.pipRect is where it ended up (the mouse ignores it).
+R.pipRect = null;
+R.drawPip = function (main, dt) {
+  R.pipRect = null;
+  const pct = AU.settings.pip;
+  if (!(pct > 0) || !G) return;
+  let sc = R.bufs.pip;
+  if (!sc) { const c = document.createElement('canvas'); c.width = CFG.HALF; c.height = CFG.H; sc = R.bufs.pip = { c, x: c.getContext('2d') }; }
+  const wilds = Net.role === 'host', v = wilds ? R.wv : R.fv, rect = { x0: 0, w: CFG.HALF, pip: true };
+  sc.x.clearRect(0, 0, CFG.HALF, CFG.H);
+  if (wilds) R.drawWorld(sc.x, dt, rect); else R.drawFactory(sc.x, dt, rect);
+  const CH = 500, sy = Math.max(0, Math.min(CFG.H - CH, Math.round(v.cy - CH / 2)));
+  const W = Math.round(CFG.W * pct / 100), H = Math.round(W * CH / CFG.HALF), x = CFG.W - W - 16, y = CFG.H - H - 16;
+  main.save();
+  main.fillStyle = '#1a0f28'; main.fillRect(x - 6, y - 6, W + 12, H + 12);
+  main.fillStyle = '#ffc94a'; main.fillRect(x - 2, y - 2, W + 4, H + 4);
+  main.imageSmoothingEnabled = true; main.imageSmoothingQuality = 'medium';
+  main.drawImage(sc.c, 0, sy, CFG.HALF, CH, x, y, W, H);
+  main.restore();
+  const label = wilds ? 'WIZARD' : 'FACTORY';
+  main.fillStyle = 'rgba(26,15,40,0.8)'; main.fillRect(x, y, Math.min(W, 150), 22);
+  drawText(main, label, x + 8, y + 17, 10, '#ffe36b', 'left', 'd');
+  if (wilds && G.w) {   // the Wizard's health and armour under the picture
+    const w = G.w, mh = WZ.maxHp();
+    main.fillStyle = 'rgba(26,15,40,0.85)'; main.fillRect(x, y + H - 22, W, 22);
+    main.fillStyle = '#3a2a4a'; main.fillRect(x + 6, y + H - 17, W - 12, 7);
+    main.fillStyle = '#ff5a6a'; main.fillRect(x + 6, y + H - 17, Math.round((W - 12) * Math.max(0, w.hp) / mh), 7);
+    if (w.armor > 0) { main.fillStyle = '#7bb8ff'; main.fillRect(x + 6, y + H - 9, Math.round((W - 12) * w.armor / CFG.wizard.armorMax), 4); }
+    if (w.dead) { main.fillStyle = 'rgba(40,0,10,0.55)'; main.fillRect(x, y, W, H - 22); drawText(main, 'DOWN', x + W / 2, y + H / 2, 16, '#ff9ab0', 'center', 'd'); }
+  }
+  R.pipRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
 };
 
 R.hpBar = function (ctx, x, y, w, fr, col) {
@@ -1385,7 +1424,7 @@ R.wkey = () => (Main.padW() ? 'A' : !Main.kbShared() || G.swapped ? 'SPACE' : '.
 // forage spots: a glint says "search me", a bar fills while he mashes, a searched bush stands bare until it regrows
 R.drawForage = function (ctx, v, o) {
   const w = G.w, p = R.toScreen(v, o.x, o.y), S = CFG.WT.S, t = w.t;
-  if (p[0] < CFG.HALF - 60 || p[0] > CFG.W + 60) return;
+  if (p[0] < R.rect.x0 - 60 || p[0] > R.rect.x0 + R.rect.w + 60) return;
   if (o.kind === 'cache') { if (!o.broken) R.drawCache(ctx, v, o, p); return; }
   if (o.broken) { dspr(ctx, SP.fbush_bare, p[0], p[1], S); return; }
   const spr = SP[o.kind === 'bush' ? 'fbush' : o.kind], shake = o.shake > 0 ? (Math.random() < 0.5 ? -3 : 3) : 0, h = spr.c.height * S;
@@ -1401,7 +1440,7 @@ R.drawForage = function (ctx, v, o) {
     ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffec8c' : '#ffd23a'; ctx.lineWidth = 6; diamond(ctx, p[0], p[1], 33, 15); ctx.stroke();
     // key cap hammering away + what's inside (a bush hides a pickup)
     const loot = o.kind === 'bush' ? ['potion'] : Object.keys(CFG.forage[o.kind].drop);
-    R.iprompt(ctx, p[0], p[1] - h - 42, R.wkey(), loot, CFG.W, CFG.HALF, true);
+    R.iprompt(ctx, p[0], p[1] - h - 42, R.wkey(), loot, R.rect.x0 + R.rect.w, R.rect.x0, true);
   }
 };
 // landmarks: camps wake when the Wizard walks up, shrines boost harnessers while he stands on them, crypts open if he waits at the door
@@ -1424,7 +1463,7 @@ R.drawMark = function (ctx, v, m) {
     diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4, M.shrineR * v.hh * 1.4); ctx.stroke(); ctx.globalAlpha = 1;
     if (s.flash > 0) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 9; ctx.globalAlpha = s.flash / 0.5; diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4 * (1.6 - s.flash), M.shrineR * v.hh * 1.4 * (1.6 - s.flash)); ctx.stroke(); ctx.globalAlpha = 1; }   // just claimed
     const wants = ELEMS.filter(e => e !== m.el).map(e => (s.fed && s.fed[e] ? 'ic_check' : 'core_' + e));   // the three Cores it takes (every element but its own); a check for each it already has
-    if (!done && near && !w.dead) R.iprompt(ctx, p[0], p[1] - 150, null, wants.concat(['ic_portal']), CFG.W, CFG.HALF, false);   // sent through the Spell Portal one by one (the Builder's job)
+    if (!done && near && !w.dead) R.iprompt(ctx, p[0], p[1] - 150, null, wants.concat(['ic_portal']), R.rect.x0 + R.rect.w, R.rect.x0, false);   // sent through the Spell Portal one by one (the Builder's job)
     dspr(ctx, SP.lm_shrine, p[0], p[1], S);
     dspr(ctx, SP['cr_' + m.el], p[0], p[1] - 39 - (Math.sin(t * (on ? 8 : 3)) > 0 ? 3 : 0), S, done && !on ? 0.6 : 1);
     if (!done && !near) ic = wants.map(k => [k]);   // what it wants
@@ -1484,11 +1523,11 @@ R.drawKeepCount = function (ctx, v, t) {
 };
 // goal pointer in the wilds: an arrow over the target, or a boxed pointer on the edge with the distance
 R.drawWHint = function (ctx, v, h, t) {
-  const p = R.toScreen(v, h.x, h.y), left = CFG.HALF;
-  const on = p[0] > left + 40 && p[0] < CFG.W - 40 && p[1] > 200 && p[1] < CFG.H - 40;
+  const p = R.toScreen(v, h.x, h.y), left = R.rect.x0, right = left + R.rect.w;
+  const on = p[0] > left + 40 && p[0] < right - 40 && p[1] > 200 && p[1] < CFG.H - 40;
   const bob = Math.sin(t * 6) > 0 ? 0 : 6;
   if (on) { R.arrow(ctx, p[0], p[1] - (h.lift || 80) - bob, 0, 1); return; }
-  const cx = Math.max(left + 60, Math.min(CFG.W - 60, p[0])), cy = Math.max(200, Math.min(CFG.H - 200, p[1]));
+  const cx = Math.max(left + 60, Math.min(right - 60, p[0])), cy = Math.max(200, Math.min(CFG.H - 200, p[1]));
   const dx = p[0] - cx, dy = p[1] - cy, m = Math.hypot(dx, dy) || 1;
   R.arrow(ctx, cx + dx / m * (20 - bob), cy + dy / m * (20 - bob), dx / m, dy / m);
   txt(ctx, Math.round(Math.hypot(h.x - G.w.x, h.y - G.w.y)) + 'm', cx - dx / m * 50, cy - dy / m * 50 + 6, 12, '#ffe36b', 'center', 'd');
@@ -1503,7 +1542,7 @@ R.buildMap = function () {
   R.mapC = c;
 };
 R.drawMinimap = function (c) {
-  const w = G.w, cx = CFG.W - 124, cy = CFG.H - 74, t = w.t;
+  const w = G.w, cx = R.rect.x0 + R.rect.w - 124, cy = Net.role === 'guest' ? 76 : CFG.H - 74, t = w.t;   // (the guest's picture-in-picture takes the bottom-right corner, so there it sits at the top)
   const at = (x, y) => [Math.round(cx + (x - y) * 0.5), Math.round(cy + (x + y - CFG.WW) * 0.25)];
   c.save();
   c.fillStyle = '#1a0f28';
@@ -1609,7 +1648,7 @@ R.drawAltarParts = function (ctx, v, w) {
   for (let i = 0; i < N; i++) {
     const dep = H(i, 1) * Math.max(0.5, K.form - 1.5), dur = 1.0 + H(i, 2) * 0.6, u = (c.t - dep) / dur;
     if (u <= 0 || u >= 1) continue;
-    const sx = CFG.HALF + 10 + H(i, 3) * 150, sy = -40 + H(i, 4) * 230, ex = tx + (H(i, 5) - 0.5) * 84, ey = ty + (H(i, 6) - 0.5) * 120, bend = Math.sin(u * Math.PI) * (H(i, 7) - 0.5) * 150;
+    const sx = R.rect.x0 + 10 + H(i, 3) * 150, sy = -40 + H(i, 4) * 230, ex = tx + (H(i, 5) - 0.5) * 84, ey = ty + (H(i, 6) - 0.5) * 120, bend = Math.sin(u * Math.PI) * (H(i, 7) - 0.5) * 150;
     for (let k = 0; k < 6; k++) {   // a trail behind each particle
       const uu = u - k * 0.03; if (uu <= 0) break;
       const e = uu * uu * (3 - 2 * uu), px = sx + (ex - sx) * e + bend * 0.5, py = sy + (ey - sy) * e - bend, sz = [15, 12, 12, 9, 6, 3][k];
@@ -1906,7 +1945,7 @@ R.drawChasm = function (ctx, v, sx, sy, x, y, t, ter, WW) {
 // a loose boulder (the Stonefist Charm's Gust shoves it)
 R.drawBoulder = function (ctx, v, b) {
   const p = R.toScreen(v, b.x, b.y), S = CFG.WT.S;
-  if (p[0] < CFG.HALF - 60 || p[0] > CFG.W + 60) return;
+  if (p[0] < R.rect.x0 - 60 || p[0] > R.rect.x0 + R.rect.w + 60) return;
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(snap(p[0] - 24), Math.round(p[1] / 3) * 3 - 3, 48, 9);
   dspr(ctx, SP.boulder, p[0], p[1], S);
   if (G.aug.worn.charm === 'stone' && Math.sin(G.w.t * 3 + b.x) > 0.7) { ctx.fillStyle = '#ffffff'; const gx = snap(p[0] + 15), gy = Math.round((p[1] - 48) / 3) * 3; ctx.fillRect(gx - 3, gy, 9, 3); ctx.fillRect(gx, gy - 3, 3, 9); }   // it glints for a Wizard who can move it
@@ -1942,12 +1981,12 @@ R.drawCache = function (ctx, v, o, p) {
   if (o.prog > 0) R.hpBar(ctx, p[0], p[1] - 36, 42, o.prog / CFG.forage.cache.taps, '#ffe36b');
   if (w.dig === o && !w.dead) {
     ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffec8c' : '#ffd23a'; ctx.lineWidth = 6; diamond(ctx, p[0], p[1], 33, 15); ctx.stroke();
-    R.iprompt(ctx, p[0], p[1] - 66, R.wkey(), ['iron', 'stone', 'elixir'], CFG.W, CFG.HALF, true);
+    R.iprompt(ctx, p[0], p[1] - 66, R.wkey(), ['iron', 'stone', 'elixir'], R.rect.x0 + R.rect.w, R.rect.x0, true);
   }
 };
 // with the Kilnsight Mask: glints at the edge of the screen point at landmarks nobody has claimed yet (within CFG.aug.mask.hintR)
 R.drawMaskHints = function (ctx, v, t) {
-  const w = G.w, left = CFG.HALF, right = CFG.W, Y = q => Math.round(q / 3) * 3;
+  const w = G.w, left = R.rect.x0, right = left + R.rect.w, Y = q => Math.round(q / 3) * 3;
   if (w.dead || G.aug.worn[AUGS.kiln.slot] !== 'kiln') return;
   for (const m of WZ.marks) {
     if (w.lm[m.id].state === 'done') continue;
@@ -2004,7 +2043,7 @@ R.drawVine = function (ctx, v, x, y, t) {
 // a spell's mark on the ground (G.w.decals). Every shape comes from the decal's own seed, so it holds still while it fades
 R.drawDecal = function (ctx, v, dc) {
   const s = R.toScreen(v, dc.x, dc.y);
-  if (s[0] < CFG.HALF - 260 || s[0] > CFG.W + 260 || s[1] < -160 || s[1] > CFG.H + 160) return;
+  if (s[0] < R.rect.x0 - 260 || s[0] > R.rect.x0 + R.rect.w + 260 || s[1] < -160 || s[1] > CFG.H + 160) return;
   const k = dc.t / dc.dur, a = dc.a * Math.min(1, dc.t / 0.12) * Math.min(1, (1 - k) / 0.4), rx = dc.r * v.hw * 1.414, ry = dc.r * v.hh * 1.414;
   const H = n => { const q = Math.sin(dc.s * 977 + n * 12.9898) * 43758.5453; return q - Math.floor(q); }, Y = q => Math.round(q / 3) * 3;
   const blot = (col, sc, al) => {
@@ -2071,7 +2110,7 @@ R.drawDecal = function (ctx, v, dc) {
 R.drawArc = function (ctx, v, a) {
   if (a.t < 0) return;
   const w = G.w, k = Math.min(1, a.t / a.T), tx = a.tx !== null ? a.tx : w.x, ty = a.ty !== null ? a.ty : w.y;
-  const g0 = R.toTile(v, CFG.HALF + 70, 300), dx = tx - g0[0], dy = ty - g0[1], m = Math.hypot(dx, dy) || 1, Y = q => Math.round(q / 3) * 3;
+  const g0 = R.toTile(v, R.rect.x0 + 70, 300), dx = tx - g0[0], dy = ty - g0[1], m = Math.hypot(dx, dy) || 1, Y = q => Math.round(q / 3) * 3;
   const at = u => {
     const bend = Math.sin(u * Math.PI) * Math.min(3, m * 0.12), gx = g0[0] + dx * u - dy / m * bend, gy = g0[1] + dy * u + dx / m * bend;
     const s = R.toScreen(v, gx, gy);
@@ -2093,31 +2132,31 @@ R.drawArc = function (ctx, v, a) {
 // the wilds' weather follows what the factory is processing (G.fac.weather, 0..1 per element, turning slowly): a colour wash per element,
 // plus Fire embers drifting up, Water rain, Air wind streaks, Earth dust; heavy work on several elements mixes them
 R.drawWeather = function (ctx, t) {
-  const Wt = G.fac.weather, L = CFG.HALF, H = CFG.H, P = 3, Q = q => Math.round(q / P) * P;
+  const Wt = G.fac.weather, X0 = R.rect.x0, L = R.rect.w, H = CFG.H, P = 3, Q = q => Math.round(q / P) * P, kd = L / CFG.HALF;   // (kd: a wider view gets proportionally more weather)
   const rnd = (i, s) => { const q = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return q - Math.floor(q); };
   const wash = { fire: ['#ff6a20', 0.13], water: ['#2a5aff', 0.11], air: ['#eef8ff', 0.09], earth: ['#b07a30', 0.12] };
-  for (const el in wash) if (Wt[el] > 0.02) { ctx.globalAlpha = Wt[el] * wash[el][1]; ctx.fillStyle = wash[el][0]; ctx.fillRect(L, 0, L, H); }
-  let n = Math.round(Wt.fire * 46);
+  for (const el in wash) if (Wt[el] > 0.02) { ctx.globalAlpha = Wt[el] * wash[el][1]; ctx.fillStyle = wash[el][0]; ctx.fillRect(X0, 0, L, H); }
+  let n = Math.round(Wt.fire * 46 * kd);
   for (let i = 0; i < n; i++) {   // embers rising and flickering
-    const y = H + 20 - ((t * (40 + rnd(i, 1) * 70) + rnd(i, 2) * (H + 40)) % (H + 40)), x = L + ((rnd(i, 3) * L + Math.sin(t * 1.3 + i) * 18) % L + L) % L;
+    const y = H + 20 - ((t * (40 + rnd(i, 1) * 70) + rnd(i, 2) * (H + 40)) % (H + 40)), x = X0 + ((rnd(i, 3) * L + Math.sin(t * 1.3 + i) * 18) % L + L) % L;
     ctx.globalAlpha = Math.min(1, Wt.fire * 1.5) * (0.5 + 0.5 * Math.sin(t * 9 + i)); ctx.fillStyle = i % 3 ? '#ff9a3a' : '#ffe36b';
     ctx.fillRect(Q(x), Q(y), i % 4 ? 3 : 6, i % 4 ? 3 : 6);
   }
-  n = Math.round(Wt.water * 70);
+  n = Math.round(Wt.water * 70 * kd);
   ctx.fillStyle = '#c8e4ff';
   for (let i = 0; i < n; i++) {   // slanting rain
-    const y = ((t * (520 + rnd(i, 4) * 200) + rnd(i, 5) * H) % (H + 30)) - 15, x = L + ((rnd(i, 6) * L - y * 0.25) % L + L) % L;
+    const y = ((t * (520 + rnd(i, 4) * 200) + rnd(i, 5) * H) % (H + 30)) - 15, x = X0 + ((rnd(i, 6) * L - y * 0.25) % L + L) % L;
     ctx.globalAlpha = 0.35 + Wt.water * 0.45; ctx.fillRect(Q(x), Q(y), 3, 15);
   }
-  n = Math.round(Wt.air * 26);
+  n = Math.round(Wt.air * 26 * kd);
   ctx.fillStyle = '#ffffff';
   for (let i = 0; i < n; i++) {   // gusts of wind streaking across
-    const x = L - 90 + (t * (380 + rnd(i, 7) * 220) + rnd(i, 8) * (L + 180)) % (L + 180), y = rnd(i, 9) * H + Math.sin(t * 2 + i) * 9;
+    const x = X0 - 90 + (t * (380 + rnd(i, 7) * 220) + rnd(i, 8) * (L + 180)) % (L + 180), y = rnd(i, 9) * H + Math.sin(t * 2 + i) * 9;
     ctx.globalAlpha = 0.2 + Wt.air * 0.35; ctx.fillRect(Q(x), Q(y), Q(24 + rnd(i, 10) * 36), 3);
   }
-  n = Math.round(Wt.earth * 40);
+  n = Math.round(Wt.earth * 40 * kd);
   for (let i = 0; i < n; i++) {   // dust motes drifting and bobbing
-    const x = L + ((t * (18 + rnd(i, 11) * 30) + rnd(i, 12) * L) % L), y = (rnd(i, 13) * H + Math.sin(t * 1.1 + i * 1.7) * 14 + H) % H;
+    const x = X0 + ((t * (18 + rnd(i, 11) * 30) + rnd(i, 12) * L) % L), y = (rnd(i, 13) * H + Math.sin(t * 1.1 + i * 1.7) * 14 + H) % H;
     ctx.globalAlpha = 0.35 + Wt.earth * 0.4; ctx.fillStyle = i % 2 ? '#c8a060' : '#8a6a3c'; ctx.fillRect(Q(x), Q(y), 6, 6);
   }
   ctx.globalAlpha = 1;
@@ -2202,7 +2241,7 @@ R.drawFx = function (ctx, v, f) {
     const a = 1 - Math.max(0, fr - 0.5) * 2, y = s[1] - 60 - Math.floor(fr * 6) * 6;
     R.defer.push(c => R.iconRow(c, s[0], y, [[f.k]], a));
   } else if (f.type === 'glowup') {   // the first Warden fell: a pillar of light, rings climbing off his feet, sparkles rising, a flash of white
-    const q = R.toScreenLocked(v, G.w.x, G.w.y), wd = Math.round((84 * (1 - fr) + 12) / 3) * 3, L = CFG.HALF, Y = n => Math.round(n / 3) * 3;
+    const q = R.toScreenLocked(v, G.w.x, G.w.y), wd = Math.round((84 * (1 - fr) + 12) / 3) * 3, Y = n => Math.round(n / 3) * 3;
     ctx.globalAlpha = Math.min(1, (1 - fr) * 1.4) * 0.5; ctx.fillStyle = '#fff2a8'; ctx.fillRect(snap(q[0] - wd / 2), q[1] - 700, wd, 700);
     ctx.globalAlpha = Math.min(1, (1 - fr) * 1.4); ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(q[0] - 6), q[1] - 700, 12, 700);
     for (let i = 0; i < 3; i++) {
@@ -2215,7 +2254,7 @@ R.drawFx = function (ctx, v, f) {
       const k = (fr * 2.4 + i * 0.37) % 1;
       ctx.globalAlpha = (1 - k) * (1 - fr * 0.5); ctx.fillRect(snap(q[0] + Math.sin(i * 12.9) * 42), Y(q[1] - k * 180), i % 3 ? 3 : 6, i % 3 ? 3 : 6);
     }
-    if (fr < 0.14) { ctx.globalAlpha = (0.14 - fr) / 0.14 * 0.55; ctx.fillStyle = '#ffffff'; ctx.fillRect(L, 0, L, CFG.H); }
+    if (fr < 0.14) { ctx.globalAlpha = (0.14 - fr) / 0.14 * 0.55; ctx.fillStyle = '#ffffff'; ctx.fillRect(R.rect.x0, 0, R.rect.w, CFG.H); }
     ctx.globalAlpha = 1;
   } else if (f.type === 'hsuck') R.drawHsuck(ctx, v, f, s, fr);
   else if (f.type === 'swirl') {   // a Cyclone Gust pulse: curved wind streaks spinning outward
@@ -2239,7 +2278,7 @@ R.drawFx = function (ctx, v, f) {
     ctx.fillStyle = '#ffffff'; for (let i = 0; i < 6; i++) ctx.fillRect(snap(s[0] + Math.cos(i * 1.05 + fr * 3) * wd * 0.8), Math.round((s[1] - h - 9 + Math.sin(i * 2.1) * 12) / 3) * 3, 9, 9);
     ctx.globalAlpha = 1;
   } else if (f.type === 'flash') {   // the Nova: a flash of white over the wilds
-    ctx.globalAlpha = (1 - fr) * 0.55; ctx.fillStyle = f.col; ctx.fillRect(CFG.HALF, 0, CFG.HALF, CFG.H); ctx.globalAlpha = 1;
+    ctx.globalAlpha = (1 - fr) * 0.55; ctx.fillStyle = f.col; ctx.fillRect(R.rect.x0, 0, R.rect.w, CFG.H); ctx.globalAlpha = 1;
   } else if (f.type === 'altarTxt') {   // words rising off the Summoning Altar (it will not take spells while the Warden lives)
     const a = fr < 0.1 ? fr / 0.1 : 1 - Math.max(0, fr - 0.65) / 0.35, y = s[1] - 186 - Math.floor(fr * 12) * 6, jx = fr < 0.15 ? (Math.floor(f.t * 40) % 2 ? 3 : -3) : 0;
     ctx.globalAlpha = Math.max(0, a); txt(ctx, f.text, s[0] + jx, y, 16, f.col, 'center', 'd'); ctx.globalAlpha = 1;

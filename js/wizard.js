@@ -47,6 +47,20 @@ WZ.bucket = null;    // per-tile arrays of decor / harvestables / landmarks
 WZ.palette = [];
 WZ.marks = [];       // landmarks: { id, type: 'camp'|'shrine'|'crypt', x, y, el? }
 WZ.forage = [];      // dirt mounds, stick piles and berry bushes: { kind, x, y, prog, broken, respawn }
+// The harvestables and forage spots are static layout (regenerated from the seed) plus a little state that changes in play: hp, broken, respawn timer, hit flash,
+// dig progress. That state lives in G.w (sparse: G.w.hv / G.w.fg, keyed by the node's id, only for nodes that differ from fresh), so a snapshot sees it;
+// the module objects read and write it through these accessors, so the rest of the code still says h.hp, o.broken, ...
+WZ.nodeProps = function (o, store, defs) {
+  for (const key in defs) {
+    const dflt = typeof defs[key] === 'function' ? defs[key] : () => defs[key];
+    Object.defineProperty(o, key, {
+      enumerable: true, configurable: true,
+      get() { const st = G && G.w && G.w[store], e = st && st[o.id]; return e && key in e ? e[key] : dflt(o); },
+      set(v) { const st = G.w[store]; let e = st[o.id]; if (!e) { if (v === dflt(o)) return; e = st[o.id] = {}; } e[key] = v; },
+    });
+  }
+};
+const FORAGE_STATE = { prog: 0, lastT: 0, broken: false, respawn: 0, shake: 0 };
 WZ.generate = function () {
   const WW = CFG.WW, WH = CFG.WH;
   // a small flat palette per terrain (8-bit look): 8 shade slots, but only 3 distinct steps
@@ -207,7 +221,8 @@ WZ.generate = function () {
       const x = 2 + r() * (WW - 4), y = 2 + r() * (WH - 4);
       if (hostile(tyAt(x, y)) || tyAt(x, y) === T_BOG || Math.hypot(x - SPAWN.x, y - SPAWN.y) < CFG.world.minSpawnDist || nearMark(x, y)) continue;
       const def = CFG.harvest[k];
-      const h = { x, y, kind: k, hp: def.hp, maxHp: def.hp, broken: false, respawn: 0, flash: 0, harv: true };
+      const h = { id: WZ.harv.length, x, y, kind: k, maxHp: def.hp, harv: true };
+      WZ.nodeProps(h, 'hv', { hp: o => o.maxHp, broken: false, respawn: 0, flash: 0, surf: undefined });
       WZ.harv.push(h); add(h); c++;
     }
   }
@@ -218,7 +233,8 @@ WZ.generate = function () {
     for (let c = 0, tries = 0; c < CFG.forage[k].count && tries < 20000; tries++) {
       const x = 2 + r() * (WW - 4), y = 2 + r() * (WH - 4);
       if (ground[k].indexOf(tyAt(x, y)) < 0 || Math.hypot(x - SPAWN.x, y - SPAWN.y) < 4 || nearMark(x, y)) continue;
-      const o = { x, y, kind: k, prog: 0, lastT: 0, broken: false, respawn: 0, shake: 0, forage: true };
+      const o = { id: WZ.forage.length, x, y, kind: k, forage: true };
+      WZ.nodeProps(o, 'fg', FORAGE_STATE);
       WZ.forage.push(o); add(o); c++;
     }
   }
@@ -227,7 +243,8 @@ WZ.generate = function () {
   for (let c = 0, tries = 0; c < CC.count && tries < 20000; tries++) {
     const x = 2 + rc() * (WW - 4), y = 2 + rc() * (WH - 4);
     if ([T_GRASS, T_DIRT, T_SAND, T_DARK, T_FLOWER].indexOf(tyAt(x, y)) < 0 || Math.hypot(x - SPAWN.x, y - SPAWN.y) < 6 || nearMark(x, y)) continue;
-    const o = { x, y, kind: 'cache', prog: 0, lastT: 0, broken: false, respawn: 0, shake: 0, forage: true, hidden: true };
+    const o = { id: WZ.forage.length, x, y, kind: 'cache', forage: true, hidden: true };
+    WZ.nodeProps(o, 'fg', FORAGE_STATE);
     WZ.forage.push(o); add(o); c++;
   }
   // extra grass tufts all over (their own RNG, so nothing above moved): they lean as the Wizard and big foes push through them
@@ -349,6 +366,7 @@ WZ.fresh = function () {
     enemies: [], proj: [], eproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
     time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
     cine: null, rit: 0, quake: 0, altarFlash: 0,   // the Altar's landing cinematic, the Chimera ritual countdown, the world shake after the impact, the flash when a spell hits it
+    hv: {}, fg: {},   // harvestable / forage node state (see WZ.nodeProps)
     arcs: [], decals: [], bend: {}, tmod, tmodN, kick: null, jump: null,   // deliveries in flight, ground marks, leaning grass, spell terrain, recoil, geyser jump
     boulders: (WZ.boulderSpots || []).map(b => ({ x: b.x, y: b.y, vx: 0, vy: 0 })), blink: null, glowT: 0, scorchT: 0,   // loose boulders, the Circlet's blink, the glow-up timer, time spent on scorched ground
     lm: WZ.marks.map(() => ({ state: 'idle', t: 0, sp: 0, near: false })),
@@ -371,7 +389,7 @@ WZ.bankLooseShards = function () {
   for (const a of w.arcs) if (a.then === 'drop') G.fac.outQ.push(a.kind);   // overflow still in the air: it waits at the portal for the next expedition
   w.arcs = w.arcs.filter(a => a.then !== 'drop');
 };
-WZ.reenter = function () { WZ.bankLooseShards(); G.w = WZ.fresh(); };
+WZ.reenter = function () { WZ.bankLooseShards(); const hv = G.w.hv, fg = G.w.fg; G.w = WZ.fresh(); G.w.hv = hv; G.w.fg = fg; };   // the trees and spots keep their state from one expedition to the next (a new game or a load starts them fresh)
 
 // ---------- helpers ----------
 const rand = (a, b) => a + Math.random() * (b - a);

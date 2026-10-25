@@ -228,7 +228,7 @@ FA.initial = function () {
   FA.splitConn(sp); sp.pct = { 0: CFG.starterSplit, 1: 100 - CFG.starterSplit };   // its outputs are east (the portal belts) and south (the Spawner)
   G.bd = FA.freshBuilder();
 };
-FA.freshBuilder = () => { const B = CFG.factory.base; return { x: B.x0 + 6.5, y: B.y0 + 4.5, vx: 0, vy: 0, fx: 1, fy: 0, target: null, then: null, stuckT: 0, gather: null, apT: 0,
+FA.freshBuilder = () => { const B = CFG.factory.base; return { x: B.x0 + 6.5, y: B.y0 + 4.5, vx: 0, vy: 0, fx: 1, fy: 0, flipS: false, target: null, then: null, stuckT: 0, gather: null, apT: 0,
   bob: 0, moving: false, squash: 0, throwCd: 0, dustT: 0, roll: 0, rollCd: 0, rdx: 1, rdy: 0, ghosts: [] }; };
 
 // Floor Tiles: a blueprint placed just outside the floor; thrown its materials like any building, it turns into floor when finished.
@@ -1299,6 +1299,9 @@ FA.moveBuilder = function (dt, ix, iy) {
     if (bd.trailT <= 0) { bd.trailT = 0.07; const tc = Players.trailCol('builder'); if (tc) G.fac.parts.push({ x: bd.x, y: bd.y, z: 0.15, vx: (Math.random() - 0.5) * 0.8, vy: (Math.random() - 0.5) * 0.8, vz: 1.2 + Math.random() * 1.4, g: 3, t: 0.7, col: tc }); }
   }
   if (wasMoving !== bd.moving) bd.squash = 0.12;
+  // facing flips with hysteresis: moving straight up or down the screen sits right on the threshold and used to flicker (state, not drawing: the renderer only reads bd.flipS)
+  const fd = bd.fx - bd.fy;
+  if (fd < -0.3) bd.flipS = true; else if (fd > 0.3) bd.flipS = false;
   if (bd.target) {
     if (moved < 0.0005 && m > 0) { bd.stuckT += dt; if (bd.stuckT > 0.35) { bd.target = null; bd.then = null; bd.stuckT = 0; } } else bd.stuckT = 0;
   }

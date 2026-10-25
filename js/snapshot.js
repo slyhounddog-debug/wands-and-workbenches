@@ -22,8 +22,8 @@ const Snap = { snap: null, mode: 'off', img: null, report: null, MODES: ['live',
   // Live state outside G that the renderers may read without it being a leak: scratch the renderer owns, and the world that is
   // generated once from a fixed seed (terrain, palette, landmark positions). Everything else on these modules is a leak.
   const ALLOW = new Set([
-    'R.defer', 'R.px', 'R.org', 'R.bufs', 'R.fv', 'R.wv', 'R.mapC',
-    'WZ.terrain', 'WZ.palette', 'WZ.marks',
+    'R.defer', 'R.px', 'R.org', 'R.bufs', 'R.fv', 'R.wv', 'R.mapC', 'R.rect',   // (R.rect: the rectangle the draw call was given)
+    'WZ.terrain', 'WZ.palette', 'WZ.marks', 'WZ.bucket',   // (WZ.bucket is the static layout of nodes; their changing state is G.w.hv / G.w.fg)
     'FA.splitCol',   // constant colour table
   ]);
   // The audit of 2026-10-22: what is already known to leak or break the rules. The photo test reports these as KNOWN; the standing
@@ -34,8 +34,6 @@ const Snap = { snap: null, mode: 'off', img: null, report: null, MODES: ['live',
       'read R.fcam', 'read R.wcam',                                  // smoothed cameras live on R
       'read R.focus', 'read R.hoverB', 'read R.ghost', 'read R.demo', 'read R.aim', 'read R.hint', 'read R.whint', 'read R.padMode',   // prompts, pointers, placement ghost: computed in Main.updateFocus, stored on R
       'read UI.treeOpen',                                            // the skill tree being open lives in UI (and it freezes the sim)
-      'read WZ.bucket',                                              // harvestables / forage / decor state (broken, flash, hp, progress) lives in WZ module arrays
-      'write G.bd.flipS',                                            // R.drawBuilder writes the facing flip into G
     ]),
     issues: [
       'alias G.fac.bld[]', 'alias G.fac.belts[]', 'alias G.bd.then', 'alias G.bd.gather', 'alias G.lock',   // grid cells ARE the bld / belts objects, and targets point into them
@@ -95,6 +93,12 @@ const Snap = { snap: null, mode: 'off', img: null, report: null, MODES: ['live',
     Snap.report = null;
     return snap;
   };
+
+  // The wire snapshot (online co-op, js/net.js): G as one JSON string. This is the literal rule of the guardrails (JSON.parse(JSON.stringify(G)) must work) taken at face
+  // value: the native serializer drops functions and turns NaN / Infinity into null, exactly the cases capture() reports as issues, and it is far cheaper than capture's
+  // audit walk (no alias or cycle bookkeeping), which matters 20 times a second. tools/snapcheck compares it with capture().G on every run. Duplicated identity (a grid
+  // cell that IS a building) simply becomes two equal copies: the guest never mutates its copy.
+  Snap.wire = function () { return JSON.stringify(G); };
 
   // ---------- the leak alarm ----------
   let leaks = new Map();

@@ -159,7 +159,7 @@ Main.stockSaved = function () {
 };
 Main.facSaved = () => FA.toJSON();
 Main.save = function () {
-  if (!G) return;
+  if (!G || Net.role === 'guest') return;   // (the guest holds a copy of the host's state: it writes no save)
   const key = 'wands2_save_slot' + G.slot;
   try {
     // shards still lying in the wilds count as banked in the save, so quitting mid-run never loses them
@@ -208,7 +208,10 @@ Main.helpFoot = function () {
 };
 Main.toTitle = function (noSave) {
   DevBot.set(null); Book.close(true);
-  if (!noSave && G) { WZ.bankLooseShards(); Main.save(); }
+  if (!noSave && G && Net.role !== 'guest') { WZ.bankLooseShards(); Main.save(); }
+  if (Net.role) Net.close();   // an online session ends with the game (the host's save is already written, the guest has none)
+  Main.netUi(null);
+  UI.show('pause', false); UI.show('results', false); UI.show('victory', false);
   STATE = 'menu';
   UI.splitB = null; UI.show('splitModal', false); UI.askB = null; UI.show('askModal', false);
   UI.show('game', false); UI.show('menu', true);
@@ -219,7 +222,9 @@ Main.toTitle = function (noSave) {
 // ---------- controls ----------
 const KV = (l, r, u, d) => [(IN.down(r) ? 1 : 0) - (IN.down(l) ? 1 : 0), (IN.down(d) ? 1 : 0) - (IN.down(u) ? 1 : 0)];
 const clampv = v => Math.max(-1, Math.min(1, v));
-const mouseInFactory = () => IN.mouse.moved && IN.mouse.x >= 0 && IN.mouse.x < CFG.HALF && IN.mouse.y > 0 && IN.mouse.y < 800;
+Main.viewW = () => (Net.on ? CFG.W : CFG.HALF);   // the width of the Builder's world on screen: half the stage side by side, all of it online
+const overPip = () => { const p = R.pipRect, m = IN.mouse; return !!(Net.on && p && m.x >= p.x && m.x < p.x + p.w && m.y >= p.y && m.y < p.y + p.h); };
+const mouseInFactory = () => IN.mouse.moved && IN.mouse.x >= 0 && IN.mouse.x < Main.viewW() && IN.mouse.y > 0 && IN.mouse.y < 800 && !overPip();
 
 function hoverPoint(view) { return R.toTile(view, IN.mouse.x, IN.mouse.y); }
 function hoverTile(view) { const t = hoverPoint(view); return [Math.floor(t[0]), Math.floor(t[1])]; }
@@ -365,7 +370,7 @@ Main.controls = function (dt) {
     else Main.pause(true);
   }
   if (IN.hit('KeyT') || (p0 && p0.y && !UI.splitB)) UI.openTree('L');
-  if (IN.hit('KeyY') || (p1 && p1.y)) UI.openTree('R');
+  if (!Net.on && (IN.hit('KeyY') || (p1 && p1.y))) UI.openTree('R');   // (online the Wizard's tree is on the guest's screen)
   if (IN.hit('KeyH')) { UI.help(); G.helpT = 0; }
   if (IN.hit('KeyC') && !frozenNow() && !UI.splitB && !UI.askB) Book.open();   // the Collection Book: every spell and creature
   if ((IN.hit('KeyP') || (p0 && p0.l3)) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
@@ -376,7 +381,7 @@ Main.controls = function (dt) {
   let rot = 0;
   if (IN.hit('BracketLeft') || (p0 && p0.lb)) rot = -1;
   if (IN.hit('BracketRight') || (p0 && p0.rb)) rot = 1;
-  if (IN.wheel && IN.mouse.x < CFG.HALF && !UI.treeOpen.L) rot = IN.wheel > 0 ? 1 : -1;
+  if (IN.wheel && IN.mouse.x < Main.viewW() && !UI.treeOpen.L) rot = IN.wheel > 0 ? 1 : -1;
   if (rot && !(UI.treeOpen.L || UI.treeOpen.R)) UI.cycle(rot);
   if (!(UI.treeOpen.L || UI.treeOpen.R) && Main.graceT <= 0 && (IN.hit('KeyQ') || (p0 && p0.rt))) UI.cycleFam(IN.shift() ? -1 : 1);   // next member of a family slot
   if (IN.hit('KeyB') || IN.hit('Delete') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt, or an empty tile to lift it (full refund). Esc cancels.', 'L', 'ic_bomb'); }
@@ -388,7 +393,7 @@ Main.controls = function (dt) {
   }
 
   // swap roles: hold X (keyboard) or Start (either pad)
-  const holding = IN.down('KeyX') || (p0 && p0.startHeld) || (p1 && p1.startHeld);   // either pad, or X on the keyboard
+  const holding = !Net.on && (IN.down('KeyX') || (p0 && p0.startHeld) || (p1 && p1.startHeld));   // either pad, or X on the keyboard (no job swap online: the roles are fixed)
   if (G.swapCd > 0) G.swapCd -= dt;
   if (holding && G.swapCd <= 0) {
     G.swapHold += dt;
@@ -411,9 +416,9 @@ Main.controls = function (dt) {
 
   // an open skill tree (either side) freezes both halves, so nobody acts until it closes (and for the "And..." beat after)
   const inTree = UI.treeOpen.L || UI.treeOpen.R, frozen = inTree || Main.graceT > 0;
-  if (inTree && (IN.hit('KeyQ') || (p0 && p0.x) || (p1 && p1.x))) UI.undoBank();   // Q / pad X: take the last deposit back out
-  if (inTree) Main.treePads(dt, p0, p1);
-  if (frozen) { bix = 0; biy = 0; use = false; pick = false; wix = 0; wiy = 0; roll = false; hold = false; broll = false; }
+  if (inTree && (IN.hit('KeyQ') || (p0 && p0.x) || (!Net.on && p1 && p1.x))) UI.undoBank();   // Q / pad X: take the last deposit back out
+  if (inTree) Main.treePads(dt, p0, Net.on ? null : p1);
+  if (frozen) { bix = 0; biy = 0; use = false; pick = false; broll = false; if (!Net.on) { wix = 0; wiy = 0; roll = false; hold = false; } }   // (online a tree only holds ITS player still: the sim and the other player carry on)
   // a demolish question is open: E / Enter / A confirms, Esc / B backs out
   if (UI.askB && !frozen) {
     if (use || IN.hit('Enter') || (p0 && p0.a)) UI.askClose(true);
@@ -510,9 +515,9 @@ Main.holdKeyName = () => (Main.padW() ? 'X' : 'Z');
 
 // ---------- per-frame simulation ----------
 Main.step = function (dt, ctl) {
-  ctl = ctl || Main.controls(dt);
-  // the whole game (machines, belts, Builder, wilds) freezes while anyone has a skill tree open, then for the "And..." beat
-  const inTree = UI.treeOpen.L || UI.treeOpen.R;
+  ctl = ctl || (Main.modal() ? Main.wizardOnly() : Main.controls(dt));
+  // the whole game (machines, belts, Builder, wilds) freezes while anyone has a skill tree open, then for the "And..." beat. Online nothing ever freezes it.
+  const inTree = !Net.on && (UI.treeOpen.L || UI.treeOpen.R);
   if (!inTree && Main.graceT > 0) { Main.graceT -= dt; if (Main.graceT <= 0) UI.and(false); }
   const frozen = inTree || Main.graceT > 0;
   const facHalt = frozen || G.w.dead;   // the factory waits while the Wizard is down (the wilds keep running for the death effects)
@@ -532,7 +537,16 @@ Main.step = function (dt, ctl) {
     if (!facHalt && bd.moving) { st.b -= dt; if (st.b <= 0) { st.b = 0.3; AU.sfx('step_b'); } } else st.b = 0.08;
     if (wz.moving && !wz.dead && !(wz.roll > 0)) { st.w -= dt; if (st.w <= 0) { st.w = 0.27; AU.sfx('step_w'); } } else st.w = 0.08;
   }
-  if (G.w.dead && !G.w.deadHandled) { G.w.deadHandled = true; setTimeout(() => { if (G && G.w.dead) UI.showResults(); }, 900); }
+  if (G.w.dead && !G.w.deadHandled) {
+    G.w.deadHandled = true;
+    if (!Net.on) setTimeout(() => { if (G && G.w.dead) UI.showResults(); }, 900);
+    else UI.toast('The Wizard is down. The factory waits until he is back.', 'L', 'ic_skull');   // (the guest sees the results screen on his side)
+  }
+  if (Net.on && G.w.dead) {   // online the Wizard re-enters with his roll button (the results screen on the guest's side is the same press)
+    G.w.deadT = (G.w.deadT || 0) + dt;
+    const p1 = Main.padW();
+    if (G.w.deadT > 1 && p1 && p1.a) { WZ.reenter(); R.wcam.x = G.w.x; R.wcam.y = G.w.y; AU.sfx('buy'); }
+  }
   if (!frozen) { G.stats.time += dt; Main.sample(dt); }
   // the soundtrack follows the game: factory activity, monsters crowding the Wizard, the Chimera
   const w = G.w;
@@ -574,10 +588,12 @@ Main.treePads = function (dt, p0, p1) {
 Main.graceT = 0;
 Main.treeClosed = function () {
   if (!G) return;
+  if (Net.role === 'guest') { IN.squelch(); return; }
   G.ibuf = null; G.pRepeat = 0; G.mRepeat = 0; G.drag = null; G.lock = null;
   G.bd.target = null; G.bd.then = null; G.bd.burst = 0;
   G.w.target = null; G.w.rollBuf = 0;
   IN.squelch();
+  if (Net.on) return;   // online nothing holds for a beat: the other player never stopped
   Main.graceT = CFG.graceTime;
   UI.and(true);
 };
@@ -709,8 +725,18 @@ Main.updateFocus = function () {
 Main.pause = function (on) {
   if (!G) return;
   if (on) { UI.closeSplit(); UI.askClose(false); }
-  if (G.paused !== on) AU.sfx(on ? 'menu_open' : 'menu_close');
-  G.paused = on;
+  if (Net.on) {   // online the menu is only a screen: the sim (and the other player) keep going
+    if (Main.menuUp !== on) AU.sfx(on ? 'menu_open' : 'menu_close');
+    Main.menuUp = on;
+    const c = $('pCode');
+    c.classList.toggle('hidden', !Net.code);
+    c.innerHTML = Net.code ? 'ROOM <b>' + Net.code + '</b>' + (Net.stats.kbps ? ' &nbsp; ' + Net.stats.kbps + ' KB/s' : '') : '';
+    $('pQuit').textContent = Net.role === 'host' ? 'END ONLINE GAME' : 'LEAVE GAME';
+  } else {
+    if (G.paused !== on) AU.sfx(on ? 'menu_open' : 'menu_close');
+    G.paused = on;
+    $('pCode').classList.add('hidden'); $('pQuit').innerHTML = 'SAVE &amp; TITLE';
+  }
   UI.show('pause', on);
   UI.show('pauseMain', true); UI.show('pauseSet', false);
   AU.hold(on);   // the music waits with the game
@@ -748,15 +774,23 @@ function frame(ts) {
   lastTs = ts;
   IN.pollPads();
   if (DevBot.on) DevBot.drive(dt);   // dev-only Wizard bot: writes the Wizard's pad state, nothing else
-  if (STATE === 'play' && G) {
+  if (Net.role === 'host') Net.drive();   // online: the guest's pad becomes the Wizard's pad, the same seam
+  if (STATE === 'guest') {
+    try { Main.guestFrame(dt, ts); } catch (e) { R.defer = null; UI.err(e); }
+  } else if (STATE === 'play' && G) {
     try {
       Snap.tick();   // dev-only: the snapshot bar and its keys (inert unless the F3 overlay is open)
       Book.tick(dt);   // the Collection Book's keys and pad while it is open
       if (Snap.mode !== 'off') { AU.hum(0); Snap.draw(ctx, ts); Main.still = 0; }   // a snapshot view is up: the simulation is frozen and the cached frame shows
       else {
-      if (!G.paused) Main.step(dt);
+      if (!G.paused && !(Net.role === 'host' && Net.state !== 'live')) Main.step(dt);   // (online, the host waits while the guest is away)
       else AU.hum(0);
-      if (G) {
+      if (Net.role === 'host') { Net.hostTick(dt); Main.netBannerTick(); }
+      if (G && Net.on) {   // online the Builder's world fills the stage with the Wizard's in a corner; nothing is ever frozen, so nothing is skipped
+        ctx.clearRect(0, 0, CFG.W, CFG.H);
+        R.drawFactory(ctx, dt, { x0: 0, w: CFG.W });
+        R.drawPip(ctx, dt);
+      } else if (G) {
         // A frozen game (pause menu, a skill tree, the "And..." beat) is the same picture every frame: once it has settled for a few frames the canvas is left alone,
         // and a half hidden under its own opaque tree panel is not drawn at all. Main.still counts the frames since anything changed (UI.changed resets it).
         const frozen = G.paused || UI.treeOpen.L || UI.treeOpen.R || Main.graceT > 0;
@@ -810,9 +844,10 @@ window.addEventListener('DOMContentLoaded', () => {
     UI.show('pauseMain', false); UI.show('pauseSet', true);
   };
   $('pQuit').onclick = () => { Main.pause(false); Main.toTitle(); };
-  window.addEventListener('beforeunload', () => { if (STATE === 'play') Main.save(); });
+  $('mOnline').onclick = () => UI.onlinePage();
+  window.addEventListener('beforeunload', () => { if (STATE === 'play') Main.save(); if (Net.role) Net.close(); });
   // losing focus or switching tabs pauses play and silences all audio until the window is back
-  const away = () => { if (STATE === 'play' && G && !G.paused) Main.pause(true); AU.sleep(true); };
+  const away = () => { if (Net.on) return; if (STATE === 'play' && G && !G.paused) Main.pause(true); AU.sleep(true); };   // (online the game carries on: it is not the host's alone to stop)
   window.addEventListener('blur', away);
   window.addEventListener('focus', () => AU.sleep(false));
   document.addEventListener('visibilitychange', () => {
@@ -850,7 +885,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // ---------- test hook ----------
 window.__wands = {
   get G() { return G; },
-  Main, FA, WZ, UI, R, CFG, DevBot, Snap,
+  Main, FA, WZ, UI, R, CFG, DevBot, Snap, Net,
   start(slot) { Main.newGame(slot || 1); },
   deliver(kind) { FA.deliver(kind); },
   bank(kind, n) { for (let i = 0; i < (n || 1); i++) FA.bank(kind); },

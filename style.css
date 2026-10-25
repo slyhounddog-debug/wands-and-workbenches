@@ -611,3 +611,36 @@ button.big.slot em { grid-column: 2; grid-row: 1 / 4; align-self: center; font-s
 .res.comp { gap: 2px; }
 .res.comp:empty { display: none; }
 .res.comp b { margin-right: 6px; }
+
+/* ===== online co-op (js/online.js, js/net.js) ===== */
+.netNote { margin: 0 0 8px; font-size: 19px; line-height: 1.1; color: var(--muted); text-align: center; }
+.netCode { font: 12px var(--display); color: var(--muted); margin-bottom: 8px; }
+.netCode b { color: var(--gold); font-size: 20px; letter-spacing: 4px; margin-left: 6px; }
+.bigCode { font: 56px var(--display); color: var(--gold); letter-spacing: 12px; text-align: center; margin: 14px 0 6px; text-shadow: 4px 4px 0 var(--ink); }
+.netStatus { min-height: 44px; margin: 6px 0 10px; font-size: 20px; line-height: 1.1; color: var(--cream); text-align: center; }
+.netStatus.err { color: #ff9a9a; }
+.netStatus .dots::after { content: ''; animation: netDots 1.2s steps(4) infinite; }
+@keyframes netDots { 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+#joinCode { width: 100%; box-sizing: border-box; font: 40px var(--display); letter-spacing: 12px; text-align: center; text-transform: uppercase; padding: 16px 8px 12px; background: var(--ink); color: var(--gold); border: 4px solid var(--panel-hi); outline: none; }
+#joinCode:focus { border-color: var(--gold); }
+.slotRow { display: flex; gap: 10px; align-items: stretch; }
+.slotRow button.slot { flex: 1; }
+.slotRow button.ow { flex: none; min-width: 0; width: 150px; font-size: 11px; }
+#netBanner { background: rgba(10, 4, 20, 0.78); z-index: 80; }
+#netBanner .panel { width: 640px; animation: tin .2s steps(2); }
+#netBanner .panel p { font-size: 20px; line-height: 1.15; margin: 8px 0; }
+#netBanner .panel p b { color: var(--gold); font: 16px var(--display); }
+#netBanner .splitBtns { display: flex; gap: 12px; margin-top: 12px; }
+#netBanner .splitBtns button.big { min-width: 0; margin: 4px 0; padding: 14px 10px 12px; font-size: 12px; }
+
+/* online layout: the player's own world fills the stage, the partner's is a picture-in-picture drawn on the canvas */
+#game.online #splitLine, #game.online #wizPause, #game.online #facNote { display: none; }
+#game.onHost #questW, #game.onHost #hudR, #game.onHost #eggQ { display: none; }
+#game.onHost #vigL { width: 1600px; }
+#game.onGuest #hudL, #game.onGuest #questB, #game.onGuest #hotbar, #game.onGuest #inspect, #game.onGuest #hotTip, #game.onGuest #vigL, #game.onGuest #toastL, #game.onGuest #swapRing { display: none; }
+#game.onGuest #hudR { left: 16px; right: auto; align-items: flex-start; }
+#game.onGuest #questW { left: 316px; }
+#game.onGuest #eggQ { left: 16px; }
+#game.onGuest #toastR { left: 540px; }
+#game.onGuest #help { bottom: 20px; width: 760px; grid-template-columns: 1fr; }
+#game.onGuest #help .hfoot { grid-column: 1; }

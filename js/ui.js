@@ -34,7 +34,9 @@ UI.decorate = function (root) {   // <i data-ic="ic_heart" data-s="24"></i> plac
 };
 
 // ---------- toasts ----------
-UI.toast = function (text, side, icon) {
+UI.toast = function (text, side, icon, local) {
+  if (UI.toastCap) { UI.toastCap.push({ text, side, icon }); return; }   // the guest's purchase is being resolved: its messages go back to him (Net.hooks.buy)
+  if (!local && side === 'R') Net.sendToast(text, icon);   // the Wizard's messages also reach the Wizard's screen (online host)
   const box = $(side === 'R' ? 'toastR' : 'toastL');
   if (!box) return;
   for (const c of box.children) if (c.dataset.t === text) { c.classList.remove('out'); c._ttl = 2.6; c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); return; }
@@ -150,14 +152,14 @@ UI.updateHud = function (dt) {
   }
   // whoever opens a skill tree freezes the wilds: say so on the other half in plain words
   const tl = UI.treeOpen.L, tr = UI.treeOpen.R;
-  $('wizPause').classList.toggle('hidden', !tl || tr);
-  $('facNote').classList.toggle('hidden', !tr || tl);
+  $('wizPause').classList.toggle('hidden', Net.on || !tl || tr);
+  $('facNote').classList.toggle('hidden', Net.on || !tr || tl);
   UI.updateGear();
   UI.updateQuest(dt);
   UI.updateEvent();
   UI.updateEggQ();
-  UI.updatePins(dt);
-  UI.updateHotbar();
+  if (Net.role !== 'guest') { UI.updatePins(dt); UI.updateHotbar(); }
+  if (Net.on) UI.syncTrees();
   UI.updateDebug(dt);
   if (UI.tipT > 0) { UI.tipT -= dt; if (UI.tipT <= 0 && !UI.tipHover) $('hotTip').classList.add('hidden'); }
   UI.tickToasts(dt);
@@ -170,7 +172,7 @@ UI.updateGear = function () {
     const id = A.worn[sl[0]], cool = id === 'phoenix' && A.cd.phoenix > 0;
     s += '<span class="gs ' + (id ? '' : 'em ') + (cool ? 'cool' : '') + '" title="' + (id ? AUGS[id].name : sl[1]) + '">' + UI.img(id ? 'aug_' + id : 'aug_' + AUG_ORDER.find(k => AUGS[k].slot === sl[0]), 32) + (id ? '' : '<small>' + sl[1].toUpperCase().slice(0, 4) + '</small>') + (cool ? '<i style="width:' + Math.round((1 - A.cd.phoenix / P.cd) * 38) + 'px"></i>' : '') + '</span>';
   }
-  if (G.hold.on) s += '<span class="gs hold' + (G.hold.spell ? ' full' : '') + '" title="Held spell">' + (G.hold.spell ? UI.img(G.hold.spell, 32) : UI.img('ic_hand', 24)) + '<kbd>' + Main.holdKeyName() + '</kbd></span>';
+  if (G.hold.on) s += '<span class="gs hold' + (G.hold.spell ? ' full' : '') + '" title="Held spell">' + (G.hold.spell ? UI.img(G.hold.spell, 32) : UI.img('ic_hand', 24)) + '<kbd>' + (Net.role === 'guest' ? (IN.pad[0] ? 'X' : 'E') : Main.holdKeyName()) + '</kbd></span>';
   else s += '<span class="gs lockd" title="The held-spell slot opens when the first Warden falls">' + UI.img('ic_lock', 24) + '</span>';
   setHtml('gearCard', s);
 };
@@ -237,9 +239,10 @@ UI.questSide = function (side) {
     $('qBar' + side).style.display = 'none';
     return;
   }
-  if (G.qbase[side] == null) G.qbase[side] = q.stat ? q.stat(G) : 0;
-  const p = UI.questProg(side, q);
-  if (q.stat ? p[0] >= p[1] : q.done(G)) { UI.questDone(side, q); return; }
+  const guest = Net.role === 'guest';   // (the guest only reads: the host starts, counts and completes goals)
+  if (G.qbase[side] == null && !guest) G.qbase[side] = q.stat ? q.stat(G) : 0;
+  const p = guest && G.qbase[side] == null ? (q.stat ? [0, q.n] : (q.prog ? q.prog(G) : null)) : UI.questProg(side, q);
+  if (!guest && (q.stat ? p[0] >= p[1] : q.done(G))) { UI.questDone(side, q); return; }
   setHtml('qIcon' + side, UI.img(q.icon, 32));
   setHtml('qHead' + side, '<span>' + nm + ' GOAL ' + (i + 1) + '/' + list.length + '</span><span class="qr">' + (p ? '<em>' + Math.floor(p[0]) + '/' + p[1] + '</em>' : '') + '+' + q.xp + ' XP' + UI.giftHtml(q.gift, 16) + '</span>');
   setTxt('qText' + side, q.text);
@@ -249,7 +252,7 @@ UI.questSide = function (side) {
 UI.updateQuest = function (dt) {
   for (const side of QUEST_SIDES) UI.questSide(side);
   // pickups from a gift drop beside the Wizard one at a time, once he is alive and the game is running
-  if (G.pend && G.pend.length && G.w && !G.w.dead && !UI.treeOpen.L && !UI.treeOpen.R) {
+  if (Net.role !== 'guest' && G.pend && G.pend.length && G.w && !G.w.dead && !UI.treeOpen.L && !UI.treeOpen.R) {
     G.pendT = (G.pendT || 0) - dt;
     if (G.pendT <= 0) { G.pendT = 0.8; WZ.dropPickup(G.pend.shift()); }
   }
@@ -318,6 +321,7 @@ UI.updateDebug = function (dt) {
   UI.dbgT = (UI.dbgT || 0) - dt;
   if (UI.dbgT > 0) return;
   UI.dbgT = 0.25;
+  if (Net.role === 'guest') { el.innerHTML = '<b>' + UI.img('ic_chart', 14) + 'NET (guest)</b>' + UI.netHtml(); return; }
   const m = Main.metrics, a = m.samples[0], b = m.samples[m.samples.length - 1];
   if (!a || b.t - a.t < 2) { el.innerHTML = '<b>DEBUG</b><div>collecting...</div>' + DevBot.html(); return; }
   const min = (b.t - a.t) / 60, xpm = (b.xp - a.xp) / min, pkm = (b.pk - a.pk) / min, bkm = (b.bk - a.bk) / min;
@@ -346,7 +350,11 @@ UI.updateDebug = function (dt) {
     ' <span class="dim">' + ELEMS.map(k => k[0].toUpperCase() + f1(rateOf(k))).join(' ') + '</span></div>' +
     '<div>Spell Portal <b>' + FA.rate('spell') + '/min</b>  Skill Portal <b>' + FA.rate('skill') + '/min</b></div>' +
     '<div>Next unlock: <b>' + eta + '</b></div>' + UI.debugEvent() + UI.debugGear() +
-    '<div class="dim">Foes ' + G.w.enemies.length + '  working machines ' + G.fac.working + '  play ' + fmtTime(G.stats.time) + '</div>' + DevBot.html();
+    '<div class="dim">Foes ' + G.w.enemies.length + '  working machines ' + G.fac.working + '  play ' + fmtTime(G.stats.time) + '</div>' + DevBot.html() + (Net.role ? UI.netHtml() : '');
+};
+UI.netHtml = function () {
+  const s = Net.stats;
+  return '<div>NET <b>' + Net.role + '</b> ' + Net.state + ' room <b>' + (Net.code || '-') + '</b></div><div>Snapshot <b>' + s.rawKB.toFixed(0) + ' KB</b> raw, <b>' + s.zipKB.toFixed(1) + ' KB</b> sent (max ' + s.maxZip.toFixed(1) + '), <b>' + s.fps + '</b>/s, <b>' + s.kbps + ' KB/s</b>' + (Net.role === 'guest' ? ', ping <b>' + s.rtt + ' ms</b>' : '') + '</div>';
 };
 
 // ---------- hotbar: single slots plus families (Harnessers, Crafters, Power, Logistics, Spawners) whose member cycles ----------
@@ -618,6 +626,7 @@ UI.showNodeTip = function (side, id) {
   el.style.top = Math.max(8, Math.min(CFG.H - hgt - 8, y)) + 'px';
 };
 UI.buy = function (id) {
+  if (Net.role === 'guest') { Net.sendBuy(id); return; }   // online the guest only asks: the host checks the cost and applies it (the answer comes back as a snapshot and a buyres)
   const n = CFG.tree.find(t => t.id === id);
   if (!n) return;
   const c = UI.nodeCost(n);
@@ -681,6 +690,7 @@ UI.undoKind = function () {
   return null;
 };
 UI.undoBank = function () {
+  if (Net.role === 'guest') return;
   const k = FA.unbank();
   if (!k) { AU.sfx('error'); return; }
   AU.sfx('drop');
@@ -688,6 +698,7 @@ UI.undoBank = function () {
 };
 // ---------- pinned nodes: either player pins one (right-click in the tree); a card shows what's left and how ----------
 UI.pin = function (side, id) {
+  if (Net.role === 'guest') return;
   G.pins = G.pins || { L: null, R: null };
   G.pins[side] = G.pins[side] === id ? null : id;
   AU.sfx('blip'); UI.changed();
@@ -760,6 +771,12 @@ UI.updatePins = function (dt) {
     if (id && CFG.tree.find(t => t.id === id)) setHtml('pin' + sd, UI.pinHtml(sd, id));
   }
 };
+// online a tree stays open while the game runs on, so it follows the numbers it shows
+UI.syncTrees = function () {
+  if (!UI.treeOpen.L && !UI.treeOpen.R) return;
+  const sig = G.xp + '|' + JSON.stringify(G.bank) + '|' + JSON.stringify(G.tree);
+  if (sig !== UI.treeSig) { UI.treeSig = sig; UI.refreshTrees(); }
+};
 UI.refreshTrees = function () {
   if (UI.treeOpen.L) UI.renderTree('L');
   if (UI.treeOpen.R) UI.renderTree('R');
@@ -799,20 +816,23 @@ UI.showResults = function () {
   const el = $('results');
   el.innerHTML = '<div class="rIcon">' + UI.img('ic_skull', 48) + '</div><h2>THE WIZARD NEEDS A NAP</h2>' + UI.statsHtml() + '<p>The factory, stockpile, XP, bank and skill tree are all safe.</p><button class="big" id="rRe">RE-ENTER</button><button class="big ghost" id="rTitle">TITLE</button>';
   el.classList.remove('hidden');
-  $('rRe').onclick = () => { WZ.reenter(); R.wcam.x = G.w.x; R.wcam.y = G.w.y; el.classList.add('hidden'); AU.sfx('buy'); };
+  $('rRe').onclick = () => {
+    if (Net.role === 'guest') { Net.latchPress('a'); AU.sfx('buy'); return; }   // the roll button re-enters; the panel goes when the next snapshot shows him alive
+    WZ.reenter(); R.wcam.x = G.w.x; R.wcam.y = G.w.y; el.classList.add('hidden'); AU.sfx('buy');
+  };
   $('rTitle').onclick = () => { el.classList.add('hidden'); Main.toTitle(); };
 };
 UI.showVictory = function () {
   if (!G) return;
   const el = $('victory'), s = G.stats;
-  G.paused = true;
+  if (!Net.on) G.paused = true;   // (online the game cannot be stopped for one of the two)
   el.innerHTML = '<div class="panel px"><div class="rIcon">' + UI.img('ic_trophy', 64) + '</div><h2>THE CHIMERA FALLS!</h2><p class="sub2">Builder and Wizard, you did it together. You win!</p>' + UI.statsHtml() +
     '<div class="life">ALL TIME: ' + UI.img('ic_skull', 14) + s.kills + ' kills ' + UI.img('ic_portal', 14) + s.deliveries + ' deliveries ' + UI.img('ic_flag', 14) + (s.landmarks || 0) + ' landmarks ' + UI.img('ic_crown', 14) + (s.wins || 1) + ' win' + ((s.wins || 1) > 1 ? 's' : '') + ' ' + UI.img('ic_clock', 14) + fmtTime(s.time) + '</div>' +
     '<button class="big" id="vKeep">KEEP PLAYING</button><button class="big ghost" id="vTitle">SAVE &amp; TITLE</button></div>';
   el.classList.remove('hidden');
   Main.save();
-  $('vKeep').onclick = () => { el.classList.add('hidden'); G.paused = false; AU.sfx('buy'); };
-  $('vTitle').onclick = () => { el.classList.add('hidden'); G.paused = false; Main.toTitle(); };
+  $('vKeep').onclick = () => { el.classList.add('hidden'); if (!Net.on) G.paused = false; AU.sfx('buy'); };
+  $('vTitle').onclick = () => { el.classList.add('hidden'); if (!Net.on) G.paused = false; Main.toTitle(); };
 };
 
 // ---------- menu ----------
@@ -834,7 +854,7 @@ function slotLabel(i, s) {
   return '<b>SLOT ' + i + '</b><span>' + Math.floor(s.xp || 0) + ' XP, ' + nb + ' buildings, goals ' + (q.B + q.W) + '/' + (QUESTS.B.length + QUESTS.W.length) + '</span><small>' + when + '</small>';
 }
 UI.menuPage = function (page) {
-  ['menuMain', 'menuSlots', 'menuHow', 'menuSet'].forEach(id => UI.show(id, id === page));
+  ['menuMain', 'menuSlots', 'menuHow', 'menuSet', 'menuOnline', 'menuHost', 'menuJoin'].forEach(id => UI.show(id, id === page));
   if (page === 'menuMain') $('mContinue').classList.toggle('hidden', !UI.lastSlot());
 };
 UI.lastSlot = function () {
@@ -934,9 +954,13 @@ UI.settingsPage = function (box, back) {
   const s = AU.settings, row = (k, icon, label) => '<label>' + UI.img(icon, 24) + label + ' <b>' + Math.round(s[k] * 100) + '%</b><input data-k="' + k + '" type="range" min="0" max="100" value="' + Math.round(s[k] * 100) + '"></label>';
   box.classList.remove('wideCtl');
   box.innerHTML = '<h2>SETTINGS</h2>' + row('sfx', 'ic_sound', 'SOUND') + row('music', 'ic_music', 'MUSIC') +
+    '<label title="Online only: how big your partner\'s world is in the corner of your screen. 0% hides it. Only you see this setting.">' + UI.img('ic_portal', 24) + 'PARTNER VIEW <b>' + (s.pip ? s.pip + '%' : 'OFF') + '</b><input data-k="pip" type="range" min="0" max="45" value="' + s.pip + '"></label>' +
     '<button class="big ghost ctl">' + UI.img('ic_pad', 20) + 'CONTROLS</button><button class="big ghost back">BACK</button>';
   box.querySelectorAll('input').forEach(inp => {
-    inp.oninput = () => { (inp.dataset.k === 'sfx' ? AU.setSfx : AU.setMusic)(inp.value / 100); inp.previousElementSibling.textContent = inp.value + '%'; };
+    inp.oninput = () => {
+      if (inp.dataset.k === 'pip') { AU.setPip(+inp.value); inp.previousElementSibling.textContent = +inp.value ? inp.value + '%' : 'OFF'; return; }
+      (inp.dataset.k === 'sfx' ? AU.setSfx : AU.setMusic)(inp.value / 100); inp.previousElementSibling.textContent = inp.value + '%';
+    };
   });
   box.querySelector('[data-k="sfx"]').onchange = () => AU.sfx('pickup');
   box.querySelector('.ctl').onclick = () => { AU.sfx('blip'); UI.controlsPage(box, () => UI.settingsPage(box, back)); };
@@ -975,6 +999,14 @@ const CONTROLS = [
     [K('ENTER') + ' &nbsp;/&nbsp; ' + K('A'), 'Next step; then up / down picks a row and left / right tries a cosmetic on. Enter / A again = ready'],
     [K('ESC') + ' &nbsp;/&nbsp; ' + K('B'), 'Back'],
     ['Cosmetics', 'Unlocked by achievements (see the ACHIEVEMENTS button). They never change how the game plays'],
+  ]],
+  ['ONLINE (the guest is the Wizard)', [
+    [K('W', 'A', 'S', 'D'), 'Guest: walk'],
+    [K('SPACE'), 'Guest: roll (invulnerable), and dig at a mound, stick pile, bush or cache'],
+    [K('E'), 'Guest: fire the held spell'],
+    [K('T'), 'Guest: skill tree (a purchase is sent to the host, who checks it). Nothing pauses online: a tree or menu only holds its own player still'],
+    ['Gamepad', 'A pad works as on the Wizard side (A roll, X fire the held spell, Y tree). Job swap is off online'],
+    ['Settings > PARTNER VIEW', 'How big the other player\'s world is in your corner, 0% (off) to 45%. Only you see it'],
   ]],
   ['BOTH PLAYERS', [
     [K('C'), 'Collection Book: every spell and creature, with live demos (also on the pause menu)'],

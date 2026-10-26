@@ -78,7 +78,7 @@ Main.hostHooks = {
       const s = el();
       if (!s || conn.open || Net.conn) return;
       const p = await Net.probe(conn), secs = Math.round((performance.now() - t0) / 1000);
-      s.innerHTML = 'Player 2 found you, connecting<span class="dots"></span><br><small>' + Net.probeText(p) + ' (' + secs + 's)</small>';
+      s.innerHTML = 'Player 2 found you, connecting<span class="dots"></span><br><small>' + Net.probeText(p, Net.hdiag) + ' (' + secs + 's)</small>';
       setTimeout(tick, 1000);
     };
     tick();
@@ -187,7 +187,11 @@ Main.guestFrame = function (dt, ts) {
 UI.onlinePage = function () {
   const box = $('menuOnline');
   box.innerHTML = '<h2>ONLINE</h2><p class="netNote">Two players, two computers. The host plays the Builder and gets a 6-letter room code; the guest types it in and plays the Wizard. No accounts, no installs.</p>' +
-    '<button class="big" id="oCreate">' + UI.img('ic_wrench', 20) + 'CREATE GAME</button><button class="big" id="oJoin">' + UI.img('ic_hat', 20) + 'JOIN GAME</button><button class="big ghost back">BACK</button>';
+    '<button class="big" id="oCreate">' + UI.img('ic_wrench', 20) + 'CREATE GAME</button><button class="big" id="oJoin">' + UI.img('ic_hat', 20) + 'JOIN GAME</button><button class="big ghost" id="oTest">CHECK THIS COMPUTER</button><div class="netStatus" id="oTestMsg"></div><button class="big ghost back">BACK</button>';
+  $('oTest').onclick = () => {
+    const m = $('oTestMsg'); m.className = 'netStatus'; m.innerHTML = 'Checking<span class="dots"></span>';
+    Net.selfTest().then(r => { m.className = 'netStatus' + (r.ok ? '' : ' err'); m.textContent = r.text; });
+  };
   $('oCreate').onclick = () => UI.hostSlots();
   $('oJoin').onclick = () => UI.joinPage();
   box.querySelector('.back').onclick = () => UI.menuPage('menuMain');

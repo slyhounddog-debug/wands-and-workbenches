@@ -27,7 +27,7 @@ const Net = {
   state: 'idle',                 // idle | opening | waiting (host: room open, nobody yet) | live | lost | ended
   code: null, error: '',
   peer: null, conn: null, tok: null, lastRx: 0, lostAt: 0,
-  hooks: {},
+  hooks: {}, errs: [], diag: null, hdiag: null,
   stats: { rawKB: 0, zipKB: 0, maxZip: 0, snapsOut: 0, bytesOut: 0, kbps: 0, rtt: 0, fps: 0, _t: 0, _b: 0, _n: 0, total: 0 },
   // host
   snapN: 0, snapAcc: 0, busy: false, gpad: null, gedge: null,
@@ -90,6 +90,7 @@ const Net = {
   Net.reset = function () {
     try { if (Net.conn) Net.conn.close(); } catch (e) { /* ignore */ }
     try { if (Net.peer) Net.peer.destroy(); } catch (e) { /* ignore */ }
+    Net.errs = []; Net.diag = null; Net.hdiag = null;
     Net.role = null; Net.on = false; Net.state = 'idle'; Net.code = null; Net.error = '';
     Net.peer = null; Net.conn = null; Net.tok = null; Net.lastRx = 0; Net.lostAt = 0;
     Net.snapN = 0; Net.snapAcc = 0; Net.busy = false; Net.gpad = null; Net.gedge = null;
@@ -120,6 +121,7 @@ const Net = {
           res(code);
         });
         peer.on('error', e => {
+          Net.errs.push(e.type);
           if (!opened && e.type === 'unavailable-id' && ++tries < 8) { try { peer.destroy(); } catch (x) { /* ignore */ } attempt(); return; }   // the id is taken: another code
           if (!opened) { Net.state = 'idle'; rej(new Error(e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error' ? 'Could not reach the matchmaking server (is this machine online?)' : 'Could not open a room (' + e.type + ')')); return; }
           if (e.type !== 'peer-unavailable') UI.err('Net: ' + e.type);
@@ -129,6 +131,7 @@ const Net = {
     }));
   };
   function hostConn(conn) {
+    if (!Net.conn) Net.hdiag = watchIce(conn);
     if (Net.hooks.guestDialing && !Net.conn) Net.hooks.guestDialing(conn);
     const dropT = setTimeout(() => { if (conn !== Net.conn) { try { conn.close(); } catch (e) { /* ignore */ } } }, 12000);   // never said hello
     conn.on('data', m => hostMsg(conn, m));
@@ -241,6 +244,7 @@ const Net = {
       const peer = new Peer(peerOpts());
       Net.peer = peer;
       peer.on('error', e => {
+        Net.errs.push(e.type);
         const msg = e.type === 'peer-unavailable' ? (again ? 'The room is gone: the host has left, or its 60 seconds ran out.' : 'No room with that code. Check the letters, and that the host is still waiting.') :
           e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error' ? 'Could not reach the matchmaking server (is this machine online?)' : 'Connection problem (' + e.type + ')';
         if (Net.state === 'opening') fail(msg); else UI.err('Net: ' + e.type);
@@ -249,7 +253,7 @@ const Net = {
       peer.on('open', () => {
         const conn = peer.connect(Net.PREFIX + Net.code, { reliable: true, serialization: 'binary' });
         Net.conn = conn;
-        watchIce(conn);
+        Net.diag = watchIce(conn);
         conn.on('open', () => send(conn, { t: 'hello', v: Net.VERSION, tok: Net.tok }));
         conn.on('data', m => guestMsg(conn, m, res, fail, again));
         conn.on('close', () => { if (conn === Net.conn) connLost('closed'); });
@@ -261,16 +265,23 @@ const Net = {
   // What the browser saw while it tried to connect: the ICE state and which kinds of candidate showed up (host = a local address, srflx = our public address as STUN
   // sees it; "mdns" = the local address was hidden behind a .local name, which only works if both computers can find each other by multicast).
   function watchIce(conn) {
-    const d = Net.diag = { ice: 'new', open: false, host: 0, mdns: 0, srflx: 0, relay: 0 };
-    conn.on('open', () => { d.open = true; });
+    const t0 = now(), d = { ice: 'new', open: false, host: 0, mdns: 0, srflx: 0, relay: 0, log: [], nopc: false };
+    const note = s => d.log.push(s + ' ' + ((now() - t0) / 1000).toFixed(1) + 's');
+    note('start');
+    conn.on('open', () => { d.open = true; note('channel open'); });
+    conn.on('close', () => note('closed'));
+    conn.on('error', e => note('error ' + (e && (e.type || e.message) || e)));
     const pc = conn.peerConnection;
-    if (!pc) return;
-    pc.addEventListener('iceconnectionstatechange', () => { d.ice = pc.iceConnectionState; console.info('[net] ice ' + d.ice); });
+    if (!pc) { d.nopc = true; note('NO PEER CONNECTION'); return d; }
+    pc.addEventListener('iceconnectionstatechange', () => { d.ice = pc.iceConnectionState; note('ice ' + d.ice); console.info('[net] ice ' + d.ice); });
+    pc.addEventListener('icegatheringstatechange', () => note('gathering ' + pc.iceGatheringState));
+    pc.addEventListener('icecandidateerror', e => note('stun/turn error ' + e.errorCode));
     pc.addEventListener('icecandidate', e => {
       if (!e.candidate) return;
       const m = / typ (\w+)/.exec(e.candidate.candidate), t = m ? m[1] : '?';
       if (t === 'host' && /\.local /.test(e.candidate.candidate)) d.mdns++; else if (d[t] !== undefined) d[t]++;
     });
+    return d;
   }
   // What the browser's own statistics say about the connection attempt (either side): which addresses each side gathered, how many connectivity checks went out and how
   // many were answered. 0 answers with addresses on both sides = the networks in between blocked every direct path (symmetric / carrier NAT, AP isolation): only a relay helps.
@@ -289,13 +300,47 @@ const Net = {
     } catch (e) { /* no stats: the numbers stay 0 */ }
     return out;
   };
+  // "Check this computer": what THIS browser can do on its own, with no partner. It gathers connection addresses from three STUN servers for a few seconds and says what
+  // that means: no addresses at all = the browser hides them (a privacy setting, extension or Brave shield); no public address = STUN is unreachable (UDP blocked); public
+  // addresses with DIFFERENT ports per server = the router / phone network gives every destination its own port (symmetric NAT: direct connections cannot work, a relay is needed).
+  Net.selfTest = function () {
+    return new Promise(res => {
+      let pc;
+      const c = { host: 0, hidden: 0, srflx: [], relay: 0, stunErr: 0 };
+      try { pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:global.stun.twilio.com:3478' }] }); } catch (e) { res({ ok: false, text: 'This browser would not even start a WebRTC connection (' + e.message + '). WebRTC is turned off or blocked here (a privacy extension, a browser setting or Brave shields).' }); return; }
+      let done = false;
+      const finish = () => {
+        if (done) return; done = true; try { pc.close(); } catch (e) { /* ignore */ }
+        const ports = new Set(c.srflx.map(s => s.split('|')[1])), ips = new Set(c.srflx.map(s => s.split('|')[0]));
+        const sum = 'Local addresses ' + (c.host + c.hidden) + (c.hidden ? ' (hidden)' : '') + ', public addresses ' + ips.size + ', public ports ' + ports.size + ', STUN errors ' + c.stunErr + '.';
+        let text, ok = false;
+        if (!c.host && !c.hidden && !c.srflx.length) text = 'This browser is hiding ALL network addresses, so it cannot connect to anyone. Check Brave Shields / WebRTC privacy settings, a "WebRTC leak" extension or VPN extension, and try another browser (Edge or Chrome). ' + sum;
+        else if (!c.srflx.length) text = 'No public address could be found: the STUN servers are unreachable (UDP blocked by a firewall, a security program, or this network). ' + sum;
+        else if (ports.size > 1) text = 'Looks like a symmetric NAT (the same computer gets a different public port for each server): direct connections cannot work from this network, a relay server is needed. Phone hotspots do this. ' + sum;
+        else { ok = true; text = 'Fine: this computer can find its public address and the network keeps one port for it. ' + sum; }
+        res({ ok, text, c });
+      };
+      pc.createDataChannel('t');
+      pc.onicecandidateerror = () => { c.stunErr++; };
+      pc.onicecandidate = e => {
+        if (!e.candidate) { finish(); return; }
+        const s = e.candidate.candidate, parts = s.split(' '), m = / typ (\w+)/.exec(s), t = m ? m[1] : '?';
+        if (t === 'host') { if (/\.local$/.test(parts[4])) c.hidden++; else c.host++; }
+        else if (t === 'srflx') c.srflx.push(parts[4] + '|' + parts[5]);
+        else if (t === 'relay') c.relay++;
+      };
+      pc.createOffer().then(o => pc.setLocalDescription(o)).catch(e => res({ ok: false, text: 'WebRTC failed to start: ' + e.message }));
+      setTimeout(finish, 7000);
+    });
+  };
   const list = o => Object.keys(o).map(k => o[k] + ' ' + k).join(', ') || 'none';
-  Net.probeText = p => (p ? 'ICE ' + p.ice + '. Our addresses: ' + list(p.local) + '. Theirs: ' + list(p.remote) + '. Connection checks sent ' + p.sent + ', answered ' + p.recv + '.' : 'no connection details');
+  Net.probeText = (p, d) => (p ? 'ICE ' + p.ice + '. Our addresses: ' + list(p.local) + '. Theirs: ' + list(p.remote) + '. Connection checks sent ' + p.sent + ', answered ' + p.recv + '.' : 'The connection object is already gone.') +
+    (d && d.log.length ? ' History: ' + d.log.join(', ') + '.' : '') + (Net.errs.length ? ' Errors: ' + Net.errs.slice(-3).join('; ') + '.' : '');
   async function why() {
     const p = await Net.probe(Net.conn), d = Net.diag || {};
     console.info('[net] gave up', JSON.stringify(p), JSON.stringify(d));
     if (d.open) return 'Connected to the host, but it never answered the handshake. Ask them to restart the game and try again.';
-    const t = Net.probeText(p);
+    const t = Net.probeText(p, d);
     if (!d.ice || d.ice === 'new') return 'Reached the room, but the two computers never even started trying to connect. Try again; if it keeps happening, restart the game on both sides. ' + t;
     if (p && !Object.keys(p.remote).length) return 'Found the host, but their connection details never arrived. Try again; if it keeps happening, ask the host to restart the game. ' + t;
     if (p && !p.recv) return 'Both computers found each other, but nothing got through between the two networks (every connection check went unanswered). Phone hotspots and some routers do this: they only allow traffic that went out first, and this version has no relay server to get around it. ' + t;

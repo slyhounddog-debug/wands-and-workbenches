@@ -47,7 +47,7 @@ const Net = {
   Net.plog = [];
   Net.log = (...a) => {
     const s = a.map(x => { if (x instanceof Error) return x.message; if (x && typeof x === 'object') { try { return JSON.stringify(x); } catch (e) { return '[object]'; } } return String(x); }).join(' ').replace(/\s+/g, ' ');
-    Net.plog.push(((now() - Net.t0) / 1000).toFixed(1) + 's ' + s.slice(0, 110));
+    Net.plog.push(((now() - Net.t0) / 1000).toFixed(1) + 's ' + s.slice(0, s.indexOf('{') >= 0 ? 72 : 120));
     if (Net.plog.length > 60) Net.plog.shift();
     console.info('[peerjs]', s.slice(0, 300));
   };
@@ -127,6 +127,8 @@ const Net = {
         peer.on('open', () => {
           opened = true; Net.peer = peer; Net.code = code; Net.state = 'waiting';
           peer.on('connection', hostConn);
+          peer.on('close', () => Net.log('host peer CLOSED (destroyed)'));
+          peer.on('disconnected', () => Net.log('host peer lost the matchmaking server'));
           peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) { /* ignore */ } });   // the signaling server dropped us: stay reachable for a rejoin
           res(code);
         });
@@ -141,7 +143,7 @@ const Net = {
     }));
   };
   function hostConn(conn) {
-    if (!Net.conn) Net.hdiag = watchIce(conn);
+    if (!Net.conn) { Net.hdiag = watchIce(conn); traceClose(conn, 'host'); }
     if (Net.hooks.guestDialing && !Net.conn) Net.hooks.guestDialing(conn);
     const dropT = setTimeout(() => { if (conn !== Net.conn) { try { conn.close(); } catch (e) { /* ignore */ } } }, 12000);   // never said hello
     conn.on('data', m => hostMsg(conn, m));
@@ -263,7 +265,7 @@ const Net = {
       peer.on('open', () => {
         const conn = peer.connect(Net.PREFIX + Net.code, { reliable: true, serialization: 'binary' });
         Net.conn = conn;
-        Net.diag = watchIce(conn);
+        Net.diag = watchIce(conn); traceClose(conn, 'guest');
         conn.on('open', () => send(conn, { t: 'hello', v: Net.VERSION, tok: Net.tok }));
         conn.on('data', m => guestMsg(conn, m, res, fail, again));
         conn.on('close', () => { if (conn === Net.conn) connLost('closed'); });
@@ -274,6 +276,15 @@ const Net = {
   }
   // What the browser saw while it tried to connect: the ICE state and which kinds of candidate showed up (host = a local address, srflx = our public address as STUN
   // sees it; "mdns" = the local address was hidden behind a .local name, which only works if both computers can find each other by multicast).
+  // log WHO closes a connection (the callers' names survive minification) and every PeerJS-level event, so an early teardown can be traced
+  function traceClose(conn, tag) {
+    const orig = conn.close.bind(conn);
+    conn.close = function (...a) {
+      const st = (new Error().stack || '').split('\n').slice(2, 7).map(l => (/at (\S+)/.exec(l) || [])[1] || '?').join(' < ');
+      Net.log(tag + ' conn.close() by ' + st);
+      return orig(...a);
+    };
+  }
   function watchIce(conn) {
     const t0 = now(), d = { ice: 'new', open: false, host: 0, mdns: 0, srflx: 0, relay: 0, log: [], nopc: false };
     const note = s => d.log.push(s + ' ' + ((now() - t0) / 1000).toFixed(1) + 's');
@@ -298,13 +309,13 @@ const Net = {
   Net.probe = async function (conn) {
     const pc = conn && conn.peerConnection;
     if (!pc) return null;
-    const out = { ice: pc.iceConnectionState, local: {}, remote: {}, pairs: {}, sent: 0, recv: 0, open: !!conn.open };
+    const out = { ice: pc.iceConnectionState, local: {}, remote: {}, pairs: {}, sent: 0, recv: 0, open: !!conn.open, lip: '', rip: '' };
     try {
       const st = await pc.getStats();
       const kind = c => (c.candidateType === 'host' && /\.local$/.test(c.address || c.ip || '') ? 'hidden-local' : c.candidateType);
       st.forEach(r => {
-        if (r.type === 'local-candidate') out.local[kind(r)] = (out.local[kind(r)] || 0) + 1;
-        else if (r.type === 'remote-candidate') out.remote[kind(r)] = (out.remote[kind(r)] || 0) + 1;
+        if (r.type === 'local-candidate') { out.local[kind(r)] = (out.local[kind(r)] || 0) + 1; if (r.candidateType === 'srflx') out.lip = r.address || r.ip || ''; }
+        else if (r.type === 'remote-candidate') { out.remote[kind(r)] = (out.remote[kind(r)] || 0) + 1; if (r.candidateType === 'srflx') out.rip = r.address || r.ip || ''; }
         else if (r.type === 'candidate-pair') { out.pairs[r.state] = (out.pairs[r.state] || 0) + 1; out.sent += r.requestsSent || 0; out.recv += r.responsesReceived || 0; }
       });
     } catch (e) { /* no stats: the numbers stay 0 */ }
@@ -327,7 +338,7 @@ const Net = {
         if (!c.host && !c.hidden && !c.srflx.length) text = 'This browser is hiding ALL network addresses, so it cannot connect to anyone. Check Brave Shields / WebRTC privacy settings, a "WebRTC leak" extension or VPN extension, and try another browser (Edge or Chrome). ' + sum;
         else if (!c.srflx.length) text = 'No public address could be found: the STUN servers are unreachable (UDP blocked by a firewall, a security program, or this network). ' + sum;
         else if (ports.size > 1) text = 'Looks like a symmetric NAT (the same computer gets a different public port for each server): direct connections cannot work from this network, a relay server is needed. Phone hotspots do this. ' + sum;
-        else { ok = true; text = 'Fine: this computer can find its public address and the network keeps one port for it. ' + sum; }
+        else { ok = true; text = 'Fine: this computer can find its public address and the network keeps one port for it. YOUR PUBLIC ADDRESS: ' + [...ips].join(', ') + ' (two computers on the same network show the same one). ' + sum; }
         res({ ok, text, c });
       };
       pc.createDataChannel('t');
@@ -344,7 +355,7 @@ const Net = {
     });
   };
   const list = o => Object.keys(o).map(k => o[k] + ' ' + k).join(', ') || 'none';
-  Net.probeText = (p, d) => (p ? 'ICE ' + p.ice + '. Our addresses: ' + list(p.local) + '. Theirs: ' + list(p.remote) + '. Connection checks sent ' + p.sent + ', answered ' + p.recv + '.' : 'The connection object is already gone.') +
+  Net.probeText = (p, d) => (p ? 'ICE ' + p.ice + '. Our addresses: ' + list(p.local) + '. Theirs: ' + list(p.remote) + '. Public addresses: ours ' + (p.lip || '?') + ', theirs ' + (p.rip || '?') + '. Connection checks sent ' + p.sent + ', answered ' + p.recv + '.' : 'The connection object is already gone.') +
     (d && d.log.length ? ' History: ' + d.log.join(', ') + '.' : '') + (Net.errs.length ? ' Errors: ' + Net.errs.slice(-3).join('; ') + '.' : '');
   async function why() {
     const p = await Net.probe(Net.conn), d = Net.diag || {};

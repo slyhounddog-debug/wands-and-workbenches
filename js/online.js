@@ -79,7 +79,7 @@ Main.hostHooks = {
       if (!s || conn.open || Net.conn) return;
       const p = await Net.probe(conn), secs = Math.round((performance.now() - t0) / 1000);
       s.innerHTML = 'Player 2 found you, connecting<span class="dots"></span><br><small>' + Net.probeText(p, Net.hdiag) + ' (' + secs + 's)</small><pre class="plog"></pre>';
-      s.querySelector('.plog').textContent = Net.logText(9);
+      s.querySelector('.plog').textContent = Net.logText(16);
       setTimeout(tick, 1000);
     };
     tick();

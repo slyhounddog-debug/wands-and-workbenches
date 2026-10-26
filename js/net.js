@@ -43,7 +43,7 @@ const Net = {
   // no longer resolves in DNS), and a relay carries all of that session's traffic through a third party's server.
   const qp = k => { const m = new RegExp('[?&]' + k + '=([^&]*)').exec(location.search); return m ? decodeURIComponent(m[1]) : ''; };
   Net.relay = !!qp('turn');
-  const iceServers = () => (Net.relay ? ICE.iceServers.concat([{ urls: qp('turn'), username: qp('tuser'), credential: qp('tpass') }]) : ICE.iceServers);
+  const iceServers = () => (Net.relay ? ICE.iceServers.concat([{ urls: qp('turn').split(','), username: qp('tuser'), credential: qp('tpass') }]) : ICE.iceServers);
   // PeerJS's own log (every signaling message it sends and receives, ICE events, errors) is kept in a small ring so a failed join can show what the handshake did
   Net.plog = [];
   Net.log = (...a) => {

@@ -644,3 +644,5 @@ button.big.slot em { grid-column: 2; grid-row: 1 / 4; align-self: center; font-s
 #game.onGuest #toastR { left: 540px; }
 #game.onGuest #help { bottom: 20px; width: 760px; grid-template-columns: 1fr; }
 #game.onGuest #help .hfoot { grid-column: 1; }
+
+.netStatus small { font-size: 15px; line-height: 1.1; color: var(--muted); display: block; margin-top: 6px; }

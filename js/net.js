@@ -35,7 +35,7 @@ const Net = {
   mute: false, lastN: 0, next: null, prev: null, latch: null, padAcc: 0, pingAcc: 0, pending: null,
 };
 (function () {
-  const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }] };   // STUN only (PeerJS's own default adds a TURN relay: switched off on purpose)
+  const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:global.stun.twilio.com:3478' }] };   // STUN only (PeerJS's own default adds a TURN relay: switched off on purpose)
   // OPT-IN TEST HOOK, off by default: open the game on BOTH computers with ?turn=<url>&tuser=<name>&tpass=<secret> (url like turn:relay.example.com:3478) to add a TURN relay
   // of your own choosing. It exists so a pair of networks that cannot connect directly (AP isolation, no hairpin NAT) can be tried with a relay before anyone decides to run
   // one. Which relay to use, and whether to ship one, is Josh's decision (CLAUDE.md): nothing turns this on by itself, nothing is built in (PeerJS's free community relay
@@ -129,7 +129,7 @@ const Net = {
     }));
   };
   function hostConn(conn) {
-    if (Net.hooks.guestDialing && !Net.conn) Net.hooks.guestDialing();
+    if (Net.hooks.guestDialing && !Net.conn) Net.hooks.guestDialing(conn);
     const dropT = setTimeout(() => { if (conn !== Net.conn) { try { conn.close(); } catch (e) { /* ignore */ } } }, 12000);   // never said hello
     conn.on('data', m => hostMsg(conn, m));
     conn.on('close', () => { clearTimeout(dropT); if (conn === Net.conn) guestGone('closed'); });
@@ -255,7 +255,7 @@ const Net = {
         conn.on('close', () => { if (conn === Net.conn) connLost('closed'); });
         conn.on('error', () => { if (conn === Net.conn) connLost('error'); });
       });
-      setTimeout(() => fail(why()), 25000);
+      setTimeout(() => { if (Net.state === 'opening') why().then(fail); }, 25000);
     }));
   }
   // What the browser saw while it tried to connect: the ICE state and which kinds of candidate showed up (host = a local address, srflx = our public address as STUN
@@ -272,14 +272,34 @@ const Net = {
       if (t === 'host' && /\.local /.test(e.candidate.candidate)) d.mdns++; else if (d[t] !== undefined) d[t]++;
     });
   }
-  function why() {
-    const d = Net.diag || {};
-    console.info('[net] gave up', JSON.stringify(d));
+  // What the browser's own statistics say about the connection attempt (either side): which addresses each side gathered, how many connectivity checks went out and how
+  // many were answered. 0 answers with addresses on both sides = the networks in between blocked every direct path (symmetric / carrier NAT, AP isolation): only a relay helps.
+  Net.probe = async function (conn) {
+    const pc = conn && conn.peerConnection;
+    if (!pc) return null;
+    const out = { ice: pc.iceConnectionState, local: {}, remote: {}, pairs: {}, sent: 0, recv: 0, open: !!conn.open };
+    try {
+      const st = await pc.getStats();
+      const kind = c => (c.candidateType === 'host' && /\.local$/.test(c.address || c.ip || '') ? 'hidden-local' : c.candidateType);
+      st.forEach(r => {
+        if (r.type === 'local-candidate') out.local[kind(r)] = (out.local[kind(r)] || 0) + 1;
+        else if (r.type === 'remote-candidate') out.remote[kind(r)] = (out.remote[kind(r)] || 0) + 1;
+        else if (r.type === 'candidate-pair') { out.pairs[r.state] = (out.pairs[r.state] || 0) + 1; out.sent += r.requestsSent || 0; out.recv += r.responsesReceived || 0; }
+      });
+    } catch (e) { /* no stats: the numbers stay 0 */ }
+    return out;
+  };
+  const list = o => Object.keys(o).map(k => o[k] + ' ' + k).join(', ') || 'none';
+  Net.probeText = p => (p ? 'ICE ' + p.ice + '. Our addresses: ' + list(p.local) + '. Theirs: ' + list(p.remote) + '. Connection checks sent ' + p.sent + ', answered ' + p.recv + '.' : 'no connection details');
+  async function why() {
+    const p = await Net.probe(Net.conn), d = Net.diag || {};
+    console.info('[net] gave up', JSON.stringify(p), JSON.stringify(d));
     if (d.open) return 'Connected to the host, but it never answered the handshake. Ask them to restart the game and try again.';
-    if (!d.ice || d.ice === 'new') return 'The host did not answer. Check the code, and that their game is still showing "Waiting for player 2".';
-    return 'Found the host, but the two computers could not open a direct connection (' + d.ice + '; seen ' + d.host + ' local, ' + d.mdns + ' hidden-local, ' + d.srflx + ' public addresses). ' +
-      'On the same Wi-Fi this usually means the router isolates devices from each other (a guest network or "AP isolation") or blocks local discovery; a VPN does it too. ' +
-      'This version has no relay server. Try one of you on a phone hotspot or wired, or turn the VPN off.';
+    const t = Net.probeText(p);
+    if (!d.ice || d.ice === 'new') return 'Reached the room, but the two computers never even started trying to connect. Try again; if it keeps happening, restart the game on both sides. ' + t;
+    if (p && !Object.keys(p.remote).length) return 'Found the host, but their connection details never arrived. Try again; if it keeps happening, ask the host to restart the game. ' + t;
+    if (p && !p.recv) return 'Both computers found each other, but nothing got through between the two networks (every connection check went unanswered). Phone hotspots and some routers do this: they only allow traffic that went out first, and this version has no relay server to get around it. ' + t;
+    return 'The connection started but did not hold (' + d.ice + '). ' + t;
   }
   function guestMsg(conn, m, res, fail, again) {
     if (!m || typeof m !== 'object' || conn !== Net.conn) return;

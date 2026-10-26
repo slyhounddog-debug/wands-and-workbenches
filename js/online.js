@@ -71,7 +71,18 @@ Main.hostHooks = {
     Main.netUi('host');
     UI.toast('Player 2 joined as the Wizard.', 'L', 'ic_check');
   },
-  guestDialing() { if (Net.state === 'waiting' && $('menuHost') && !$('menuHost').classList.contains('hidden')) { const s = document.querySelector('#menuHost .netStatus'); if (s) s.innerHTML = 'Player 2 found you, connecting<span class="dots"></span>'; } },
+  // somebody is knocking: show how the connection attempt is going (it is the one place the host can see why a join does not complete)
+  guestDialing(conn) {
+    const el = () => (Net.state === 'waiting' && !$('menuHost').classList.contains('hidden') ? document.querySelector('#menuHost .netStatus') : null), t0 = performance.now();
+    const tick = async () => {
+      const s = el();
+      if (!s || conn.open || Net.conn) return;
+      const p = await Net.probe(conn), secs = Math.round((performance.now() - t0) / 1000);
+      s.innerHTML = 'Player 2 found you, connecting<span class="dots"></span><br><small>' + Net.probeText(p) + ' (' + secs + 's)</small>';
+      setTimeout(tick, 1000);
+    };
+    tick();
+  },
   guestLost() { Main.netBanner('hostLost'); },
   guestBack() { Main.netBanner(null); UI.toast('Player 2 is back.', 'L', 'ic_check'); },
   timeout() { Main.toTitle(); },   // 60 s are up: back to the title screen, the save (already written) is intact

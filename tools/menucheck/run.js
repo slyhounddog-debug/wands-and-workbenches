@@ -24,7 +24,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const frames = (t0, dt) => page.waitForFunction(([t0, dt]) => { const m = __wands.G.menu; return !m || m.t > t0 + dt; }, [t0, dt], { timeout: 20000 });
   // park a character off the plates, wait for frames, put it on the plate: that is a step-on
   const stepOn = async (role, act, wait) => {
-    const t0 = await page.evaluate(role => { const G = __wands.G, c = G.menu.cam, x = c.x + (role === 'B' ? 0.5 : -0.5), y = c.y - 1.5; if (role === 'B') { G.bd.x = x - 80; G.bd.y = y - 80; G.bd.vx = G.bd.vy = 0; } else { G.w.x = x; G.w.y = y; } return G.menu.t; }, role);
+    const t0 = await page.evaluate(role => { const G = __wands.G, c = G.menu.tc, x = c.x + (role === 'B' ? 0.5 : -0.5), y = c.y + 1.0; if (role === 'B') { G.bd.x = x - 80; G.bd.y = y - 80; G.bd.vx = G.bd.vy = 0; } else { G.w.x = x; G.w.y = y; } return G.menu.t; }, role);
     await frames(t0, 0.3);
     const r = await page.evaluate(([role, act]) => { const G = __wands.G, q = G.menu.plates.find(x => x.act === act || x.key === act); if (!q) return 'noplate ' + act; if (role === 'B') { G.bd.x = q.x - 80; G.bd.y = q.y - 80; } else { G.w.x = q.x; G.w.y = q.y; } return 'ok'; }, [role, act]);
     if (r !== 'ok') throw new Error(r);
@@ -41,10 +41,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok(await page.waitForFunction(() => !document.getElementById('studio-intro').classList.contains('hidden'), null, { timeout: 8000 }).then(() => true, () => false), 'a click on the loading screen starts the studio intro (unchanged)');
   await page.keyboard.press('Space');
   await page.waitForFunction(() => !StudioIntro.isActive(), null, { timeout: 30000 });
-  await page.waitForFunction(() => __wands.G && __wands.G.menu && __wands.G.menu.plates.length >= 7, null, { timeout: 20000 });
+  await page.waitForFunction(() => __wands.G && __wands.G.menu && __wands.G.menu.plates.length >= 5, null, { timeout: 20000 });
   await sleep(1500); await shot('01_menu');
   ok(await ev(() => __wands.G.menu.page === 'main' && !!__wands.G.bd && !!__wands.G.w), 'after the intro: the menu world, both characters in it');
-  ok((await plates()) === 'go:new,go:load,go:online,go:settings,doc:controls,doc:howto,go:ach', 'the main set: New, Load, Online, Settings, Controls, How to Play, Achievements', await plates());
+  ok((await plates()) === 'go:new,go:load,go:online,go:settings,doc:howto,go:ach', 'the main set: New, Load, Online, Settings, How to Play, Achievements (no Controls: that lives in the pause menu)', await plates());
   const b0 = await ev(() => { const m = __wands.G.menu, a = __wands.menu.idleBob('B'), b = __wands.menu.idleBob('W'); return { conn: m.conn, a: a && a.rot, b: b && b.rot }; });
   await sleep(400);
   const b1 = await ev(() => { const a = __wands.menu.idleBob('B'), b = __wands.menu.idleBob('W'); return { a: a && a.rot, b: b && b.rot }; });
@@ -54,10 +54,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await key('ArrowRight');
   ok(await ev(() => __wands.G.menu.conn.W && __wands.menu.idleBob('W') === null), 'and the arrows connect the Wizard');
   // the belt delivers, the Builder picks and throws with the real mouse, the spell fires on the Wizard with its name toasted and no damage
-  await page.waitForFunction(() => { const e = __wands.G.fac.belts.find(b => b.x === 22); return e && e.item && e.item.prog >= 1; }, null, { timeout: 30000 });
-  const st = await ev(() => { const W = __wands, G = W.G, e = G.fac.belts.find(b => b.x === 22), v = Object.assign({}, W.R.wv), s = W.R.toScreen(v, e.x + 80 + 0.5, e.y + 80 + 0.5), p = G.fac.pp, sp = W.R.toScreen(v, p.x + 80 + 0.5, p.y + 80 + 1); return { kind: e.item.kind, bx: s[0], by: s[1], px: sp[0], py: sp[1] }; });
+  await page.waitForFunction(() => { const e = __wands.G.fac.belts.find(b => b.y === 17); return e && e.item && e.item.prog >= 1; }, null, { timeout: 30000 });
+  const st = await ev(() => { const W = __wands, G = W.G, e = G.fac.belts.find(b => b.y === 17), v = Object.assign({}, W.R.wv), s = W.R.toScreen(v, e.x + 80 + 0.5, e.y + 80 + 0.5), p = G.fac.pp, sp = W.R.toScreen(v, p.x + 80 + 0.5, p.y + 80 + 1); return { kind: e.item.kind, bx: s[0], by: s[1], px: sp[0], py: sp[1] }; });
   ok(true, 'the spell belt line has brought in a spell', st.kind);
-  await ev(() => { const G = __wands.G; G.bd.x = 23.2; G.bd.y = 11.5; G.w.x = 95.4; G.w.y = 91.4; });   // (the Wizard waits up in the corner: a spell's reach would press the safe plates near him)
+  await ev(() => { const G = __wands.G; G.bd.x = 16.4; G.bd.y = 17.4; G.w.x = 98.5; G.w.y = 100.5; G.w.fx = -1; G.w.fy = 1; });   // (the Wizard waits down at the bottom: a spell's reach would press the safe plates near him)
   await sleep(400);
   await page.mouse.move(st.bx * 0.8, (st.by - 6) * 0.8); await sleep(100);
   await page.mouse.click(st.bx * 0.8, (st.by - 6) * 0.8); await sleep(600);
@@ -69,6 +69,28 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok(!!named, 'the thrown spell fires on the Wizard and its name is toasted', named);
   ok(hpMin === 100 && await ev(() => !__wands.G.w.dead), 'nobody takes damage in the menu world');
   await shot('02_spell');
+  await sleep(2500);
+  await ev(() => { const m = __wands.G.menu; m.stack.length = 0; if (m.page !== 'main') __wands.menu.show('main'); });   // (a spell that flew over a safe plate may have pressed it: that is allowed, go home)
+  await sleep(1500);
+  // the Builder can throw a spell straight at the Wizard (a tile of grace): it fires on him with its lead-in, without the Spell Portal's flight; further off it is just thrown on the floor
+  const throwAt = async (dx, dy) => {
+    await ev(() => { const W = __wands, G = W.G; G.bd.x = 21.0; G.bd.y = 17.0; G.bd.vx = G.bd.vy = 0; G.bd.target = null; G.w.x = 103.6; G.w.y = 99.0; G.w.fx = -1; G.w.fy = 1; G.hands.length = 0; G.fac.floor.length = 0; G.menu.toasts.length = 0; G.bd.throwCd = 0; W.FA.addHands('water', 1); });
+    await sleep(300);
+    const p = await page.evaluate(([dx, dy]) => { const W = __wands, G = W.G, s = W.R.toScreen(Object.assign({}, W.R.wv), G.w.x + dx, G.w.y + dy); return [s[0], s[1]]; }, [dx, dy]);
+    await page.mouse.move(p[0] * 0.8, p[1] * 0.8); await sleep(150);
+    await page.mouse.down({ button: 'right' }); await sleep(100); await page.mouse.up({ button: 'right' });
+    let seen = { drop: 0 };
+    for (let i = 0; i < 10; i++) { await sleep(60); seen = await ev(() => { const G = __wands.G; return { drop: G.w.fx_.filter(f => f.type === 'drop').length, sucks: G.fac.sucks.length, arcs: G.w.arcs.length, hands: G.hands.length }; }); if (seen.drop) break; }
+    await sleep(1500);
+    seen.toast = await ev(() => __wands.G.menu.toasts.map(t => t.text).join('|'));
+    seen.floor = await ev(() => __wands.G.fac.floor.length + __wands.G.fac.flying.length);
+    return seen;
+  };
+  const hit1 = await throwAt(0.6, 0.4);
+  ok(hit1.drop > 0 && hit1.hands === 0 && hit1.sucks === 0 && hit1.arcs === 0 && !!hit1.toast, 'a spell thrown within a tile of the Wizard fires on him: the drop-in lead, the name toasted, no Spell Portal flight', JSON.stringify(hit1));
+  const hit2 = await throwAt(2.6, 2.0);
+  ok(hit2.drop === 0 && !hit2.toast && hit2.floor > 0, 'thrown further than a tile off him, it is just a spell on the floor (the Wizard picks nothing up)', JSON.stringify(hit2));
+  await ev(() => { const G = __wands.G; G.fac.floor.length = 0; G.hands.length = 0; });
 
   // ---- 2. walk every menu
   await stepOn('B', 'go:new'); await shot('03_new');
@@ -106,9 +128,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await ev(() => { const G = __wands.G, p = G.menu.plates.find(q => q.key === 'back'); __wands.menu.touch(p.x, p.y, 0.5); });
   await sleep(1300);
   ok((await pageOf()) === 'main' && await ev(() => !__wands.G.menu.modals.length), 'a spell presses its Back plate: the window is gone and the main set is back');
-  await stepOn('W', 'doc:controls', 1600); await shot('06_controls');
-  ok((await pageOf()) === 'controls', 'the Controls plate shows the controls as a window');
-  await stepOn('W', 'back', 1300);
+  ok(!(await plates()).includes('doc:controls'), 'there is no Controls plate in the start menu (the controls are in the pause menu)');
   await stepOn('W', 'go:ach', 1300); await stepOn('W', 'ach:0', 1200); await shot('07_ach');
   ok(await ev(() => __wands.G.menu.modals.some(m => m.kind === 'ach' && m.page === 0)), 'Achievements: the first page is a window above its plate');
   await stepOn('W', 'ach:1', 1200);
@@ -145,7 +165,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok(await ev(() => { const s = JSON.parse(localStorage.getItem('wands_settings')); return Math.abs(s.sfx - 3 / 7) < 1e-6 && Math.abs(AU.settings.sfx - 3 / 7) < 1e-6; }), 'the settings persist across a reload', await ev(() => localStorage.getItem('wands_settings')));
   await page.mouse.click(400, 300); await sleep(300); await page.keyboard.press('Space');
   await page.waitForFunction(() => !StudioIntro.isActive(), null, { timeout: 30000 });
-  await page.waitForFunction(() => __wands.G && __wands.G.menu && __wands.G.menu.plates.length >= 7, null, { timeout: 20000 });
+  await page.waitForFunction(() => __wands.G && __wands.G.menu && __wands.G.menu.plates.length >= 5, null, { timeout: 20000 });
   await sleep(1200);
 
   // ---- 4. a save to overwrite / load: slot 3
@@ -224,11 +244,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   for (let i = 0; i < 300; i++) {
     const s = await ev(() => { const G = __wands.G, m = G.menu; return m ? (m.ret ? 'ret' + m.ret.ph : m.page + ':' + m.plates.length) : 'exit' + __wands.Main.xs.t.toFixed(0); });
     if (s !== last) { back.push(s); last = s; }
-    if (/^main:7/.test(s)) break;
+    if (/^main:6/.test(s)) break;
     await sleep(80);
   }
   console.log('   ' + back.join(' > '));
-  ok(/exit0.*ret0.*ret1.*ret2.*ret3.*main:7/.test(back.join(' ')), 'back at the title: sucked up, dropped beside the Wizard, both teleported to the start, then the plates popped up');
+  ok(/exit0.*ret0.*ret1.*ret2.*ret3.*main:6/.test(back.join(' ')), 'back at the title: sucked up, dropped beside the Wizard, both teleported to the start, then the plates popped up');
   await sleep(500);
   const wp = await ev(() => [__wands.G.w.x, __wands.G.w.y]);
   ok(Math.hypot(wp[0] - 100.5, wp[1] - 100.5) < 8, 'the Wizard is back at the start of the world', wp.map(v => v.toFixed(1)).join(','));

@@ -13,7 +13,7 @@ window.TUNING = {
  "harness.water.cycle": 4.25,
  "harness.fire.cycle": 4.75,
  "harness.earth.cycle": 5,
- "upgrade.gems": 0.11,
+ "upgrade.gems": 0.1,
  "gemCap": 2.2,
  "harvest.tree.n": 5,
  "forage.mound.drop.stone": 3,
@@ -28,5 +28,13 @@ window.TUNING = {
  "enemies.lurker.gem.1": 0.5,
  "enemies.wisp.gem.1": 0.48,
  "enemies.golem.gem.1": 0.55,
- "events.reward.gems": 8
+ "events.reward.gems": 8,
+ "pickups.potion.heal": 25,
+ "pickups.armor.armor": 15,
+ "pickups.plate.armor": 40,
+ "pickups.elixir.heal": 50,
+ "upgrade.hearty": 15,
+ "wizard.rollSpeed": 2.2,
+ "wizard.rollTime": 0.43,
+ "wizard.rollCd": 1.3
 };

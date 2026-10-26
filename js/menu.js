@@ -17,22 +17,26 @@ const Menu = {};
 (function () {
 // The patch is the floor of the menu world (tiles in x0..x1 by y0..y1). The wilds' start is the tip of a landmass that lies to the north (water to the south, east and
 // south-west), so the main menu's patch is the dry square round the spawn and the character select's grows to the north, where there is room for its plates.
-const RECT_MAIN = { x0: 94, x1: 108, y0: 90, y1: 104 }, RECT_CS = { x0: 88, x1: 108, y0: 82, y1: 104 };
-const CEN_MAIN = { x: 101, y: 97 }, CEN_CS = { x: 97.5, y: 93.5 };   // where the camera looks for each
+const RECT_MAIN = { x0: 94, x1: 108, y0: 90, y1: 104 }, RECT_CS = { x0: 75.8, x1: 108, y0: 82.8, y1: 102.4 };
+const CEN_MAIN = { x: 101, y: 97 }, CEN_CS = { x: 91.9, y: 92.6 };   // the middle of each patch
+const SHIFT_MAIN = [-170, 130];   // the main menu's patch sits low and to the left of the screen (px): the top-right of the screen is where the windows go
+const START = { B: { x: 97.4, y: 95.2 }, W: { x: 100.6, y: 99.0 } };   // where the characters stand at the start of the world
 const FW = 34, OX = 80, OY = 80;           // the scratch factory grid is FW x FW; factory tile (fx, fy) is world tile (fx + OX, fy + OY)
-const BELT = { y: 11, x0: 15, n: 8 }, PORTAL = { x: 25, y: 11 };   // the spell belt line (factory coordinates) and the Spell Portal's top cell
+const BELT = { x: 15, y0: 10, n: 8 }, PORTAL = { x: 15, y: 20 };   // the spell belt line runs down the patch's left edge (factory coordinates) into the Spell Portal's top cell
 Menu.OX = OX; Menu.OY = OY; Menu.FW = FW; Menu.BELT = BELT; Menu.PORTAL = PORTAL;
 Menu.camOf = () => G.menu.cam;
+Menu.cleared = o => o.x > RECT_CS.x0 - 1.5 && o.x < RECT_CS.x1 + 1.5 && o.y > RECT_CS.y0 - 1.5 && o.y < RECT_CS.y1 + 1.5;   // (in the menu's patch, character select size)
 // a screen offset in px from the page's centre -> world coordinates (the wilds' tiles are 60 x 30 px)
 const at = (sx, sy, c) => { c = c || (G.menu && G.menu.tc) || CEN_MAIN; return { x: c.x + (sx / 30 + sy / 15) / 2, y: c.y + (sy / 15 - sx / 30) / 2 }; };
 Menu.at = at;
+const camT = (c, sh) => at(-sh[0], -sh[1], c);   // where the camera looks so that the patch's middle c appears sh px off the screen's centre
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 Menu.charPos = role => (role === 'B' ? { x: G.bd.x + OX, y: G.bd.y + OY } : { x: G.w.x, y: G.w.y });
 const ROLES = ['B', 'W'];
 
 // ---------- the scratch world ----------
 Menu.fresh = () => ({
-  v: 1, t: 0, rect: Object.assign({}, RECT_MAIN), tr: Object.assign({}, RECT_MAIN), cam: Object.assign({}, CEN_MAIN), tc: Object.assign({}, CEN_MAIN), landN: -1, beltOn: true, free: false, ret: null, tele: null, dropB: null, sx: null, fade: 0, page: 'main', stack: [], plates: [], nextId: 1, modals: [],
+  v: 1, t: 0, rect: Object.assign({}, RECT_MAIN), tr: Object.assign({}, RECT_MAIN), cam: camT(CEN_MAIN, SHIFT_MAIN), tc: Object.assign({}, CEN_MAIN), sh: SHIFT_MAIN, landN: -1, beltOn: true, free: false, ret: null, tele: null, dropB: null, sx: null, fade: 0, page: 'main', stack: [], plates: [], nextId: 1, modals: [],
   conn: { B: false, W: false }, kbUsed: { B: false, W: false }, swap: false, count: -1, seq: null, hideB: false,
   toasts: [], ev: [], evN: 0, beltT: 1.2, online: null, flow: '', pend: null, kb: null, typing: null, doc: { id: 'howto', pg: 0 }, statues: null,
 });
@@ -44,15 +48,17 @@ Menu.make = function (ret) {
   for (const k in g.stock) g.stock[k] = 0;   // (there is no Stockpile here: starting materials would spill out onto the floor)
   R.focus = null; R.hint = null; R.whint = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null;   // (whatever the last game was pointing at)
   g.w = WZ.fresh();
+  for (const o of WZ.harv.concat(WZ.forage)) if (Menu.cleared(o)) { o.broken = true; o.respawn = 1e9; }   // (no trees, rocks or dig spots on the menu's floor: they would sit under the plates)
+  for (const k in g.w.tmod) { const t = +k; if (Menu.cleared({ x: t % CFG.WW + 0.5, y: Math.floor(t / CFG.WW) + 0.5 })) { delete g.w.tmod[k]; g.w.tmodN--; } }   // (nor cracked rock or vines)
+  g.w.boulders = g.w.boulders.filter(b => !Menu.cleared(b));
   g.fac = FA.fresh(FW, FW);
   g.fac.qp = { x: 1, y: 1 };   // (the "?" station sits far off the patch)
   FA.setPortals(PORTAL.x, PORTAL.y);
-  for (let i = 0; i < BELT.n; i++) FA.addBelt(BELT.x0 + i, BELT.y, 0);
+  for (let i = 0; i < BELT.n; i++) FA.addBelt(BELT.x, BELT.y0 + i, 1);
   g.bd = FA.freshBuilder();
   Menu.setLand(g.menu.tr);
-  const b = at(110, -5), w = at(-30, -20);
-  g.bd.x = b.x - OX; g.bd.y = b.y - OY; g.bd.fx = 1; g.bd.fy = 0;
-  g.w.x = w.x; g.w.y = w.y; g.w.fx = 1; g.w.fy = 1;
+  g.bd.x = START.B.x - OX; g.bd.y = START.B.y - OY; g.bd.fx = 1; g.bd.fy = 0;
+  g.w.x = START.W.x; g.w.y = START.W.y; g.w.fx = 1; g.w.fy = 1;
   g.w.spawnT = 1e9;
   g.ctl = Menu.ctlFor(g.menu);
   g.swapped = g.menu.swap && g.ctl.kbB && g.ctl.kbW;
@@ -64,7 +70,7 @@ Menu.make = function (ret) {
     R.wcam.x = ret.cam.x; R.wcam.y = ret.cam.y;
     g.bd.x = ret.x + 1.5 - OX; g.bd.y = ret.y - 0.2 - OY;
   } else {
-    R.wcam.x = CEN_MAIN.x; R.wcam.y = CEN_MAIN.y;
+    R.wcam.x = g.menu.cam.x; R.wcam.y = g.menu.cam.y;
     Menu.show('main', { first: true });
   }
   return g;
@@ -106,6 +112,15 @@ Menu.react = function () {
   }
   Menu.lastEv = m.evN;
 };
+// a spell the Builder throws that comes down within a tile of the Wizard fires on him: the drop-in lead-up, without the Spell Portal's flight (true = caught)
+Menu.catchSpell = function (o) {
+  const z = FA.menuWiz(o.kind);
+  if (!z || Math.hypot(z.x - o.x, z.y - o.y) > 1) return false;
+  FA.impact(o);
+  AU.sfx('drop');
+  WZ.incoming(BASIC_SPELL[o.kind] || o.kind);
+  return true;
+};
 Menu.say = function (text) {
   const m = G && G.menu;
   if (!m) return;
@@ -123,7 +138,7 @@ Menu.spellName = function (spell) {
 const sp = (act, label, sx, sy, o) => Object.assign({ act, label, sx, sy, r: 0.8 }, o);
 function newPlate(s, delay) {
   const m = G.menu, p = s.sx !== undefined ? at(s.sx, s.sy) : { x: s.x, y: s.y };
-  return { id: m.nextId++, key: s.key || null, act: s.act, label: s.label || '', ic: s.ic || null, x: p.x, y: p.y, r: s.r || 0.8, kind: s.kind || 'act', safe: !!s.safe,
+  return { id: m.nextId++, key: s.key || null, act: s.act, label: s.label || '', word: s.word || '', flip: !!s.flip, ic: s.ic || null, x: p.x, y: p.y, r: s.r || 0.8, kind: s.kind || 'act', safe: !!s.safe,
     role: s.role || null, data: s.data === undefined ? null : s.data, st: 'wait', t: 0, delay, arm: { B: false, W: false }, on: { B: false, W: false }, cd: 0, flash: 0, col: s.col || null, row: s.row || null };
 }
 // swap the current plate set for another: the old plates pop out, the new ones pop in (a plate that keeps its key stays put and only changes what it does)
@@ -132,7 +147,7 @@ Menu.show = function (page, o) {
   o = o || {};
   m.page = page;
   if (page !== 'none') {   // the patch and the camera follow the page: the character select needs more floor than the main menu
-    m.tr = Object.assign({}, page === 'cs' ? RECT_CS : RECT_MAIN); m.tc = Object.assign({}, page === 'cs' ? CEN_CS : CEN_MAIN);
+    m.tr = Object.assign({}, page === 'cs' ? RECT_CS : RECT_MAIN); m.tc = Object.assign({}, page === 'cs' ? CEN_CS : CEN_MAIN); m.sh = page === 'cs' ? [0, 0] : SHIFT_MAIN;
     if (page === 'cs') Menu.setLand(RECT_CS); else m.shrinkLand = true;   // (the floor is there before the patch has grown over it, and goes when it has shrunk back)
   }
   const specs = Menu.specs(page, o);
@@ -141,7 +156,7 @@ Menu.show = function (page, o) {
   for (const p of m.plates) {
     if (p.st === 'out') continue;
     const k = p.key && keep[p.key];
-    if (k) { p.act = k.act; p.safe = !!k.safe; if (k.label !== undefined) p.label = k.label; k.used = true; continue; }
+    if (k) { p.act = k.act; p.safe = !!k.safe; if (k.label !== undefined) p.label = k.label; p.word = k.word || ''; p.ic = k.ic || null; k.used = true; continue; }
     p.st = 'out'; p.t = 0; p.delay = 0;
   }
   for (const md of m.modals) md.out = true;
@@ -168,8 +183,10 @@ Menu.modal = modal;
 Menu.closeModals = function () { for (const md of G.menu.modals) md.out = true; };
 
 // ---------- the plate sets ----------
-const SLOT_POS = [[-250, 75], [0, 110], [250, 75]];
-const BACK_AT = [0, 185];   // the Back plate sits at the patch's bottom corner (a few pages need that spot and put it on the left corner instead)
+// The plates stand along the patch's top-right edge (y = NE, running from the top corner toward the right corner) and turn down its right edge (x = CORNER): that keeps the
+// windows they raise (which hover above them) over the empty sky and off the characters. The Back plate stays at the bottom corner.
+const NE = 91.4, CORNER = 106.7, STEP = 2.7;
+const BACK_AT = [0, 185];   // (screen px from the patch's middle: the bottom corner)
 Menu.slotLines = function (i) {
   const s = UI.slotInfo(i);
   if (!s) return { empty: true, lines: ['SLOT ' + i, 'Empty'] };
@@ -177,50 +194,47 @@ Menu.slotLines = function (i) {
   const nb = s.fac && s.fac.bld ? s.fac.bld.length : 0, q = Main.questOf(s);
   return { empty: false, lines: ['SLOT ' + i, Math.floor(s.xp || 0) + ' XP, ' + nb + ' buildings', 'goals ' + (q.B + q.W) + '/' + (QUESTS.B.length + QUESTS.W.length), s.at ? new Date(s.at).toLocaleDateString() : ''] };
 };
+// a plate spec: wp = at a world position. label is the full name (a tooltip near it), word the short text written on the plate, ic the symbol on it
+const wp = (act, label, x, y, o) => Object.assign({ act, label, x, y, r: 1.1 }, o);
 Menu.specs = function (page, o) {
-  const m = G.menu, back = (left) => sp('back', 'BACK', left ? -300 : BACK_AT[0], left ? -10 : BACK_AT[1], { ic: 'ic_x', safe: true, kind: 'back', r: 0.7, key: 'back' });
+  const m = G.menu, back = () => sp('back', 'BACK', BACK_AT[0], BACK_AT[1], { ic: 'ic_x', word: 'BACK', safe: true, kind: 'back', r: 0.8, key: 'back' });
+  const along = i => CORNER - (3 - i) * STEP;   // the plates along the top edge: i = 3 is the corner
   switch (page) {
     case 'main': return [
-      sp('go:new', 'NEW GAME', -300, 10, { ic: 'ic_play' }),
-      sp('go:load', 'LOAD GAME', -225, 55, { ic: 'ic_folder' }),
-      sp('go:online', 'ONLINE', -150, 100, { ic: 'ic_portal', safe: true }),
-      sp('go:settings', 'SETTINGS', -65, 138, { ic: 'ic_gear', safe: true }),
-      sp('doc:controls', 'CONTROLS', 20, 158, { ic: 'ic_pad', safe: true, key: 'controls' }),
-      sp('doc:howto', 'HOW TO PLAY', 105, 126, { ic: 'ic_book', safe: true, key: 'howto' }),
-      sp('go:ach', 'ACHIEVEMENTS', 185, 84, { ic: 'ic_trophy', safe: true }),
+      wp('go:new', 'NEW GAME', along(0), NE, { ic: 'ic_play', word: 'NEW' }),
+      wp('go:load', 'LOAD GAME', along(1), NE, { ic: 'ic_folder', word: 'LOAD' }),
+      wp('go:online', 'ONLINE', along(2), NE, { ic: 'ic_globe', safe: true }),
+      wp('go:settings', 'SETTINGS', CORNER, NE, { ic: 'ic_gear', safe: true }),
+      wp('doc:howto', 'HOW TO PLAY', CORNER, NE + STEP, { ic: 'ic_book', word: 'HELP', safe: true, key: 'howto' }),
+      wp('go:ach', 'ACHIEVEMENTS', CORNER, NE + STEP * 2, { ic: 'ic_trophy', safe: true }),
     ];
     case 'slots': {
       const out = [back()];
-      for (let i = 0; i < 3; i++) out.push(sp('slot:' + (i + 1), 'SLOT ' + (i + 1), SLOT_POS[i][0], SLOT_POS[i][1], { ic: m.flow === 'load' ? 'ic_folder' : m.flow === 'new' ? 'ic_play' : 'ic_portal', key: 'slot' + (i + 1), r: 0.9 }));
+      for (let i = 0; i < 3; i++) out.push(wp('slot:' + (i + 1), 'SLOT ' + (i + 1), 99.9 + i * 3.2, NE, { ic: m.flow === 'load' ? 'ic_folder' : m.flow === 'new' ? 'ic_play' : 'ic_portal', word: String(i + 1), key: 'slot' + (i + 1) }));
       return out;
     }
     case 'confirm': return [
-      sp('ok', 'OVERWRITE', -110, 80, { ic: 'ic_warn', key: 'ok', col: '#e8503a' }),
-      sp('back', 'CANCEL', 110, 80, { ic: 'ic_x', key: 'cancel', safe: false, kind: 'back' }),
+      wp('ok', 'OVERWRITE', 101.6, NE, { ic: 'ic_warn', word: 'YES', key: 'ok', col: '#e8503a' }),
+      wp('back', 'CANCEL', 105.0, NE, { ic: 'ic_x', word: 'NO', key: 'cancel', safe: false, kind: 'back' }),
     ];
     case 'settings': {
       const out = [back()];
-      for (const [row, k, y, ic] of [[0, 'sfx', -10, 'ic_sound'], [1, 'music', 85, 'ic_music']]) {
-        for (let i = 0; i < 8; i++) out.push(sp('vol:' + k + ':' + i, '', -217 + i * 62, y, { r: 0.46, kind: 'vol', data: { k, i }, ic: i === 0 ? 'ic_x' : null }));
-        out.push({ act: 'none', label: k === 'sfx' ? 'SOUND' : 'MUSIC', sx: -255, sy: y - 38, r: 0.001, kind: 'tag', ic, key: 'tag_' + k });
+      for (const [k, y, ic] of [['sfx', 92.1, 'ic_sound'], ['music', 94.5, 'ic_music']]) {
+        for (let i = 0; i < 8; i++) out.push(wp('vol:' + k + ':' + i, (k === 'sfx' ? 'SOUND ' : 'MUSIC ') + (i ? i + '/7' : 'OFF'), 97.4 + i * 1.4, y, { r: 0.62, kind: 'vol', data: { k, i }, ic: i === 0 ? ic : null }));
       }
       return out;
     }
-    case 'howto': case 'controls': {
-      const key = page, ac = page === 'howto' ? 'doc:howto' : 'doc:controls';
-      const lbl = page === 'howto' ? 'HOW TO PLAY' : 'CONTROLS', ic = page === 'howto' ? 'ic_book' : 'ic_pad';
-      const pos = page === 'howto' ? [105, 126] : [20, 158];
-      return [sp(ac, lbl, pos[0], pos[1], { ic, key, safe: false, kind: 'anchor' }), back(true), sp('pg:-1', 'PREV', -230, 60, { ic: 'ic_x', kind: 'pg', r: 0.7, data: -1 }), sp('pg:1', 'NEXT', -130, 112, { ic: 'ic_play', kind: 'pg', r: 0.7, data: 1 })];
-    }
-    case 'ach': return [back(), sp('ach:0', 'PAGE 1', -110, 70, { ic: 'ic_trophy', key: 'ach0', r: 0.9 }), sp('ach:1', 'PAGE 2', 110, 70, { ic: 'ic_trophy', key: 'ach1', r: 0.9 })];
+    case 'howto': return [wp('doc:howto', 'HOW TO PLAY', CORNER, NE + STEP, { ic: 'ic_book', word: 'HELP', key: 'howto', safe: false, kind: 'anchor' }), back(),
+      wp('pg:-1', 'PREVIOUS PAGE', 101.4, NE, { ic: 'ic_play', kind: 'pg', r: 0.95, data: -1, flip: true }), wp('pg:1', 'NEXT PAGE', 104.4, NE, { ic: 'ic_play', kind: 'pg', r: 0.95, data: 1 })];
+    case 'ach': return [back(), wp('ach:0', 'ACHIEVEMENTS 1', 101.4, NE, { ic: 'ic_trophy', word: '1', key: 'ach0' }), wp('ach:1', 'ACHIEVEMENTS 2', 104.6, NE, { ic: 'ic_trophy', word: '2', key: 'ach1' })];
     case 'online': return [
       back(),
-      sp('go:create', 'CREATE GAME', -130, 60, { ic: 'b:altar', key: 'create', r: 0.9 }),
-      sp('go:join', 'JOIN GAME', 130, 60, { ic: 'ic_hat', key: 'join', r: 0.9 }),
-      sp('net:test', 'CHECK THIS COMPUTER', -290, 10, { ic: 'ic_chart', key: 'test', r: 0.7 }),
+      wp('go:create', 'CREATE GAME', 99.9, NE, { ic: 'ic_factory', word: 'HOST', key: 'create' }),
+      wp('go:join', 'JOIN GAME', 103.1, NE, { ic: 'ic_hat', word: 'JOIN', key: 'join' }),
+      wp('net:test', 'CHECK THIS COMPUTER', 106.3, NE, { ic: 'ic_chart', word: 'TEST', key: 'test' }),
     ];
-    case 'host': return [back(), sp('none', 'CREATE GAME', -130, 60, { ic: 'b:altar', key: 'create', r: 0.9, kind: 'anchor' })];
-    case 'join': return [back(), sp('none', 'JOIN GAME', 130, 60, { ic: 'ic_hat', key: 'join', r: 0.9, kind: 'anchor' })];
+    case 'host': return [back(), wp('none', 'CREATE GAME', 99.9, NE, { ic: 'ic_factory', word: 'HOST', key: 'create', kind: 'anchor' })];
+    case 'join': return [back(), wp('none', 'JOIN GAME', 103.1, NE, { ic: 'ic_hat', word: 'JOIN', key: 'join', kind: 'anchor' })];
     case 'cs': return Menu.csSpecs();
   }
   return [];
@@ -229,10 +243,10 @@ Menu.specs = function (page, o) {
 Menu.pageModals = function (page, o) {
   const m = G.menu;
   if (page === 'slots') for (let i = 1; i <= 3; i++) { const s = Menu.slotLines(i); modal('slot', { anchor: 'slot' + i, lines: s.lines, empty: s.empty, t: -0.45 - i * 0.1 }); }
-  else if (page === 'howto' || page === 'controls') { m.doc = { id: page, pg: 0 }; modal('doc', { anchor: page, doc: page, t: -0.15 }); }
+  else if (page === 'howto') { m.doc = { id: page, pg: 0 }; modal('doc', { anchor: page, doc: page, t: -0.15 }); }
   else if (page === 'host') modal('room', { anchor: 'create', t: -0.3 });
   else if (page === 'join') modal('code', { anchor: 'kb', t: -0.45 });
-  else if (page === 'confirm' && o.slot) { const c = Menu.slotLines(o.slot); modal('text', { title: 'OVERWRITE SLOT ' + o.slot + '?', lines: ['This replaces the saved game:'].concat(c.lines.slice(1)), t: -0.2, at: { sx: 0, sy: 20 } }); }
+  else if (page === 'confirm' && o.slot) { const c = Menu.slotLines(o.slot); modal('text', { anchor: 'ok', title: 'OVERWRITE SLOT ' + o.slot + '?', lines: ['This replaces the saved game:'].concat(c.lines.slice(1)), t: -0.2 }); }
   if (page === 'join') Menu.kbPop();
 };
 
@@ -365,7 +379,7 @@ function feedBelt(dt) {
   if (m.seq) return;
   if ((m.beltT -= dt) > 0) return;
   m.beltT = 2.4;
-  const f = G.fac, first = f.belts.find(b => b.x === BELT.x0 && b.y === BELT.y);
+  const f = G.fac, first = f.belts.find(b => b.x === BELT.x && b.y === BELT.y0);
   if (!first || first.item || f.belts.filter(b => b.item).length >= 4 || f.floor.length > 6) return;
   const p = pool();
   first.item = { kind: p[Math.floor(Math.random() * p.length)], prog: 0, moved: true };
@@ -405,7 +419,8 @@ Menu.step = function (dt) {
   w.hp = WZ.maxHp(); w.dead = false;
   const e = Math.min(1, dt * 3);
   for (const k of ['x0', 'x1', 'y0', 'y1']) m.rect[k] += (m.tr[k] - m.rect[k]) * e;
-  m.cam.x += (m.tc.x - m.cam.x) * e; m.cam.y += (m.tc.y - m.cam.y) * e;
+  const ct = camT(m.tc, m.sh);
+  m.cam.x += (ct.x - m.cam.x) * e; m.cam.y += (ct.y - m.cam.y) * e;
   if (m.shrinkLand && Math.abs(m.rect.x0 - m.tr.x0) + Math.abs(m.rect.y0 - m.tr.y0) < 0.5 && Math.abs(m.rect.x1 - m.tr.x1) + Math.abs(m.rect.y1 - m.tr.y1) < 0.5) { Menu.setLand(m.tr); m.shrinkLand = false; }
   // the plates
   platesTick(dt);
@@ -454,8 +469,7 @@ const near = (role, o, d) => { const c = Menu.charPos(role); return Math.hypot(c
 Menu.kbPop = function () {
   const m = G.menu;
   if (m.kb) { m.kb.out = false; return; }
-  const p = at(0, 10);
-  m.kb = { x: p.x, y: p.y, t: 0, out: false };
+  m.kb = { x: 102.6, y: 95.6, t: 0, out: false };
 };
 Menu.nearProp = function (role) {
   const m = G.menu;
@@ -568,14 +582,15 @@ function onlineTick(dt) {
 // owns that character (Menu.react), a character standing on its Ready plate is ready, and when every connected player is ready a 3 second countdown starts the game.
 Menu.csSpecs = function () {
   const m = G.menu, out = [];
-  out.push({ act: 'back', label: 'BACK', x: 95.0, y: 100.5, r: 0.7, safe: true, kind: 'back', ic: 'ic_x', key: 'back' });
+  out.push({ act: 'back', label: 'BACK', word: 'BACK', x: 106.0, y: 100.9, r: 0.8, safe: true, kind: 'back', ic: 'ic_x', key: 'backcs' });
   const bb = Players.CATS.builder, wz = Players.CATS.wizard;
-  // the Builder's block in the north (a row per category along x), the Wizard's in the south-east (a row per category along y), the belt line runs between them
-  bb.forEach((cat, r) => cat.opts.forEach((op, c) => out.push({ act: 'eq', label: op.name, x: 89.5 + c, y: 84.5 + r, r: 0.42, kind: 'cos', role: 'B', data: { cat: cat.key, opt: op.id, kind: cat.kind, who: 'builder' }, row: c === 0 ? cat.label : null })));
-  wz.forEach((cat, r) => cat.opts.forEach((op, c) => out.push({ act: 'eq', label: op.name, x: 99.5 + r, y: 93.5 + c, r: 0.42, kind: 'cos', role: 'W', data: { cat: cat.key, opt: op.id, kind: cat.kind, who: 'wizard' }, row: c === 0 ? cat.label : null })));
-  out.push({ act: 'ready', label: 'BUILDER READY', x: 92.6, y: 91.4, r: 0.85, kind: 'ready', role: 'B', ic: 'ic_wrench', key: 'readyB' });
-  out.push({ act: 'ready', label: 'WIZARD READY', x: 107.0, y: 97.4, r: 0.85, kind: 'ready', role: 'W', ic: 'ic_hat', key: 'readyW' });
-  m.statues = { B: { x: 95.0, y: 95.5 }, W: { x: 96.8, y: 97.8 } };
+  // two dressing floors with a gap between them (the belt line runs down the middle of it): the Wizard's in the west, seven lines (one per part, running down-left),
+  // the Builder's in the east, five. A line's plates are its options; the characters standing in the world are the preview, and what a plate is shows when someone stands on it.
+  wz.forEach((cat, j) => cat.opts.forEach((op, i) => out.push({ act: 'eq', label: op.name, x: 78.0 + j * 2.0, y: 85.0 + i * 1.65, r: 0.68, kind: 'cos', role: 'W', data: { cat: cat.key, opt: op.id, kind: cat.kind, who: 'wizard' } })));
+  bb.forEach((cat, k) => cat.opts.forEach((op, i) => out.push({ act: 'eq', label: op.name, x: 98.4 + k * 2.0, y: 85.0 + i * 1.65, r: 0.68, kind: 'cos', role: 'B', data: { cat: cat.key, opt: op.id, kind: cat.kind, who: 'builder' } })));
+  out.push({ act: 'ready', label: 'WIZARD READY', word: 'READY', x: 92.5, y: 89.6, r: 1.0, kind: 'ready', role: 'W', ic: 'ic_hat', key: 'readyW' });
+  out.push({ act: 'ready', label: 'BUILDER READY', word: 'READY', x: 96.7, y: 89.6, r: 1.0, kind: 'ready', role: 'B', ic: 'ic_wrench', key: 'readyB' });
+  m.statues = { B: { x: 96.2, y: 85.6 }, W: { x: 93.0, y: 85.6 } };
   return out;
 };
 function csTick(dt) {
@@ -620,7 +635,7 @@ function seqTick(dt) {
   if (q.ph === 2) {
     const f = G.fac, n = BELT.n, k = Math.min(n, Math.floor((m.t - q.t2) / SEQ.beltGap) + 1);
     while (q.belts < k) {   // the belts go from the Builder's end back toward where they came in
-      const b = f.belts.find(x => x.x === BELT.x0 + n - 1 - q.belts);
+      const b = f.belts.find(x => x.y === BELT.y0 + n - 1 - q.belts);
       if (b) { b.sk = m.t; sfx('whoosh'); }
       q.belts++;
     }
@@ -668,8 +683,7 @@ function retTick(dt) {
   else if (r.ph === 1 && r.t >= 0.7) { r.ph = 2; r.t = 0; m.tele = { t0: m.t, dir: 'out' }; sfx('whoosh'); }
   else if (r.ph === 2 && r.t >= 0.85) {
     r.ph = 3; r.t = 0;
-    const b = at(-90, 60), w = at(90, 60);
-    bd.x = b.x - OX; bd.y = b.y - OY; bd.vx = bd.vy = 0; G.w.x = w.x; G.w.y = w.y; G.w.vx = G.w.vy = 0;
+    bd.x = START.B.x - OX; bd.y = START.B.y - OY; bd.vx = bd.vy = 0; G.w.x = START.W.x; G.w.y = START.W.y; G.w.vx = G.w.vy = 0;
     m.free = false; m.dropB = null; m.beltOn = true; m.beltAt = m.t;
     m.tele = { t0: m.t, dir: 'in' }; sfx('whoosh');
     Menu.show('main', { first: true });

@@ -741,6 +741,7 @@ R.outlineObj = function (ctx, v, o, col, t, k) {
   };
   if (o === 'zone') { const hk = FA.topKind(), z = hk ? FA.pileSpot(hk) : null; if (z) quad(Math.floor(z.x), Math.floor(z.y), Math.floor(z.x) + 1, Math.floor(z.y) + 1); }   // the Stockpile tile that kind goes on
   else if (o === 'q') { const q = FA.qTile(); quad(q.x, q.y, q.x + 1, q.y + 1); }
+  else if (o === 'wiz') { const z = FA.menuWiz(FA.topKind()); if (z) quad(z.x - 1, z.y - 1, z.x + 1, z.y + 1); }   // the menu world: the Wizard and his tile of grace
   else if (o.type === 'portal') { const q = FA.portal(o.which); quad(q.x, q.y, q.x + 1, q.y + 2); }
   else quad(o.x, o.y, o.x + 1, o.y + 1);
   ctx.setLineDash([]);
@@ -1221,6 +1222,7 @@ R.prompt = function (ctx, x, y, key, label, maxX, minX) {
 };
 
 // ===================== WIZARD WORLD =====================
+const MENU_TOP = { wiz: 1, menu: 1, enemy: 1, drop: 1, pick: 1 };
 R.drawWorld = function (main, dt, rect) {
   const T = CFG.WT, S = T.S, P = T.P, w = G.w;
   const rc = R.rect = rect || { x0: CFG.HALF, w: CFG.HALF }, X0 = rc.x0, RW = rc.w;
@@ -1263,7 +1265,7 @@ R.drawWorld = function (main, dt, rect) {
       const b = bk[i];
       if (b) for (let j = 0; j < b.length; j++) {
         const o = b[j];
-        if (!o.broken || o.kind === 'bush') objs.push({ d: o.x + o.y, t: o.lm ? 'lm' : o.deco ? 'deco' : o.forage ? 'forage' : 'harv', o, k: i * 32 + j });
+        if ((!o.broken || o.kind === 'bush') && !(mv && Menu.cleared(o) && !(o.deco && BENDY.has(o.spr) && o.spr.slice(0, 3) !== 'sh_'))) objs.push({ d: o.x + o.y, t: o.lm ? 'lm' : o.deco ? 'deco' : o.forage ? 'forage' : 'harv', o, k: i * 32 + j });
       }
     }
   }
@@ -1273,7 +1275,6 @@ R.drawWorld = function (main, dt, rect) {
   const alt = G.altar && (G.altar.placed || w.cine) ? G.altar : null, airborne = !!(alt && w.cine && !w.cine.landed);   // the Summoning Altar (still in the air while it lands)
   if (alt) R.drawAltarGround(ctx, v, w);
   for (const f of w.fx_) if (f.type === 'ring' || f.type === 'warn' || f.type === 'shock') R.drawFx(ctx, v, f); else if (f.type === 'drop') R.drawDrop(ctx, v, f, true);
-  if (mv) Menu.drawGround(ctx, v, mv);   // the floor plates
 
   for (const b of w.boulders) objs.push({ d: b.x + b.y, t: 'boulder', o: b });
   for (const dr of w.drops) objs.push({ d: dr.x + dr.y, t: 'drop', o: dr });
@@ -1284,7 +1285,10 @@ R.drawWorld = function (main, dt, rect) {
   if (mv) Menu.collect(objs, v, mv);
   if (alt && !airborne) objs.push({ d: alt.x + alt.y, t: 'altar', o: alt });
   objs.sort((a, b) => a.d - b.d);
-  for (const it of objs) {
+  // the menu world: the floor plates lie over all the scenery (grass, shrubs...) and under everything that stands or moves on them
+  const order = mv ? objs.filter(i => !MENU_TOP[i.t]).concat([{ t: 'plates' }], objs.filter(i => MENU_TOP[i.t])) : objs;
+  for (const it of order) {
+    if (it.t === 'plates') { Menu.drawGround(ctx, v, mv); continue; }
     const o = it.o;
     if (it.t === 'deco') {
       const p = R.toScreen(v, o.x, o.y);

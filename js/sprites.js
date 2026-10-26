@@ -502,6 +502,7 @@ task(() => {
   icon('pause', ['ooo.ooo', 'owo.owo', 'owo.owo', 'owo.owo', 'owo.owo', 'ooo.ooo']);
   icon('rotate', ['..www.w', '.w...ww', 'w...www', 'w......', 'w.....w', '.w...w.', '..www..']);
   icon('chart', ['o......', 'o....g.', 'o...gg.', 'o.g.gg.', 'o.gggg.', 'ogggggg', 'ooooooo']);
+  icon('globe', ['.ooooo.', 'obwgbBo', 'ogggbBo', 'obggBBo', 'oBbbgBo', 'obbgggo', '.ooooo.']);   // (Online: the world)
   // tiny element-weakness pips shown over foes
   // (same shapes as the packets: ring / drop / flame / block)
   const WK = { air: ['.ooo.', 'oc.co', 'o...o', 'oc.co', '.ooo.'], water: ['..o..', '.oco.', 'occco', 'occco', '.ooo.'],

@@ -85,7 +85,7 @@ function drawPlate(ctx, v, p, t) {
   const press = (p.on.B || p.on.W) ? 4 : 0, flash = p.flash > 0 ? p.flash / 0.4 : 0;
   const [top0, rim] = plateColors(p);
   let top = top0;
-  if (p.kind === 'vol') { const lit = volLit(p.data); top = lit ? (p.data.i === 0 ? '#ff7a6a' : ['#9be86a', '#c8e84a', '#ffd23a', '#ffb02a', '#ff8a2a', '#ff6a3a', '#ff4a4a'][Math.max(0, p.data.i - 1)]) : '#4a3a6a'; }
+  if (p.kind === 'vol') { const lit = volLit(p.data); top = lit ? (p.data.i === 0 ? '#ff7a6a' : ['#9be86a', '#c8e84a', '#ffd23a', '#ffb02a', '#ff8a2a', '#ff6a3a', '#ff4a4a'][Math.max(0, p.data.i - 1)]) : '#7a6aa8'; }
   if (p.kind === 'cos') {
     const { cat, op } = optOf(p), has = Players.has(op), sel = Players.selId(p.data.who, p.data.cat) === op.id;
     top = !has ? '#8a80a0' : sel ? '#9affb8' : '#efe8f6';
@@ -106,11 +106,26 @@ function drawPlate(ctx, v, p, t) {
   }
   // the face of the plate
   if (p.kind === 'cos') drawCosFace(ctx, p, c[0], cy, s);
-  else if (p.ic && (SP[p.ic] || UI.iconCanvas(p.ic))) {
-    const spr = SP[p.ic];
-    if (spr) dspr(ctx, spr, c[0], cy + spr.ay * 0.0 + Math.min(spr.c.height * 3, 40) * 0.5, Math.max(2, Math.floor(hw / 20)) * (s > 0.99 ? 1 : s));
-    else { const cv = UI.iconCanvas(p.ic), k = Math.max(1, Math.floor(hw / 24)); ctx.imageSmoothingEnabled = false; ctx.drawImage(cv, Math.round(c[0] - cv.width * k / 2), Math.round(cy - cv.height * k * 0.75), cv.width * k, cv.height * k); }
+  else if (p.kind === 'vol') drawVolFace(ctx, p, c[0], cy, s);
+  else if (p.ic && SP[p.ic]) {   // the symbol on the plate: small above the short word written under it (drawText), or big when it stands alone
+    const spr = SP[p.ic], S = (s < 0.99 ? s : 1) * (p.word ? 3 : 6), h = spr.c.height * S;
+    dspr(ctx, spr, c[0], p.word ? cy - 3 * s : cy + h / 2, S, 1, p.flip);
   }
+}
+function drawVolFace(ctx, p, x, y, s) {
+  const d = p.data, lit = volLit(d);
+  if (d.i === 0) {   // the mute plate: the row's symbol, struck through
+    const spr = SP[p.ic];
+    if (spr) dspr(ctx, spr, x, y + spr.c.height * 1.5 * s, 3 * s);
+    ctx.strokeStyle = '#1a0f28'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(x - 15 * s, y - 11 * s); ctx.lineTo(x + 15 * s, y + 11 * s); ctx.stroke();
+    return;
+  }
+  for (let k = 0; k < 7; k++) {   // a staircase of bars: as many as the plate's level
+    const bh = (3 + 2 * k) * s, bx = x - 20 * s + k * 6 * s;
+    ctx.globalAlpha = k < d.i ? 0.9 : 0.5; ctx.fillStyle = k < d.i ? '#1a0f28' : '#e4d8ff';
+    ctx.fillRect(Math.round(bx), Math.round(y + 7 * s - bh), Math.round(4 * s), Math.round(bh));
+  }
+  ctx.globalAlpha = 1;
 }
 function volLit(d) {
   const lv = Math.round((d.k === 'sfx' ? AU.settings.sfx : AU.settings.music) * 7);
@@ -128,7 +143,7 @@ function drawCosFace(ctx, p, x, y, s) {
     else op.cols.slice(0, 4).forEach((cl, i) => { ctx.fillStyle = cl; ctx.fillRect(Math.round((x - 12 + (i % 2) * 12) / 3) * 3, Math.round((y - 6 + (i >> 1) * 6) / 3) * 3, 6, 6); });
   } else {
     const cv = Players.thumb(p.data.who, cat, op);
-    if (cv) { const k = 1; ctx.imageSmoothingEnabled = false; ctx.drawImage(cv, Math.round(x - cv.width * k / 2), Math.round(y - cv.height * k * 0.55), cv.width * k, cv.height * k); }
+    if (cv) { const k = 3 * s; ctx.imageSmoothingEnabled = false; ctx.drawImage(cv, Math.round(x - cv.width * k / 2), Math.round(y - cv.height * k * 0.55), cv.width * k, cv.height * k); }
   }
   if (!has) { const l = SP.ic_lock; if (l) dspr(ctx, l, x + 10, y + 10, 1); }
   if (sel) { ctx.strokeStyle = '#1f8a4a'; ctx.lineWidth = 3; diamond(ctx, x, y, p.r * 2 * 30 * s + 3, p.r * 2 * 15 * s + 2); ctx.stroke(); }
@@ -372,7 +387,7 @@ function flow(runs, W, size) {
 }
 // blocks -> pages. block kinds: { h: 'Heading' } { p: 'html' } { runs: [...] } { row: [keyHtml, descHtml], kw }.
 // Each page is { cmds: [ { type, x, y, ... } ] } at a fixed size.
-const DOC = { w: 1060, h: 540, pad: 28, size: 22, lh: 28 };
+const DOC = { w: 760, h: 430, pad: 24, size: 18, lh: 24 };
 function paginate(blocks, W, H, size, lh) {
   const pages = [];
   let page = { cmds: [] }, y = 0;
@@ -402,9 +417,10 @@ function paginate(blocks, W, H, size, lh) {
   return pages;
 }
 function docBlocks() {
-  const out = { howto: [], controls: [] };
+  const out = { howto: [] };   // (the Controls live in the pause menu only)
   const ks = Object.keys(HOWTO);
   for (const tab of ks) {
+    if (tab === 'CONTROLS') continue;
     const blocks = [];
     if (HOWTO[tab]) for (const h of HOWTO[tab]) { blocks.push({ h: h[0] }); blocks.push({ p: h[1] }); }
     else {   // the recipes tab: what each resource is for, then every machine's recipes as icons
@@ -428,15 +444,14 @@ function docBlocks() {
     }
     out.howto.push({ name: tab, blocks });
   }
-  for (const [title, rows] of CONTROLS) out.controls.push({ name: title, blocks: [{ h: title }].concat(rows.map(r => ({ row: r, kw: 360 }))) });
   return out;
 }
 let docCache = null;
 function docPages(id) {
   if (!docCache) {
-    docCache = { howto: [], controls: [] };
+    docCache = { howto: [] };
     const d = docBlocks(), IW = DOC.w - DOC.pad * 2, IH = DOC.h - 130;
-    for (const key of ['howto', 'controls']) for (const sec of d[key]) for (const pg of paginate(sec.blocks, IW, IH, DOC.size, DOC.lh)) { pg.title = sec.name; docCache[key].push(pg); }
+    for (const key of ['howto']) for (const sec of d[key]) for (const pg of paginate(sec.blocks, IW, IH, DOC.size, DOC.lh)) { pg.title = sec.name; docCache[key].push(pg); }
   }
   return docCache[id];
 }
@@ -464,38 +479,45 @@ function drawLines(c, cmd, x0, y0, size, lh) {
 // -- the windows
 function anchorOf(v, md) {
   const m = G.menu;
-  let ax, ay, lift = 64;
-  if (md.anchor === 'kb' && m.kb) { ax = m.kb.x; ay = m.kb.y; lift = 80; }
+  let ax, ay;
+  if (md.anchor === 'kb' && m.kb) { ax = m.kb.x; ay = m.kb.y; }
   else if (md.anchor) { const p = m.plates.find(q => q.key === md.anchor); if (p) { ax = p.x; ay = p.y; } }
   if (ax === undefined) { const o = md.at ? Menu.at(md.at.sx, md.at.sy) : { x: md.x, y: md.y }; ax = o.x; ay = o.y; }
   const s = R.toScreen(v, ax, ay);
-  return { x: s[0], y: s[1], lift };
+  return { x: s[0], y: s[1] };
 }
-const SIZES = { doc: [DOC.w, DOC.h], ach: [1060, 520], slot: [250, 150], text: [560, 220], room: [560, 320], code: [560, 280] };
+const SIZES = { doc: [DOC.w, DOC.h], ach: [DOC.w, DOC.h], slot: [250, 150], text: [560, 220], room: [560, 320], code: [560, 280] };
 function modalSize(md) {
   if (md.kind === 'text') { const n = (md.lines || []).length; return [md.w || 560, 96 + n * 28]; }
   if (md.kind === 'slot') return [250, 56 + (md.empty ? 1 : md.lines.length - 1) * 30 + 14];
   return SIZES[md.kind] || [400, 200];
 }
+// The windows hover in the sky above the patch's top-right edge (the plates stand along it), never over the patch where the characters are: each one flies out of its plate
+// to the place above the edge that is nearest to it, side by side when there are several, and a big one (the documents, the achievements) takes the far right.
 Menu.drawModals = function (c, v) {
-  const m = G.menu;
-  for (const md of m.modals) {
-    const k = easeOut(clamp(md.t, 0, 1));
+  const m = G.menu, r = m.rect;
+  const A = scrOf(v, r.x0, r.y0), B = scrOf(v, r.x1, r.y0);   // the patch's top corner and its right corner
+  const sky = (x0, x1) => { const d = x1 < A[0] ? A[0] - x1 : x0 > A[0] ? x0 - A[0] : 0; return A[1] + Math.min(d, B[0] - A[0]) * 0.5; };   // the lowest a window may reach over [x0, x1]
+  const list = m.modals.map(md => ({ md, sz: modalSize(md), a: anchorOf(v, md) })).sort((p, q) => p.a.x - q.a.x);
+  let edge = 20;
+  for (const it of list) {
+    const md = it.md, w = it.sz[0], h = it.sz[1], a = it.a, k = easeOut(clamp(md.t, 0, 1));
+    let hx = Math.max(md.kind === 'doc' || md.kind === 'ach' ? CFG.W - w - 24 : a.x - w / 2, edge);
+    let hy = sky(hx, hx + w) - 20 - h, guard = 0;
+    while (hy < 14 && hx + w < CFG.W - 20 && guard++ < 80) { hx += 20; hy = sky(hx, hx + w) - 20 - h; }
+    hy = Math.max(14, hy) - Math.sin(m.t * 2 + md.id) * 3;
+    edge = hx + w + 12;
     if (k <= 0) continue;
-    const [w, h] = modalSize(md), a = anchorOf(v, md), t = m.t;
-    // it flies out of the plate that summoned it and hovers above it
-    let hx = clamp(a.x - w / 2, 24, CFG.W - w - 24), hy = a.y - a.lift - h - Math.sin(t * 2 + md.id) * 3;
-    hy = clamp(hy, 20, CFG.H - h - 20);
-    if (md.kind === 'doc' || md.kind === 'ach') { hx = (CFG.W - w) / 2; hy = 14; }
     const x = a.x + (hx + w / 2 - a.x) * k - (w * k) / 2, y = a.y + (hy + h / 2 - a.y) * k - (h * k) / 2;
     c.save();
     c.translate(x, y); c.scale(k, k);
     drawModal(c, md, w, h, k, v);
     c.restore();
     // a thin tether from the plate to the window, so it reads as coming from it
-    if (k < 1 || md.kind === 'slot') { c.globalAlpha = 0.5; c.strokeStyle = GOLD; c.lineWidth = 3; c.setLineDash([6, 6]); c.beginPath(); c.moveTo(a.x, a.y - 30); c.lineTo(a.x, Math.min(y + h * k, a.y - 30)); c.stroke(); c.setLineDash([]); c.globalAlpha = 1; }
+    c.globalAlpha = 0.5; c.strokeStyle = GOLD; c.lineWidth = 3; c.setLineDash([6, 6]); c.beginPath(); c.moveTo(a.x, a.y - 26); c.lineTo(clamp(a.x, hx + 14, hx + w - 14), y + h * k + 4); c.stroke(); c.setLineDash([]); c.globalAlpha = 1;
   }
 };
+function fit(c, s, size, maxW) { c.font = size + 'px ' + FONT_B; while (size > 11 && c.measureText(s).width > maxW) { size--; c.font = size + 'px ' + FONT_B; } return size; }
 function drawModal(c, md, w, h, k, v) {
   panel(c, 0, 0, w, h);
   switch (md.kind) {
@@ -512,32 +534,32 @@ function drawModal(c, md, w, h, k, v) {
     }
     case 'doc': {
       const pages = docPages(md.doc), pg = clamp(G.menu.doc.pg, 0, pages.length - 1), page = pages[pg];
-      ptext(c, md.doc === 'howto' ? 'HOW TO PLAY' : 'CONTROLS', DOC.pad, 46, 18, GOLD, 'left', true);
-      ptext(c, page.title.toUpperCase(), w / 2, 46, 14, MUTED, 'center', true);
-      ptext(c, (pg + 1) + ' / ' + pages.length, w - DOC.pad, 46, 16, CREAM, 'right', true);
-      c.fillStyle = HI; c.fillRect(DOC.pad, 62, w - DOC.pad * 2, 4);
-      const x0 = DOC.pad, y0 = 84;
+      ptext(c, 'HOW TO PLAY', DOC.pad, 42, 16, GOLD, 'left', true);
+      ptext(c, page.title.toUpperCase(), w / 2 + 50, 42, 12, MUTED, 'center', true);
+      ptext(c, (pg + 1) + ' / ' + pages.length, w - DOC.pad, 42, 14, CREAM, 'right', true);
+      c.fillStyle = HI; c.fillRect(DOC.pad, 56, w - DOC.pad * 2, 4);
+      const x0 = DOC.pad, y0 = 76;
       for (const cmd of page.cmds) {
         if (cmd.type === 'h') ptext(c, cmd.s, x0, y0 + cmd.y + 18, 15, GOLD, 'left', true);
         else drawLines(c, cmd, x0, y0, DOC.size, DOC.lh);
       }
-      ptext(c, 'PREV / NEXT PLATES TURN THE PAGE', w / 2, h - 16, 12, MUTED, 'center', true);
+      ptext(c, '< >  PLATES TURN THE PAGE', w / 2, h - 14, 12, MUTED, 'center', true);
       break;
     }
     case 'ach': {
       const rows = Players.achRows(), half = Math.ceil(rows.length / 2), list = md.page === 0 ? rows.slice(0, half) : rows.slice(half);
       const done = rows.filter(r => r.ok).length;
-      ptext(c, 'ACHIEVEMENTS ' + done + '/' + rows.length, 28, 46, 18, GOLD, 'left', true);
-      ptext(c, 'PAGE ' + (md.page + 1) + ' / 2', w - 28, 46, 14, MUTED, 'right', true);
-      c.fillStyle = HI; c.fillRect(28, 62, w - 56, 4);
-      const cw = (w - 56 - 24) / 2, per = Math.ceil(list.length / 2);
+      ptext(c, 'ACHIEVEMENTS ' + done + '/' + rows.length, 24, 42, 16, GOLD, 'left', true);
+      ptext(c, 'PAGE ' + (md.page + 1) + ' / 2', w - 24, 42, 12, MUTED, 'right', true);
+      c.fillStyle = HI; c.fillRect(24, 56, w - 48, 4);
+      const cw = (w - 48 - 20) / 2, per = Math.ceil(list.length / 2);
       list.forEach((r, i) => {
-        const col = i < per ? 0 : 1, ri = i < per ? i : i - per, x = 28 + col * (cw + 24), y = 82 + ri * 54;
+        const col = i < per ? 0 : 1, ri = i < per ? i : i - per, x = 24 + col * (cw + 20), y = 70 + ri * 44;
         c.globalAlpha = r.ok ? 1 : 0.62;
-        icon(c, r.icon, x, y + 44, 36);
-        ptext(c, r.name, x + 50, y + 18, 22, r.ok ? GOLD : CREAM);
-        ptext(c, r.text, x + 50, y + 40, 18, MUTED);
-        icon(c, r.ok ? 'ic_check' : 'ic_lock', x + cw - 22, y + 30, 20);
+        icon(c, r.icon, x, y + 34, 30);
+        ptext(c, r.name, x + 40, y + 16, fit(c, r.name, 19, cw - 80), r.ok ? GOLD : CREAM);
+        ptext(c, r.text, x + 40, y + 36, fit(c, r.text, 15, cw - 80), MUTED);
+        icon(c, r.ok ? 'ic_check' : 'ic_lock', x + cw - 22, y + 28, 20);
         c.globalAlpha = 1;
       });
       break;
@@ -580,30 +602,20 @@ function drawModal(c, md, w, h, k, v) {
 // -- what is drawn in the screen-space pass for the whole menu world
 Menu.drawText = function (c, v, mv) {
   const m = G.menu;
-  // plate labels
+  // the short word written on a plate, and a tooltip with its full name when a character is beside it
   for (const p of m.plates) {
-    if (p.kind === 'tag' || p.kind === 'vol') continue;
-    const s = plateScale(p);
-    if (s < 0.6 || !p.label) continue;
-    const sc = scrOf(v, p.x, p.y);
-    if (p.kind === 'cos') continue;
-    c.globalAlpha = Math.min(1, (s - 0.6) / 0.4);
-    drawText(c, p.label, sc[0], sc[1] + p.r * 2 * v.hh + 24, 17, p.kind === 'ready' ? '#c8ffd8' : '#ffffff', 'center');
-    c.globalAlpha = 1;
+    if (p.kind === 'cos' || !p.word || plateScale(p) < 0.95) continue;
+    const sc = scrOf(v, p.x, p.y), cy = sc[1] - (8 - ((p.on.B || p.on.W) ? 4 : 0));
+    drawText(c, p.word, sc[0], cy + 15, 17, '#ffffff', 'center');
   }
-  for (const p of m.plates) if (p.kind === 'tag') {   // the row labels of the volume staircase
-    const sc = scrOf(v, p.x, p.y);
-    c.globalAlpha = 1;
-    drawText(c, p.label, sc[0], sc[1] - 10, 12, '#ffffff', 'center', 'd');
-    if (p.ic) icon(c, p.ic, sc[0] - 12, sc[1] - 28 + 0, 24);
+  if (!m.seq) for (const p of m.plates) {
+    if (p.kind === 'cos' || !p.label || p.label === p.word || plateScale(p) < 0.95) continue;
+    let near = false;
+    for (const r of ['B', 'W']) if (m.conn[r]) { const q = Menu.charPos(r); if (Math.hypot(q.x - p.x, q.y - p.y) < p.r + 1.2) near = true; }
+    if (near) { const sc = scrOf(v, p.x, p.y); tooltip(c, sc[0], sc[1] - 30, [p.label], GOLD); }
   }
-  // the character select: row labels, and what the plate under a character is
+  // the character select: what the plate under a character is
   if (m.page === 'cs') {
-    for (const p of m.plates) if (p.kind === 'cos' && p.row && plateScale(p) > 0.9) {
-      const sc = scrOf(v, p.x, p.y);
-      if (p.role === 'B') drawText(c, p.row, sc[0] - 50, sc[1] + 6, 12, '#ffe36b', 'right', 'd');
-      else drawText(c, p.row, sc[0] + 50, sc[1] + 6, 12, '#ffe36b', 'left', 'd');
-    }
     for (const r of ['B', 'W']) {
       if (!m.conn[r]) continue;
       const p = m.plates.find(q => q.kind === 'cos' && q.role === r && q.on[r]);
@@ -620,18 +632,19 @@ Menu.drawText = function (c, v, mv) {
   if (m.kb && m.kb.t >= 1 && !m.typing) for (const r of ['B', 'W']) if (m.conn[r] && Menu.nearProp(r) === 'kb') { const s = scrOf(v, m.kb.x, m.kb.y); keyPrompt(c, s[0], s[1] - 90, r, ['ic_gear']); }
   // spell names, top right
   m.toasts.forEach((tt, i) => {
-    const a = clamp(Math.min(tt.t / 0.15, (3.2 - tt.t) / 0.4), 0, 1), y = 40 + i * 52, w = 330;
-    c.globalAlpha = a; panel(c, CFG.W - w - 30 + (1 - a) * 40, y, w, 40);
-    c.fillStyle = tt.col; c.fillRect(CFG.W - w - 30 + (1 - a) * 40 + 8, y + 8, 8, 24);
-    ptext(c, tt.text, CFG.W - w - 30 + (1 - a) * 40 + 28, y + 28, 22, CREAM);
+    const a = clamp(Math.min(tt.t / 0.15, (3.2 - tt.t) / 0.4), 0, 1), y = 40 + i * 52, w = 330, x0 = 30 - (1 - a) * 40;
+    c.globalAlpha = a; panel(c, x0, y, w, 40);
+    c.fillStyle = tt.col; c.fillRect(x0 + 8, y + 8, 8, 24);
+    ptext(c, tt.text, x0 + 28, y + 28, 22, CREAM);
     c.globalAlpha = 1;
   });
   if (m.page === 'main' && !m.seq && !m.ret) {   // the title, over the patch
     const bob = Math.round(Math.sin(m.t * 2.4) * 3);
     c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.font = '52px ' + FONT_D;
-    [['WANDS &', 90], ['WORKBENCHES', 152]].forEach(([s, y]) => { for (const [dx, col] of [[8, INK], [4, '#a0500a']]) { c.fillStyle = col; c.fillText(s, CFG.W / 2 + dx, y + bob + dx); } c.fillStyle = '#ffd23a'; c.fillText(s, CFG.W / 2, y + bob); });
-    ptext(c, 'Build the factory. Arm the wizard. Together.', CFG.W / 2, 196 + bob, 26, CREAM, 'center');
-    if (!m.conn.B && !m.conn.W) drawText(c, 'WALK ONTO A PLATE', CFG.W / 2, 850, 14, '#ffe36b', 'center', 'd');
+    const tx = CFG.W / 2 + m.sh[0];   // (over the patch, which sits left of the screen's middle)
+    [['WANDS &', 90], ['WORKBENCHES', 152]].forEach(([s, y]) => { for (const [dx, col] of [[8, INK], [4, '#a0500a']]) { c.fillStyle = col; c.fillText(s, tx + dx, y + bob + dx); } c.fillStyle = '#ffd23a'; c.fillText(s, tx, y + bob); });
+    ptext(c, 'Build the factory. Arm the wizard. Together.', tx, 196 + bob, 26, CREAM, 'center');
+    if (!m.conn.B && !m.conn.W) drawText(c, 'WALK ONTO A PLATE', tx, 860, 14, '#ffe36b', 'center', 'd');
   }
   if (m.fade > 0 && Net.role !== 'guest') { c.fillStyle = 'rgba(0,0,0,' + m.fade.toFixed(3) + ')'; c.fillRect(0, 0, CFG.W, CFG.H); }   // (online the host's screen goes dark before the factory)
   // the countdown
@@ -665,7 +678,7 @@ Menu.hints = function (ctx, v, mv) {
     if (a.fn) { const s = R.toScreen(mv, tgt.x, tgt.y); R.iprompt(ctx, s[0], s[1] - 100, R.key('pick'), a.ic || []); }
   } else if (G.hands.length && !bd.gather) {
     const aim = Menu.aimNow();
-    if (aim && aim.obj && aim.obj.type === 'portal') {
+    if (aim && aim.obj && (aim.obj.type === 'portal' || aim.obj === 'wiz')) {
       const s = R.toScreen(mv, aim.x, aim.y);
       R.iprompt(ctx, s[0], s[1] - 150, G.lastInput === 'pad' ? 'B' : G.ctl.kbB && Main.altB() ? ',' : 'RMB', ['ic_portal']);
       const sa = R.toScreen(mv, aim.x, aim.y); ctx.strokeStyle = '#7bff9a'; ctx.lineWidth = 4; diamond(ctx, sa[0], sa[1], 34, 17); ctx.stroke();

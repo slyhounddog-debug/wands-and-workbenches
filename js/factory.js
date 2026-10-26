@@ -1119,7 +1119,9 @@ FA.updCell = function (b, dt) {
 
 // ---------- throwing ----------
 // will this receiver take a thrown item of kind k? (portal / belt / building / blueprint / the Stockpile Zone)
-FA.accepts = (o, k) => (o === 'q' ? true : o === 'zone' ? FA.room(k) > 0 : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item && FA.beltOk(k) : FA.canInsert(o, k) || FA.canOver(o, k));
+// the living menu: the Wizard stands in the same world as the Builder, so a spell can be thrown straight at him (his position in factory coordinates, or null)
+FA.menuWiz = k => (G.menu && G.w && !G.w.dead && ITEMS[k] && (ITEMS[k].elem || ITEMS[k].spell) ? { x: G.w.x - Menu.OX, y: G.w.y - Menu.OY } : null);
+FA.accepts = (o, k) => (o === 'q' || o === 'wiz' ? true : o === 'zone' ? FA.room(k) > 0 : !o ? false : o.type === 'portal' ? FA.portalTakes(o, k) : o.type === 'belt' ? !o.item && FA.beltOk(k) : FA.canInsert(o, k) || FA.canOver(o, k));
 // every receiver in throwing range that would take kind k, with a priority (lower = preferred)
 FA.throwList = function (k) {
   const bd = G.bd, out = [];
@@ -1130,6 +1132,7 @@ FA.throwList = function (k) {
     else if (FA.canOver(b, k)) add(b.x + 0.5, b.y + 0.5, b, 2.6);   // overcharging is on purpose: the portal stays the first choice for spells
   }
   { const q = FA.qTile(); add(q.x + 0.5, q.y + 0.5, 'q', FA.storable(k) ? 3 : 2.4); }
+  { const wz = FA.menuWiz(k); if (wz) add(wz.x, wz.y, 'wiz', 0.7); }
   if (FA.room(k) > 0) { const z = FA.pileSpot(k); add(z.x, z.y, 'zone', 1.1); }   // the Stockpile tile this kind goes on
   if (FA.beltOk(k)) for (const bl of G.fac.belts) if (!bl.item) add(bl.x + 0.5, bl.y + 0.5, bl, 2.2);
   return out;
@@ -1179,6 +1182,8 @@ FA.throwTarget = function (aimX, aimY) {
     const d = Math.hypot(dx, dy) || 1;
     if (d > FA.range()) { dx *= FA.range() / d; dy *= FA.range() / d; }
     const tx = bd.x + dx, ty = bd.y + dy, c = FA.cell(Math.floor(tx), Math.floor(ty));
+    const wz = FA.menuWiz(k);
+    if (wz && !(c && c.type === 'portal') && Math.hypot(wz.x - tx, wz.y - ty) <= 1) return { x: wz.x, y: wz.y, obj: 'wiz' };   // (the menu world: aimed at the Wizard, with a tile of grace)
     if (c && c.type !== 'belt') return { x: Math.floor(tx) + 0.5, y: Math.floor(ty) + 0.5, obj: c };
     if (!c && FA.isQ(Math.floor(tx), Math.floor(ty))) { const q = FA.qTile(); return { x: q.x + 0.5, y: q.y + 0.5, obj: 'q' }; }
     if (!c && FA.isPile(Math.floor(tx), Math.floor(ty))) return { x: tx, y: ty, obj: 'zone' };
@@ -1236,6 +1241,7 @@ FA.impact = (o, bad) => G.fac.rings.push({ x: o.x, y: o.y, dx: o.x - o.sx, dy: o
 FA.land = function (o) {
   if (o.stock) { G.stock[o.kind] = (G.stock[o.kind] || 0) + (o.n || 1); FA.ipop(o.tx, o.ty - 0.4, [[o.kind]]); AU.sfx('drop'); UI.changed(); return; }   // (a stack that no longer fits spills out again: FA.pileSync)
   if (o.boing) { FA.dropAt(o.kind, o.x, o.y); AU.sfx('thud'); return; }   // the end of a bounce-back: it just lands
+  if (G.menu && Menu.catchSpell(o)) return;   // the menu world: a spell that comes down within a tile of the Wizard fires on him
   const tx = Math.floor(o.x), ty = Math.floor(o.y), c = FA.cell(tx, ty);
   const toPortal = c => {
     if (!FA.enterPortal(c, o.kind, o.x, o.y)) return false;

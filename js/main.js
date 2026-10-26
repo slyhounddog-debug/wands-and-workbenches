@@ -906,6 +906,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // factory; the factory then stands empty for a second and the starting buildings fall out of portals ~200 ms apart, each landing with a puff of dust.
 // (All of it is plain data in G: G.intro, and fallAt on whatever has yet to land; the sim waits until it is over.)
 Main.introPending = false;
+Main.CINE = 2;   // the start sequence (the intro: slide, drops) and the way back play this many times faster than their data says (the data stays: 1 s empty, 200 ms apart)
 Main.launch = function (pend, mG) {
   const c = mG.ctl, wiz = { x: mG.w.x, y: mG.w.y, fx: mG.w.fx, fy: mG.w.fy }, swapped = mG.swapped, cam = { x: R.wcam.x, y: R.wcam.y };
   const online = !!pend.online && Net.role === 'host';
@@ -955,8 +956,10 @@ Main.introStep = function (dt) {
 };
 const smooth = k => k * k * (3 - 2 * k);
 Main.introFrame = function (dt, ts) {
+  const rdt = dt;
+  dt *= Main.CINE;
   Main.introStep(dt);
-  if (Net.role === 'host') { Net.hostTick(dt); Main.netBannerTick(); }   // (online the guest watches the factory fill up in his corner: the snapshots keep flowing)
+  if (Net.role === 'host') { Net.hostTick(rdt); Main.netBannerTick(); }   // (online the guest watches the factory fill up in his corner: the snapshots keep flowing)
   const I = G.intro;
   AU.hum(0); AU.mix(0, 0, false); AU.layerMix(G.fac.weather); AU.muffle(false);
   ctx.clearRect(0, 0, CFG.W, CFG.H);
@@ -995,6 +998,7 @@ Main.introEnd = function () {
 };
 // ---------- the way back: the Builder is sucked into a portal, the factory slides away, he drops into the Wizard's world, both are teleported to the start ----------
 Main.exitFrame = function (dt, ts) {
+  dt *= Main.CINE;
   const X = Main.xs, g = X.g, T1 = 1.0, T2 = 0.9;
   X.t += dt; G = g;
   g.fac.t += dt; g.outro.t0 = X.t;

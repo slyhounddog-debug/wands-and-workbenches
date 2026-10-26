@@ -387,7 +387,7 @@ function flow(runs, W, size) {
 }
 // blocks -> pages. block kinds: { h: 'Heading' } { p: 'html' } { runs: [...] } { row: [keyHtml, descHtml], kw }.
 // Each page is { cmds: [ { type, x, y, ... } ] } at a fixed size.
-const DOC = { w: 760, h: 430, pad: 24, size: 18, lh: 24 };
+const DOC = { w: 640, h: 420, pad: 24, size: 18, lh: 24 };
 function paginate(blocks, W, H, size, lh) {
   const pages = [];
   let page = { cmds: [] }, y = 0;
@@ -602,6 +602,7 @@ function drawModal(c, md, w, h, k, v) {
 // -- what is drawn in the screen-space pass for the whole menu world
 Menu.drawText = function (c, v, mv) {
   const m = G.menu;
+  TIPS = [];
   // the short word written on a plate, and a tooltip with its full name when a character is beside it
   for (const p of m.plates) {
     if (p.kind === 'cos' || !p.word || plateScale(p) < 0.95) continue;
@@ -612,7 +613,7 @@ Menu.drawText = function (c, v, mv) {
     if (p.kind === 'cos' || !p.label || p.label === p.word || plateScale(p) < 0.95) continue;
     let near = false;
     for (const r of ['B', 'W']) if (m.conn[r]) { const q = Menu.charPos(r); if (Math.hypot(q.x - p.x, q.y - p.y) < p.r + 1.2) near = true; }
-    if (near) { const sc = scrOf(v, p.x, p.y); tooltip(c, sc[0], sc[1] - 30, [p.label], GOLD); }
+    if (near) { const sc = scrOf(v, p.x, p.y); tooltip(c, sc[0], sc[1] - 56, [p.label], GOLD); }
   }
   // the character select: what the plate under a character is
   if (m.page === 'cs') {
@@ -623,11 +624,12 @@ Menu.drawText = function (c, v, mv) {
         const { cat, op } = optOf(p), has = Players.has(op), sc = scrOf(v, p.x, p.y);
         const lines = [cat.label + ': ' + op.name];
         if (!has) { const a = Players.achById[op.ach]; lines.push('Earn ' + a.name + ': ' + a.text); } else if (op.ach) lines.push('Unlocked by ' + Players.achById[op.ach].name);
-        tooltip(c, sc[0], sc[1] - 40, lines, has ? GOLD : '#ff9a8a');
+        tooltip(c, sc[0], sc[1] - 62, lines, has ? GOLD : '#ff9a8a');
       }
     }
     for (const r of ['B', 'W']) if (m.statues && Menu.nearProp(r) === 'statue') { const s = scrOf(v, m.statues[r === 'B' ? 'W' : 'B'].x, m.statues[r === 'B' ? 'W' : 'B'].y); keyPrompt(c, s[0], s[1] - 120, r, ['ic_swap']); }
   }
+  charsOverTips(c, v, mv);
   // the prompts: use next to the keyboard
   if (m.kb && m.kb.t >= 1 && !m.typing) for (const r of ['B', 'W']) if (m.conn[r] && Menu.nearProp(r) === 'kb') { const s = scrOf(v, m.kb.x, m.kb.y); keyPrompt(c, s[0], s[1] - 90, r, ['ic_gear']); }
   // spell names, top right
@@ -644,7 +646,7 @@ Menu.drawText = function (c, v, mv) {
     const tx = CFG.W / 2 + m.sh[0];   // (over the patch, which sits left of the screen's middle)
     [['WANDS &', 90], ['WORKBENCHES', 152]].forEach(([s, y]) => { for (const [dx, col] of [[8, INK], [4, '#a0500a']]) { c.fillStyle = col; c.fillText(s, tx + dx, y + bob + dx); } c.fillStyle = '#ffd23a'; c.fillText(s, tx, y + bob); });
     ptext(c, 'Build the factory. Arm the wizard. Together.', tx, 196 + bob, 26, CREAM, 'center');
-    if (!m.conn.B && !m.conn.W) drawText(c, 'WALK ONTO A PLATE', tx, 860, 14, '#ffe36b', 'center', 'd');
+    if (!m.conn.B && !m.conn.W) drawText(c, 'WALK ONTO A PLATE', tx, 884, 14, '#ffe36b', 'center', 'd');
   }
   if (m.fade > 0 && Net.role !== 'guest') { c.fillStyle = 'rgba(0,0,0,' + m.fade.toFixed(3) + ')'; c.fillRect(0, 0, CFG.W, CFG.H); }   // (online the host's screen goes dark before the factory)
   // the countdown
@@ -658,11 +660,24 @@ Menu.drawText = function (c, v, mv) {
   // the pad / keyboard hints for a Builder holding or next to a spell
   Menu.drawModals(c, v);
 };
+let TIPS = [];   // the tooltips drawn this frame: [x, y, w, h]
 function tooltip(c, x, y, lines, col) {
   const w = Math.max(...lines.map(s => { c.font = '20px ' + FONT_B; return c.measureText(s).width; })) + 36, h = 18 + lines.length * 28;
   x = clamp(x - w / 2, 14, CFG.W - w - 14); y = y - h;
   panel(c, x, y, w, h, 0.96);
   lines.forEach((s, i) => ptext(c, s, x + 18, y + 30 + i * 28, 20, i ? CREAM : col));
+  TIPS.push([x - 4, y - 4, w + 8, h + 8]);
+}
+// the characters stand on top of the tooltips (which are full-resolution text drawn after the low-res world): draw both again, clipped to the tooltips' rectangles
+function charsOverTips(c, v, mv) {
+  const m = G.menu;
+  if (!TIPS.length || m.seq || m.ret || m.tele || m.dropB) return;
+  c.save(); c.beginPath(); for (const r of TIPS) c.rect(r[0], r[1], r[2], r[3]); c.clip();
+  const bd = G.bd, w = G.w, last = (bd.x + OX + bd.y + OY) > (w.x + w.y);   // the nearer one last
+  if (last) Menu.drawWizard(c, v, w);
+  if (!m.hideB) drawBuilderMenu(c, v, mv, m, m.t);
+  if (!last) Menu.drawWizard(c, v, w);
+  c.restore();
 }
 function keyPrompt(c, x, y, role, icons) {
   const key = role === 'B' ? (Main.padB() ? 'X' : (G.ctl.kbB && !(Main.kbShared() && G.swapped) ? 'E' : '/')) : (Main.padW() ? 'X' : (G.ctl.kbB ? 'Z' : 'E'));

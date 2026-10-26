@@ -19,7 +19,7 @@ const Menu = {};
 // south-west), so the main menu's patch is the dry square round the spawn and the character select's grows to the north, where there is room for its plates.
 const RECT_MAIN = { x0: 94, x1: 108, y0: 90, y1: 104 }, RECT_CS = { x0: 75.8, x1: 108, y0: 82.8, y1: 102.4 };
 const CEN_MAIN = { x: 101, y: 97 }, CEN_CS = { x: 91.9, y: 92.6 };   // the middle of each patch
-const SHIFT_MAIN = [-170, 130];   // the main menu's patch sits low and to the left of the screen (px): the top-right of the screen is where the windows go
+const SHIFT_MAIN = [0, 150];   // the main menu's patch sits centred across the screen and low (px): the sky above its top-right edge is where the windows go
 const START = { B: { x: 97.4, y: 95.2 }, W: { x: 100.6, y: 99.0 } };   // where the characters stand at the start of the world
 const FW = 34, OX = 80, OY = 80;           // the scratch factory grid is FW x FW; factory tile (fx, fy) is world tile (fx + OX, fy + OY)
 const BELT = { x: 15, y0: 10, n: 8 }, PORTAL = { x: 15, y: 20 };   // the spell belt line runs down the patch's left edge (factory coordinates) into the Spell Portal's top cell
@@ -204,37 +204,37 @@ Menu.specs = function (page, o) {
       wp('go:new', 'NEW GAME', along(0), NE, { ic: 'ic_play', word: 'NEW' }),
       wp('go:load', 'LOAD GAME', along(1), NE, { ic: 'ic_folder', word: 'LOAD' }),
       wp('go:online', 'ONLINE', along(2), NE, { ic: 'ic_globe', safe: true }),
-      wp('go:settings', 'SETTINGS', CORNER, NE, { ic: 'ic_gear', safe: true }),
       wp('doc:howto', 'HOW TO PLAY', CORNER, NE + STEP, { ic: 'ic_book', word: 'HELP', safe: true, key: 'howto' }),
       wp('go:ach', 'ACHIEVEMENTS', CORNER, NE + STEP * 2, { ic: 'ic_trophy', safe: true }),
+      wp('go:settings', 'SETTINGS', CORNER, NE + STEP * 3, { ic: 'ic_gear', safe: true }),
     ];
     case 'slots': {
       const out = [back()];
-      for (let i = 0; i < 3; i++) out.push(wp('slot:' + (i + 1), 'SLOT ' + (i + 1), 99.9 + i * 3.2, NE, { ic: m.flow === 'load' ? 'ic_folder' : m.flow === 'new' ? 'ic_play' : 'ic_portal', word: String(i + 1), key: 'slot' + (i + 1) }));
+      for (let i = 0; i < 3; i++) out.push(wp('slot:' + (i + 1), 'SLOT ' + (i + 1), 98.6 + i * 3.2, NE, { ic: m.flow === 'load' ? 'ic_folder' : m.flow === 'new' ? 'ic_play' : 'ic_portal', word: String(i + 1), key: 'slot' + (i + 1) }));
       return out;
     }
     case 'confirm': return [
-      wp('ok', 'OVERWRITE', 101.6, NE, { ic: 'ic_warn', word: 'YES', key: 'ok', col: '#e8503a' }),
-      wp('back', 'CANCEL', 105.0, NE, { ic: 'ic_x', word: 'NO', key: 'cancel', safe: false, kind: 'back' }),
+      wp('ok', 'OVERWRITE', 100.4, NE, { ic: 'ic_warn', word: 'YES', key: 'ok', col: '#e8503a' }),
+      wp('back', 'CANCEL', 103.8, NE, { ic: 'ic_x', word: 'NO', key: 'cancel', safe: false, kind: 'back' }),
     ];
     case 'settings': {
       const out = [back()];
       for (const [k, y, ic] of [['sfx', 92.1, 'ic_sound'], ['music', 94.5, 'ic_music']]) {
-        for (let i = 0; i < 8; i++) out.push(wp('vol:' + k + ':' + i, (k === 'sfx' ? 'SOUND ' : 'MUSIC ') + (i ? i + '/7' : 'OFF'), 97.4 + i * 1.4, y, { r: 0.62, kind: 'vol', data: { k, i }, ic: i === 0 ? ic : null }));
+        for (let i = 0; i < 8; i++) out.push(wp('vol:' + k + ':' + i, (k === 'sfx' ? 'SOUND ' : 'MUSIC ') + (i ? i + '/7' : 'OFF'), 96.9 + i * 1.3, y, { r: 0.62, kind: 'vol', data: { k, i }, ic: i === 0 ? ic : null }));
       }
       return out;
     }
     case 'howto': return [wp('doc:howto', 'HOW TO PLAY', CORNER, NE + STEP, { ic: 'ic_book', word: 'HELP', key: 'howto', safe: false, kind: 'anchor' }), back(),
-      wp('pg:-1', 'PREVIOUS PAGE', 101.4, NE, { ic: 'ic_play', kind: 'pg', r: 0.95, data: -1, flip: true }), wp('pg:1', 'NEXT PAGE', 104.4, NE, { ic: 'ic_play', kind: 'pg', r: 0.95, data: 1 })];
-    case 'ach': return [back(), wp('ach:0', 'ACHIEVEMENTS 1', 101.4, NE, { ic: 'ic_trophy', word: '1', key: 'ach0' }), wp('ach:1', 'ACHIEVEMENTS 2', 104.6, NE, { ic: 'ic_trophy', word: '2', key: 'ach1' })];
+      wp('pg:-1', 'PREVIOUS PAGE', 100.2, NE, { ic: 'ic_play', kind: 'pg', r: 0.95, data: -1, flip: true }), wp('pg:1', 'NEXT PAGE', 103.2, NE, { ic: 'ic_play', kind: 'pg', r: 0.95, data: 1 })];
+    case 'ach': return [back(), wp('ach:0', 'ACHIEVEMENTS 1', 100.4, NE, { ic: 'ic_trophy', word: '1', key: 'ach0' }), wp('ach:1', 'ACHIEVEMENTS 2', 103.6, NE, { ic: 'ic_trophy', word: '2', key: 'ach1' })];
     case 'online': return [
       back(),
-      wp('go:create', 'CREATE GAME', 99.9, NE, { ic: 'ic_factory', word: 'HOST', key: 'create' }),
-      wp('go:join', 'JOIN GAME', 103.1, NE, { ic: 'ic_hat', word: 'JOIN', key: 'join' }),
-      wp('net:test', 'CHECK THIS COMPUTER', 106.3, NE, { ic: 'ic_chart', word: 'TEST', key: 'test' }),
+      wp('go:create', 'CREATE GAME', 98.6, NE, { ic: 'ic_factory', word: 'HOST', key: 'create' }),
+      wp('go:join', 'JOIN GAME', 101.8, NE, { ic: 'ic_hat', word: 'JOIN', key: 'join' }),
+      wp('net:test', 'CHECK THIS COMPUTER', 105.0, NE, { ic: 'ic_chart', word: 'TEST', key: 'test' }),
     ];
-    case 'host': return [back(), wp('none', 'CREATE GAME', 99.9, NE, { ic: 'ic_factory', word: 'HOST', key: 'create', kind: 'anchor' })];
-    case 'join': return [back(), wp('none', 'JOIN GAME', 103.1, NE, { ic: 'ic_hat', word: 'JOIN', key: 'join', kind: 'anchor' })];
+    case 'host': return [back(), wp('none', 'CREATE GAME', 98.6, NE, { ic: 'ic_factory', word: 'HOST', key: 'create', kind: 'anchor' })];
+    case 'join': return [back(), wp('none', 'JOIN GAME', 101.8, NE, { ic: 'ic_hat', word: 'JOIN', key: 'join', kind: 'anchor' })];
     case 'cs': return Menu.csSpecs();
   }
   return [];
@@ -388,6 +388,7 @@ function feedBelt(dt) {
 // ---------- the step ----------
 Menu.step = function (dt) {
   const m = G.menu, f = G.fac, w = G.w;
+  if (m.seq || m.ret) dt *= Main.CINE;   // (the start sequence and the way back play faster)
   m.t += dt;
   G.ctl = Menu.ctlFor(m);
   G.swapped = m.swap && G.ctl.kbB && G.ctl.kbW;

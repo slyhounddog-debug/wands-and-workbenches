@@ -212,7 +212,7 @@ UI.hostLobby = function (state, info) {
   const box = $('menuHost');
   let h = '<h2>HOST A GAME</h2>';
   if (state === 'opening') h += '<div class="netStatus">Opening a room<span class="dots"></span></div>';
-  else if (state === 'waiting') h += '<p class="netNote">Tell your partner to open the game, press ONLINE, JOIN GAME and type:</p><div class="bigCode">' + info + '</div><div class="netStatus">Waiting for player 2<span class="dots"></span></div>';
+  else if (state === 'waiting') h += '<p class="netNote">Tell your partner to open the game, press ONLINE, JOIN GAME and type:</p><div class="bigCode">' + info + '</div><div class="netStatus">Waiting for player 2<span class="dots"></span></div>' + (Net.relay ? '<p class="netNote">A relay is ON (?turn=...): the other computer needs it too.</p>' : '');
   else h += '<div class="netStatus err">' + (info || 'Something went wrong.') + '</div>';
   h += '<button class="big ghost back">' + (state === 'error' ? 'BACK' : 'CANCEL') + '</button>';
   box.innerHTML = h;
@@ -221,7 +221,7 @@ UI.hostLobby = function (state, info) {
 };
 UI.joinPage = function (msg, isErr) {
   const box = $('menuJoin');
-  box.innerHTML = '<h2>JOIN A GAME</h2><p class="netNote">Type the 6 letters the host sees on their screen.</p><input id="joinCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="------">' +
+  box.innerHTML = '<h2>JOIN A GAME</h2><p class="netNote">Type the 6 letters the host sees on their screen.' + (Net.relay ? ' (A relay is ON.)' : '') + '</p><input id="joinCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="------">' +
     '<div class="netStatus' + (isErr ? ' err' : '') + '" id="joinMsg">' + (msg || '') + '</div><button class="big" id="joinGo">JOIN</button><button class="big ghost back">BACK</button>';
   const inp = $('joinCode'), go = () => {
     const code = Net.cleanCode(inp.value);

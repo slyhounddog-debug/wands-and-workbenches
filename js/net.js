@@ -36,7 +36,14 @@ const Net = {
 };
 (function () {
   const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }] };   // STUN only (PeerJS's own default adds a TURN relay: switched off on purpose)
-  const peerOpts = () => ({ config: ICE, debug: 1 });
+  // OPT-IN TEST HOOK, off by default: open the game on BOTH computers with ?turn=<url>&tuser=<name>&tpass=<secret> (url like turn:relay.example.com:3478) to add a TURN relay
+  // of your own choosing. It exists so a pair of networks that cannot connect directly (AP isolation, no hairpin NAT) can be tried with a relay before anyone decides to run
+  // one. Which relay to use, and whether to ship one, is Josh's decision (CLAUDE.md): nothing turns this on by itself, nothing is built in (PeerJS's free community relay
+  // no longer resolves in DNS), and a relay carries all of that session's traffic through a third party's server.
+  const qp = k => { const m = new RegExp('[?&]' + k + '=([^&]*)').exec(location.search); return m ? decodeURIComponent(m[1]) : ''; };
+  Net.relay = !!qp('turn');
+  const iceServers = () => (Net.relay ? ICE.iceServers.concat([{ urls: qp('turn'), username: qp('tuser'), credential: qp('tpass') }]) : ICE.iceServers);
+  const peerOpts = () => ({ config: { iceServers: iceServers() }, debug: 1 });
   const now = () => performance.now();
   const EDGES = ['a', 'b', 'x', 'y', 'lb', 'rb', 'rt', 'l3', 'back'];
   const HELD = ['xHeld', 'aHeld', 'bHeld', 'ltHeld', 'startHeld'];

@@ -129,6 +129,8 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     rows.push(row('Egg recipe', UI.recipeHtml(rec)), row('Hatch', (c.n || 1) + ' creature' + ((c.n || 1) > 1 ? 's' : '') + ' per Egg, ' + c.time + 's at a Creature Spawner, ' + c.power + ' power'));
     rows.push(row('Health', '' + c.hp), row('Touch damage', '' + c.dmg), row('Speed', c.speed + ' tiles/s' + (c.fly ? ', flies' : '')));
     rows.push(row('Gems', (c.gem[0] ? c.gem[0] + ' guaranteed + ' : '') + pct(c.gem[1]) + ' chance of ' + (c.gem[0] ? 'one more' : 'one')));
+    const ar = CFG.recipes['aegg_' + id], par = ar.parents ? ', after ' + ar.parents.map(p => SPELLS[p]).join(' + ') + ' have been made' : '';
+    rows.push(row('Ally version', UI.recipeHtml('aegg_' + id) + ' thrown at a Spawner (by hand, Cores only): a FRIENDLY ' + c.name + '. ' + CFG.ally.hpMul + 'x health (' + Math.round(c.hp * CFG.ally.hpMul) + '), half damage, never elite or mutated' + par + '. Hostiles attack it before the Wizard; it pays nothing when it falls'));
     rows.push(row('Variants', pct(CFG.crafted.eliteChance) + ' elite (x' + CFG.crafted.eliteHp + ' HP, x' + CFG.crafted.eliteDmg + ' damage), ' + pct(CFG.crafted.mutChance) + ' one mutation, HP / speed / damage +-' + pct(CFG.crafted.jitter)));
     return rows.join('');
   }

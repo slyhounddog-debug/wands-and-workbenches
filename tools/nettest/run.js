@@ -91,6 +91,12 @@ async function boot(browser, name) {
   ok(fan.n === 3 && fan.d.every(d => d <= 6.05), 'the guest sees three Tempest Tears, each within 6 tiles of him', fan.n + ' tears, ' + fan.d.map(d => d.toFixed(1)).join(','));
   await gp.evaluate(() => { delete navigator.getGamepads; });
   await hp.evaluate(() => { __wands.G.w.zones.length = 0; });
+  // ---- allies are host-sim state: the guest sees them through the snapshot (and they carry the heart marker)
+  await hp.evaluate(() => { const W = __wands, a = W.WZ.spawnAlly('pebble'); a.fall = 0; });
+  await sleep(700);
+  const gal = await gp.evaluate(() => __wands.G.w.allies.map(a => a.type + ':' + a.ally + ':' + Math.round(a.hp)));
+  ok(gal.length === 1 && /^pebble:true:/.test(gal[0]), "the guest sees the host's ally (G.w.allies rides the snapshot)", gal.join());
+  await hp.evaluate(() => { __wands.G.w.allies.length = 0; });
 
   // ---- the tree: T opens it on the guest; a purchase is an intent the host validates
   await hp.evaluate(() => { __wands.G.xp = 500; __wands.G.bank.air = 40; __wands.G.bank.water = 40; });

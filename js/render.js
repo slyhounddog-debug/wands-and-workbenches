@@ -598,7 +598,8 @@ R.drawBuilding = function (ctx, v, b, t) {
       }
       if (have.length || R.inTip(b)) {
         const can = FA.spawnerCan(b);
-        R.pips(ctx, p[0], base - 20, have.length && !ELEM[have[0]] ? [{ col: R.kcol(have[0]), on: true }] : ELEMS.map(k => ({ col: ELEM[k].color, on: have.indexOf(k) >= 0, blink: can.indexOf(k) >= 0, dim: have.indexOf(k) < 0 && can.indexOf(k) < 0 })), t);   // a seed spell inside = one lamp in its colour
+        const ally = FA.spawnerAlly(b);
+        R.pips(ctx, p[0], base - 20, have.length && !ally && !ELEM[have[0]] ? [{ col: R.kcol(have[0]), on: true }] : ELEMS.map(k => { const on = have.indexOf(ally ? 'core_' + k : k) >= 0; return { col: ELEM[k].color, on, blink: !on && can.indexOf(k) >= 0, dim: !on && can.indexOf(k) < 0 }; }), t);   // a seed spell inside = one lamp in its colour
       }
     } else if (b.recipe) {
       const R2 = CFG.recipes[b.recipe], keys = Object.keys(R2.in);
@@ -1241,6 +1242,7 @@ R.drawWorld = function (main, dt, rect) {
   for (const dr of w.drops) objs.push({ d: dr.x + dr.y, t: 'drop', o: dr });
   for (const pk of w.pickups) objs.push({ d: pk.x + pk.y, t: 'pick', o: pk });
   for (const e of w.enemies) objs.push({ d: e.x + e.y, t: 'enemy', o: e });
+  for (const e of w.allies) objs.push({ d: e.x + e.y, t: 'enemy', o: e });   // the friendly creatures (R.drawEnemy shows them in green)
   objs.push({ d: w.x + w.y, t: 'wiz', o: w });
   if (alt && !airborne) objs.push({ d: alt.x + alt.y, t: 'altar', o: alt });
   objs.sort((a, b) => a.d - b.d);
@@ -1287,6 +1289,7 @@ R.drawWorld = function (main, dt, rect) {
   for (const b of w.booms) R.drawBoom(ctx, v, b);
   for (const p of w.proj) R.drawProj(ctx, v, p);
   for (const p of w.eproj) R.drawProj(ctx, v, p);
+  for (const p of w.aproj) R.drawProj(ctx, v, p);
   if (airborne) R.drawAltar(ctx, v, w);
   for (const f of w.fx_) if (f.type !== 'ring' && f.type !== 'warn' && f.type !== 'shock') R.drawFx(ctx, v, f);
   for (const a of w.arcs) R.drawArc(ctx, v, a);
@@ -1395,6 +1398,7 @@ R.drawEnemy = function (ctx, v, e) {
     ctx.globalAlpha = 1;
   } else if (e.elite) { ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffd23a' : '#ffa62a'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 27 * (e.sz || 1), 13 * (e.sz || 1)); ctx.stroke(); }
   if (e.crafted) { ctx.strokeStyle = '#46e0c8'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 21 * sc, 10 * sc); ctx.stroke(); }   // factory-made: a teal ring
+  if (e.ally) { ctx.strokeStyle = Math.sin(t * 4 + e.bob) > 0 ? '#7bff9a' : '#46e0c8'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 21 * sc, 10 * sc); ctx.stroke(); }   // a friendly one: a green ring
   if (e.slow > 0) { ctx.strokeStyle = '#78c8ff'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 18 * sc, 9 * sc); ctx.stroke(); }
   const y = p[1] - hop - lift;
   dsprSq(ctx, spr, p[0], y, S, qx, qy, 1, e.face < 0);
@@ -1416,7 +1420,8 @@ R.drawEnemy = function (ctx, v, e) {
     if (e.frozen < 0.4) { ctx.fillStyle = '#5a8ab0'; ctx.fillRect(snap(p[0] - 3), Math.round((top + 6) / 3) * 3, 3, 21); ctx.fillRect(snap(p[0] + 3), Math.round((top + 24) / 3) * 3, 9, 3); }
   } else if (e.dazeT > 0) { ctx.fillStyle = '#ffe36b'; for (let i = 0; i < 3; i++) ctx.fillRect(snap(p[0] + Math.cos(t * 8 + i * 2.1) * 15 - 3), Math.round((top - 6 + Math.sin(t * 8 + i * 2.1) * 4) / 3) * 3, 6, 6); }
   if (e.tele) dspr(ctx, SP.ic_warn, p[0], top - 22, S);
-  if (e.hp < e.maxHp) R.hpBar(ctx, p[0], top - 9, e.elite ? 42 : 30, e.hp / e.maxHp, e.elite ? '#ffd23a' : e.crafted ? '#46e0c8' : '#ff6a6a');
+  if (e.hp < e.maxHp || e.ally) R.hpBar(ctx, p[0], top - 9, e.elite ? 42 : 30, e.hp / e.maxHp, e.ally ? '#7bff9a' : e.elite ? '#ffd23a' : e.crafted ? '#46e0c8' : '#ff6a6a');
+  if (e.ally) dspr(ctx, SP.ic_heart, p[0], top - 18, S);
   if (e.elite) dspr(ctx, SP.ic_crown, p[0], top - 15, S);
   if (e.mut) dspr(ctx, SP[CFG.mutations[e.mut].ic], p[0] - 27, top - 6, S);   // its mutation
   if (e.weak && (e.elite || CFG.enemies[e.type].weak)) dspr(ctx, SP['wk_' + e.weak], p[0] + (e.elite ? 30 : 21), top + 3, S);

@@ -39,16 +39,21 @@ WZ.killGems = function (e) {
 };
 
 // ---------- hostile effects shared by the creatures ----------
-WZ.strike = function (x, y, r, dmg) {   // a hit on the Wizard if he is inside (the roll swallows it)
+// A hostile strike hurts every ALLY inside, and the Wizard if he is inside (the roll swallows it). An ally's strike (ally = true) hurts hostiles only: never the Wizard.
+WZ.strike = function (x, y, r, dmg, ally) {
   const w = G.w;
+  if (ally) { for (const e of w.enemies) if (!e.dead && !(e.fall > 0) && Math.hypot(e.x - x, e.y - y) < r + e.rad) WZ.hurtE(e, dmg, 0, 0); return; }
+  for (const a of w.allies) if (!a.dead && !(a.fall > 0) && Math.hypot(a.x - x, a.y - y) < r + a.rad) WZ.hurtAlly(a, dmg, 0, 0);
   if (w.dead || Math.hypot(w.x - x, w.y - y) >= r) return;
   if (w.roll > 0) WZ.dodge(); else WZ.damage(dmg);
 };
-WZ.telegraph = function (x, y, r, delay, col, fn) {   // a flashing ring, then the burst
+WZ.telegraph = function (x, y, r, delay, col, fn, quiet) {   // a flashing ring, then the burst (quiet: an ally's, no danger cue)
   G.w.fx_.push({ type: 'warn', x, y, r, t: 0, dur: delay, col });
-  AU.sfx('warn');
-  WZ.later(delay, () => { WZ.boom(x, y, r, col); AU.sfx('slam'); if (fn) fn(); });
+  if (!quiet) AU.sfx('warn');
+  WZ.later(delay, () => { WZ.boom(x, y, r, col); AU.sfx(quiet ? 'hit' : 'slam'); if (fn) fn(); });
 };
+// a creature's shot: hostile orbs fly in w.eproj and hurt the Wizard or an ally, an ally's fly in w.aproj and hurt hostiles
+WZ.shoot = function (e, p) { p.ally = !!e.ally; (e.ally ? G.w.aproj : G.w.eproj).push(p); };
 
 // ---------- mutations ----------
 WZ.mutate = function (e, kind) {
@@ -99,7 +104,7 @@ WZ.rebirth = function (e) {
   const def = CFG.creatures[e.type];
   e.reborn = true; e.hp = e.maxHp * def.reborn; e.dv = 0; e.dvCd = 2; e.flash = 0.4; e.slow = 0;
   WZ.ring(e.x, e.y, 2.4, '#ff9a3a', 0.5); WZ.puff(e.x, e.y, '#ffd23a', 18); WZ.epuff(e.x, e.y, 'fire', 10);
-  WZ.strike(e.x, e.y, 2.2, 8);
+  WZ.strike(e.x, e.y, 2.2, e.ally ? 8 * CFG.ally.dmgMul : 8, e.ally);
   AU.sfx('el_fire'); WZ.num(e.x, e.y, 'REBORN', '#ffd23a');
   return true;
 };
@@ -153,18 +158,133 @@ WZ.spawnCreature = function (id, spot) {
 // an Egg reached the Spell Portal: hatch it now, or hold it until the crafted-creature cap has room
 WZ.hatch = function (kind) {
   const n = CFG.creatures[ITEMS[kind].creature].n || 1;   // all n creatures wait their turn: eggTick drops them CFG.crafted.dropGap apart
+  if (ITEMS[kind].ally) { G.w.aq.push({ k: kind, left: n }); return; }   // a friendly egg waits in the wilds' ally queue (run state, like the creatures themselves)
   for (let i = 0; i < n; i++) G.fac.eggQ.push(kind);
 };
 WZ.eggTick = function (dt) {
   const w = G.w, q = G.fac.eggQ;
+  if (!w.dead && w.aq.length && w.t >= (w.aeggT || 0) && WZ.allyAlive() < CFG.ally.cap) {   // allies: the first queued egg hatches what fits, one at a time
+    const eg = w.aq[0];
+    if (WZ.spawnAlly(ITEMS[eg.k].creature)) { w.aeggT = w.t + CFG.crafted.dropGap; if (--eg.left <= 0) w.aq.shift(); }
+  }
   if (!q.length || w.dead || w.t < (w.eggT || 0) || WZ.craftedAlive() >= CFG.crafted.cap) return;
   if (WZ.spawnCreature(ITEMS[q[0]].creature)) { q.shift(); w.eggT = w.t + CFG.crafted.dropGap; }
+};
+// ---------- allies: the friendly versions (grown from Cores at the Spawner). They live in G.w.allies, NOT w.enemies, so the Wizard's spells, events, keeps and kill goals never see them ----------
+WZ.allyAlive = function () { let n = 0; for (const a of G.w.allies) if (!a.dead) n++; return n; };
+// 2-4 tiles from the Wizard on dry land: help arrives at his side
+WZ.allySpot = function () {
+  const w = G.w, A = CFG.ally;
+  for (let i = 0; i < 30; i++) {
+    const an = Math.random() * 6.283, d = A.spawnMin + Math.random() * (A.spawnMax - A.spawnMin);
+    const x = clampN(w.x + Math.cos(an) * d, 1, CFG.WW - 1), y = clampN(w.y + Math.sin(an) * d, 1, CFG.WH - 1);
+    if (!WZ.blocked(x, y, 0.4)) return [x, y];
+  }
+  return WZ.dryNear(w.x, w.y, 12, [A.spawnMin, A.spawnMax]);
+};
+WZ.spawnAlly = function (id) {
+  const w = G.w, A = CFG.ally, C = CFG.crafted, spot = WZ.allySpot();
+  if (!spot) return null;
+  const e = WZ.makeCreature(id, spot[0], spot[1], { plain: true });   // stats +-15%, size, palette: but never elite, never mutated
+  w.enemies.splice(w.enemies.lastIndexOf(e), 1);   // makeEnemy put it among the hostiles; it is not one
+  const met = G.stats.met; if (met && met[id] > 0) met[id]--;   // an ally does not count as a creature you have met
+  e.ally = true; e.crafted = false;
+  e.hp = e.maxHp = e.maxHp * A.hpMul; e.dmg *= A.dmgMul;
+  e.fallT0 = e.fall = C.fall + 0.25; e.dazeT = C.daze;
+  w.allies.push(e);
+  w.fx_.push({ type: 'hatch', x: e.x, y: e.y, col: '#46e0c8', t: 0, dur: C.fall + 0.25 + 0.35 });
+  AU.sfx('portalDrop');
+  return e;
+};
+// what a hostile goes for: the nearest living ally within aggro tiles of it, else the Wizard. { x, y, a } (a = the ally, or null for the Wizard); never stored
+WZ.foeTarget = function (e) {
+  const w = G.w;
+  let best = null, bd = CFG.ally.aggro;
+  for (const a of w.allies) {
+    if (a.dead || a.fall > 0) continue;
+    const d = Math.hypot(a.x - e.x, a.y - e.y);
+    if (d < bd) { bd = d; best = a; }
+  }
+  return best ? { x: best.x, y: best.y, a: best } : { x: w.x, y: w.y, a: null };
+};
+// damage to an ally, from any hostile attack: exactly what the Wizard would take, minus his armor and rolls
+WZ.hurtAlly = function (a, d, kx, ky) {
+  if (a.dead || a.fall > 0) return;
+  a.hp -= d; a.flash = 0.12;
+  if (kx || ky) { const kb = a.kb !== undefined ? a.kb : 1; a.kx += kx * kb; a.ky += ky * kb; }
+  WZ.num(a.x, a.y, Math.round(d), '#ff8aa8');
+  if (a.hp <= 0) WZ.allyDie(a);
+};
+// an ally is spent: its own death effects (a slime's splash, a lava golem's blast) work for its side, and NOTHING drops: no gems, packets, Cores, recycle roll, kills or event progress
+WZ.allyDie = function (a) {
+  if (a.dead || WZ.rebirth(a)) return;
+  a.dead = true;
+  const def = CFG.creatures[a.type], A = CFG.ally;
+  if (def && def.ai === 'slime') { const S = def.splash; WZ.zone({ x: a.x, y: a.y, r: S.r, t: S.t, slow: S.slow, ally: true, col: '#4aa8ff' }); }
+  if (def && def.ai === 'lava') { const x = a.x, y = a.y, B = def.blast; WZ.telegraph(x, y, B.r, B.delay, '#ff5a2a', () => WZ.strike(x, y, B.r, B.dmg * A.dmgMul, true), true); }
+  AU.sfx('hit');
+  G.w.fx_.push({ type: 'boom', x: a.x, y: a.y, r: 0.9, t: 0, dur: 0.3, col: '#46e0c8' });
+  WZ.puff(a.x, a.y, def ? def.col : '#46e0c8', 9);
+};
+// every ally, every frame: fight the nearest hostile within engage tiles of the Wizard (their own attacks, half damage), otherwise drift back to him and stand near
+WZ.allyTick = function (dt) {
+  const w = G.w, A = CFG.ally, al = w.allies, cfg = CFG.world;
+  if (!al.length) return;
+  for (let i = 0; i < al.length; i++) {
+    const a = al[i];
+    if (a.dead) continue;
+    if (a.flash > 0) a.flash -= dt;
+    if (a.cd > 0) a.cd -= dt;
+    if (a.slowT > 0) { a.slowT -= dt; if (a.slowT <= 0) a.slow = 0; }
+    if (a.regen && a.hp < a.maxHp) a.hp = Math.min(a.maxHp, a.hp + a.maxHp * a.regen * dt);
+    if (a.land > 0) a.land -= dt;
+    if (a.fall > 0) { a.fall -= dt; if (a.fall <= 0) { a.fall = 0; a.land = 0.22; WZ.puff(a.x, a.y, '#d8c8a8', 8); AU.sfx('thud'); } continue; }   // dropping in from the Egg's portal
+    if (a.dazeT > 0) { a.dazeT -= dt; continue; }
+    const dw = Math.hypot(w.x - a.x, w.y - a.y) || 1;
+    if (dw > A.teleport) { const sp = WZ.allySpot(); if (sp) { a.x = sp[0]; a.y = sp[1]; WZ.puff(a.x, a.y, '#46e0c8', 8); } continue; }   // left far behind: it rejoins him
+    let foe = null, bd = 1e9;
+    if (dw < A.leash) for (const e of w.enemies) {
+      if (e.dead || e.fall > 0 || Math.hypot(e.x - w.x, e.y - w.y) > A.engage) continue;
+      const d = Math.hypot(e.x - a.x, e.y - a.y);
+      if (d < bd) { bd = d; foe = e; }
+    }
+    const tx = foe ? foe.x : w.x, ty = foe ? foe.y : w.y, ex = tx - a.x, ey = ty - a.y, d = Math.hypot(ex, ey) || 1;
+    const s = a.spd * (1 - a.slow) * (!a.fly && WZ.tile(a.x, a.y) === T_BOG ? cfg.slowTerrain : 1);
+    let ux = ex / d, uy = ey / d, mx = 0, my = 0;
+    if (a.detour > 0) { a.detour -= dt; const px = -uy * a.side, py = ux * a.side; ux = px; uy = py; }   // last-resort sidestep
+    if (foe) {
+      mx = ux * s; my = uy * s;
+      if (a.ai) { const r = WZ.aiTick(a, dt, d, ux, uy, s, { x: foe.x, y: foe.y, e: foe }); if (r) { mx = r[0]; my = r[1]; } }
+    } else if (dw > A.follow) { const k = Math.min(1.7, 0.7 + (dw - A.follow) * 0.15); mx = ux * s * k; my = uy * s * k; }   // back to his side, faster the further it is
+    // keep the line apart from the other allies
+    for (let j = i + 1; j < al.length; j++) {
+      const o = al[j]; if (o.dead) continue;
+      const ox = a.x - o.x, oy = a.y - o.y, want = a.rad + o.rad + cfg.sepPad;
+      if (Math.abs(ox) > want || Math.abs(oy) > want) continue;
+      const od = Math.hypot(ox, oy) || 0.01;
+      if (od >= want) continue;
+      const push = (want - od) * cfg.sepForce;
+      mx += ox / od * push; my += oy / od * push;
+      WZ.slide(o, o.x - ox / od * push * dt, o.y - oy / od * push * dt, 0.3);
+    }
+    if (a.fly) { a.x = Math.max(0.5, Math.min(CFG.WW - 0.5, a.x + (mx + a.kx) * dt)); a.y = Math.max(0.5, Math.min(CFG.WH - 0.5, a.y + (my + a.ky) * dt)); }
+    else if (WZ.slide(a, a.x + (mx + a.kx) * dt, a.y + (my + a.ky) * dt, 0.3) && !(a.detour > 0)) { a.detour = 0.5 + Math.random() * 0.6; a.side = a.side || (Math.random() < 0.5 ? 1 : -1); a.kx = 0; a.ky = 0; }
+    const decay = Math.exp(-6 * dt); a.kx *= decay; a.ky *= decay;
+    a.face = (ex - ey) >= 0 ? 1 : -1;
+    if (foe && d < a.rad + foe.rad + 0.45 && a.cd <= 0) {   // touch: the hostile takes its half-strength hit
+      a.cd = cfg.touchCd * rand(0.85, 1.3);
+      WZ.hurtE(foe, (a.diving && a.diveDmg) || a.dmg, ux * 3, uy * 3);
+      if (!foe.dead) { a.kx -= ux * 5; a.ky -= uy * 5; }
+    }
+  }
+  w.allies = al.filter(a => !a.dead);
 };
 
 // ---------- creature behaviour ----------
 // returns [mx, my] to replace the usual chase, or null. (ux, uy) points at the Wizard, d is the distance, s the current speed
-WZ.aiTick = function (e, dt, d, ux, uy, s) {
-  const w = G.w, def = CFG.creatures[e.type] || {}, px = -uy, py = ux;
+WZ.aiTick = function (e, dt, d, ux, uy, s, TG) {
+  const w = G.w, def = CFG.creatures[e.type] || {}, px = -uy, py = ux, ally = !!e.ally, dm = v => (ally ? v * CFG.ally.dmgMul : v);   // an ally's damage is half
+  TG = TG || { x: w.x, y: w.y, a: null };   // where it is going: the ally it hunts, or the Wizard (for an ally: the foe it fights)
   e.age = (e.age || 0) + dt;
   e.tele = false;
   switch (e.ai) {
@@ -185,7 +305,7 @@ WZ.aiTick = function (e, dt, d, ux, uy, s) {
       e.shotCd = (e.shotCd === undefined ? rand(0.6, S.every) : e.shotCd) - dt;
       if (e.shotCd <= 0 && d < S.far + 2 && d > 1) {
         e.shotCd = S.every * rand(0.85, 1.2);
-        w.eproj.push({ x: e.x, y: e.y, vx: ux * S.speed, vy: uy * S.speed, life: 2.4, dmg: S.dmg, col: '#ff7a30', size: 5 });
+        WZ.shoot(e, { x: e.x, y: e.y, vx: ux * S.speed, vy: uy * S.speed, life: 2.4, dmg: dm(S.dmg), col: '#ff7a30', size: 5 });
         AU.sfx('volley');
       }
       const want = d < S.near ? -1 : d > S.far ? 1 : 0, side = e.side || (e.side = Math.random() < 0.5 ? 1 : -1);
@@ -193,7 +313,7 @@ WZ.aiTick = function (e, dt, d, ux, uy, s) {
       return [mx / m * s, my / m * s];
     }
     case 'storm': case 'serpent': case 'phoenix': {
-      if (e.ai !== 'phoenix') WZ.zapTick(e, dt, def.zap);
+      if (e.ai !== 'phoenix') WZ.zapTick(e, dt, def.zap, TG);
       if (e.ai === 'storm') {   // hovers about four tiles off, drifting slowly overhead
         const want = d > 4.5 ? 1 : d < 3 ? -1 : 0, k = Math.sin(e.age * 0.8 + e.bob) * 0.6, mx = ux * want + px * k, my = uy * want + py * k, m = Math.hypot(mx, my) || 1;
         return [mx / m * s, my / m * s];
@@ -203,15 +323,15 @@ WZ.aiTick = function (e, dt, d, ux, uy, s) {
       e.diving = false;
       if (e.dv === 1) {   // wind-up: hangs in the air flashing, then locks onto where he stands
         e.dvT -= dt; e.tele = true;
-        if (e.dvT <= 0) { e.dv = 2; e.dvT = V.time; const m = Math.hypot(w.x - e.x, w.y - e.y) || 1; e.dx = (w.x - e.x) / m; e.dy = (w.y - e.y) / m; AU.sfx('volley'); }
+        if (e.dvT <= 0) { e.dv = 2; e.dvT = V.time; const m = Math.hypot(TG.x - e.x, TG.y - e.y) || 1; e.dx = (TG.x - e.x) / m; e.dy = (TG.y - e.y) / m; AU.sfx('volley'); }
         return [0, 0];
       }
       if (e.dv === 2) {
-        e.dvT -= dt; e.diving = true; e.diveDmg = V.dmg;
+        e.dvT -= dt; e.diving = true; e.diveDmg = dm(V.dmg);
         if (e.dvT <= 0) { e.dv = 0; e.dvCd = V.every * rand(0.8, 1.2); if (V.burst) WZ.steamBurst(e, V.burst); }
         return [e.dx * s * V.mul, e.dy * s * V.mul];
       }
-      if (e.dvCd <= 0 && d < 10 && d > 2.5) { e.dv = 1; e.dvT = V.wind; AU.sfx('warn'); }
+      if (e.dvCd <= 0 && d < 10 && d > 2.5) { e.dv = 1; e.dvT = V.wind; if (!ally) AU.sfx('warn'); }
       const want = d > 5 ? 1 : d < 3 ? -0.6 : 0, side = e.side || (e.side = Math.random() < 0.5 ? 1 : -1);
       const mx = ux * want + px * side * 0.8, my = uy * want + py * side * 0.8, m = Math.hypot(mx, my) || 1;
       return [mx / m * s, my / m * s];
@@ -219,13 +339,13 @@ WZ.aiTick = function (e, dt, d, ux, uy, s) {
     case 'lava': {   // leaves short-lived magma behind it
       const T = def.trail;
       e.trCd = (e.trCd === undefined ? 0.3 : e.trCd) - dt;
-      if (e.trCd <= 0) { e.trCd = T.every; WZ.zone({ x: e.x, y: e.y, r: T.r, t: T.t, dps: T.dps, hostile: true, col: '#ff5a2a' }); }
+      if (e.trCd <= 0) { e.trCd = T.every; WZ.zone({ x: e.x, y: e.y, r: T.r, t: T.t, dps: dm(T.dps), hostile: !ally, ally, col: '#ff5a2a' }); }
       return null;
     }
     case 'shambler': {   // mud-snare zones across the Wizard's path; heals while standing in bog or at the water's edge
       const S = def.snare;
       e.snCd = (e.snCd === undefined ? rand(1, S.every) : e.snCd) - dt;
-      if (e.snCd <= 0 && d < 11) { e.snCd = S.every; WZ.zone({ x: e.x + (w.x - e.x) * 0.6, y: e.y + (w.y - e.y) * 0.6, r: S.r, t: S.t, slow: S.slow, hostile: true, col: '#6e4a2a' }); }
+      if (e.snCd <= 0 && d < 11) { e.snCd = S.every; WZ.zone({ x: e.x + (TG.x - e.x) * 0.6, y: e.y + (TG.y - e.y) * 0.6, r: S.r, t: S.t, slow: S.slow, hostile: !ally, ally, col: '#6e4a2a' }); }
       const wet = WZ.tile(e.x, e.y) === T_BOG || WZ.wet(e.x + 1, e.y) || WZ.wet(e.x - 1, e.y) || WZ.wet(e.x, e.y + 1) || WZ.wet(e.x, e.y - 1);
       if (wet && e.hp < e.maxHp) { e.hp = Math.min(e.maxHp, e.hp + e.maxHp * def.regen * dt); if (Math.random() < dt * 3) WZ.puff(e.x, e.y, '#6aff8a', 1); }
       return null;
@@ -238,7 +358,7 @@ WZ.aiTick = function (e, dt, d, ux, uy, s) {
         e.brT -= dt; e.tele = true;
         if (e.brT <= 0) {
           const base = Math.atan2(e.bdy, e.bdx);
-          for (let i = 0; i < B.n; i++) { const a = base + (i / (B.n - 1) - 0.5) * 2 * B.half; w.eproj.push({ x: e.x, y: e.y, vx: Math.cos(a) * B.speed, vy: Math.sin(a) * B.speed, life: B.range / B.speed, dmg: B.dmg, col: '#ff9a2b', size: 6 }); }
+          for (let i = 0; i < B.n; i++) { const a = base + (i / (B.n - 1) - 0.5) * 2 * B.half; WZ.shoot(e, { x: e.x, y: e.y, vx: Math.cos(a) * B.speed, vy: Math.sin(a) * B.speed, life: B.range / B.speed, dmg: dm(B.dmg), col: '#ff9a2b', size: 6 }); }
           AU.sfx('zap_fire');
         }
         return [0, 0];
@@ -246,11 +366,13 @@ WZ.aiTick = function (e, dt, d, ux, uy, s) {
       if (e.brCd <= 0 && d < B.range) {
         e.brCd = B.every * rand(0.9, 1.1); e.brT = B.delay; e.bdx = ux; e.bdy = uy;
         for (let i = 1; i <= 3; i++) w.fx_.push({ type: 'warn', x: e.x + ux * i * 2, y: e.y + uy * i * 2, r: 0.9 + i * 0.35, t: 0, dur: B.delay, col: '#ff7a30' });
-        AU.sfx('warn');
+        if (!ally) AU.sfx('warn');
       }
       if (e.guCd <= 0 && d < Gu.r) {
         e.guCd = Gu.every; WZ.ring(e.x, e.y, Gu.r, '#e6f8ff', 0.4); AU.sfx('slam');
-        if (!w.dead && w.roll <= 0) { w.vx += ux * Gu.push; w.vy += uy * Gu.push; WZ.damage(Gu.dmg); } else if (w.roll > 0) WZ.dodge();
+        if (TG.a) WZ.hurtAlly(TG.a, Gu.dmg, ux * Gu.push, uy * Gu.push);   // a hostile dragon's gust on the ally it hunts
+        else if (ally) { if (TG.e) WZ.hurtE(TG.e, dm(Gu.dmg), ux * Gu.push, uy * Gu.push); }   // an allied dragon's on its foe
+        else if (!w.dead && w.roll <= 0) { w.vx += ux * Gu.push; w.vy += uy * Gu.push; WZ.damage(Gu.dmg); } else if (w.roll > 0) WZ.dodge();
       }
       return null;
     }
@@ -259,7 +381,7 @@ WZ.aiTick = function (e, dt, d, ux, uy, s) {
       while (e.crack < def.cracks.length && f <= def.cracks[e.crack]) {
         e.crack++; e.dr = def.dr[e.crack]; e.flash = 0.3;
         const x = e.x, y = e.y;
-        WZ.telegraph(x, y, V.r, V.delay, '#f4f4f8', () => WZ.strike(x, y, V.r, V.dmg));
+        WZ.telegraph(x, y, V.r, V.delay, '#f4f4f8', () => WZ.strike(x, y, V.r, dm(V.dmg), ally), ally);
         WZ.puff(e.x, e.y, '#c8a07a', 12);
       }
       return null;
@@ -268,7 +390,7 @@ WZ.aiTick = function (e, dt, d, ux, uy, s) {
       const S = e.slam;
       e.slamT -= dt;
       if (e.slamT <= 0 && d < 11) {
-        e.slamT = S.every; const x = w.x, y = w.y;
+        e.slamT = S.every; const x = TG.x, y = TG.y;
         WZ.telegraph(x, y, S.r, 1.0, '#ff4a8a', () => { w.shake = Math.max(w.shake, 0.3); WZ.strike(x, y, S.r, S.dmg); });
       }
       if (e.vol) {
@@ -285,25 +407,28 @@ WZ.aiTick = function (e, dt, d, ux, uy, s) {
   }
   return null;
 };
-WZ.zapTick = function (e, dt, Z) {   // chain zaps: telegraphed strike points around the Wizard, then a bolt strings them together
-  const w = G.w;
+WZ.zapTick = function (e, dt, Z, TG) {   // chain zaps: telegraphed strike points around its target (the Wizard / the ally it hunts / an ally's foe), then a bolt strings them together
+  const w = G.w, ally = !!e.ally;
+  TG = TG || { x: w.x, y: w.y };
   e.zapCd = (e.zapCd === undefined ? rand(1.5, Z.every) : e.zapCd) - dt;
-  if (e.zapCd > 0 || Math.hypot(w.x - e.x, w.y - e.y) > 13) return;
+  if (e.zapCd > 0 || Math.hypot(TG.x - e.x, TG.y - e.y) > 13) return;
   e.zapCd = Z.every * rand(0.85, 1.15);
   const pts = [];
-  for (let i = 0; i < Z.n; i++) pts.push(i ? [w.x + rand(-3.4, 3.4), w.y + rand(-3.4, 3.4)] : [w.x, w.y]);
+  for (let i = 0; i < Z.n; i++) pts.push(i ? [TG.x + rand(-3.4, 3.4), TG.y + rand(-3.4, 3.4)] : [TG.x, TG.y]);
   for (const p of pts) w.fx_.push({ type: 'warn', x: p[0], y: p[1], r: Z.r, t: 0, dur: Z.delay, col: '#fff27a' });
-  AU.sfx('warn');
+  if (!ally) AU.sfx('warn');
   const ox = e.x, oy = e.y;
   WZ.later(Z.delay, () => {
     G.w.fx_.push({ type: 'bolt', pts: [[ox, oy]].concat(pts), t: 0, dur: 0.35, col: '#fff27a' });
     AU.sfx('zap_combo');
-    for (const p of pts) WZ.strike(p[0], p[1], Z.r, Z.dmg);
+    for (const p of pts) WZ.strike(p[0], p[1], Z.r, ally ? Z.dmg * CFG.ally.dmgMul : Z.dmg, ally);
   });
 };
 WZ.steamBurst = function (e, B) {
   const w = G.w;
   w.fx_.push({ type: 'boom', x: e.x, y: e.y, r: B.r, t: 0, dur: 0.35, col: '#f4f4f8' }); AU.sfx('hit');
+  if (e.ally) { for (const o of w.enemies) if (!o.dead && !(o.fall > 0) && Math.hypot(o.x - e.x, o.y - e.y) < B.r + o.rad) { WZ.hurtE(o, B.dmg * CFG.ally.dmgMul, 0, 0); WZ.slowE(o, B.slow, B.slowT); } return; }
+  for (const a of w.allies) if (!a.dead && !(a.fall > 0) && Math.hypot(a.x - e.x, a.y - e.y) < B.r + a.rad) { WZ.hurtAlly(a, B.dmg, 0, 0); a.slow = Math.max(a.slow, B.slow); a.slowT = Math.max(a.slowT, B.slowT); }
   if (w.dead || Math.hypot(w.x - e.x, w.y - e.y) >= B.r) return;
   if (w.roll > 0) { WZ.dodge(); return; }
   WZ.damage(B.dmg); w.slowT = B.slowT; w.slowAmt = B.slow;

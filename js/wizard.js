@@ -363,7 +363,7 @@ WZ.fresh = function () {
   return {
     x: SPAWN.x, y: SPAWN.y, hp: WZ.maxHp(), armor: 0, fx: 1, fy: 1, sx: 0, sy: 0, mines: [], booms: [], eidN: 0, vx: 0, vy: 0, target: null,
     roll: 0, rollCd: 0, rdx: 0, rdy: 0, hurtT: 0, moving: false, bob: 0, shake: 0, ghosts: [],
-    enemies: [], proj: [], eproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
+    enemies: [], allies: [], aq: [], proj: [], eproj: [], aproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
     time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
     cine: null, rit: 0, quake: 0, altarFlash: 0,   // the Altar's landing cinematic, the Chimera ritual countdown, the world shake after the impact, the flash when a spell hits it
     hv: {}, fg: {},   // harvestable / forage node state (see WZ.nodeProps)
@@ -1383,8 +1383,9 @@ WZ.summonBoss = function (ax, ay) {   // at the Altar when it calls it (ax, ay);
   AU.sfx('roar');
   return true;
 };
-WZ.bossAI = function (e, dt, d) {
+WZ.bossAI = function (e, dt, d, TG) {   // d and TG: the distance to, and the position of, what it is going for (an ally in range, else the Wizard)
   const B = CFG.boss, w = G.w;
+  TG = TG || { x: w.x, y: w.y };
   const ph = Math.min(3, Math.floor((1 - e.hp / e.maxHp) * 4));
   if (e.weakFlash > 0) e.weakFlash -= dt;
   if (ph !== e.phase) {
@@ -1396,12 +1397,12 @@ WZ.bossAI = function (e, dt, d) {
   e.slamT -= dt; e.sumT -= dt; e.volT -= dt;
   if (e.slamT <= 0 && d < 10) {   // telegraphed slam where the Wizard stands: roll or walk out
     e.slamT = B.slamEvery;
-    const x = w.x, y = w.y;
+    const x = TG.x, y = TG.y;
     w.fx_.push({ type: 'warn', x, y, r: B.slamR, t: 0, dur: B.slamDelay, col: '#ff4a8a' });
     AU.sfx('warn');
     WZ.later(B.slamDelay, () => {
       WZ.boom(x, y, B.slamR, '#ff4a8a'); AU.sfx('slam'); G.w.shake = Math.max(G.w.shake, 0.3);
-      if (!G.w.dead && Math.hypot(G.w.x - x, G.w.y - y) < B.slamR) { if (G.w.roll > 0) WZ.dodge(); else WZ.damage(B.slamDmg); }
+      WZ.strike(x, y, B.slamR, B.slamDmg);   // hurts every ally inside, and the Wizard if he is (the roll swallows it)
     });
   }
   if (e.volT <= 0 && d < 15) {    // a ring of orbs in the current weakness colour
@@ -1698,16 +1699,17 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     }
     if (e.frozen > 0) e.frozen -= dt;
     if (e.dazeT > 0) { e.dazeT -= dt; continue; }   // dazed on landing (or frozen solid, or staggered)
-    const ex = w.x - e.x, ey = w.y - e.y, d = Math.hypot(ex, ey) || 1;
-    if (d > 45) { const sp2 = WZ.dryNear(w.x, w.y, 8, [cfg.ringMin, cfg.ringMax]); if (sp2) { e.x = sp2[0]; e.y = sp2[1]; } continue; }
-    if (d < 12) { const key = e.elite ? 'elite' : e.boss ? null : (e.weak ? e.type : null); if (key && !w.seen[key]) { w.seen[key] = true; WZ.announce(e, key); } }
-    if (e.boss) WZ.bossAI(e, dt, d);
+    const dw = Math.hypot(w.x - e.x, w.y - e.y) || 1;   // to the Wizard (the despawn teleport and the first-sighting toast always use him)
+    if (dw > 45) { const sp2 = WZ.dryNear(w.x, w.y, 8, [cfg.ringMin, cfg.ringMax]); if (sp2) { e.x = sp2[0]; e.y = sp2[1]; } continue; }
+    if (dw < 12) { const key = e.elite ? 'elite' : e.boss ? null : (e.weak ? e.type : null); if (key && !w.seen[key]) { w.seen[key] = true; WZ.announce(e, key); } }
+    const TG = WZ.foeTarget(e), ex = TG.x - e.x, ey = TG.y - e.y, d = TG.a ? Math.hypot(ex, ey) || 1 : dw;   // an ally within aggro range comes first
+    if (e.boss) WZ.bossAI(e, dt, d, TG);
     const s = e.spd * (1 - e.slow) * (!e.fly && WZ.tile(e.x, e.y) === T_BOG ? cfg.slowTerrain : 1);
     let ux = ex / d, uy = ey / d, steered = false;
     if (e.detour > 0) { e.detour -= dt; const px = -uy * e.side, py = ux * e.side; ux = px; uy = py; }   // last-resort sidestep
-    else if (d > 1.5 && !e.fly) { const f = WZ.flowDir(e, d); if (f) { ux = f[0]; uy = f[1]; steered = true; } }
+    else if (d > 1.5 && !e.fly && !TG.a) { const f = WZ.flowDir(e, d); if (f) { ux = f[0]; uy = f[1]; steered = true; } }   // (the flow field leads to the Wizard: an ally is chased in a straight line)
     let mx = ux * s, my = uy * s;
-    if (e.ai) { const r = WZ.aiTick(e, dt, d, ux, uy, s); if (r) { mx = r[0]; my = r[1]; } }   // a creature's own movement and attacks
+    if (e.ai) { const r = WZ.aiTick(e, dt, d, ux, uy, s, TG); if (r) { mx = r[0]; my = r[1]; } }   // a creature's own movement and attacks
     // soft separation: bodies keep (rad + rad + sepPad) apart, so packs stay readable and don't land hits in one clump
     for (let j = i + 1; j < en.length; j++) {
       const o = en[j]; if (o.dead) continue;
@@ -1740,7 +1742,13 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     e.face = (ex - ey) >= 0 ? 1 : -1;
     // touch damage
     const reach = e.rad + 0.45;
-    if (d < reach && e.cd <= 0 && w.roll <= 0 && w.hurtT > 0) e.cd = rand(0.15, 0.45);   // queued: strike a little later
+    if (TG.a) {   // hunting an ally: the touch is for it, not for the Wizard
+      if (d < e.rad + TG.a.rad + 0.25 && e.cd <= 0) {
+        e.cd = cfg.touchCd * rand(0.85, 1.3);
+        WZ.hurtAlly(TG.a, (e.diving && e.diveDmg) || e.dmg, ex / d * 4, ey / d * 4);
+        if (!e.boss) { e.kx -= ex / d * 6; e.ky -= ey / d * 6; }
+      }
+    } else if (d < reach && e.cd <= 0 && w.roll <= 0 && w.hurtT > 0) e.cd = rand(0.15, 0.45);   // queued: strike a little later
     else if (d < reach && e.cd <= 0 && w.roll <= 0 && w.hurtT <= 0) {
       e.cd = cfg.touchCd * rand(0.85, 1.3);
       WZ.damage((e.diving && e.diveDmg) || e.dmg);
@@ -1749,6 +1757,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     } else if (d < reach && e.cd <= 0 && w.roll > 0) { e.cd = 0.3; WZ.dodge(); }
   }
   w.enemies = en.filter(e => !e.dead);
+  WZ.allyTick(dt);   // the friendly creatures fight (after the hostiles have had their turn at them)
   WZ.bendTick(dt);
 
   // projectiles
@@ -1791,9 +1800,21 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     const p = w.eproj[i];
     p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
     if (p.life <= 0 || WZ.wet(p.x, p.y)) { w.eproj.splice(i, 1); continue; }
+    let ha = null;
+    for (const a of w.allies) if (!a.dead && !(a.fall > 0) && Math.hypot(a.x - p.x, a.y - p.y) < a.rad + 0.35) { ha = a; break; }
+    if (ha) { WZ.hurtAlly(ha, p.dmg, p.vx * 0.15, p.vy * 0.15); w.eproj.splice(i, 1); continue; }   // it hit an ally in the way
     const pd = Math.hypot(p.x - w.x, p.y - w.y);
     if (w.roll > 0 && pd < 0.9 && !p.dodged) { p.dodged = true; WZ.dodge(); }   // rolled clean through it
     else if (pd < 0.55 && w.roll <= 0 && w.hurtT <= 0) { WZ.damage(p.dmg); w.eproj.splice(i, 1); }
+  }
+  // an ally's shots (an Imp's ember, a Dragon's breath): they hurt hostiles, never the Wizard or other allies
+  for (let i = w.aproj.length - 1; i >= 0; i--) {
+    const p = w.aproj[i];
+    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+    if (p.life <= 0 || WZ.wet(p.x, p.y)) { w.aproj.splice(i, 1); continue; }
+    let hit = null;
+    for (const e of w.enemies) if (!e.dead && !(e.fall > 0) && Math.hypot(e.x - p.x, e.y - p.y) < e.rad + 0.35) { hit = e; break; }
+    if (hit) { WZ.hurtE(hit, p.dmg, p.vx * 0.15, p.vy * 0.15); w.aproj.splice(i, 1); }
   }
 
   // zones
@@ -1806,6 +1827,22 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
       if (!w.dead && Math.hypot(w.x - z.x, w.y - z.y) < z.r) {
         if (z.slow) zs = Math.max(zs, z.slow);
         if (z.dps && w.roll <= 0) { z.tk = (z.tk || 0) + dt; if (z.tk >= 0.5) { z.tk = 0; WZ.damage(z.dps * 0.5); } }
+      }
+      z.tka = (z.tka || 0) + dt;
+      const tickA = z.tka >= 0.5; if (tickA) z.tka = 0;
+      for (const a of w.allies) {   // allies are caught in it like the Wizard
+        if (a.dead || a.fall > 0 || Math.hypot(a.x - z.x, a.y - z.y) >= z.r) continue;
+        if (z.slow) WZ.slowE(a, z.slow, 0.25);
+        if (z.dps && tickA) WZ.hurtAlly(a, z.dps * 0.5, 0, 0);
+      }
+      if (z.t <= 0) w.zones.splice(i, 1);
+      continue;
+    }
+    if (z.ally) {   // a friendly creature's zone (a slime's splash, a lava trail, a mud snare): it slows / burns hostiles only
+      for (const e of w.enemies) {
+        if (e.dead || e.fall > 0 || Math.hypot(e.x - z.x, e.y - z.y) >= z.r + e.rad) continue;
+        if (z.slow) WZ.slowE(e, z.slow, 0.25);
+        if (z.dps) WZ.hurtE(e, z.dps * dt, 0, 0, true);
       }
       if (z.t <= 0) w.zones.splice(i, 1);
       continue;

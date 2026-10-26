@@ -600,6 +600,18 @@ task(() => {
       if (c.tier === 3) { x.fillStyle = '#ffe36b'; x.fillRect(3, 1, 4, 1); x.fillRect(4, 0, 2, 1); }
     }), 5, 11);
   }
+  // ally eggs: the same egg in a teal-tinted shell with a teal rim, and a tiny heart where the hostile one has its tier band
+  for (const id in CFG.creatures) {
+    const c = CFG.creatures[id], col = mixHex(c.col, '#2fe0d0', 0.45);
+    reg('it_aegg_' + id, mk(10, 12, x => {
+      x.fillStyle = '#0c3a38'; x.beginPath(); x.ellipse(5, 7, 5, 5.5, 0, 0, Math.PI * 2); x.fill();
+      x.fillStyle = col; x.beginPath(); x.ellipse(5, 7, 4, 4.5, 0, 0, Math.PI * 2); x.fill();
+      x.fillStyle = shade(col, 0.7); x.fillRect(5, 5, 3, 6);
+      x.fillStyle = '#ffffff'; x.fillRect(3, 4, 1, 2);
+      x.fillStyle = '#7bffe8'; x.fillRect(4, 8, 1, 1); x.fillRect(6, 8, 1, 1); x.fillRect(3, 9, 5, 1); x.fillRect(4, 10, 3, 1);   // a heart
+      if (c.tier === 3) { x.fillStyle = '#ffe36b'; x.fillRect(3, 1, 4, 1); x.fillRect(4, 0, 2, 1); }
+    }), 5, 11);
+  }
   reg('it_core', mapSprite(['...oooo...', '..oyyyyo..', '.oywwyyyo.', 'oywyyyyyyo', 'oyyyYYyyyo', 'oyyyYYyyyo', 'oyyyyyyyYo', '.oyyyyyYo.', '..oYYYYo..', '...oooo...'], { o: '#4a3408', y: '#ffd23a', Y: '#c8921a', w: '#ffffff' }), 5, 10);
   reg('lm_keep', mk(40, 36, x => {
     isoBox(x, 20, 33, 18, 3, '#9a9484', '#76705e', '#5e5a4c');

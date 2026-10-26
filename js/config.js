@@ -1,4 +1,5 @@
 'use strict';
+const mixHex = (a, b, k) => { const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); const x = p(a), y = p(b); return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * k).toString(16).padStart(2, '0')).join(''); };   // blend two #rrggbb colours
 // ===== All tuning numbers live here =====
 const CFG = {
   W: 1600, H: 900, HALF: 800,
@@ -341,6 +342,17 @@ const CFG = {
     recycle: 0.3,             // chance a crafted BASIC creature drops one packet of its element on death
     recycleSpell: { 2: 0.25, 3: 0.2 },   // chance a crafted double / triple drops the combo spell it was hatched from (it flies home to the Stockpile like a packet)
   },
+  // ---- Allies: Element Cores thrown at a Creature Spawner grow FRIENDLY versions of the same 11 creatures ----
+  // double HP, half damage (on every attack and ability), never elite, never mutated. They hatch 2-4 tiles from the Wizard and fight what comes within engage tiles of him
+  // (drifting back toward him outside that, and past leash tiles of him they ignore foes); every hostile goes for an ally within aggro tiles before the Wizard.
+  // At most cap alive; queue = eggs the Spell Portal holds back behind them (then it boings the next one back). Their deaths pay nothing.
+  // window: every absorbed Core leaves at least this many seconds of growth to go (it extends the timer), so a quick Builder can always feed it up to a triple
+  ally: {
+    cap: 10, queue: 3, hpMul: 2, dmgMul: 0.5,
+    aggro: 9, engage: 10, leash: 16, follow: 3.2, teleport: 30,
+    spawnMin: 2, spawnMax: 4,
+    window: 12,
+  },
   // at most one per creature; ic is the icon popped on both halves at spawn
   mutations: {
     swift:    { name: 'Swift',        ic: 'ic_fast',   spd: 1.45 },
@@ -447,6 +459,11 @@ const WEAK_TO = { fire: 'water', water: 'earth', earth: 'air', air: 'fire' };
     CFG.enemies[id] = { name: c.name, hp: c.hp, speed: c.speed, dmg: c.dmg, gem: c.gem, w: 0, col: c.col, weak: c.weak, resist: c.resist, rad: c.rad, crafted: true, creature: id };
     CFG.recipes['egg_' + id] = { machine: 'spawner', in: c.cost, out: 'egg_' + id, time: c.time, power: c.power,
       use: 'Hatches a ' + c.name + ' beside the Wizard' };
+    // the friendly version: one Core of each of its elements (a Gale Core is Air, Tide Water, Ember Fire, Stone Earth); a triple needs the same parent pairs MADE as the hostile seed spell
+    const seed = Object.keys(c.cost)[0], par = c.order.length > 1 && CFG.recipes[seed] ? CFG.recipes[seed].parents : null, cin = {};
+    c.order.forEach(el => { cin['core_' + el] = 1; });
+    CFG.recipes['aegg_' + id] = { machine: 'spawner', in: cin, out: 'aegg_' + id, time: c.time, power: c.power, ally: true, use: 'Hatches a FRIENDLY ' + c.name + ' beside the Wizard' };
+    if (par) CFG.recipes['aegg_' + id].parents = par;
   }
   const NOTE = {
     zephyr: 'Drifts erratically and phase-dashes through you.', puddle: 'Slow. Bursts into a slowing splash zone when it dies.', cinder: 'Keeps its distance and spits ember bolts.',
@@ -621,6 +638,7 @@ const ITEMS = {};
   { const K = CFG.keyCost, inp = {}; for (const el in ELEM) inp['core_' + el] = K.cores; inp.iron = K.iron; inp.shard = K.shard;
     CFG.recipes.wardkey = { machine: 'anvil', in: inp, out: 'wardkey', time: K.time, power: 2, tier: 'armory', key: true, use: 'Opens the Stronghold door, where the Warden waits' }; }
   for (const id in CFG.creatures) ITEMS['egg_' + id] = { name: CFG.creatures[id].name + ' Egg', egg: true, creature: id, color: CFG.creatures[id].col };
+  for (const id in CFG.creatures) ITEMS['aegg_' + id] = { name: 'Allied ' + CFG.creatures[id].name + ' Egg', egg: true, ally: true, creature: id, color: mixHex(CFG.creatures[id].col, '#2fe0d0', 0.45) };   // a teal-tinted shell: the friendly version
   for (const k in CFG.recipes) {
     const r = CFG.recipes[k];
     if (r.machine === 'forge') ITEMS[r.out] = { name: SPELLS[r.out], spell: true, color: SPELL_COL[r.out] };

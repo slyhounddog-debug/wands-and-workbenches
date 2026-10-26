@@ -121,12 +121,13 @@ FA.qInfo = function (k) {
   if (k === 'wood' || k === 'stone') use = 'Builds things. Burns in a Battery.';
   else if (k === 'iron') use = 'Builds Forges, Armory, Batteries.';
   else if (k === 'shard') use = 'Rare. Spawners, garments, keys. Skill Portal: Summoning.';
-  else if (isCoreKind(k)) use = 'Forges garments and the Warden Key. Opens other Shrines.';
+  else if (isCoreKind(k)) use = 'Forges garments and the Warden Key. Opens other Shrines. At a Spawner: grows a FRIENDLY creature.';
   else if (isKeyKind(k)) use = 'Spell Portal: opens the Stronghold door.';
   else if (ELEM[k]) use = 'Feeds Forge, Spawner, Battery.';
   else if (ITEMS[k] && ITEMS[k].spell) use = SEED_SPELL[k] ? 'Cast it, bank it, or hatch a ' + CFG.creatures[SEED_SPELL[k]].name + ' at the Spawner.' : 'Cast it: Spell Portal. Bank it: Skill.';
   else if (k === 'potion' || k === 'elixir') use = 'Heals the Wizard via the Spell Portal.';
   else if (k === 'armor' || k === 'plate') use = 'Armors the Wizard via the Spell Portal.';
+  else if (ITEMS[k] && ITEMS[k].ally) use = 'Spell Portal: a FRIENDLY creature joins the Wizard.';
   else if (ITEMS[k] && ITEMS[k].egg) use = 'Spell Portal: hatches beside the Wizard.';
   else if (ITEMS[k] && ITEMS[k].aug) use = 'Spell Portal: the Wizard wears it.';
   else use = 'Throw it into a machine or portal.';
@@ -187,7 +188,8 @@ FA.crateOk = k => !!ELEM[k] || !!(ITEMS[k] && ITEMS[k].egg);   // a Storage Crat
 FA.isBankable = k => BANK_KINDS.indexOf(k) >= 0;                                                 // Skill Portal (packets, spells and Aether Shards)
 // an Egg is taken while the crafted-creature cap has room, then it waits in the portal queue; a full queue stops the portal taking more
 FA.eggRoom = () => G.fac.eggQ.length < CFG.crafted.queue || (!G.w.dead && WZ.craftedAlive() < CFG.crafted.cap);
-FA.portalTakes = (c, k) => (c.which === 'skill' ? FA.isBankable(k) : FA.isDeliverable(k) && (!ITEMS[k].egg || FA.eggRoom()) &&
+FA.allyEggRoom = () => !G.w.dead && (G.w.aq.length < CFG.ally.queue || WZ.allyAlive() < CFG.ally.cap);   // an ALLY egg: room while fewer than 10 allies live, or fewer than 3 eggs wait behind them
+FA.portalTakes = (c, k) => (c.which === 'skill' ? FA.isBankable(k) : FA.isDeliverable(k) && (!ITEMS[k].egg || (ITEMS[k].ally ? FA.allyEggRoom() : FA.eggRoom())) &&
   (!ITEMS[k].aug || (!G.w.dead)) && (!FA.isUnlockKind(k) || !!WZ.unlockTarget(k)));   // a garment needs a living Wizard; a Core / key only goes when he stands near the shrine / keep it opens
 FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 'crate'; };
 
@@ -492,18 +494,44 @@ FA.recipesFor = type => Object.keys(CFG.recipes).filter(id => CFG.recipes[id].ma
 FA.spawnerHave = b => Object.keys(b.inv).filter(k => b.inv[k] > 0);
 FA.spawnerFor = function (have) {   // the egg recipe whose one input is this (an element packet = a basic creature, a seed spell = its pair / triple creature)
   if (have.length !== 1) return null;
-  return FA.recipesFor('spawner').find(id => { const ks = Object.keys(CFG.recipes[id].in); return ks.length === 1 && ks[0] === have[0]; }) || null;
+  return FA.recipesFor('spawner').find(id => { if (CFG.recipes[id].ally) return false; const ks = Object.keys(CFG.recipes[id].in); return ks.length === 1 && ks[0] === have[0]; }) || null;
 };
-FA.spawnerPick = b => FA.spawnerFor(FA.spawnerHave(b));
+// a Core grows an ALLY (the same 11 creatures, friendly): the SET of Core elements absorbed so far names the creature, exactly like packets name a hostile one.
+FA.coreEl = k => (/^core_(air|water|fire|earth)$/.test(k) ? k.slice(5) : null);
+FA.spawnerAlly = b => FA.spawnerHave(b).some(k => !!FA.coreEl(k));
+// the ally egg recipe for a set of Core kinds: only a set that names a creature, and (for a triple) whose parent pairs have been MADE, exists
+FA.allyFor = function (have) {
+  if (!have.length || have.some(k => !FA.coreEl(k))) return null;
+  return FA.recipesFor('spawner').find(id => { const r = CFG.recipes[id]; if (!r.ally) return false; const ks = Object.keys(r.in); return ks.length === have.length && ks.every(k => have.indexOf(k) >= 0); }) || null;
+};
+FA.spawnerPick = b => { const have = FA.spawnerHave(b); return have.length && FA.spawnerAlly(b) ? FA.allyFor(have) : FA.spawnerFor(have); };
 FA.eggOf = rid => CFG.creatures[ITEMS[CFG.recipes[rid].out].creature];   // the creature an egg recipe hatches
 // It takes ONE thing at a time, only while it is empty (and the finished eggs are not backed up): an element packet, or a seed spell (SEED_SPELL). Anything else is refused
 // and boings back (Steam Mine, Gale Boomerang, Blizzard, a second thing while an egg grows).
+// Cores are the other language: one starts an ally on an idle Spawner, and while an ALLY grows each further Core of a DIFFERENT element upgrades it (pair, then triple) as long
+// as the set names a creature. It never takes a Core while a hostile grows, nor a packet / seed spell while an ally grows. Everything else boings back.
 FA.spawnerTakes = function (b, kind) {
-  if (!(ELEM[kind] || SEED_SPELL[kind]) || FA.spawnerHave(b).length || b.out.length >= CFG.buffer) return false;
+  if (b.out.length >= CFG.buffer) return false;
+  const have = FA.spawnerHave(b);
+  if (FA.coreEl(kind)) {
+    if (!have.length) return !!FA.allyFor([kind]);
+    if (!FA.spawnerAlly(b) || have.indexOf(kind) >= 0 || have.length >= 3) return false;
+    return !!FA.allyFor(have.concat([kind]));
+  }
+  if (!(ELEM[kind] || SEED_SPELL[kind]) || have.length) return false;
   return !!FA.spawnerFor([kind]);
+};
+// an absorbed Core: the grow timer is pushed back so at least CFG.ally.window seconds are left (the bigger creature also takes longer), keeping the next Core in reach
+FA.allyAbsorb = function (b, kind) {
+  const R = CFG.recipes[b.recipe];
+  if (R) b.prog = Math.max(0, Math.min(b.prog, R.time - Math.min(CFG.ally.window, R.time)));
+  const el = FA.coreEl(kind), cx = b.x + 0.5, cy = b.y + 0.5;
+  FA.eburst(cx, cy, el, 8); FA.burst(cx, cy, '#46e0c8', 12); AU.sfx('el_' + el); AU.sfx('complete');
+  if (R) FA.ipop(cx, cy, [[R.out]]);
 };
 // an older save's Spawner may hold spare packets or a pair egg grown from two elements (no longer a thing): the first thing that names an egg stays (a basic one), everything else is set down beside it
 FA.spawnerFix = function (b) {
+  if (FA.spawnerAlly(b)) { b.recipe = FA.spawnerPick(b); if (!b.recipe) { for (const k of FA.spawnerHave(b)) for (let i = 0; i < b.inv[k]; i++) FA.dropAt(k, b.x + 0.5, b.y + 0.5); b.inv = {}; b.prog = 0; } return; }   // an ally grow carries on
   const have = FA.spawnerHave(b), keep = have.find(k => FA.spawnerFor([k]));
   for (const k of have) {
     const n = k === keep ? 1 : 0;
@@ -515,7 +543,7 @@ FA.spawnerFix = function (b) {
   if (!b.recipe) { b.inv = {}; b.prog = 0; }
 };
 // what it would take now (an empty Spawner takes any of the four packets): shown as blinking lamps on its front
-FA.spawnerCan = b => ELEMS.filter(k => FA.spawnerTakes(b, k));
+FA.spawnerCan = b => ELEMS.filter(k => FA.spawnerTakes(b, k) || FA.spawnerTakes(b, 'core_' + k));
 FA.refreshRecipes = function () {
   for (const b of G.fac.bld) if (b.done && FA.def(b).kind === 'crafter' && b.type !== 'spawner' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
 };
@@ -565,7 +593,8 @@ FA.insert = function (b, kind, thrown) {
     b.inv[kind] = (b.inv[kind] || 0) + 1;
     if (b.type === 'spawner') {   // absorbed whole at once: the egg starts growing
       b.recipe = FA.spawnerPick(b);
-      if (ELEM[kind]) { FA.eburst(b.x + 0.5, b.y + 0.5, kind, 8); AU.sfx('el_' + kind); }
+      if (FA.coreEl(kind)) FA.allyAbsorb(b, kind);
+      else if (ELEM[kind]) { FA.eburst(b.x + 0.5, b.y + 0.5, kind, 8); AU.sfx('el_' + kind); }
       else { FA.burst(b.x + 0.5, b.y + 0.5, ITEMS[kind].color, 14); (SPELL_EL[kind] || []).forEach(el => FA.eburst(b.x + 0.5, b.y + 0.5, el, 4)); AU.sfx('complete'); }   // a seed spell
     }
   }
@@ -650,7 +679,7 @@ FA.deliver = function (kind, x, y) {
   G.flags['sent_' + kind] = true;
   if (ITEMS[kind].aug) G.flags.sent_aug = true;
   G.stats.sent[kind] = (G.stats.sent[kind] || 0) + 1;   // for the goals: Potions sent, Eggs hatched, combo spells delivered
-  if (ITEMS[kind].egg) G.stats.eggs = (G.stats.eggs || 0) + 1;
+  if (ITEMS[kind].egg && !ITEMS[kind].ally) G.stats.eggs = (G.stats.eggs || 0) + 1;
   else if ((SPELL_EL[kind] || []).length >= 2) G.stats.combos = (G.stats.combos || 0) + 1;
   FA.suck(kind, x === undefined ? p.x + 0.5 : x, y === undefined ? p.y + 1 : y);
   if (ITEMS[kind].egg) WZ.hatch(kind);
@@ -1551,9 +1580,9 @@ FA.statusText = function (b) {
   }
   if (d.kind === 'crafter') {
     if (b.type === 'spawner') {
-      if (!b.recipe) return n + ': feed it ONE thing: a packet = its basic creature, or a seed spell: ' + Object.keys(SEED_SPELL).map(k => itemName(k) + ' = ' + CFG.creatures[SEED_SPELL[k]].name).join(', ');
-      const R = CFG.recipes[b.recipe], c = FA.eggOf(b.recipe), seed = FA.spawnerHave(b)[0];
-      let s = n + ': growing ' + c.name + ' from ' + itemName(seed) + ' ' + Math.min(99, Math.floor(b.prog / R.time * 100)) + '%';
+      if (!b.recipe) return n + ': feed it ONE thing: a packet = its basic creature, or a seed spell: ' + Object.keys(SEED_SPELL).map(k => itemName(k) + ' = ' + CFG.creatures[SEED_SPELL[k]].name).join(', ') + '. Or throw it a CORE to grow a FRIENDLY one';
+      const R = CFG.recipes[b.recipe], c = FA.eggOf(b.recipe), ally = FA.spawnerAlly(b);
+      let s = n + ': growing ' + (ally ? 'a FRIENDLY ' : '') + c.name + ' from ' + FA.spawnerHave(b).map(itemName).join(' + ') + ' ' + Math.min(99, Math.floor(b.prog / R.time * 100)) + '%' + (ally && FA.spawnerCan(b).length ? ' (another Core of a different element makes it bigger)' : '');
       if (b.draw > 0 && !b.powered) s += '. NO POWER';
       if (b.out.length) s += '. ' + b.out.length + ' ready (click to take)';
       return s;

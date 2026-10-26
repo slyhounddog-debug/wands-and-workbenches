@@ -1282,7 +1282,9 @@ R.drawWorld = function (main, dt, rect) {
     else if (it.t === 'enemy') R.drawEnemy(ctx, v, o);
     else if (it.t === 'wiz') R.drawWizard(ctx, v, o);
   }
-  for (const z of w.zones) if (TALL_ZONES[z.kind]) R.drawZone(ctx, v, z);   // fire streams, steam clouds, twisters, storm orbs and clouds stand up over the bodies
+  for (const z of w.zones) if (TALL_ZONES[z.kind]) R.drawZone(ctx, v, z);   // fire streams, steam clouds, storm clouds, droplets and orbs stand up over the bodies
+  for (const m of w.mines) R.drawMine(ctx, v, m);
+  for (const b of w.booms) R.drawBoom(ctx, v, b);
   for (const p of w.proj) R.drawProj(ctx, v, p);
   for (const p of w.eproj) R.drawProj(ctx, v, p);
   if (airborne) R.drawAltar(ctx, v, w);
@@ -1774,6 +1776,37 @@ R.drawHsuck = function (ctx, v, f, s, fr) {
   if (!sp) return;
   ctx.globalAlpha = a; dspr(ctx, sp, x, Y(y), sc); ctx.globalAlpha = 1;
 };
+// a Steam Mine: dormant it sits pulsing slowly (a faint ring shows how close a foe has to come); awake it flashes, hops and flies at its foe
+R.drawMine = function (ctx, v, m) {
+  const S = CFG.spells.steam, s = R.toScreen(v, m.x, m.y), t = G.w.t, Y = n => Math.round(n / 3) * 3, lift = (m.z || 0) * 30, cx = snap(s[0]), cy = Y(s[1] - 15 - lift);
+  const hot = m.st === 'wake' ? Math.floor(t * 18) % 2 : m.st === 'fly' ? 1 : m.st === 'dorm' && Math.sin(t * 2.4 + m.sx) > 0.4 ? 1 : 0;
+  if (m.st === 'dorm') { ctx.globalAlpha = 0.16 + (hot ? 0.1 : 0); ctx.strokeStyle = '#f4f4f8'; ctx.lineWidth = 3; ctx.setLineDash([9, 9]); diamond(ctx, s[0], s[1], S.wake * v.hw * 1.414, S.wake * v.hh * 1.414); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
+  ctx.fillStyle = 'rgba(0,0,0,' + (0.28 - Math.min(0.14, lift / 200)) + ')'; ctx.fillRect(snap(s[0] - 12), Y(s[1]) - 3, 24, 9);
+  ctx.fillStyle = '#23232e'; ctx.fillRect(cx - 12, cy - 9, 24, 18); ctx.fillRect(cx - 9, cy - 12, 18, 24);
+  ctx.fillStyle = '#6a7a88'; ctx.fillRect(cx - 9, cy - 9, 18, 15);
+  ctx.fillStyle = '#23232e'; ctx.fillRect(cx - 3, cy - 18, 6, 6); ctx.fillRect(cx - 18, cy - 3, 6, 6); ctx.fillRect(cx + 12, cy - 3, 6, 6);   // the spikes
+  ctx.fillStyle = hot ? (m.st === 'dorm' ? '#bfe9ff' : '#ff7a30') : '#3a4a58'; ctx.fillRect(cx - 6, cy - 6, 12, 9);
+  if (hot) { ctx.fillStyle = '#ffffff'; ctx.fillRect(cx - 3, cy - 3, 6, 3); }
+  if (m.st === 'fly') for (let i = 1; i <= 3; i++) { ctx.globalAlpha = 0.5 - i * 0.12; ctx.fillStyle = '#f4f4f8'; ctx.fillRect(snap(cx - 4 - i * 6), Y(cy + i * 3), 9, 9); }
+  ctx.globalAlpha = 1;
+};
+// a Gale Boomerang: a stone-edged blade turning in quarter steps, a catch ring where it will land on the way back
+R.drawBoom = function (ctx, v, b) {
+  const S = CFG.spells.sandstorm, s = R.toScreen(v, b.x, b.y), t = G.w.t, Y = n => Math.round(n / 3) * 3, ph = Math.floor(b.spin * 16) % 4;
+  if (!b.one && b.ph === 'back') {   // where he has to stand: it follows him, then the spot freezes (the ring blinks)
+    const q = R.toScreen(v, b.tx, b.ty), locked = b.t / S.back >= S.lock;
+    if (!locked || Math.floor(t * 16) % 2) { ctx.globalAlpha = locked ? 0.95 : 0.4; ctx.strokeStyle = locked ? '#ffe36b' : '#ffffff'; ctx.lineWidth = 6; ctx.setLineDash([9, 6]); ctx.lineDashOffset = -Math.floor(t * 12) * 3; diamond(ctx, q[0], q[1], S.catchR * v.hw * 1.414, S.catchR * v.hh * 1.414); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
+  }
+  const L = Math.max(9, Math.round(24 * b.sc / 3) * 3), W = Math.max(6, Math.round(9 * b.sc / 3) * 3), cx = snap(s[0]), cy = Y(s[1] - 36 * b.sc - 6), dx = [1, 1, -1, -1][ph], dy = [-1, 1, 1, -1][ph];
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(snap(s[0] - L / 2), Y(s[1]) - 3, L, 6);
+  for (let i = 1; i <= 3; i++) { ctx.globalAlpha = 0.4 - i * 0.1; ctx.fillStyle = '#fff0c8'; ctx.fillRect(snap(cx - (b.ax - b.ay) * i * 9 - 3), Y(cy - (b.ax + b.ay) * i * 4.5 - 3), 6, 6); }
+  ctx.globalAlpha = 1;
+  const arm = (x, y, w, h) => { ctx.fillStyle = '#4a4a58'; ctx.fillRect(x, y, w, h); ctx.fillStyle = '#a07a4a'; ctx.fillRect(x + 3, y + 3, Math.max(3, w - 6), Math.max(3, h - 6)); ctx.fillStyle = '#d9b46a'; ctx.fillRect(x + 3, y + 3, Math.max(3, w - 6), 3); };
+  arm(dx > 0 ? cx - 3 : cx - L + 3, cy - W / 2, L, W);   // the horizontal arm
+  arm(cx - W / 2, dy > 0 ? cy - 3 : cy - L + 3, W, L);   // the vertical arm
+  ctx.fillStyle = '#6a6a78'; ctx.fillRect(dx > 0 ? cx + L - 6 : cx - L, cy - W / 2, 6, W); ctx.fillRect(cx - W / 2, dy > 0 ? cy + L - 6 : cy - L, W, 6);   // the stone edges on the tips
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(cx - 3, cy - 3, 6, 6);
+};
 R.drawProj = function (ctx, v, p) {
   if (p.kind === 'strike') return;   // a bolt still on its way down: its warning ring is the fx
   const s = R.toScreen(v, p.x, p.y), sz = Math.max(6, Math.round(p.size * 1.4 / 3) * 3), Y = n => Math.round(n / 3) * 3, t = G.w.t;
@@ -1847,7 +1880,7 @@ R.drawProj = function (ctx, v, p) {
   ctx.fillRect(x - 3, y, sz + 6, sz); ctx.fillRect(x, y - 3, sz, sz + 6);
   ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, 6, 6);
 };
-const TALL_ZONES = { flame: 1, twister: 1, orb: 1, storm: 1, tear: 1, mshield: 1, novapull: 1 };   // zones that stand up: drawn over the bodies
+const TALL_ZONES = { flame: 1, steamcloud: 1, storm: 1, tear: 1, mshield: 1, novapull: 1 };   // zones that stand up: drawn over the bodies
 R.drawZone = function (ctx, v, z) {
   const s = R.toScreen(v, z.x, z.y), fr = Math.min(1, z.t / z.dur), t = G.w.t, Y = n => Math.round(n / 3) * 3;
   if (z.kind === 'flame') {   // the stream of fire: tongues of flame fanning out along his aim, flickering
@@ -1907,28 +1940,15 @@ R.drawZone = function (ctx, v, z) {
     ctx.globalAlpha = 1;
     return;
   }
-  if (z.kind === 'twister') {   // a pixel tornado: stacked rings that widen as they rise, spinning, sand whipping round its foot
-    const fade = Math.min(1, z.t / 0.3, (z.dur - z.t) / 0.2 + 0.2);
-    ctx.globalAlpha = 0.25 * fade; ctx.fillStyle = '#d9b46a'; diamond(ctx, s[0], s[1], z.r * v.hw, z.r * v.hh); ctx.fill();
-    for (let i = 0; i < 9; i++) {
-      const k = i / 8, w2 = Math.round((15 + k * 66) / 3) * 3, h = Math.round((6 + k * 12) / 3) * 3, y = s[1] - 9 - i * 21, sw = Math.sin(t * 5 + i * 0.7) * (6 + k * 12);
-      ctx.globalAlpha = fade * (0.85 - k * 0.3); ctx.strokeStyle = i % 2 ? '#d9b46a' : '#a8844a'; ctx.lineWidth = 6;
-      diamond(ctx, snap(s[0] + sw), Y(y), w2 / 2, h / 2); ctx.stroke();
-      ctx.fillStyle = '#fff0c8'; const a2 = t * 9 + i; ctx.fillRect(snap(s[0] + sw + Math.cos(a2) * w2 / 2 - 3), Y(y + Math.sin(a2) * h / 2 - 3), 6, 6);
+  if (z.kind === 'steamcloud') {   // the cloud a mine leaves: white steam rolling up, thinning out as it ends
+    const fade = Math.min(1, z.t / 0.8), rx = z.r * v.hw * 1.414, ry = z.r * v.hh * 1.414;
+    ctx.globalAlpha = 0.22 * fade; ctx.fillStyle = '#f4f4f8'; diamond(ctx, s[0], s[1] - 6, rx, ry * 1.2); ctx.fill();
+    ctx.globalAlpha = 0.5 * fade; ctx.strokeStyle = Math.floor(t * 10) % 2 ? '#ffffff' : '#bfe0ff'; ctx.lineWidth = 3; ctx.setLineDash([9, 9]); ctx.lineDashOffset = -Math.floor(t * 6) * 3; diamond(ctx, s[0], s[1] - 6, rx, ry * 1.2); ctx.stroke(); ctx.setLineDash([]);
+    for (let i = 0; i < 11; i++) {
+      const an = i * 0.571 + t * 0.6, rr = z.r * (0.25 + 0.55 * ((i * 0.37) % 1)), q = R.toScreen(v, z.x + Math.cos(an) * rr, z.y + Math.sin(an) * rr), rise = ((t * 16 + i * 9) % 36);
+      ctx.globalAlpha = (0.65 - rise / 70) * fade; ctx.fillStyle = i % 3 ? '#f4f4f8' : '#ffffff';
+      const sz = 12 + (i % 3) * 3; ctx.fillRect(snap(q[0] - sz / 2), Y(q[1] - 12 - rise - sz / 2), sz, Math.round(sz * 0.7 / 3) * 3);
     }
-    ctx.globalAlpha = 1;
-    return;
-  }
-  if (z.kind === 'orb') {   // the storm orb: a crackling ball hovering over the ground
-    const fade = Math.min(1, z.t / 0.2), y = s[1] - 54 + (Math.sin(t * 4) > 0 ? 3 : 0);
-    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(snap(s[0] - 15), Y(s[1]) - 3, 30, 9);
-    ctx.globalAlpha = 0.35 * fade; ctx.strokeStyle = '#bfe9ff'; ctx.lineWidth = 3; ctx.setLineDash([9, 9]); ctx.lineDashOffset = -Math.floor(t * 12) * 3;
-    diamond(ctx, s[0], s[1], z.r * v.hw * 1.414, z.r * v.hh * 1.414); ctx.stroke(); ctx.setLineDash([]);
-    ctx.globalAlpha = fade; ctx.fillStyle = '#2a4a8a'; ctx.fillRect(snap(s[0] - 18), Y(y - 18), 36, 36);
-    ctx.fillStyle = '#7ab4ff'; ctx.fillRect(snap(s[0] - 15), Y(y - 15), 30, 30);
-    ctx.fillStyle = '#e6f8ff'; ctx.fillRect(snap(s[0] - 9), Y(y - 9), 18, 18);
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
-    for (let i = 0; i < 3; i++) { const an = t * 13 + i * 2.1; ctx.beginPath(); ctx.moveTo(s[0], y); ctx.lineTo(snap(s[0] + Math.cos(an) * 24), Y(y + Math.sin(an) * 18)); ctx.lineTo(snap(s[0] + Math.cos(an + 0.4) * 33), Y(y + Math.sin(an + 0.4) * 24)); ctx.stroke(); }
     ctx.globalAlpha = 1;
     return;
   }
@@ -2372,7 +2392,7 @@ R.drawDrop = function (ctx, v, f, ground) {
       diamond(ctx, cx, q[1], rr * v.hw * 1.414, rr * v.hh * 1.414); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
     // aimed spells: chevrons light up along the way they'll fly
-    if (['fireball', 'boulder', 'magma', 'spray', 'flamethrower'].indexOf(f.spell) >= 0) {
+    if (['fireball', 'boulder', 'magma', 'spray', 'flamethrower', 'steam', 'sandstorm'].indexOf(f.spell) >= 0) {
       const a = WZ.aim(), dx = (a[0] - a[1]) * v.hw, dy = (a[0] + a[1]) * v.hh;
       for (let i = 1; i <= 3; i++) {
         ctx.globalAlpha = Math.floor(t * 10) % 3 === i - 1 ? 1 : 0.4;
@@ -2448,20 +2468,13 @@ R.drawDrop = function (ctx, v, f, ground) {
       blk(cx, y, s2 + 6, '#1f5fa8'); blk(cx, y, s2, '#4fc3ff'); blk(cx - 3, y - 3, Math.max(3, s2 - 12), '#ffffff');
       break;
     }
-    case 'sandstorm': {   // a sand funnel twists down from the portal, wide at the top, narrow at his feet
-      if (ground) { flat(0.4 + fr * 0.5, f.col, 0.25); break; }
+    case 'sandstorm': {   // a heavy boomerang spins out of the portal and drops toward his hand, wind streaks round it
+      if (ground) break;
       portal(top, R0, '#b08a40');
-      const bot = top + (q[1] - 6 - top) * c01((fr - 0.1) / 0.6);
-      for (let L = 0; L < 9; L++) {
-        const y = top + 9 + L * 11, r = 36 - L * 3.5;
-        if (y > bot) break;
-        for (let g = 0; g < 3; g++) {
-          const a = t * 14 + L * 0.9 + g * 2.09 + sd;
-          ctx.globalAlpha = Math.sin(a) > 0 ? 1 : 0.5;   // the back of the funnel is fainter
-          blk(cx + Math.cos(a) * r, y + Math.sin(a) * r * 0.25, 6, g ? '#d9b46a' : '#8a6a3c');
-        }
-      }
-      ctx.globalAlpha = 1;
+      if (fr < 0.15) break;
+      const p = ease(c01((fr - 0.15) / 0.85)), y = top + 6 + (land - top - 6) * p, ph = Math.floor(t * 16) % 4, dx = [1, 1, -1, -1][ph], dy = [-1, 1, 1, -1][ph];
+      for (let i = 0; i < 3; i++) blk(cx + Math.cos(t * 12 + i * 2.1) * 24, y + Math.sin(t * 12 + i * 2.1) * 9, 3, '#fff0c8');
+      blk(cx, y, 12, '#4a4a58'); blk(cx + dx * 9, y, 9, '#a07a4a'); blk(cx, y + dy * 9, 9, '#a07a4a'); blk(cx + dx * 15, y, 6, '#6a6a78'); blk(cx, y + dy * 15, 6, '#6a6a78');
       break;
     }
     case 'magma': {   // a glob of molten rock oozes out on a stretching neck, drips run ahead, then it drops
@@ -2475,19 +2488,14 @@ R.drawDrop = function (ctx, v, f, ground) {
       blk(cx, y, sz + 6, '#3a0a08'); blk(cx, y, sz, '#ff4a1a'); blk(cx - 3, y - 3, Math.max(3, sz - 12), '#ffc850');
       break;
     }
-    case 'steam': {   // (the Storm Orb) a storm cloud gathers over the portal, slanting rain, lightning flickering inside
-      if (ground) break;
-      portal(top, R0, '#9aa8d8');
-      const grow = c01(fr / 0.3);
-      if (fr > 0.15) for (let i = 0; i < 12; i++) {
-        const p = (t * 2.6 + i * 0.37 + sd) % 1, x = cx + ((i * 7) % 11 - 5) * 7 - p * 15, y = top + 6 + (q[1] - 12 - top) * p;
-        ctx.fillStyle = '#bfe9ff'; ctx.fillRect(snap(x), Y(y), 3, 9);
-      }
-      for (let i = 0; i < 5; i++) blk(cx + (i - 2) * 15 * grow, top - 6 + Math.sin(i * 1.3 + sd + t * 3) * 3 - (i % 2) * 9, (15 + (i % 2) * 6) * grow, i % 2 ? '#7a84a8' : '#5a6488');
-      if (fr > 0.55 && Math.floor(t * 25) % 3 === 0) {
-        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.beginPath();
-        ctx.moveTo(cx - 9, top - 6); ctx.lineTo(cx + 3, top + 9); ctx.lineTo(cx - 6, top + 18); ctx.lineTo(cx + 6, top + 33); ctx.stroke();
-      }
+    case 'steam': {   // a dark mine drops out of the portal, a fuse spitting sparks
+      if (ground) { flat(0.4 + fr * 0.5, '#f4f4f8', 0.12 + fr * 0.2); break; }
+      portal(top, R0, '#c8ccd8', '#2a2a3a');
+      if (fr < 0.15) break;
+      const p = ease(c01((fr - 0.15) / 0.85)), y = top + 6 + (land - top - 6) * p;
+      blk(cx, y, 24, '#23232e'); blk(cx, y, 18, '#6a7a88'); blk(cx - 3, y - 3, 6, '#bfe9ff');
+      blk(cx, y - 15, 6, '#23232e'); blk(cx - 15, y, 6, '#23232e'); blk(cx + 15, y, 6, '#23232e');
+      if (Math.floor(t * 30) % 2) blk(cx + Math.sin(t * 40) * 3, y - 21 - (t * 40) % 9, 3, '#ffe36b');
       break;
     }
     case 'mud': {   // a blue and a brown orb spiral down out of the portal and start circling him

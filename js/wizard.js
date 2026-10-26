@@ -361,7 +361,7 @@ WZ.fresh = function () {
   for (const i of WZ.rockTiles || []) { tmod[i] = { k: 'rock', t: 1e9, dur: 1e9 }; tmodN++; }
   for (const i of WZ.vineTiles || []) { tmod[i] = { k: 'vine', t: 1e9, dur: 1e9 }; tmodN++; }
   return {
-    x: SPAWN.x, y: SPAWN.y, hp: WZ.maxHp(), armor: 0, fx: 1, fy: 1, sx: 0, sy: 0, vx: 0, vy: 0, target: null,
+    x: SPAWN.x, y: SPAWN.y, hp: WZ.maxHp(), armor: 0, fx: 1, fy: 1, sx: 0, sy: 0, mines: [], booms: [], eidN: 0, vx: 0, vy: 0, target: null,
     roll: 0, rollCd: 0, rdx: 0, rdy: 0, hurtT: 0, moving: false, bob: 0, shake: 0, ghosts: [],
     enemies: [], proj: [], eproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
     time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
@@ -744,13 +744,13 @@ WZ.cast = function (spell) {
       WZ.zone({ kind: 'flame', follow: true, r: S.range, t: S.t, dps: S.dps, half: S.half, ax: a[0], ay: a[1], col: '#ff9a2b', trT: 0, snd: 0 });
       WZ.recoil(a, S.recoil);
       break;
-    case 'steam':   // a storm orb drifts out along the aim and keeps zapping
+    case 'steam':   // a mine is lobbed a short way along the aim and sits dormant (WZ.mineTick)
       AU.sfx('zap_combo');
-      WZ.zone({ kind: 'orb', x: px + a[0] * 1, y: py + a[1] * 1, vx: a[0] * S.speed, vy: a[1] * S.speed, r: S.range, t: S.t, zt: 0.05, col: '#bfe9ff' });
+      WZ.layMine(px, py, a, S);
       break;
-    case 'sandstorm':   // a twister set loose along the aim: it hunts, pulls and grinds
-      AU.sfx('zap_combo');
-      WZ.zone({ kind: 'twister', x: px + a[0] * 1.5, y: py + a[1] * 1.5, vx: a[0] * S.speed, vy: a[1] * S.speed, r: S.r, t: S.t, dps: S.dps, slow: S.slow, pull: S.pull, seek: S.seek, col: '#d9b46a', trT: 0 });
+    case 'sandstorm':   // a boomerang thrown in an arc along the aim: out, back to where he stands, a catch throws a smaller one (WZ.boomTick)
+      AU.sfx('zap_air');
+      WZ.throwBoom(px, py, a, S, ctx);
       break;
     case 'magma': {   // lobbed high onto the thickest crowd
       AU.sfx('zap_fire');
@@ -801,7 +801,7 @@ WZ.cast = function (spell) {
     }
   }
   WZ.ctx = null;
-  WZ.later(1.1, () => FA.landed(ctx));
+  if (spell !== 'steam' && spell !== 'sandstorm') WZ.later(1.1, () => FA.landed(ctx));   // (a mine and a boomerang report when they are spent)
 };
 // ---------- the spells' moving parts (all plain data in G.w.proj / G.w.zones; WZ.update calls projSpecial / zoneSpecial) ----------
 // a fresh mark of the current spell's trail (or its own mark, smaller) where a moving spell passes
@@ -842,7 +842,7 @@ WZ.lobLand = function (p) {
     WZ.boom(x, y, S.r * 1.3, '#ffffff'); WZ.ring(x, y, S.r * 1.6, '#ffb030', 0.6);
     for (let i = 0; i < S.frags; i++) {   // the fragments are burning boulders that fly out and bounce
       const an = (i + Math.random() * 0.6) / S.frags * 6.283;
-      WZ.proj({ x, y, vx: Math.cos(an) * S.fragSpeed, vy: Math.sin(an) * S.fragSpeed, life: 30, dmg: S.fragDmg, sr: S.fragR, push: 6, col: '#ff7a30', kind: 'boulder', burn: true, size: 7, r: 0.5, hops: S.fragHops, h0: S.fragHops, hop: S.fragHop * (0.9 + Math.random() * 0.3), ht: 0, n: 0 });
+      WZ.proj({ x, y, vx: Math.cos(an) * S.fragSpeed, vy: Math.sin(an) * S.fragSpeed, life: 30, dmg: S.fragDmg, sr: S.fragR, push: 6, col: '#ff7a30', kind: 'boulder', burn: true, size: 7, r: 0.5, hops: S.fragHops, h0: S.fragHops, hop: S.fragHop * (0.9 + Math.random() * 0.3), ht: 0, n: 0, seek: S.fragSeek, turn: S.fragTurn, tid: 0 });
     }
     w.shake = Math.max(w.shake, 0.8); AU.sfx('slam'); AU.sfx('thud'); WZ.puff(x, y, '#d8c8a8', 24); WZ.epuff(x, y, 'fire', 16);
     WZ.bendRing(x, y, S.r * 2);
@@ -863,6 +863,115 @@ WZ.gustPulse = function (x, y, r, S, last) {
   if (last) WZ.gustEffects(x, y, r);   // the Stonefist Charm: boulders shoved, cracked rock broken
 };
 WZ.bendRing = function (x, y, r) { const n = Math.max(6, Math.ceil(r * 5)); for (let i = 0; i < n; i++) { const an = i / n * 6.283; WZ.bendAt(x + Math.cos(an) * r, y + Math.sin(an) * r, Math.cos(an) * 6, Math.sin(an) * 6, 0.7); } };
+// lazy ids, so a mine or a fragment can hold on to its foe as plain data (G has no references to enemies)
+WZ.eid = e => e.id || (e.id = G.w.eidN = (G.w.eidN || 0) + 1);
+WZ.byId = id => { for (const e of G.w.enemies) if (e.id === id && !e.dead) return e; return null; };
+// Steam Mine: lobbed a short way along the aim (back off from water and walls), it lands and sits dormant
+WZ.layMine = function (x, y, a, S) {
+  const w = G.w;
+  let d = S.throw, tx = x + a[0] * d, ty = y + a[1] * d;
+  while (d > 1 && (WZ.wet(tx, ty) || WZ.blocked(tx, ty, 0.3))) { d -= 0.5; tx = x + a[0] * d; ty = y + a[1] * d; }
+  w.mines.push({ x, y, sx: x, sy: y, tx, ty, z: 0, st: 'lob', t: 0, age: 0, tid: 0, gx: tx, gy: ty, ctx: WZ.ctx });
+  while (w.mines.length > S.max) { const o = w.mines.shift(); WZ.puff(o.x, o.y, '#f4f4f8', 8); }   // the oldest pops harmlessly
+};
+// every mine: lob -> dormant (pulsing; a foe within wake tiles wakes it) -> wake (a fast pulse and a hop) -> fly at that foe -> burst
+WZ.mineTick = function (dt) {
+  const w = G.w, S = CFG.spells.steam;
+  for (let i = w.mines.length - 1; i >= 0; i--) {
+    const m = w.mines[i];
+    m.age += dt; m.t += dt;
+    if (m.st === 'lob') {
+      const k = Math.min(1, m.t / S.flight);
+      m.x = m.sx + (m.tx - m.sx) * k; m.y = m.sy + (m.ty - m.sy) * k; m.z = Math.sin(k * Math.PI) * S.h;
+      if (k >= 1) { m.st = 'dorm'; m.t = 0; m.z = 0; WZ.puff(m.x, m.y, '#d8c8a8', 6); AU.sfx('thud'); }
+    } else if (m.st === 'dorm') {
+      if (m.age > S.life) { WZ.puff(m.x, m.y, '#f4f4f8', 10); w.mines.splice(i, 1); continue; }   // spent: it pops harmlessly
+      let e = null, bd = S.wake;
+      for (const o of w.enemies) { if (o.dead || o.fall > 0) continue; const d = Math.hypot(o.x - m.x, o.y - m.y); if (d < bd) { bd = d; e = o; } }
+      if (e) { m.st = 'wake'; m.t = 0; m.tid = WZ.eid(e); m.gx = e.x; m.gy = e.y; AU.sfx('alert'); }
+    } else if (m.st === 'wake') {
+      m.z = S.hopH * Math.min(1, m.t / S.wakeT);
+      const e = WZ.byId(m.tid); if (e) { m.gx = e.x; m.gy = e.y; }
+      if (m.t >= S.wakeT) { m.st = 'fly'; m.t = 0; }
+    } else {   // fly: it commits to the foe that woke it (and to where it last saw it if that foe dies)
+      const e = WZ.byId(m.tid); if (e) { m.gx = e.x; m.gy = e.y; }
+      const dx = m.gx - m.x, dy = m.gy - m.y, d = Math.hypot(dx, dy) || 1, step = S.speed * dt;
+      if (d <= S.hit + step * 0.5 || m.t >= S.fly) { WZ.mineBurst(m); w.mines.splice(i, 1); continue; }
+      m.x += dx / d * step; m.y += dy / d * step; m.z = S.hopH * (1 - 0.4 * Math.min(1, m.t / S.fly));
+      if (Math.random() < dt * 40) w.fx_.push({ type: 'spark', x: m.x, y: m.y, vx: rand(-1, 1), vy: rand(-1, 1), z: m.z * 0.7, vz: rand(0, 1.5), g: -1, col: '#ffffff', t: 0, dur: 0.4 });
+    }
+  }
+};
+// a mine goes off: scalding steam in r tiles, then a cloud that slows
+WZ.mineBurst = function (m) {
+  const S = CFG.spells.steam, w = G.w, x = m.x, y = m.y, c = WZ.ctx;
+  WZ.ctx = m.ctx;
+  WZ.explode(x, y, S.r, S.dmg, '#f4f4f8', null, S.push);
+  WZ.ring(x, y, S.r, '#ffffff', 0.45);
+  WZ.zone({ kind: 'steamcloud', x, y, r: S.cloud.r, t: S.cloud.t, slow: S.cloud.slow, col: '#f4f4f8' });
+  for (let i = 0; i < 16; i++) { const an = i / 16 * 6.283; w.fx_.push({ type: 'spark', x, y, vx: Math.cos(an) * 9, vy: Math.sin(an) * 9, z: 0.6, vz: 2, g: -2, col: i % 2 ? '#ffffff' : '#cfe8ff', t: 0, dur: 0.6 }); }
+  WZ.bendRing(x, y, S.r);
+  w.shake = Math.max(w.shake, 0.35); AU.sfx('slam');
+  if (m.ctx) { const mc = m.ctx; WZ.later(0.3, () => FA.landed(mc)); }
+  WZ.ctx = c;
+};
+// Gale Boomerang: thrown along the aim from where he stands; ph 'out' (an arc), 'back' (to the catch spot tx, ty), or a one-way throw (b.one)
+WZ.throwBoom = function (x, y, a, S, ctx) {
+  G.w.booms.push({ x, y, ox: x, oy: y, ax: a[0], ay: a[1], ph: 'out', t: 0, k: 0, fx: x, fy: y, tx: x, ty: y, sc: 1, dmg: S.dmg, one: false, spin: 0, sid: Math.floor(Math.random() * 1e9), ctx });
+};
+// a boomerang's hits this frame: every foe / node it overlaps takes its damage once per leg (the token is the throw + the leg)
+WZ.boomHit = function (b, px, py, leg) {
+  const S = CFG.spells.sandstorm, w = G.w, r = S.r * b.sc, tok = b.sid * 4 + leg;
+  let ux = b.x - px, uy = b.y - py; const m = Math.hypot(ux, uy) || 1; ux /= m; uy /= m;
+  WZ.ctx = b.ctx;
+  for (const e of w.enemies) {
+    if (e.dead || e.fall > 0 || e.bm === tok || Math.hypot(e.x - b.x, e.y - b.y) > r + e.rad) continue;
+    e.bm = tok;
+    WZ.hurtE(e, b.dmg, ux * S.push, uy * S.push);
+    WZ.mark(e.x, e.y, 0.6);
+  }
+  for (const h of WZ.harv) if (!h.broken && h.surf !== tok && Math.hypot(h.x - b.x, h.y - b.y) < r + 0.4) { h.surf = tok; WZ.hurtH(h, b.dmg); }
+  WZ.altarTouch(b.x, b.y, r);
+  WZ.ctx = null;
+};
+WZ.boomTick = function (dt) {
+  const w = G.w, S = CFG.spells.sandstorm, T = S.second;
+  for (let i = w.booms.length - 1; i >= 0; i--) {
+    const b = w.booms[i], px = b.x, py = b.y;
+    b.spin += dt; b.t += dt;
+    let leg = 0, end = false;
+    if (b.one) {   // the second, smaller one: straight along the aim it was thrown on, one way, then gone
+      const d = Math.min(b.reach, b.t * T.speed);
+      b.x = b.ox + b.ax * d; b.y = b.oy + b.ay * d; leg = 2;
+      end = d >= b.reach;
+    } else if (b.ph === 'out') {   // an arc: ahead of him first, bending to the side at the far point
+      const th = Math.min(1, b.t / S.out) * Math.PI / 2, nx = -b.ay, ny = b.ax;
+      b.x = b.ox + b.ax * S.reach * Math.sin(th) + nx * S.curve * (1 - Math.cos(th));
+      b.y = b.oy + b.ay * S.reach * Math.sin(th) + ny * S.curve * (1 - Math.cos(th));
+      if (b.t >= S.out) { b.ph = 'back'; b.t = 0; b.fx = b.x; b.fy = b.y; }
+    } else {   // back: toward where he stands now; for the last stretch the catch spot stays put (he has to be there)
+      leg = 1;
+      const k = Math.min(1, b.t / S.back);
+      if (k < S.lock) { b.tx = w.x; b.ty = w.y; }
+      const dx = b.tx - b.fx, dy = b.ty - b.fy, d = Math.hypot(dx, dy) || 1, cx = dx / d, cy = dy / d, bulge = S.curve * 1.1 * Math.sin(Math.PI * k);
+      const sg = (-cy * -b.ay + cx * b.ax) >= 0 ? 1 : -1;   // it bulges to the same side the throw bent to, so the two legs make a loop
+      b.x = b.fx + dx * k - cy * sg * bulge; b.y = b.fy + dy * k + cx * sg * bulge;
+      end = k >= 1;
+    }
+    b.k = leg;
+    WZ.boomHit(b, px, py, leg);
+    if (Math.random() < dt * 30) w.fx_.push({ type: 'spark', x: b.x, y: b.y, vx: rand(-1.5, 1.5), vy: rand(-1.5, 1.5), z: 0.9, vz: rand(0, 1), g: 3, col: Math.random() < 0.5 ? '#d9b46a' : '#fff0c8', t: 0, dur: 0.4, el: 'air' });
+    if (!end) continue;
+    w.booms.splice(i, 1);
+    const spent = () => { const bc = b.ctx; if (bc) WZ.later(0.2, () => FA.landed(bc)); };
+    if (b.one) { WZ.puff(b.x, b.y, '#d9b46a', 8); spent(); continue; }
+    if (Math.hypot(w.x - b.x, w.y - b.y) <= S.catchR) {   // caught: it flies again, smaller, one way, along his aim
+      const a = WZ.aim(), m = Math.hypot(a[0], a[1]) || 1;
+      WZ.ring(w.x, w.y, 1.2, '#ffe36b', 0.3); WZ.num(w.x, w.y, 'CATCH!', '#ffe36b'); AU.sfx('pickup');
+      w.booms.push({ x: w.x, y: w.y, ox: w.x, oy: w.y, ax: a[0] / m, ay: a[1] / m, t: 0, k: 2, one: true, sc: T.scale, dmg: S.dmg * T.dmg, reach: T.reach, spin: 0, sid: Math.floor(Math.random() * 1e9), ctx: b.ctx });
+    } else { WZ.puff(b.x, b.y, '#d9b46a', 10); AU.sfx('thud'); spent(); }   // nobody there: it falls and fizzles
+  }
+};
 // Mud Shield: an orb goes off on the foe it touched
 WZ.mudBlast = function (x, y, S) {
   const w = G.w;
@@ -958,6 +1067,16 @@ WZ.projSpecial = function (p, dt) {
     return false;
   }
   if (p.kind === 'boulder') {   // in the air between landings it touches nothing; each landing crushes
+    if (p.seek) {   // a Meteor fragment hunts: it steers (a lazy turn) toward its foe, and takes the nearest one when that foe is gone
+      let tg = p.tid ? WZ.byId(p.tid) : null;
+      if (!tg) { tg = WZ.nearest(p.x, p.y, p.seek); p.tid = tg ? WZ.eid(tg) : 0; }
+      if (tg) {
+        const sp = Math.hypot(p.vx, p.vy) || 1, want = Math.atan2(tg.y - p.y, tg.x - p.x), cur = Math.atan2(p.vy, p.vx);
+        let da = want - cur; while (da > Math.PI) da -= 6.283; while (da < -Math.PI) da += 6.283;
+        const na = cur + Math.max(-p.turn * dt, Math.min(p.turn * dt, da));
+        p.vx = Math.cos(na) * sp; p.vy = Math.sin(na) * sp;
+      }
+    }
     p.x += p.vx * dt; p.y += p.vy * dt; p.ht += dt;
     if (p.ht < p.hop) return false;
     p.ht = 0; p.n++;
@@ -1105,42 +1224,6 @@ WZ.zoneSpecial = function (z, dt) {
       for (const t of hit) w.fx_.push({ type: 'bolt', pts: [[z.x, z.y], [t.x, t.y]], t: 0, dur: 0.18, col: Math.random() < 0.5 ? '#ffe36b' : '#ffffff' });
       if (hit.length) AU.sfx('zap_air');
     }
-    return true;
-  }
-  if (z.kind === 'twister') {   // it hunts the nearest foe within seek, drags foes into its eye and grinds them
-    const e = WZ.nearest(z.x, z.y, z.seek), sp = S.speed;
-    if (e) { const dx = e.x - z.x, dy = e.y - z.y, d = Math.hypot(dx, dy) || 1, k = Math.min(1, dt * 2.5); z.vx += (dx / d * sp - z.vx) * k; z.vy += (dy / d * sp - z.vy) * k; }
-    const nx = z.x + z.vx * dt, ny = z.y + z.vy * dt;
-    if (WZ.tile(nx, ny) === T_WALL || nx < 1 || ny < 1 || nx > CFG.WW - 1 || ny > CFG.WH - 1) { z.vx = -z.vx; z.vy = -z.vy; } else { z.x = nx; z.y = ny; }
-    for (const o of w.enemies) {
-      if (o.dead || o.fall > 0) continue;
-      const dx = z.x - o.x, dy = z.y - o.y, d = Math.hypot(dx, dy);
-      if (d > z.r * 1.6 + o.rad) continue;
-      const kb = o.kb !== undefined ? o.kb : o.boss ? 0.08 : o.elite ? 0.4 : 1;
-      if (d > 0.3) { o.kx += (dx / d * z.pull - dy / d * z.pull * 0.6) * kb * dt * 6; o.ky += (dy / d * z.pull + dx / d * z.pull * 0.6) * kb * dt * 6; }   // in and round
-      if (d < z.r + o.rad) { WZ.hurtE(o, z.dps * dt, 0, 0, true); WZ.slowE(o, z.slow, 0.25); o.flash = 0.04; }
-    }
-    WZ.bendAt(z.x, z.y, z.vx * 3 + 4, z.vy * 3 - 4, 1.2);
-    if ((z.trT -= dt) <= 0) { z.trT = S.trailGap; WZ.trail(z.x, z.y); }
-    WZ.ctx = z.ctx;
-    for (const h of WZ.harv) if (!h.broken && Math.hypot(h.x - z.x, h.y - z.y) < z.r * 0.7) { h.hp -= z.dps * dt * WZ.harvMul(); h.flash = 0.05; if (h.hp <= 0) { h.hp = 0.0001; WZ.hurtH(h, 1); } }
-    WZ.altarTouch(z.x, z.y, z.r * 0.6);
-    return true;
-  }
-  if (z.kind === 'orb') {   // drifts and zaps the nearest foe in range now and then
-    const nx = z.x + z.vx * dt, ny = z.y + z.vy * dt;
-    if (nx > 1 && ny > 1 && nx < CFG.WW - 1 && ny < CFG.WH - 1) { z.x = nx; z.y = ny; }
-    if ((z.zt -= dt) <= 0) {
-      z.zt = S.zap;
-      const al = WZ.altarChainTarget(z.x, z.y, z.r), e = WZ.nearest(z.x, z.y, z.r);
-      if (al && (!e || Math.hypot(al.x - z.x, al.y - z.y) < Math.hypot(e.x - z.x, e.y - z.y))) { w.fx_.push({ type: 'bolt', pts: [[z.x, z.y], [al.x, al.y]], t: 0, dur: 0.2, col: '#bfe9ff' }); WZ.altarHit(WZ.ctx); }
-      else if (e) {
-        w.fx_.push({ type: 'bolt', pts: [[z.x, z.y], [e.x, e.y]], t: 0, dur: 0.2, col: '#bfe9ff' });
-        WZ.mark(e.x, e.y, 1); WZ.hurtE(e, S.dmg, 0, 0); WZ.slowE(e, S.slow, S.slowT);
-        AU.sfx('zap_air');
-      }
-    }
-    if (z.t <= 0) { WZ.boom(z.x, z.y, 1.4, '#bfe9ff'); WZ.puff(z.x, z.y, '#ffffff', 8); }
     return true;
   }
   if (z.kind === 'storm') {   // the cloud hangs over him and calls bolts down
@@ -1729,7 +1812,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     }
     if (z.frost && (z.fk -= dt) <= 0) { z.fk = z.frost; WZ.freeze(z.x, z.y, z.r, CFG.spells.blizzard.frost.t); }   // the Blizzard freezes the ground it passes over
     WZ.ctx = z.ctx;
-    if (!WZ.zoneSpecial(z, dt)) WZ.each(z.x, z.y, z.r, (t, d, isE) => {   // (a flame cone, a twister, the storm orb and cloud, a droplet, the mud shield, the Nova's pull do their own thing)
+    if (!WZ.zoneSpecial(z, dt)) WZ.each(z.x, z.y, z.r, (t, d, isE) => {   // (a flame cone, the storm cloud, a droplet, the mud shield, the Nova's pull do their own thing)
       if (z.dps) { if (isE) WZ.hurtE(t, z.dps * dt, 0, 0, true); else { t.hp -= z.dps * dt * WZ.harvMul(); t.flash = 0.05; if (t.hp <= 0) { t.hp = 0.0001; WZ.hurtH(t, 1); } } }
       if (isE && z.slow) WZ.slowE(t, z.slow, 0.25);
     });
@@ -1737,6 +1820,8 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     if (z.t <= 0) { if (z.kind === 'novapull') WZ.novaBurst(z); w.zones.splice(i, 1); }   // the Nova bursts when its gathering is done
   }
   w.zSlow = zs;
+  WZ.mineTick(dt);
+  WZ.boomTick(dt);
 
   // drops: fly out, then vacuum into the wizard
   w.mergeT -= dt;

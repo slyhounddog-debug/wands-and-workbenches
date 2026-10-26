@@ -8,10 +8,10 @@ const SPV = {};
   const CAP = {
     gust: 'CYCLONE: three pulses fling foes into each other', fireball: 'SEEKER: very fast, homes in on a foe',
     spray: 'WAVE: rolls out and carries foes with it', boulder: 'BOUNCER: crushes round every landing',
-    flamethrower: 'STREAM: a cone of fire for two seconds', steam: 'STORM ORB: drifts out zapping the nearest',
-    sandstorm: 'TWISTER: hunts foes and drags them in', magma: 'LOB: blast, lava pool, splattering blobs',
+    flamethrower: 'STREAM: a cone of fire for two seconds', steam: 'STEAM MINE: wakes near a foe, bursts, steam cloud',
+    sandstorm: 'BOOMERANG: out, back, catch it for a 2nd throw', magma: 'LOB: blast, lava pool, splattering blobs',
     tempest: 'TEMPEST TEAR: steer droplets, they fan out', mud: 'MUD SHIELD: orbs circle, one bursts per foe',
-    meteor: 'ONE BIG ROCK: then burning boulders', thunder: 'STORM CLOUD: bolts rain down and fork',
+    meteor: 'ONE BIG ROCK: then homing burning boulders', thunder: 'STORM CLOUD: bolts rain down and fork',
     blizzard: 'ICICLES: three hits freeze a foe solid', geyser: 'TWO WAVES: nearest 6, then 6 random',
     nova: 'PULL, ZAP, THEN BURST OUT',
   };
@@ -41,8 +41,8 @@ const SPV = {};
   const SC = {
     gust: { len: 2.8, W: [0, 0], en: [[-2.5, 1], [-2, -0.5], [3, -2], [2, 3], [2.6, 2.2], [-1, -4], [5, 2], [9, -1]],
       cast: (s, S) => { for (let i = 0; i < S.pulses; i++) s.later(i * S.gap, () => burst(s, Object.assign({}, S, { r: S.r * (i + 1) / S.pulses }), col('gust'), 0.35)); } },
-    steam: { len: 4, W: [-8.5, 0], en: [[-6, 1.5], [-2.5, -3], [0.5, 2], [3.5, -2], [6.5, 2], [9, -3]],
-      cast: (s, S) => s.zone({ x: s.W.x + 1, y: s.W.y, vx: S.speed * 1.6, vy: 0, r: S.range, t: S.t, col: '#bfe9ff', kind: 'orb', zap: S.zap, zt: 0.05, dmg: S.dmg, slowT: S.slowT }) },
+    steam: { len: 5, W: [-8.5, 0], en: [[-2.6, 0.4], [-1.5, 1.4], [-1, -2.8], [3, 2], [7, -1]],
+      cast: (s, S) => s.proj({ kind: 'mine', x: s.W.x, y: s.W.y, sx: s.W.x, sy: s.W.y, tx: s.W.x + S.throw, ty: s.W.y, st: 'lob', t: 0, z: 0, M: S, tg: null }) },
     nova: { len: 4.4, W: [0, 0], en: [[-10, 1], [9, -4], [4, 9], [-5, -8], [7, 2], [-2, 3.5], [3, -5]],
       cast: (s, S) => s.zone({ r: S.pullR, t: S.pullT, follow: true, col: '#ffe36b', kind: 'novapull', zt: 0, S,
         end: z => {
@@ -64,8 +64,6 @@ const SPV = {};
       cast: (s, S) => { s.heal(S.heal); s.proj({ vx: S.speed, vy: 0, life: S.life * 1.4, dmg: S.dmg, kind: 'wave', w: S.w, col: '#4aa8ff', size: 6, hit: [], slow: S.slow, slowT: S.slowT }); } },
     flamethrower: { len: 3.4, W: [-8.5, 0], en: [[-3.5, -1.2], [-3.5, 1.2], [-2.3, 0], [-3, 5]],
       cast: (s, S) => s.zone({ r: S.range, t: S.t, dps: S.dps, follow: true, col: '#ff9a2b', kind: 'flame', half: S.half }) },
-    sandstorm: { len: 5, W: [-8, 0], en: [[-1, -2.5], [2, 2.5], [4, -1], [-3, 3.5], [7, 1]],
-      cast: (s, S) => s.zone({ x: s.W.x + 1.5, y: s.W.y, vx: S.speed, vy: 0, r: S.r, t: S.t, dps: S.dps, slow: S.slow, col: col('sandstorm'), kind: 'twister', pull: S.pull, seek: S.seek, sp: S.speed }) },
     blizzard: { len: 5.6, W: [-4, 0], en: [[-2, -3], [1, 2.5], [4, -1.5], [6, 3], [-5, 3], [9, -2]],
       cast: (s, S) => { s.zone({ r: S.r, t: S.t, dps: S.dps, slow: S.slow, follow: true, col: col('blizzard'), kind: 'snow', ice: S }); walk(s, 2, S.t); } },
     mud: { len: 3.4, W: [0, 0], en: [[1.8, 0.3], [-1.3, 1.4], [0.4, -1.9], [-1.9, -0.6], [6, 2], [-7, -3]],
@@ -74,10 +72,12 @@ const SPV = {};
       cast: (s, S) => { for (let i = 0; i < 5; i++) s.later(i * 0.3, () => s.zone({ x: s.W.x, y: s.W.y, r: S.r, t: S.life, col: '#4fc3ff', kind: 'tear', off: 0, S, i, dps: S.dps, slow: S.slow })); } },
     thunder: { len: 4.8, W: [-6, 0], en: [[-5.5, -1], [-4, 2.5], [-2.2, -2.5], [-0.8, 1.5], [0.8, -3], [2.4, 2], [4, -1.5], [5.6, 3], [7, -2.5]],
       cast: (s, S) => s.zone({ r: S.range * 1.5, t: S.t, follow: true, col: '#fff27a', kind: 'storm', every: S.every, zt: 0.05, S }) },
+    sandstorm: { len: 4.2, W: [-8.5, 0], en: [[-4, 0.8], [-2.2, 2.6], [-6.4, 4.2], [-5, 0.1], [-3.2, -0.2], [3, 0]],
+      cast: (s, S) => { s.later(0.9, () => walk(s, -1.2, 0.5)); s.proj({ kind: 'boom', x: s.W.x, y: s.W.y, ox: s.W.x, oy: s.W.y, ph: 'out', t: 0, sc: 1, dmg: S.dmg, S, spin: 0, sid: 7, fx: s.W.x, fy: s.W.y, tx: s.W.x, ty: s.W.y }); } },
     meteor: { len: 4.6, W: [-7, 0], en: [[1, -1], [2.2, 0.6], [0.4, 1.2], [3, -1.8], [6.5, 3], [7, -3.5]],
       cast: (s, S) => { const c = crowd(s, S.range, S.r); lob(s, c[0] + 1.2, c[1] - 1.2, c[0], c[1], S.fall, 14, 12, '#ff7a30', (x, y) => {
         s.explode(x, y, S.r, S.dmg, '#ff7a30'); s.ring(x, y, S.r * 1.5, '#ffb030', 0.5);
-        for (let i = 0; i < S.frags; i++) { const an = i / S.frags * 6.283 + 0.3; s.proj({ x, y, vx: Math.cos(an) * S.fragSpeed, vy: Math.sin(an) * S.fragSpeed, life: 30, kind: 'boulder', col: '#ff7a30', size: 6, hops: S.fragHops, hop: S.fragHop, ht: 0, n: 0, sr: S.fragR, bdmg: S.fragDmg, burn: true }); }
+        for (let i = 0; i < S.frags; i++) { const an = i / S.frags * 6.283 + 0.3; s.proj({ x, y, vx: Math.cos(an) * S.fragSpeed, vy: Math.sin(an) * S.fragSpeed, life: 30, kind: 'boulder', col: '#ff7a30', size: 6, hops: S.fragHops, hop: S.fragHop, ht: 0, n: 0, sr: S.fragR, bdmg: S.fragDmg, burn: true, seek: S.fragSeek, turn: S.fragTurn }); }
       }, true); } },
     geyser: { len: 5, W: [-6, 0], en: [[-1, -2], [-0.2, -1.2], [3, 2], [3.8, 2.8], [1, 4.5], [5, -3], [9, 0], [2, -4.5], [6, 1], [7.5, 3.5], [-2.5, 3.5], [4.5, -1.2]],
       cast: (s, S) => {
@@ -139,7 +139,48 @@ const SPV = {};
         if (k >= 1) { s.pj.splice(i, 1); p.land(p.tx, p.ty); }
         continue;
       }
+      if (p.kind === 'mine') {   // lob -> dormant -> wake (a hop) -> fly at the foe -> burst, leaving a steam cloud
+        const M = p.M; p.t += dt;
+        if (p.st === 'lob') { const k = Math.min(1, p.t / M.flight); p.x = p.sx + (p.tx - p.sx) * k; p.y = p.sy + (p.ty - p.sy) * k; p.z = Math.sin(k * Math.PI) * M.h; if (k >= 1) { p.st = 'dorm'; p.t = 0; p.z = 0; } }
+        else if (p.st === 'dorm') { const e = s.nearest(p.x, p.y, M.wake); if (e) { p.st = 'wake'; p.t = 0; p.tg = e; } }
+        else if (p.st === 'wake') { p.z = M.hopH * Math.min(1, p.t / M.wakeT); if (p.t >= M.wakeT) { p.st = 'fly'; p.t = 0; } }
+        else {
+          const e = p.tg, dx = e.x - p.x, dy = e.y - p.y, d = Math.hypot(dx, dy) || 1, step = M.speed * dt;
+          if (d <= M.hit + step * 0.5 || p.t >= M.fly) {
+            s.pj.splice(i, 1); s.explode(p.x, p.y, M.r, M.dmg, '#f4f4f8'); s.ring(p.x, p.y, M.r, '#ffffff', 0.45);
+            s.zone({ x: p.x, y: p.y, r: M.cloud.r, t: M.cloud.t, slow: M.cloud.slow, col: '#f4f4f8', kind: 'steamcloud' });
+          } else { p.x += dx / d * step; p.y += dy / d * step; p.z = M.hopH * (1 - 0.4 * Math.min(1, p.t / M.fly)); }
+        }
+        continue;
+      }
+      if (p.kind === 'boom') {   // out in an arc, back to where he stands (frozen for the last stretch), caught = a smaller one-way throw
+        const B = p.S, T = B.second; p.t += dt; p.spin += dt;
+        const px = p.x, py = p.y; let leg = 0, end = false;
+        if (p.one) { const d = Math.min(p.reach, p.t * T.speed); p.x = p.ox + d; leg = 2; end = d >= p.reach; }
+        else if (p.ph === 'out') {
+          const th = Math.min(1, p.t / B.out) * Math.PI / 2;
+          p.x = p.ox + B.reach * Math.sin(th); p.y = p.oy + B.curve * (1 - Math.cos(th));
+          if (p.t >= B.out) { p.ph = 'back'; p.t = 0; p.fx = p.x; p.fy = p.y; }
+        } else {
+          leg = 1; const k = Math.min(1, p.t / B.back);
+          if (k < B.lock) { p.tx = s.W.x; p.ty = s.W.y; }
+          const dx = p.tx - p.fx, dy = p.ty - p.fy, d = Math.hypot(dx, dy) || 1, cx = dx / d, cy = dy / d, bulge = B.curve * 1.1 * Math.sin(Math.PI * k), sg = cx >= 0 ? 1 : -1;
+          p.x = p.fx + dx * k - cy * sg * bulge; p.y = p.fy + dy * k + cx * sg * bulge;
+          end = k >= 1;
+        }
+        const tok = p.sid * 4 + leg, ux = p.x - px, uy = p.y - py, um = Math.hypot(ux, uy) || 1;
+        s.en.forEach(e => { if (!e.dead && e.bm !== tok && Math.hypot(e.x - p.x, e.y - p.y) < B.r * p.sc + 0.45) { e.bm = tok; s.hurt(e, p.dmg, ux / um, uy / um, B.push); } });
+        if (end) {
+          s.pj.splice(i, 1);
+          if (!p.one && Math.hypot(s.W.x - p.x, s.W.y - p.y) <= B.catchR) {
+            s.ring(s.W.x, s.W.y, 1.2, '#ffe36b', 0.3);
+            s.pj.push({ kind: 'boom', one: true, x: s.W.x, y: s.W.y, ox: s.W.x, oy: s.W.y, t: 0, sc: T.scale, dmg: B.dmg * T.dmg, reach: T.reach, S: B, spin: 0, sid: 8 });
+          }
+        }
+        continue;
+      }
       if (p.kind === 'boulder') {   // hops: each landing crushes the ring round it
+        if (p.seek) { const e = s.nearest(p.x, p.y, p.seek); if (e) { const sp = Math.hypot(p.vx, p.vy) || 1, want = Math.atan2(e.y - p.y, e.x - p.x), cur = Math.atan2(p.vy, p.vx); let da = want - cur; while (da > Math.PI) da -= 6.283; while (da < -Math.PI) da += 6.283; const na = cur + Math.max(-p.turn * dt, Math.min(p.turn * dt, da)); p.vx = Math.cos(na) * sp; p.vy = Math.sin(na) * sp; } }
         p.x += p.vx * dt; p.y += (p.vy || 0) * dt; p.ht += dt; p.z = Math.sin(Math.min(1, p.ht / p.hop) * Math.PI) * (1.8 - p.n * 0.3);
         if (p.ht >= p.hop) { p.ht = 0; p.n++; p.hops--; p.hop *= 0.85; p.vx *= 0.9; s.explode(p.x, p.y, p.sr, p.bdmg || CFG.spells.boulder.dmg, p.burn ? '#ff7a30' : '#a98a5c'); if (p.hops <= 0) s.pj.splice(i, 1); }
         continue;
@@ -173,11 +214,6 @@ const SPV = {};
       const z = s.zn[i];
       z.t -= dt; z.tick -= dt;
       if (z.follow) { z.x = s.W.x; z.y = s.W.y; }
-      if (z.vx !== undefined) {   // a twister hunts, an orb drifts
-        if (z.kind === 'twister') { const e = s.nearest(z.x, z.y, z.seek); if (e) { const dx = e.x - z.x, dy = e.y - z.y, d = Math.hypot(dx, dy) || 1, k = Math.min(1, dt * 2.5); z.vx += (dx / d * z.sp - z.vx) * k; z.vy += (dy / d * z.sp - z.vy) * k; }
-          s.each(z.x, z.y, z.r * 1.6, e => { const dx = z.x - e.x, dy = z.y - e.y, d = Math.hypot(dx, dy) || 1; if (d > 0.3) { e.kx += dx / d * z.pull * dt * 4; e.ky += dy / d * z.pull * dt * 4; } }); }
-        z.x += z.vx * dt; z.y += z.vy * dt;
-      }
       if (z.kind === 'tear') {   // a droplet sweeping back and forth at the end of the fan, hurting what it passes through
         const a = Math.sin(s.t * 1.3) * 0.5 + (z.i - 2) * 0.1745, tx = s.W.x + Math.cos(a) * z.S.reach, ty = s.W.y + Math.sin(a) * z.S.reach, d = Math.hypot(tx - z.x, ty - z.y), k = Math.min(1, 10 * dt / (d || 1));
         z.x += (tx - z.x) * k; z.y += (ty - z.y) * k;
@@ -217,7 +253,7 @@ const SPV = {};
         }
       } else {
         s.each(z.x, z.y, r, (e, d) => { if (inZ(e, d)) e.slowT = Math.max(e.slowT, 0.3); });
-        if (z.tick <= 0) { z.tick += 0.5; s.each(z.x, z.y, r, (e, d) => { if (inZ(e, d)) s.hurt(e, z.dps * 0.5, 0, 0, 0); }); }
+        if (z.tick <= 0) { z.tick += 0.5; if (z.dps) s.each(z.x, z.y, r, (e, d) => { if (inZ(e, d)) s.hurt(e, z.dps * 0.5, 0, 0, 0); }); }
       }
       if (z.ice && (z.it = (z.it || 0) - dt) <= 0) {   // icicles: three hits freeze a dummy
         z.it = z.ice.icicle * 2;
@@ -291,10 +327,6 @@ const SPV = {};
           x.globalAlpha = fade * (1 - q * 0.6); x.fillStyle = q < 0.25 ? '#fff0a0' : q < 0.55 ? '#ffb030' : '#ff5a1a'; const w = 2 + Math.round(q * 4);
           x.fillRect(Math.round(sx(z.x + Math.cos(a) * d) - w / 2), Math.round(sy(z.y + Math.sin(a) * d) - 5 - q * 4), w, w); }
         x.globalAlpha = 1; return;
-      }
-      if (z.kind === 'twister') {   // stacked spinning rings
-        for (let k = 0; k < 7; k++) { const q = k / 6; dots(x, 2 + q * 8, 1 + q * 2, cx + Math.sin(s.t * 5 + k) * (1 + q * 2), cy - 2 - k * 4, k % 2 ? '#d9b46a' : '#a8844a', 1, s.t * 6, s.t * 6 + 6.283, true); }
-        return;
       }
       if (z.kind === 'tear') {   // a droplet
         const bx = Math.round(cx), by = Math.round(cy - 9);
@@ -392,6 +424,22 @@ const SPV = {};
       }
     });
     s.pj.forEach(p => {
+      if (p.kind === 'mine') {   // a dark mine pulsing; awake it flashes
+        const mx = Math.round(sx(p.x)), my = Math.round(sy(p.y) - 5 - (p.z || 0) * 9), hot = p.st === 'wake' ? Math.floor(s.t * 18) % 2 : p.st === 'fly' ? 1 : p.st === 'dorm' && Math.sin(s.t * 2.4) > 0.4 ? 1 : 0;
+        ell(x, mx, Math.round(sy(p.y)), 5, 2, '#000', 0.3);
+        if (p.st === 'dorm') dots(x, p.M.wake * TX, p.M.wake * TY, mx, Math.round(sy(p.y)), '#f4f4f8', 1, 0, 6.283, true);
+        x.fillStyle = '#23232e'; x.fillRect(mx - 4, my - 4, 8, 8); x.fillRect(mx - 1, my - 6, 2, 2); x.fillRect(mx - 6, my - 1, 2, 2); x.fillRect(mx + 4, my - 1, 2, 2);
+        x.fillStyle = hot ? (p.st === 'dorm' ? '#bfe9ff' : '#ff7a30') : '#6a7a88'; x.fillRect(mx - 2, my - 2, 4, 4);
+        return;
+      }
+      if (p.kind === 'boom') {   // a spinning L-shaped blade; the catch spot rings while it comes back
+        const bx = Math.round(sx(p.x)), by = Math.round(sy(p.y) - 9 * p.sc), ph = Math.floor(p.spin * 16) % 4, d1 = [1, 1, -1, -1][ph], d2 = [-1, 1, 1, -1][ph], L = Math.round(7 * p.sc), W = Math.max(2, Math.round(3 * p.sc));
+        if (!p.one && p.ph === 'back') dots(x, p.S.catchR * TX, p.S.catchR * TY, sx(p.tx), sy(p.ty), p.t / p.S.back >= p.S.lock ? '#ffe36b' : '#ffffff', 1, 0, 6.283, true);
+        ell(x, bx, Math.round(sy(p.y)), 4 * p.sc, 1.5, '#000', 0.3);
+        x.fillStyle = '#4a4a58'; x.fillRect(d1 > 0 ? bx : bx - L, by - Math.floor(W / 2), L, W); x.fillRect(bx - Math.floor(W / 2), d2 > 0 ? by : by - L, W, L);
+        x.fillStyle = '#d9b46a'; x.fillRect(d1 > 0 ? bx + 1 : bx - L + 1, by - Math.floor(W / 2) + 1, L - 2, 1); x.fillRect(bx - Math.floor(W / 2) + 1, d2 > 0 ? by + 1 : by - L + 1, 1, L - 2);
+        return;
+      }
       if (p.kind === 'lob' || p.kind === 'boulder') {   // a shadow on the ground, the thing up in the air
         ell(x, sx(p.x), sy(p.y), p.size * 0.6, p.size * 0.25, '#000', 0.3);
         const by = Math.round(sy(p.y) - 6 - (p.z || 0) * 9);

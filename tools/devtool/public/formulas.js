@@ -32,10 +32,10 @@ const F = {
   chargeDur: types => V('chargeBase') / Math.pow(V('chargeBoost'), Math.max(1, types) - 1),
   hpOf: (id, m) => { const d = CFG.enemies[id]; return V('enemies.' + id + '.hp') * (d.crafted || id === 'boss' || id === 'warden' ? 1 : F.hpMul(m)); },
 };
-function spellHit(k) {   // the optimistic damage of one cast landing entirely on one foe (the Storm Orb zaps: one hit each)
+function spellHit(k) {   // the optimistic damage of one cast landing entirely on one foe (a mine is one burst, a boomerang two legs)
   const s = CFG.spells[k], g = f => (f in s ? V('spells.' + k + '.' + f) : 0);
   if (s.dps) return { hit: g('dps'), cast: g('dps') * g('t') };
-  const n = k === 'steam' ? 1 : (s.n ? g('n') : 1);
+  const n = k === 'sandstorm' ? 2 : (s.n ? g('n') : 1);
   return { hit: g('dmg'), cast: g('dmg') * n + g('splash') };
 }
 function spellMult(k, def) {   // WZ.mult for a foe def

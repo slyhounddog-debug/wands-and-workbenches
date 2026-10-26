@@ -17,6 +17,7 @@
 // Transport: PeerJS cloud for signaling only, a reliable ordered WebRTC data channel for traffic, STUN only (no TURN: a relay is Josh's decision, see CLAUDE.md).
 const Net = {
   VERSION: 2,
+  BUILD: 6,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
   SNAP_HZ: 20, PAD_HZ: 30,
@@ -52,7 +53,7 @@ const Net = {
     console.info('[peerjs]', s.slice(0, 300));
   };
   Net.t0 = performance.now();
-  Net.logText = n => Net.plog.slice(-n).join('\n');
+  Net.logText = n => 'build ' + Net.VERSION + '.' + Net.BUILD + '\n' + Net.plog.filter(l => /clos|clean|error|ice |disconn|answer|offer|leave|expire|unavailable|webrtc|destroy|lost|conn\./i.test(l) && !/Received ICE candidates|handleCandidate|Added ICE/.test(l)).slice(-n).join('\n');
   const peerOpts = () => ({ config: { iceServers: iceServers() }, debug: 3, logFunction: (lvl, ...a) => Net.log(lvl >= 3 ? '' : 'L' + lvl, ...a) });
   const now = () => performance.now();
   const EDGES = ['a', 'b', 'x', 'y', 'lb', 'rb', 'rt', 'l3', 'back'];
@@ -145,7 +146,7 @@ const Net = {
   function hostConn(conn) {
     if (!Net.conn) { Net.hdiag = watchIce(conn); traceClose(conn, 'host'); }
     if (Net.hooks.guestDialing && !Net.conn) Net.hooks.guestDialing(conn);
-    const dropT = setTimeout(() => { if (conn !== Net.conn) { try { conn.close(); } catch (e) { /* ignore */ } } }, 12000);   // never said hello
+    const dropT = setTimeout(() => { if (conn !== Net.conn) { try { conn.close(); } catch (e) { /* ignore */ } } }, 50000);   // never said hello (ICE itself needs up to ~40 s to give up, so wait longer than that; closing earlier also hides the host's statistics)
     conn.on('data', m => hostMsg(conn, m));
     conn.on('close', () => { clearTimeout(dropT); if (conn === Net.conn) guestGone('closed'); });
     conn.on('error', () => { if (conn === Net.conn) guestGone('error'); });
@@ -271,7 +272,7 @@ const Net = {
         conn.on('close', () => { if (conn === Net.conn) connLost('closed'); });
         conn.on('error', () => { if (conn === Net.conn) connLost('error'); });
       });
-      setTimeout(() => { if (Net.state === 'opening') why().then(fail); }, 25000);
+      setTimeout(() => { if (Net.state === 'opening') why().then(fail); }, 45000);
     }));
   }
   // What the browser saw while it tried to connect: the ICE state and which kinds of candidate showed up (host = a local address, srflx = our public address as STUN

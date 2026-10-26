@@ -421,7 +421,7 @@ R.splitArrow = function (ctx, v, b, t, dir, col, pct, filt) {
     const fx = p[0] + nx * 44, fy = p[1] + ny * 30 + 16, sp = 36;
     if (tip) pbox(ctx, fx - filt.length * sp / 2 - 4, fy - 40, filt.length * sp + 8, 44, '#2b1d48', col);
     filt.forEach((k, i) => dspr(ctx, itemSprite(k), fx + (i - (filt.length - 1) / 2) * sp, fy, 4, tip ? 1 : 0.6));
-  } else if (tip) txt(ctx, pct + '%', p[0] - nx * 4, p[1] + (ny > 0 ? 36 : -30), 12, col, 'center', 'd');
+  }   // the share itself is only written in the Splitter's settings (UI.openSplit)
 };
 
 R.drawBelt = function (ctx, v, b, t) {

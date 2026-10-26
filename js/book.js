@@ -23,57 +23,68 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   const spellEls = id => SPELL_EL[id] || [];
   const klass = n => (n <= 1 ? 'BASIC' : n === 2 ? 'PAIR' : n === 3 ? 'TRIPLE' : 'ALL FOUR');
   const pct = v => Math.round(v * 100) + '%';
-  const els = list => list.map(k => UI.img(k, 16)).join('');
   const row = (a, b) => '<div class="bkr"><span>' + a + '</span><em>' + b + '</em></div>';
 
-  // numbers a spell shows, built from CFG.spells so they never drift from WZ.cast
-  const BASIC_DMG = {
-    gust: s => s.pulses + ' pulses x ' + s.dmg + ' dmg out to ' + s.r + ' tiles; foes flung into each other bonk for ' + s.bonk + '; chops trees and rocks',
-    fireball: s => s.dmg + ' dmg + ' + s.splash + ' splash, ' + s.speed + ' tiles/s, homes in on foes',
-    spray: s => s.dmg + ' dmg, carries foes ' + s.w + ' tiles wide, -' + pct(s.slow) + ' speed for ' + s.slowT + 's, heals ' + s.heal,
-    boulder: s => s.hops + ' bounces x ' + s.dmg + ' dmg in ' + s.sr + ' tiles',
+  // ---- stat badges: one number set inside the icon of what it is (the same sprites the game uses) ----
+  const fmt = n => '' + Math.round(n * 10) / 10;
+  const badge = (ic, num, tip, size, sub, cls) => '<div class="bkb ' + (cls || '') + '" title="' + tip + '">' + UI.img(ic, size) + '<b' + (('' + num).length > 3 ? ' class="sm"' : '') + '>' + num + '</b>' + (sub ? '<i>' + sub + '</i>' : '') + '</div>';
+  const main = list => '<div class="bkBad main">' + list.join('') + '</div>', sub = list => '<div class="bkBad">' + list.join('') + '</div>';
+  // the elements it takes, big: one packet per element, joined by plus signs
+  const elStrip = list => '<div class="bkEls">' + list.map(k => '<div class="bkel" style="--ec:' + ELEM[k].color + '">' + UI.img(k, 40) + '<small>' + k.toUpperCase() + '</small></div>').join('<u>+</u>') + '</div>';
+  const bigRec = (id, sz) => { const R = CFG.recipes[id]; return '<div class="bkRec">' + Object.keys(R.in).map(k => '<span>' + UI.img(k, sz) + (R.in[k] > 1 ? '<u>x' + R.in[k] + '</u>' : '') + '</span>').join('') + UI.img('ic_play', sz * 0.6) + '<span>' + UI.img(R.out, sz) + '</span></div>'; };
+
+  // Spell text: the old tree description minus its "Air + Fire:" prefix (the elements are icons now), then every damage number and the total
+  // possible damage (the badge). Built from CFG.spells so it never drifts from WZ.cast.
+  const SPELL_BOOK = {
+    gust: s => ({ total: s.pulses * s.dmg + s.bonk, text: 'A cyclone spins out of the Wizard in ' + s.pulses + ' pulses, each hitting for ' + s.dmg + ' out to ' + s.r + ' tiles and shoving foes away. Foes flung into each other bonk for ' + s.bonk + ' more. Chops trees and rocks.' }),
+    fireball: s => ({ total: s.dmg + s.splash, text: 'A very fast fireball that homes in on the nearest foe. It hits for ' + s.dmg + ' and splashes ' + s.splash + ' to everything within ' + s.sr + ' tiles, leaving a trail of embers.' }),
+    spray: s => ({ total: s.dmg, text: 'A crescent wave ' + s.w + ' tiles wide rolls out and carries every foe it catches along, hitting each for ' + s.dmg + ' and slowing them ' + pct(s.slow) + ' for ' + s.slowT + 's. It heals the Wizard ' + s.heal + '.' }),
+    boulder: s => ({ total: s.hops * s.dmg, text: 'A boulder that bounces ' + s.hops + ' times along the ground, crushing everything within ' + s.sr + ' tiles of each landing for ' + s.dmg + '.' }),
+    flamethrower: s => ({ total: s.dps * s.t, text: 'A roaring stream of fire blown ' + s.range + ' tiles out in front of the Wizard for ' + s.t + ' seconds, burning everything in the cone for ' + s.dps + ' damage per second and scorching the ground.' }),
+    tempest: s => ({ total: s.dps * s.life, text: 'A controllable water droplet that lives ' + s.life + ' seconds and flies at ' + s.speedMul + 'x the Wizard\'s speed along his aim (right stick, or the way he faces), up to ' + s.reach + ' tiles out. Everything it passes through takes ' + s.dps + ' damage per second and is slowed ' + pct(s.slow) + '. Every delivery is its own droplet; live droplets fan out ' + s.spread + ' degrees apart. Total is per droplet.' }),
+    steam: s => ({ total: s.dmg, text: 'Lobs a mine ' + s.throw + ' tiles ahead that waits for up to ' + s.life + 's. A foe within ' + s.wake + ' tiles wakes it; it hops up, flies at that foe and bursts for ' + s.dmg + ' in ' + s.r + ' tiles, leaving a steam cloud that slows foes ' + pct(s.cloud.slow) + ' for ' + s.cloud.t + 's. Up to ' + s.max + ' mines at once. Total is per mine.' }),
+    sandstorm: s => ({ total: 2 * s.dmg + s.dmg * s.second.dmg, text: 'A heavy boomerang curves out ' + s.reach + ' tiles and back, piercing everything it crosses for ' + s.dmg + ' each way. Stand at the catch spot to catch it and it flies again as a smaller one-way throw for ' + fmt(s.dmg * s.second.dmg) + '. Miss it and it fizzles.' }),
+    magma: s => ({ total: s.dmg + s.pool.dps * s.pool.t + s.blobs * s.blobDmg, text: 'Lobbed onto the thickest crowd: a blast for ' + s.dmg + ' in ' + s.sr + ' tiles, a lava pool that burns ' + s.pool.dps + ' per second for ' + s.pool.t + 's (' + s.pool.dps * s.pool.t + '), and ' + s.blobs + ' magma blobs splattering out for ' + s.blobDmg + ' each (' + s.blobs * s.blobDmg + ').' }),
+    mud: s => ({ total: s.orbs * s.dmg, text: s.orbs + ' orbs circle the Wizard for ' + s.t + ' seconds. The first foe an orb touches sets it off in a muddy blast for ' + s.dmg + ' in ' + s.sr + ' tiles that shoves and slows ' + pct(s.slow) + '. One blast per orb.' }),
+    meteor: s => ({ total: s.dmg + s.frags * s.fragHops * s.fragDmg, text: 'One huge meteor crashes onto the thickest crowd for ' + s.dmg + ' in ' + s.r + ' tiles, then shatters into ' + s.frags + ' burning boulders that hunt the nearest foes, bouncing ' + s.fragHops + ' times and crushing for ' + s.fragDmg + ' at every landing.' }),
+    thunder: s => { const bolts = Math.floor(s.t / s.every); return { total: bolts * (s.dmg + s.chain * s.chainDmg), text: 'A storm cloud over the Wizard calls a lightning bolt every ' + s.every + 's for ' + s.t + ' seconds (' + bolts + ' bolts). Each bolt hits for ' + s.dmg + ' and forks to ' + s.chain + ' more foes for ' + s.chainDmg + ' each.' }; },
+    blizzard: s => { const ice = Math.floor(s.t / s.icicle); return { total: s.dps * s.t + ice * s.iceDmg, text: 'A freezing storm rages round the Wizard for ' + s.t + ' seconds: ' + s.dps + ' damage per second to everything within ' + s.r + ' tiles, plus an icicle every ' + s.icicle + 's (' + ice + ') for ' + s.iceDmg + ' each. A foe hit ' + s.chill + ' times freezes solid for ' + s.freeze + 's. Turns bog and water into ice.' }; },
+    geyser: s => ({ total: s.waves * s.n * (s.dmg + s.land), text: s.waves + ' waves of geysers, ' + s.waveGap + 's apart: the ' + s.n + ' nearest foes, then ' + s.n + ' random ones. Each is thrown up for ' + s.dmg + ', takes ' + s.land + ' more when it lands, then is slowed ' + pct(s.slow) + ' for ' + s.slowT + 's.' }),
+    nova: s => { const zaps = Math.floor(s.pullT / s.zapEvery); return { total: zaps * s.zapDmg + s.dmg + s.bits * 4 * s.bitDmg, text: 'Foes within ' + s.pullR + ' tiles are hauled in for ' + s.pullT + 's while everyone within ' + s.r + ' tiles is zapped for ' + s.zapDmg + ' every ' + s.zapEvery + 's (' + zaps + ' zaps). Then ' + s.bits * 4 + ' bits of magma, water, air and rock burst out for ' + s.bitDmg + ' each, with a ' + s.dmg + ' damage burst that shoves everything away.' }; },
   };
+  const spellBook = id => { const b = SPELL_BOOK[id](CFG.spells[id]), t = Math.round(b.total); return { total: t, text: b.text + ' Most it can deal: ' + t + '.' }; };
   function spellRows(id) {
-    const S = CFG.spells[id], r = CFG.recipes[id], n = spellEls(id).length, rows = [];
-    rows.push(row('Class', klass(n) + ' ' + els(spellEls(id))));
-    if (r) {
-      rows.push(row('Forge recipe', UI.recipeHtml(id)), row('Craft', r.time + 's at the Forge, ' + r.power + ' power'));
-      if (r.parents) rows.push(row('Needs made first', r.parents.map(p => '<span class="bkp ' + (((G.stats.made || {})[p] || 0) > 0 ? 'ok' : '') + '">' + UI.img(p, 16) + (((G.stats.made || {})[p] || 0) > 0 ? UI.img('ic_check', 12) : UI.img('ic_lock', 12)) + '</span>').join('')));
-      else rows.push(row('Gate', 'just the packets: fuse ' + els(spellEls(id)) + ' at a Forge'));
-    } else rows.push(row('Production', 'send one ' + UI.img(BASIC_EL[id], 16) + ' packet through the Spell Portal: it casts on arrival'));
-    rows.push(row('Damage', (BASIC_DMG[id] || SPELL_DMG[id])(S)));
-    rows.push(row('Drop-in', S.drop + 's warning over the Wizard before it lands'));
-    if (S.r && !BASIC_DMG[id]) rows.push(row('Radius', S.r + ' tiles'));
-    if (S.range) rows.push(row('Reach', S.range + ' tiles'));
-    if (S.n && !BASIC_DMG[id]) rows.push(row('Projectiles / targets', '' + S.n));
-    if (S.t) rows.push(row('Lasts', S.t + 's'));
-    if (S.slow && !BASIC_DMG[id]) rows.push(row('Slows', '-' + pct(S.slow) + ' speed' + (S.slowT ? ' for ' + S.slowT + 's' : '')));
-    rows.push(row('Weakness', 'x2 on a weak foe, x0.5 on a resistant one (x1.6 / x0.4 on the Chimera)'));
-    rows.push(row('Banked now', '' + (G.bank[id] || 0)));
+    const r = CFG.recipes[id], rows = [elStrip(spellEls(id))];
+    if (r && r.parents) rows.push('<div class="bkNeed">' + r.parents.map(p => { const ok = ((G.stats.made || {})[p] || 0) > 0; return '<span class="bkp ' + (ok ? 'ok' : '') + '" title="Make this first">' + UI.img(p, 24) + UI.img(ok ? 'ic_check' : 'ic_lock', 12) + '</span>'; }).join('') + '</div>');
+    rows.push(main([badge('ic_flame', spellBook(id).total, 'Most damage it can deal', 96, '', 'dmg')]));
+    if (r) rows.push(sub([badge('ic_clock', r.time + 's', 'Craft time at the Forge', 48), badge('ic_bolt', r.power, 'Power the Forge draws', 48)]));
     return rows.join('');
   }
+  // gem value as one number: guaranteed gems count 100% each, so 1 guaranteed + 25% for one more = 125%
+  const gemPct = (g, mul) => (g[0] >= 5 ? '' + g[0] : Math.round((g[0] + g[1] * (mul || 1)) * 100) + '%');   // a boss's pile of gems reads as a count
   function wildRows(id) {   // wild foes, the Warden and the Chimera: no Egg recipe, just the numbers
-    const c = CFG.enemies[id], rows = [];
-    if (c.weak) rows.push(row('Weak to / resists', UI.img(c.weak, 16) + (c.resist ? ' / ' + UI.img(c.resist, 16) : '')));
-    rows.push(row('Health', '' + c.hp + (kindOf(id) === 'wild' ? ' (wild ones carry ' + pct(CFG.world.wildHp) + ' of it, and grow tougher the longer a run lasts)' : '')));
-    rows.push(row('Touch damage', '' + c.dmg), row('Speed', c.speed + ' tiles/s'));
-    rows.push(row('Gems', c.gem[0] ? c.gem[0] + (c.gem[1] ? ' guaranteed + ' + pct(c.gem[1]) + ' chance of one more' : ' guaranteed') : pct(c.gem[1]) + ' chance of one (wild foes pay ' + pct(CFG.world.wildGem) + ' of that)'));
-    if (id === 'warden') rows.push(row('Slams / orbs', 'a telegraphed slam every ' + CFG.strong.warden.slamEvery + 's, a ring of ' + CFG.strong.warden.volleyN + ' orbs every ' + CFG.strong.warden.volleyEvery + 's'));
+    const c = CFG.enemies[id], wild = kindOf(id) === 'wild', W = CFG.world, rows = [];
+    if (BIOME_EL[id]) rows.push(elStrip([BIOME_EL[id]]));
+    rows.push(main([badge('potion', Math.round(c.hp * (wild ? W.wildHp : 1)), 'Health', 72), badge('ic_flame', Math.round(c.dmg * (wild ? W.wildDmg : 1)), 'Touch damage', 72)]));
+    const s = [badge('ic_fast', c.speed, 'Speed, tiles per second', 48), badge('gem', gemPct(c.gem, wild ? W.wildGem : 1), 'XP Gems', 48)];
+    if (c.weak) s.push(badge(c.weak, 'x2', 'Weak to', 48, 'WEAK', 'weak'));
+    if (c.resist) s.push(badge(c.resist, 'x.5', 'Resists', 48, 'RESIST', 'res'));
+    rows.push(sub(s));
+    if (id === 'warden') rows.push(row('Slams / orbs', 'a slam every ' + CFG.strong.warden.slamEvery + 's, a ring of ' + CFG.strong.warden.volleyN + ' orbs every ' + CFG.strong.warden.volleyEvery + 's'));
     if (id === 'boss') rows.push(row('Phases', 'four, one weakness each; it summons its brood, slams and fires orb rings'));
     return rows.join('');
   }
-  // the Drops block: normal drops, elite drops and the garments the Cores it drops go into, all read off the same tables the kills use (WZ.dropInfo, CFG)
+  // the Drops block: normal drops and elite drops, all read off the same tables the kills use (WZ.dropInfo, CFG)
   function dropsHtml(id) {
-    const I = WZ.dropInfo(id), D = CFG.enemies[id], A = G.aug, E = CFG.elite, C = CFG.cores, kind = kindOf(id);
+    const I = WZ.dropInfo(id), D = CFG.enemies[id], E = CFG.elite, C = CFG.cores, kind = kindOf(id);
     const line = (ic, text, state) => '<div class="bkd">' + ic + '<span>' + text + '</span>' + (state || '') + '</div>';
-    const have = (ok, yes, no) => '<b class="' + (ok ? 'yes' : 'no') + '">' + (ok ? UI.img('ic_check', 12) + yes : no) + '</b>';
     const eliteShard = ' + a Shard (a bonus one ' + pct(E.shardBonus) + ' of the time)';
     const coreIcons = els => els.map(e => UI.img('core_' + e, 16)).join('');
     let s = '<div class="bkdc"><h4>NORMAL DROPS</h4>';
-    if (id === 'boss') s += line(UI.img('ic_xp', 16), D.gem[0] + ' XP gems') + line(UI.img('shard', 16), CFG.boss.shards + ' Aether Shards') + line(coreIcons(ELEMS), C.boss + ' of every Core');
-    else if (id === 'warden') s += line(UI.img('shard', 16), 'keep claimed: ' + CFG.strong.shards + ' Shards, ' + CFG.strong.gems + ' gems') + line(coreIcons(ELEMS), C.warden + ' Cores of every element') + line(UI.img('b:altar', 16), 'its death opens the Summoning Altar to spells') + line(UI.img('ic_crown', 16), 'the glow-up and the held-spell slot');
+    if (id === 'boss') s += line(UI.img('gem', 16), D.gem[0] + ' XP Gems') + line(UI.img('shard', 16), CFG.boss.shards + ' Aether Shards') + line(coreIcons(ELEMS), C.boss + ' of every Core');
+    else if (id === 'warden') s += line(UI.img('shard', 16), 'keep claimed: ' + CFG.strong.shards + ' Shards, ' + CFG.strong.gems + ' XP Gems') + line(coreIcons(ELEMS), C.warden + ' Cores of every element') + line(UI.img('b:altar', 16), 'its death opens the Summoning Altar to spells') + line(UI.img('ic_crown', 16), 'the glow-up and the held-spell slot');
     else {
-      s += line(UI.img('ic_xp', 16), (D.gem[0] ? D.gem[0] + ' XP gem' + (D.gem[0] > 1 ? 's' : '') + (D.gem[1] ? ' + ' + pct(D.gem[1]) + ' for one more' : '') : pct(D.gem[1]) + ' chance of an XP gem'));
+      s += line(UI.img('gem', 16), 'XP Gems: ' + gemPct(D.gem, kind === 'wild' ? CFG.world.wildGem : 1));
       if (I.els.length) s += line(coreIcons(I.els), pct(I.core) + ' chance of a ' + I.els.map(e => CORE_NAME[e]).join(' or ') + ' (rides home to the Stockpile)');
       else s += line(UI.img('ic_x', 16), 'no element: no Cores');
       if (kind === 'crafted') { const cd = CFG.creatures[id], tier = cd.order.length; s += tier === 1 ? line(UI.img(cd.order[0], 16), pct(CFG.crafted.recycle) + ' chance of a ' + ELEM_WORD[cd.order[0]] + ' packet (rides home)') : line(UI.img(Object.keys(cd.cost)[0], 16), pct(CFG.crafted.recycleSpell[tier]) + ' chance of a ' + itemName(Object.keys(cd.cost)[0]) + ' (the spell it hatched from; rides home)'); }
@@ -81,33 +92,27 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     s += '</div>';
     if (id !== 'boss') {
       s += '<div class="bkdc"><h4>ELITE DROPS</h4>';
-      if (id === 'warden') s += line(UI.img('ic_crown', 16), 'an elite: ' + E.gems + ' gems' + eliteShard);
+      if (id === 'warden') s += line(UI.img('ic_crown', 16), 'an elite: ' + E.gems + ' XP Gems' + eliteShard);
       else {
-        s += line(UI.img('ic_xp', 16), E.gems + ' XP gems' + (kind === 'crafted' && !CFG.crafted.eliteShards ? '' : eliteShard));
+        s += line(UI.img('gem', 16), E.gems + ' XP Gems' + (kind === 'crafted' && !CFG.crafted.eliteShards ? '' : eliteShard));
         if (I.els.length) {
           s += line(coreIcons(I.els), 'always ' + (C.elite[0] === C.elite[1] ? C.elite[0] : C.elite[0] + '-' + C.elite[1]) + ' Core' + (C.elite[1] > 1 ? 's' : '') + (I.els.length > 1 ? ' of each element' : ''));
         } else s += line(UI.img('ic_x', 16), 'no element: no Cores');
       }
       s += '</div>';
     }
-    s += '<div class="bkdc"><h4>CORES GO INTO</h4>';
-    s += I.els.length ? line(UI.img('wardkey', 16), 'the Warden Key: ' + CFG.keyCost.cores + ' of every Core + ' + CFG.keyCost.iron + ' Iron + ' + CFG.keyCost.shard + ' Shards (Armory)', have(A.door, 'DOOR OPEN', 'NOT YET')) : '';
-    s += I.els.length ? line(coreIcons(I.els), 'a Shrine of any OTHER element takes one') : '';
-    s += I.garments.length ? I.garments.map(a => line(UI.img('aug_' + a, 16), AUGS[a].name + ': ' + Object.keys(AUGS[a].make.in).filter(isCoreKind).map(k => AUGS[a].make.in[k] + ' ' + CORE_NAME[k.slice(5)]).join(' + '), have(FA.augMade(a), 'MADE', 'NOT YET'))).join('') : I.els.length ? '' : line(UI.img('ic_x', 16), 'nothing: it drops no Cores');
-    return s + '</div>';
+    return s;
   }
-  // ---- the Wardrobe page: what each garment does, what it is made from and where those Cores come from (the Builder forges them, the Wizard walks onto them) ----
+  // ---- the Wardrobe page: what each garment is made from and where those Cores come from (the Builder forges them, the Wizard walks onto them) ----
   const GATE_TEXT = { water: 'an island in the middle of a lake', fire: 'a field of scorched ground', earth: 'a ring of cracked rock', air: 'a chasm with a broken bridge' };
   const USES = { bog: 'Pass the vine tangles knotted over the bogs; no more slow walking in bog.', phoenix: 'A second life: the Feather recharges while you play.',
     static: 'Takes the sting out of being swarmed: every hit that lands throws the attackers back.', kiln: 'Buried caches glint through the grass; edge glints point at landmarks you have not claimed.' };
   const useText = id => (AUGS[id].gate ? 'Opens the way to the ' + ELEM_WORD[AUGS[id].gate] + ' Stronghold: ' + GATE_TEXT[AUGS[id].gate] + '. Works anywhere else in the wilds too.' : USES[id]);
-  const augState = id => (G.aug.worn[AUGS[id].slot] === id ? 'WORN' : G.stock['aug_' + id] > 0 ? 'IN THE STOCKPILE' : FA.augMade(id) ? 'MADE' : '');
   function garmentRows(id) {
-    const a = AUGS[id], R = CFG.recipes['aug_' + id];
-    return [row('Slot', a.slot.toUpperCase()), row('What it does', a.verb), row('Uses', useText(id)),
-      row('Recipe', UI.recipeHtml('aug_' + id)), row('Forged', 'at the Armory, ' + R.time + 's, ' + R.power + ' power. Throw the Cores, Iron and Shard in, press E to pick the garment'),
-      row('Worn', 'send it through the Spell Portal: it drops into the wilds and he puts it on by walking onto it. What it replaces flies to the Wardrobe Shelf by the portal')].join('');
+    const R = CFG.recipes['aug_' + id];
+    return bigRec('aug_' + id, 48) + sub([badge('ic_clock', R.time + 's', 'Craft time at the Armory', 48), badge('ic_bolt', R.power, 'Power the Armory draws', 48)]) + row('Uses', useText(id));
   }
+  const augState = id => (FA.augMade(id) ? 'MADE' : '');
   function garmentDrops(id) {   // for each kind of Core in the recipe: who drops it, and how often
     const C = CFG.cores, make = AUGS[id].make.in, nm = c => CFG.creatures[c].name;
     const line = (ic, text) => '<div class="bkd">' + ic + '<span>' + text + '</span></div>';
@@ -123,15 +128,13 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     }).join('');
   }
   function creatureRows(id) {
-    const c = CFG.creatures[id], n = c.order.length, rec = 'egg_' + id, rows = [];
-    rows.push(row('Class', klass(n) + ' ' + els(c.order)));
-    rows.push(row('Weak to / resists', UI.img(c.weak, 16) + ' / ' + UI.img(c.resist, 16)));
-    rows.push(row('Egg recipe', UI.recipeHtml(rec)), row('Hatch', (c.n || 1) + ' creature' + ((c.n || 1) > 1 ? 's' : '') + ' per Egg, ' + c.time + 's at a Creature Spawner, ' + c.power + ' power'));
-    rows.push(row('Health', '' + c.hp), row('Touch damage', '' + c.dmg), row('Speed', c.speed + ' tiles/s' + (c.fly ? ', flies' : '')));
-    rows.push(row('Gems', (c.gem[0] ? c.gem[0] + ' guaranteed + ' : '') + pct(c.gem[1]) + ' chance of ' + (c.gem[0] ? 'one more' : 'one')));
-    const ar = CFG.recipes['aegg_' + id], par = ar.parents ? ', after ' + ar.parents.map(p => SPELLS[p]).join(' + ') + ' have been made' : '';
-    rows.push(row('Ally version', UI.recipeHtml('aegg_' + id) + ' thrown at a Spawner (by hand, Cores only): a FRIENDLY ' + c.name + '. ' + CFG.ally.hpMul + 'x health (' + Math.round(c.hp * CFG.ally.hpMul) + '), half damage, never elite or mutated' + par + '. Hostiles attack it before the Wizard; it pays nothing when it falls'));
-    rows.push(row('Variants', pct(CFG.crafted.eliteChance) + ' elite (x' + CFG.crafted.eliteHp + ' HP, x' + CFG.crafted.eliteDmg + ' damage), ' + pct(CFG.crafted.mutChance) + ' one mutation, HP / speed / damage +-' + pct(CFG.crafted.jitter)));
+    const c = CFG.creatures[id], rows = [elStrip(c.order)];
+    rows.push(main([badge('potion', c.hp, 'Health', 72), badge('ic_flame', c.dmg, 'Touch damage', 72)]));
+    rows.push(sub([badge('ic_fast', c.speed, 'Speed, tiles per second' + (c.fly ? ' (flies)' : ''), 48), badge('gem', gemPct(c.gem), 'XP Gems', 48),
+      badge('egg_' + id, c.time + 's', 'Hatch time at a Creature Spawner' + ((c.n || 1) > 1 ? ', ' + c.n + ' creatures per Egg' : ''), 48, (c.n || 1) > 1 ? 'x' + c.n : ''), badge('ic_bolt', c.power, 'Power the Spawner draws', 48),
+      badge(c.weak, 'x2', 'Weak to', 48, 'WEAK', 'weak'), badge(c.resist, 'x.5', 'Resists', 48, 'RESIST', 'res')]));
+    rows.push(bigRec('egg_' + id, 32));
+    rows.push('<div class="bkAlly" title="Throw Cores at a Spawner for a FRIENDLY ' + c.name + ': ' + CFG.ally.hpMul + 'x health, half damage">' + bigRec('aegg_' + id, 24) + '<small>FRIENDLY</small></div>');
     return rows.join('');
   }
 
@@ -158,8 +161,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     el.querySelectorAll('.tab').forEach(bt => { bt.onclick = () => Book.setPage(bt.dataset.p); });
     el.onmousedown = e => { if (e.target === el) Book.close(); };
   };
-  const hintHtml = pg => '<kbd>C</kbd> / Esc closes. <kbd>W</kbd><kbd>S</kbd> or <kbd>UP</kbd><kbd>DOWN</kbd> pick an entry, <kbd>A</kbd><kbd>D</kbd> or <kbd>TAB</kbd> flip the page' + (IN.padList.length ? ' <kbd>STICK</kbd> pick <kbd>LB</kbd><kbd>RB</kbd> page <kbd>B</kbd> close' : '') +
-    (pg === 'wardrobe' ? '. The Wardrobe lists every garment: what it does and what the Builder forges it from. The Wizard wears one by walking onto it, so there is nothing to equip here. Greyed ones are not made yet.' : '. Greyed entries are ones you have not made or met yet: you can still read everything.') + ' The game waits while the book is open.';
+  const hintHtml = pg => '<kbd>C</kbd> / Esc closes. <kbd>W</kbd><kbd>S</kbd> or <kbd>UP</kbd><kbd>DOWN</kbd> pick an entry, <kbd>A</kbd><kbd>D</kbd> or <kbd>TAB</kbd> flip the page' + (IN.padList.length ? ' <kbd>STICK</kbd> pick <kbd>LB</kbd><kbd>RB</kbd> page <kbd>B</kbd> close' : '');
   Book.fillList = function () {   // the tiles of the current page (once per page flip)
     const pg = Book.page, sp = pg === 'spells', aug = pg === 'wardrobe', ids = idsOf(pg);
     ref.hint.innerHTML = hintHtml(pg);
@@ -178,7 +180,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     const pg = Book.page, sp = pg === 'spells', id = Book.sel[pg], ok = seen(pg, id);
     ref.list.querySelectorAll('.bkItem').forEach(b => b.classList.toggle('on', b.dataset.id === id));
     const crafted = !sp && kindOf(id) === 'crafted';
-    const nm = sp ? SPELLS[id] : CFG.enemies[id].name, desc = sp ? SPELL_INFO[id].desc : crafted ? CFG.creatures[id].note : WILD_NOTE[id];
+    const nm = sp ? SPELLS[id] : CFG.enemies[id].name, desc = sp ? spellBook(id).text : crafted ? CFG.creatures[id].note : WILD_NOTE[id];
     const tag = sp ? klass(spellEls(id).length) + ' SPELL' : crafted ? klass(CFG.creatures[id].order.length) + ' CREATURE' : kindOf(id) === 'wild' ? 'WILD FOE' : id === 'warden' ? 'STRONGHOLD BOSS' : 'FINAL BOSS';
     ref.head.innerHTML = UI.img(sp ? spellIcon(id) : id, 48) + '<div><b>' + nm + '</b><small>' + tag + '</small></div>' +
       '<span class="bkSt' + (ok ? ' on' : '') + '">' + (ok ? UI.img('ic_check', 12) + (sp ? 'MADE' : 'MET') : UI.img('ic_lock', 12) + (sp ? 'NOT MADE YET' : 'NOT MET YET')) + '</span>';
@@ -186,6 +188,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     ref.cap.textContent = sp ? SPV.caption(id) : crafted ? CPV.caption(id) : '';
     ref.rows.innerHTML = sp ? spellRows(id) : crafted ? creatureRows(id) : wildRows(id);
     ref.drops.innerHTML = sp ? '' : dropsHtml(id);
+    ref.drops.className = 'bkDrops two';
     ref.detail.classList.toggle('unseen', !ok);
     if (ref.page !== pg) { ref.page = pg; ref.cv.width = sp ? 186 : CPV.W; ref.cv.height = sp ? 100 : CPV.H; }   // both fill the same box on screen
     SPV.stop(); CPV.stop();
@@ -201,6 +204,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     ref.cap.textContent = 'FORGED AT THE ARMORY';
     ref.rows.innerHTML = garmentRows(id);
     ref.drops.innerHTML = garmentDrops(id);
+    ref.drops.className = 'bkDrops';
     ref.detail.classList.toggle('unseen', !ok);
     if (ref.page !== 'wardrobe') { ref.page = 'wardrobe'; ref.cv.width = CPV.W; ref.cv.height = CPV.H; }
     SPV.stop(); CPV.stop();

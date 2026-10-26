@@ -648,3 +648,31 @@ button.big.slot em { grid-column: 2; grid-row: 1 / 4; align-self: center; font-s
 .netStatus small { font-size: 15px; line-height: 1.1; color: var(--muted); display: block; margin-top: 6px; }
 
 .plog { margin: 8px 0 0; padding: 6px 8px; background: var(--ink); color: #9fe8a8; font: 10px/1.2 monospace; text-align: left; white-space: pre-wrap; word-break: break-all; max-height: 260px; overflow: hidden; }
+
+/* the Collection Book's stat badges: one number set inside the icon of what it is, and the big element strip */
+.bkRows { gap: 14px; }
+.bkEls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bkEls u { text-decoration: none; font: 22px var(--display); color: var(--gold); }
+.bkel { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 76px; padding: 10px 8px 8px; background: var(--panel-lo); box-shadow: inset 0 -5px 0 0 var(--ec, #fff); }
+.bkel small { font: 8px var(--display); color: var(--muted); }
+.bkNeed { display: flex; gap: 6px; align-items: center; }
+.bkBad { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 22px 18px; }
+.bkBad.main { gap: 28px; }
+.bkb { position: relative; display: inline-flex; flex-direction: column; align-items: center; }
+.bkb img { display: block; }
+.bkb b { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -42%); white-space: nowrap; font: 14px var(--display); color: #fff; text-shadow: -2px 0 #1a0f28, 2px 0 #1a0f28, 0 -2px #1a0f28, 0 2px #1a0f28, 2px 2px #1a0f28, -2px -2px #1a0f28, 2px -2px #1a0f28, -2px 2px #1a0f28; }
+.bkb b.sm { font-size: 11px; }
+.bkBad.main .bkb b { font-size: 22px; }
+.bkBad.main .bkb b.sm { font-size: 16px; }
+.bkBad.main .bkb.dmg b { font-size: 30px; }
+.bkBad.main .bkb.dmg b.sm { font-size: 22px; }
+.bkb i { position: absolute; bottom: -13px; font: normal 7px var(--display); color: var(--muted); }
+.bkb.weak i { color: var(--mint); }
+.bkb.res i { color: #ff7a8a; }
+.bkb.weak img { filter: drop-shadow(0 0 0 var(--mint)); }
+.bkRec { display: flex; align-items: center; gap: 8px; }
+.bkRec span { position: relative; display: inline-flex; }
+.bkRec u { position: absolute; right: -6px; bottom: -4px; text-decoration: none; font: 9px var(--display); color: #fff; text-shadow: 2px 2px 0 #1a0f28; }
+.bkAlly { display: flex; align-items: center; gap: 10px; opacity: .85; }
+.bkAlly small { font: 7px var(--display); color: #5ee0d0; }
+.bkDrops.two { grid-template-columns: repeat(2, 1fr); }

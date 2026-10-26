@@ -461,6 +461,7 @@ task(() => {
   icon('shield', ['ooooooo', 'obbwbbo', 'obbwbbo', 'obbwbbo', '.obwbo.', '.obbbo.', '..obo..', '...o...']);
   icon('clock', ['.ooooo.', 'owwowwo', 'owwowwo', 'owwooow', 'owwwwwo', 'owwwwwo', '.ooooo.']);
   icon('skull', ['.wwwww.', 'wwwwwww', 'woowoow', 'woowoow', 'wwwowww', '.wwwww.', '.w.w.w.']);
+  icon('flame', ['...o...', '..oOo..', '..oOOo.', '.oOOOOo', 'oOOyyOo', 'oOyyyOo', 'oOyyyOo', '.oOyOo.', '..ooo..']);
   icon('xp', ['...c...', '...c...', 'ccccccc', '.ccwcc.', '..ccc..', '.cc.cc.', 'c.....c']);
   icon('bolt', ['...yyo', '..yyo.', '.yyo..', 'yyyyyo', '..yyo.', '.yyo..', 'yyo...', 'yo....']);
   icon('target', ['.rrrrr.', 'rwwwwwr', 'rwrrrwr', 'rwrwrwr', 'rwrrrwr', 'rwwwwwr', '.rrrrr.']);

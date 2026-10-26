@@ -1,5 +1,5 @@
 'use strict';
-// Game flow: loading -> studio intro -> menu -> play. Input routing, save/load, main loop, test hook.
+// Game flow: loading -> studio intro -> the living menu world (js/menu.js) -> the start sequence -> play. Input routing, save/load, main loop, test hook.
 const Main = {};
 let STATE = 'loading';
 let ctx = null;
@@ -38,8 +38,9 @@ Main.newGame = function (slot) {
   G.w = WZ.fresh();
   G.ev = WZ.evFresh(0);
   FA.initial();
+  const intro = Main.introPending;
   Main.enter();
-  UI.help(true); G.helpT = 25;
+  if (!intro) { UI.help(true); G.helpT = 25; }
   Main.save();
 };
 Main.loadGame = function (slot, useBak) {
@@ -182,7 +183,7 @@ Main.enter = function () {
   STATE = 'play'; Main.still = 0; Main.drawSig = null;
   UI.splitB = null; UI.show('splitModal', false); UI.askB = null; UI.show('askModal', false);
   UI.resetCache();
-  UI.show('menu', false); UI.show('game', true);
+  UI.show('game', !Main.introPending);   // (the start sequence plays on the bare canvas; the HUD fades in when it is over)
   UI.show('pause', false); UI.show('results', false); UI.help(false);
   UI.openTree('L', false); UI.openTree('R', false);
   Book.close(true);
@@ -192,6 +193,7 @@ Main.enter = function () {
   Main.metrics = { t: 0, next: 0, samples: [] };
   Main.helpFoot();
   AU.music(true); AU.hold(false);
+  if (Main.introPending) { Main.introPending = false; Main.makeIntro(); }
   if (G.refund) {   // a save that owned skill-tree nodes that no longer exist: say what came back
     const r = G.refund; G.refund = null;
     const msg = 'Skill tree changed: refunded ' + r.xp + ' XP' + (Object.keys(r.bank).length ? ' and ' + Object.values(r.bank).reduce((a, n) => a + n, 0) + ' banked spells' : '') + (r.core ? ' and a Warden Core' : '') + '. Spells and creatures are in the Collection Book now.';
@@ -206,17 +208,27 @@ Main.helpFoot = function () {
   el.innerHTML = UI.img('ic_pad', 16) + ' ' + (pb ? pb + ' = Builder (A pick up / place, B throw, X use, LB/RB slot, RT next in a family, Back demolish). ' : '') +
     (pw ? pw + ' = Wizard (A roll). ' : '') + '<kbd>H</kbd> hides this.';
 };
-Main.toTitle = function (noSave) {
+// Back to the title: the living menu world. From a running game the Builder is sucked up into a portal, the factory slides away, he drops back into the Wizard's world,
+// both are teleported to the start of the wilds and the main menu's plates pop up (Main.exitFrame / Menu.retTick). noSave / instant skip the show.
+Main.toTitle = function (noSave, instant) {
   DevBot.set(null); Book.close(true);
-  if (!noSave && G && Net.role !== 'guest') { WZ.bankLooseShards(); Main.save(); }
+  const g = G, show = !noSave && !instant && STATE === 'play' && g && g.fac && !g.menu && !g.intro && Net.role !== 'guest';
+  if (!noSave && G && Net.role !== 'guest' && !G.menu) { WZ.bankLooseShards(); Main.save(); }
   if (Net.role) Net.close();   // an online session ends with the game (the host's save is already written, the guest has none)
   Main.netUi(null);
   UI.show('pause', false); UI.show('results', false); UI.show('victory', false);
-  STATE = 'menu';
   UI.splitB = null; UI.show('splitModal', false); UI.askB = null; UI.show('askModal', false);
-  UI.show('game', false); UI.show('menu', true);
-  UI.menuPage('menuMain');
-  G = null;
+  UI.show('game', false);
+  Main.introPending = false;
+  if (show) { Main.xs = { g, t: 0 }; STATE = 'exit'; g.paused = false; g.outro = { t0: 0 }; R.focus = null; R.hint = null; R.whint = null; R.aim = null; R.ghost = null; R.demo = null; return; }
+  Main.openMenu();
+};
+// the front door: a fresh living menu world
+Main.openMenu = function (ret) {
+  STATE = 'menu';
+  UI.show('game', false);
+  G = Menu.make(ret);
+  AU.music(true); AU.hold(false);
 };
 
 // ---------- controls ----------
@@ -778,6 +790,14 @@ function frame(ts) {
   if (Net.role === 'host') Net.drive();   // online: the guest's pad becomes the Wizard's pad, the same seam
   if (STATE === 'guest') {
     try { Main.guestFrame(dt, ts); } catch (e) { R.defer = null; UI.err(e); }
+  } else if (STATE === 'menu' && G && G.menu) {
+    AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true);   // the front door: all four music layers, muffled
+    try { Menu.frame(dt, ts); } catch (e) { R.defer = null; UI.err(e); }
+  } else if (STATE === 'exit' && Main.xs) {
+    AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true);
+    try { Main.exitFrame(dt, ts); } catch (e) { R.defer = null; UI.err(e); Main.openMenu(); }
+  } else if (STATE === 'play' && G && G.intro && !G.paused) {   // the start sequence: the factory slides in (or fades in online), the starting buildings drop out of portals
+    try { Main.introFrame(dt, ts); } catch (e) { R.defer = null; UI.err(e); Main.introEnd(); }
   } else if (STATE === 'play' && G) {
     try {
       Snap.tick();   // dev-only: the snapshot bar and its keys (inert unless the F3 overlay is open)
@@ -805,8 +825,7 @@ function frame(ts) {
       }
     } catch (e) { R.defer = null; UI.err(e); }
   } else {
-    AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true);   // title / player screens: all four layers, muffled
-    if (STATE === 'select') Players.tick(dt);
+    AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true);   // the loading screen and the studio intro: all four layers, muffled
     if (STATE !== 'intro') drawBackdrop(ts);
   }
   IN.endFrame();
@@ -819,7 +838,6 @@ window.addEventListener('DOMContentLoaded', () => {
   ctx = $('cv').getContext('2d');
   ctx.imageSmoothingEnabled = false;
   fit();
-  UI.buildMenu();
   $('btnTree').onclick = () => UI.openTree('L');
   $('btnTreeR').onclick = () => UI.openTree('R');
   $('btnBook').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB) Book.open(); };
@@ -845,7 +863,6 @@ window.addEventListener('DOMContentLoaded', () => {
     UI.show('pauseMain', false); UI.show('pauseSet', true);
   };
   $('pQuit').onclick = () => { Main.pause(false); Main.toTitle(); };
-  $('mOnline').onclick = () => UI.onlinePage();
   window.addEventListener('beforeunload', () => { if (STATE === 'play') Main.save(); if (Net.role) Net.close(); });
   // losing focus or switching tabs pauses play and silences all audio until the window is back
   const away = () => { if (Net.on) return; if (STATE === 'play' && G && !G.paused) Main.pause(true); AU.sleep(true); };   // (online the game carries on: it is not the host's alone to stop)
@@ -876,18 +893,126 @@ window.addEventListener('DOMContentLoaded', () => {
         AU.init();
         UI.show('loading', false);
         STATE = 'intro';
-        StudioIntro.run(() => { STATE = 'menu'; UI.show('menu', true); UI.menuPage('menuMain'); AU.music(true); });
+        StudioIntro.run(() => { Main.openMenu(); });
       };
       setTimeout(() => { window.addEventListener('keydown', go); window.addEventListener('mousedown', go); }, 100);
     });
   });
 });
 
+// ---------- the start sequence ----------
+// Menu.seqTick hands over here when the Builder and the belt line are gone: the real game is built (a new one or a saved one), the Wizard stays exactly where he stood, and
+// G.intro runs the rest: offline the factory slides in from the left and the Builder drops out of a portal into it, online the Builder's screen fades from black onto the
+// factory; the factory then stands empty for a second and the starting buildings fall out of portals ~200 ms apart, each landing with a puff of dust.
+// (All of it is plain data in G: G.intro, and fallAt on whatever has yet to land; the sim waits until it is over.)
+Main.introPending = false;
+Main.launch = function (pend, mG) {
+  const c = mG.ctl, wiz = { x: mG.w.x, y: mG.w.y, fx: mG.w.fx, fy: mG.w.fy }, swapped = mG.swapped, cam = { x: R.wcam.x, y: R.wcam.y };
+  const online = !!pend.online && Net.role === 'host';
+  Players.ctl = online ? { kbB: true, kbW: false, pb: IN.padList.length ? 0 : -1, pw: 1 } : { kbB: c.kbB, kbW: c.kbW, pb: c.pb, pw: c.pw };
+  Players.save();
+  Main.introPending = true;
+  Net.on = online;
+  if (pend.kind === 'new') Main.newGame(pend.slot); else Main.loadGame(pend.slot);
+  Main.introPending = false;
+  if (!G || G === mG || !G.intro) { Net.on = false; return; }   // (a save that would not load has already gone back to the menu)
+  G.swapped = !!swapped && G.ctl.kbB && G.ctl.kbW;
+  G.w.x = wiz.x; G.w.y = wiz.y; G.w.fx = wiz.fx; G.w.fy = wiz.fy;
+  R.wcam.x = cam.x; R.wcam.y = cam.y;
+  R.focus = null; R.hint = null; R.whint = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null;
+  if (online) Main.netUi('host');
+};
+Main.makeIntro = function () {
+  const online = !!Net.on, f = G.fac;
+  const lead = online ? 0.9 : 1.1;   // the slide / the fade-in
+  const I = G.intro = { t: 0, online, lead, empty: 1, drop: 0.55, gap: 0.2, end: 0 };
+  const objs = f.bld.concat(f.belts).sort((a, b) => (a.x + a.y) - (b.x + b.y));
+  I.gap = objs.length <= 24 ? 0.2 : Math.max(0.05, 4.8 / objs.length);   // (~200 ms apart; a big saved factory is dropped in faster so it does not take a minute)
+  objs.forEach((o, i) => { o.fallAt = lead + I.empty + i * I.gap; });
+  G.bd.fallAt = online ? 0.25 : lead * 0.5;
+  I.end = lead + I.empty + (objs.length - 1) * I.gap + I.drop + 0.35;
+  I.t = 0;
+};
+Main.introStep = function (dt) {
+  const I = G.intro, f = G.fac;
+  I.t += dt; f.t += dt; G.w.t += dt;
+  for (let i = f.parts.length - 1; i >= 0; i--) {
+    const p = f.parts[i];
+    p.t -= dt; p.x += p.vx * dt * 0.5; p.y += p.vy * dt * 0.5; p.z += p.vz * dt; p.vz -= (p.g === undefined ? 9 : p.g) * dt;
+    if (p.t <= 0) f.parts.splice(i, 1);
+  }
+  for (let i = f.pops.length - 1; i >= 0; i--) { f.pops[i].t += dt; if (f.pops[i].t > 1.1) f.pops.splice(i, 1); }
+  if (f.flash > 0) f.flash -= dt;
+  if (G.bd.squash > 0) G.bd.squash -= dt;
+  for (const o of f.bld) if (o.pop > 0) o.pop -= dt;
+  for (const o of f.bld.concat(f.belts, [G.bd])) {
+    if (o.fallAt === undefined || I.t < o.fallAt + I.drop) continue;
+    delete o.fallAt;   // it has landed
+    const cx = o.type === 'belt' || o.type ? o.x + 0.5 : o.x, cy = o.type === 'belt' || o.type ? o.y + 0.5 : o.y;
+    FA.landPuff(cx, cy); AU.sfx('thud');
+    if (o === G.bd) G.bd.squash = 0.2; else if (o.type !== 'belt') o.pop = 0.35;
+  }
+};
+const smooth = k => k * k * (3 - 2 * k);
+Main.introFrame = function (dt, ts) {
+  Main.introStep(dt);
+  if (Net.role === 'host') { Net.hostTick(dt); Main.netBannerTick(); }   // (online the guest watches the factory fill up in his corner: the snapshots keep flowing)
+  const I = G.intro;
+  AU.hum(0); AU.mix(0, 0, false); AU.layerMix(G.fac.weather); AU.muffle(false);
+  ctx.clearRect(0, 0, CFG.W, CFG.H);
+  if (I.online) {   // the Builder's screen fades from black onto the (empty) factory
+    R.drawFactory(ctx, dt, { x0: 0, w: CFG.W });
+    R.drawPip(ctx, dt);
+    const a = 1 - clampv(I.t / I.lead, 0, 1);
+    if (a > 0) { ctx.fillStyle = 'rgba(0,0,0,' + (a * a).toFixed(3) + ')'; ctx.fillRect(0, 0, CFG.W, CFG.H); }
+  } else {
+    const e = smooth(clampv(I.t / I.lead, 0, 1));
+    if (e < 1) Main.slide(ctx, dt, e);
+    else { R.drawFactory(ctx, dt); R.drawWorld(ctx, dt); }
+  }
+  if (I.t >= I.end) Main.introEnd();
+};
+// the two halves as two panes: the world fills the stage with the Wizard in the middle, the factory slides over it from the left (e = 0: the world alone, e = 1: the usual split)
+Main.slide = function (ctx, dt, e, fac, wld) {
+  const mk2 = n => { let b = R.bufs[n]; if (!b) { const c = document.createElement('canvas'); c.width = CFG.W; c.height = CFG.H; b = R.bufs[n] = { c, x: c.getContext('2d') }; } b.x.clearRect(0, 0, CFG.W, CFG.H); return b; };
+  const A = mk2('paneW'), B = mk2('paneF');
+  if (wld) wld(A.x); else R.drawWorld(A.x, dt, { x0: 0, w: CFG.W, pip: true });
+  if (fac) fac(B.x); else R.drawFactory(B.x, dt, { x0: 0, w: CFG.HALF });
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(A.c, Math.round(400 * e), 0);
+  ctx.drawImage(B.c, Math.round(-800 + 800 * e), 0);
+  ctx.fillStyle = '#1a0f28'; ctx.fillRect(Math.round(800 * e) - 8, 0, 8, CFG.H);   // the split line rides along with the factory's edge
+};
+Main.introEnd = function () {
+  const f = G.fac;
+  G.intro = null;
+  for (const o of f.bld.concat(f.belts, [G.bd])) delete o.fallAt;
+  UI.show('game', true);
+  const gm = $('game'); gm.classList.add('fadeIn'); setTimeout(() => gm.classList.remove('fadeIn'), 900);
+  UI.resetCache(); Main.still = 0; Main.drawSig = null;
+  UI.help(true); G.helpT = 25; Main.helpFoot();
+  if (Net.on && Net.role === 'host') UI.toast('Player 2 joined as the Wizard.', 'L', 'ic_check');
+};
+// ---------- the way back: the Builder is sucked into a portal, the factory slides away, he drops into the Wizard's world, both are teleported to the start ----------
+Main.exitFrame = function (dt, ts) {
+  const X = Main.xs, g = X.g, T1 = 1.0, T2 = 0.9;
+  X.t += dt; G = g;
+  g.fac.t += dt; g.outro.t0 = X.t;
+  for (let i = g.fac.parts.length - 1; i >= 0; i--) { const p = g.fac.parts[i]; p.t -= dt; p.x += p.vx * dt * 0.5; p.y += p.vy * dt * 0.5; p.z += p.vz * dt; p.vz -= (p.g === undefined ? 9 : p.g) * dt; if (p.t <= 0) g.fac.parts.splice(i, 1); }
+  ctx.clearRect(0, 0, CFG.W, CFG.H);
+  if (X.t < T1) { R.drawFactory(ctx, dt); R.drawWorld(ctx, dt); return; }
+  if (X.t < T1 + T2) { g.outro.gone = true; Main.slide(ctx, dt, 1 - smooth((X.t - T1) / T2)); return; }
+  const ret = { x: g.w.x, y: g.w.y, fx: g.w.fx, fy: g.w.fy, cam: { x: R.wcam.x, y: R.wcam.y } };
+  Main.xs = null; g.outro = null;
+  Main.openMenu(ret);
+};
+
 // ---------- test hook ----------
 window.__wands = {
   get G() { return G; },
   Main, FA, WZ, UI, R, CFG, DevBot, Snap, Net,
   start(slot) { Main.newGame(slot || 1); },
+  get menu() { return Menu; },
   deliver(kind) { FA.deliver(kind); },
   bank(kind, n) { for (let i = 0; i < (n || 1); i++) FA.bank(kind); },
   // runs the simulation with zeroed inputs; with the dev bot on, it plays the Wizard through the real pad path (Main.controls)

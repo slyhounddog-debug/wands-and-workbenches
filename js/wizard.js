@@ -436,6 +436,7 @@ WZ.epuff = function (x, y, el, n) {
 };
 WZ.damage = function (d, soft) {   // armor soaks damage first. soft = burning ground: no hit-stun, shake or hurt sound
   const w = G.w;
+  if (G.menu) return;   // the living menu world is a consequence-free preview: nothing can hurt the Wizard there
   if (w.jump) return;   // airborne on a geyser: nothing reaches him
   if (!soft && d >= CFG.pressure.hit * WZ.maxHp()) FA.pressure(Math.min(1.5, d / WZ.maxHp() * 3), '#ff5a5a');   // a heavy hit shakes the factory too
   const soak = Math.min(w.armor, d);
@@ -547,6 +548,7 @@ WZ.drop = function (kind, x, y, val) {
 WZ.each = function (x, y, r, fn) {
   const w = G.w;
   WZ.altarTouch(x, y, r);   // a player spell that reaches the Summoning Altar lights its socket
+  if (G.menu) Menu.touch(x, y, r);   // ...and in the menu world a spell's reach can press the safe floor plates
   for (const e of w.enemies) { if (e.dead) continue; const d = Math.hypot(e.x - x, e.y - y); if (d <= r + e.rad) fn(e, d, true); }
   for (const h of WZ.harv) { if (h.broken) continue; const d = Math.hypot(h.x - x, h.y - y); if (d <= r + 0.4) fn(h, d, false); }
 };
@@ -708,6 +710,7 @@ WZ.cast = function (spell) {
   if (!w || w.dead) return;
   const px = w.x, py = w.y, combo = BASICS.indexOf(spell) < 0;
   const ctx = { spell, el: SPELL_EL[spell] || [], hits: 0, kills: 0, weak: 0 };
+  if (G.menu) Menu.spellName(spell);   // the menu world toasts the name of every spell that fires
   // it bursts at his feet, and the Spell Portal back in the factory feels it (harder for higher tiers)
   w.fx_.push({ type: 'arrive', x: px, y: py, col: SPELL_COL[spell] || '#fff', t: 0, dur: combo ? 0.4 : 0.3, big: combo });
   if (combo) {
@@ -1665,7 +1668,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
 
   // spawning (slower while the Chimera is out: it brings its own brood)
   w.spawnT -= dt;
-  if (w.spawnT <= 0) {
+  if (w.spawnT <= 0 && !G.menu) {   // (the menu world has no wild monsters)
     const iv = Math.max(cfg.spawnFloor, cfg.spawnStart * Math.pow(cfg.spawnMul, w.time / 60));
     w.spawnT = iv * (w.boss ? 2 : 1);
     if (w.enemies.length < cfg.cap) WZ.spawn();
@@ -1767,6 +1770,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     const sp = WZ.projSpecial(p, dt);   // lobs, bouncing boulders, waves, mudslides, icicles, bolts from the sky (null = a plain bolt)
     if (sp !== null) { if (sp) w.proj.splice(i, 1); WZ.ctx = null; continue; }
     p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+    if (G.menu && p.ctx) Menu.touch(p.x, p.y, p.r || 0.4);   // (menu world: a bolt flying over a safe plate presses it)
     let hit = null, hitE = false;
     for (const e of w.enemies) { if (!e.dead && Math.hypot(e.x - p.x, e.y - p.y) < p.r + e.rad) { hit = e; hitE = true; break; } }
     if (!hit) for (const h of WZ.harv) { if (!h.broken && Math.hypot(h.x - p.x, h.y - p.y) < p.r + 0.4) { hit = h; break; } }

@@ -1,5 +1,7 @@
 'use strict';
 // Online co-op acceptance run (headless): a host page and a guest page (two isolated browser profiles) talk through the PeerJS cloud + a WebRTC data channel.
+// The front door is the living menu world: the host walks onto the Online > Create plates, the guest types the code at the keyboard prop (real key presses), both are
+// readied on their plates (the characters are put on them through the hooks) and the start sequence hands over to the game.
 //   node tools/nettest/run.js              the functional checks (join by code, input, tree purchase intent, PIP, disconnect / rejoin / timeout)
 //   SOAK=600 node tools/nettest/run.js     also a soak of that many seconds (guest walks / rolls at random, the host keeps delivering), then the report
 //   SHOTS=<dir> ...                        save screenshots of both sides
@@ -11,12 +13,36 @@ const SOAK = +process.env.SOAK || 0, SHOTS = process.env.SHOTS || '';
 const URL = 'file:///' + path.resolve(__dirname, '../../index.html').split(path.sep).join('/');
 let fails = 0;
 const ok = (c, msg, extra) => { console.log((c ? 'PASS ' : 'FAIL ') + msg + (extra !== undefined ? '  ' + extra : '')); if (!c) fails++; };
-const jc = async (p, sel) => { await p.waitForSelector(sel, { state: 'attached', timeout: 20000 }); await p.evaluate(s => document.querySelector(s).click(), sel); };   // (menu buttons wobble on hover, which headless clicking waits out forever)
-const goOnline = async (p, then) => {   // Online > CREATE / JOIN (retried: the click can land the instant the title menu appears)
-  for (let i = 0; i < 6; i++) { await jc(p, '#mOnline'); try { await p.waitForSelector(then, { state: 'attached', timeout: 1500 }); return; } catch (e) { /* again */ } }
-  throw new Error('the Online page did not open');
-};
+const jc = async (p, sel) => { await p.waitForSelector(sel, { state: 'attached', timeout: 20000 }); await p.evaluate(s => document.querySelector(s).click(), sel); };   // (in-game DOM buttons: the banners)
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// ---- walking the menu world's plates: park a character off the plates, wait for frames, put it on the plate (that is a step-on)
+const frames = (p, t0, dt) => p.waitForFunction(([t0, dt]) => { const m = __wands.G.menu; return !m || m.t > t0 + dt; }, [t0, dt], { timeout: 20000 });
+const stepOn = async (p, role, act, wait) => {
+  const t0 = await p.evaluate(role => { const G = __wands.G, c = G.menu.cam, x = c.x + (role === 'B' ? 0.5 : -0.5), y = c.y - 1.5; if (role === 'B') { G.bd.x = x - 80; G.bd.y = y - 80; G.bd.vx = G.bd.vy = 0; } else { G.w.x = x; G.w.y = y; } return G.menu.t; }, role);
+  await frames(p, t0, 0.3);
+  const r = await p.evaluate(([role, act]) => { const G = __wands.G, q = G.menu.plates.find(x => x.act === act || x.key === act); if (!q) return 'noplate ' + act; if (role === 'B') { G.bd.x = q.x - 80; G.bd.y = q.y - 80; } else { G.w.x = q.x; G.w.y = q.y; } return 'ok'; }, [role, act]);
+  if (r !== 'ok') throw new Error(r);
+  await sleep(wait || 1300);
+};
+const press = async (p, k) => { await p.keyboard.down(k); await sleep(80); await p.keyboard.up(k); };
+const hostCreate = async hp => {   // Online > Create > slot 1: resolves with the room code
+  await press(hp, 'KeyD');
+  await stepOn(hp, 'B', 'go:online'); await stepOn(hp, 'B', 'go:create'); await stepOn(hp, 'B', 'slot:1', 500);
+  await hp.waitForFunction(() => __wands.G.menu && __wands.G.menu.online && __wands.G.menu.online.code, null, { timeout: 30000 });
+  return hp.evaluate(() => __wands.G.menu.online.code);
+};
+const typeCode = async (gp, code) => {   // the keyboard prop: walk up, E, type, Enter
+  await press(gp, 'KeyD');
+  await stepOn(gp, 'B', 'go:online'); await stepOn(gp, 'B', 'go:join', 1500);
+  await gp.evaluate(() => { const G = __wands.G, k = G.menu.kb; G.bd.x = k.x - 80 + 1.2; G.bd.y = k.y - 80 + 0.2; });
+  await sleep(400); await press(gp, 'KeyE'); await sleep(300);
+  for (const ch of code) await gp.keyboard.press(/[0-9]/.test(ch) ? 'Digit' + ch : 'Key' + ch);
+  await gp.keyboard.press('Enter');
+};
+const readyUp = async (hp) => {   // both are on their Ready plates: the countdown, the start sequence, the game
+  await stepOn(hp, 'B', 'readyB', 100);
+  await hp.evaluate(() => { const q = __wands.G.menu.plates.find(x => x.key === 'readyW'); __wands.G.w.x = q.x; __wands.G.w.y = q.y; });
+};
 
 async function boot(browser, name) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } }), page = await ctx.newPage(), errs = [];
@@ -27,7 +53,8 @@ async function boot(browser, name) {
   await page.mouse.click(300, 300);
   await sleep(300); await page.keyboard.press('Space');
   await page.waitForFunction(() => !StudioIntro.isActive(), null, { timeout: 30000 });
-  await page.waitForSelector('#mOnline', { state: 'visible' });
+  await page.waitForFunction(() => __wands.G && __wands.G.menu && __wands.G.menu.plates.length > 5, null, { timeout: 30000 });
+  await sleep(1200);
   return { ctx, page, errs };
 }
 
@@ -37,17 +64,25 @@ async function boot(browser, name) {
   const t0 = Date.now();
 
   // ---- the Crystal test: open page -> Online -> Join -> type the code -> playing
-  await goOnline(hp, '#oCreate'); await jc(hp, '#oCreate');
-  await jc(hp, '#menuSlots .slotRow button.slot');
-  await hp.waitForSelector('.bigCode', { timeout: 30000 });
-  const code = (await hp.textContent('.bigCode')).trim();
-  ok(/^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{6}$/.test(code), 'room code is 6 unambiguous characters', code);
-  await goOnline(gp, '#oJoin'); await jc(gp, '#oJoin');
-  await gp.fill('#joinCode', code.toLowerCase()); await jc(gp, '#joinGo');
-  await gp.waitForFunction(() => __wands.Net.on && __wands.G && __wands.G.w, null, { timeout: 40000 });
-  await hp.waitForFunction(() => __wands.Net.on && __wands.G && __wands.Net.state === 'live', null, { timeout: 20000 });
+  const code = await hostCreate(hp);
+  ok(/^[ABCDFGHJKMNPQRSTUVWXYZ2-9]{6}$/.test(code), 'room code is 6 unambiguous characters (no E: it is the keyboard prop cancel key)', code);
+  ok(await hp.evaluate(() => { const N = __wands.Net; for (let i = 0; i < 200; i++) if (/[E0O1IL]/.test(N.makeCode())) return false; return true; }), '200 generated codes never contain E (or 0 O 1 I L)');
+  await typeCode(gp, code);
+  await hp.waitForFunction(() => __wands.G.menu && __wands.G.menu.page === 'cs' && __wands.Net.state === 'live', null, { timeout: 60000 });
+  await gp.waitForFunction(() => __wands.G.menu && __wands.G.menu.page === 'cs' && __wands.Net.state === 'live', null, { timeout: 30000 });
   console.log('joined in ' + ((Date.now() - t0) / 1000).toFixed(1) + 's (both pages loaded, incl. signaling + ICE)');
-  ok(true, 'guest joined by code and is playing');
+  ok(true, 'guest joined by typing the code at the keyboard prop: both are in the character select');
+  ok(await gp.evaluate(() => __wands.G.menu.conn.W && __wands.G.menu.conn.B), 'the guest sees the host menu world with both players connected (snapshots, no wire change)');
+  // the guest walks his Wizard with the keyboard in the lobby: it moves on the host
+  const lw0 = await hp.evaluate(() => [__wands.G.w.x, __wands.G.w.y]);
+  await gp.keyboard.down('KeyD'); await sleep(800); await gp.keyboard.up('KeyD');
+  const lw1 = await hp.evaluate(() => [__wands.G.w.x, __wands.G.w.y]);
+  ok(Math.hypot(lw1[0] - lw0[0], lw1[1] - lw0[1]) > 1, 'the guest WASD walks the Wizard in the host menu world', 'moved ' + Math.hypot(lw1[0] - lw0[0], lw1[1] - lw0[1]).toFixed(1));
+  // both ready: the host screen fades, the start sequence runs, then it is a game
+  await readyUp(hp);
+  await hp.waitForFunction(() => __wands.Net.on && __wands.G && !__wands.G.menu && !__wands.G.intro, null, { timeout: 60000 });
+  await gp.waitForFunction(() => __wands.Net.on && __wands.G && !__wands.G.menu && !__wands.G.intro && __wands.G.w, null, { timeout: 40000 });
+  ok(true, 'both ready: the countdown, the host fade and the building drop-in ran, and both are playing');
   await hp.evaluate(() => { __wands.UI.help(false); __wands.G.helpT = 0; });
   await gp.evaluate(() => __wands.UI.help(false));
   await sleep(1500);
@@ -177,17 +212,17 @@ async function boot(browser, name) {
   ok(Math.abs(gt - f3) < 1.5, 'and the guest has a fresh full snapshot');
   // a stranger is turned away once the room is locked
   const X = await boot(browser, 'stranger');
-  await goOnline(X.page, '#oJoin'); await jc(X.page, '#oJoin'); await X.page.fill('#joinCode', code); await jc(X.page, '#joinGo');
-  await X.page.waitForFunction(() => /second player|version/.test(document.getElementById('joinMsg') ? document.getElementById('joinMsg').textContent : ''), null, { timeout: 30000 }).catch(() => {});
-  ok(await X.page.evaluate(() => /second player/.test(document.getElementById('joinMsg').textContent)), 'a third page with the same code is refused (room locked to the first guest)');
+  await typeCode(X.page, code);
+  await X.page.waitForFunction(() => { const t = __wands.G.menu && __wands.G.menu.typing; return t && /second player|version/.test(t.msg); }, null, { timeout: 30000 }).catch(() => {});
+  ok(await X.page.evaluate(() => /second player/.test(__wands.G.menu.typing.msg)), 'a third page with the same code is refused (room locked to the first guest)');
   await X.ctx.close();
 
   // ---- the timeout: after the window the host is at the title with the save intact
   await hp.evaluate(() => { __wands.Net.REJOIN_MS = 4000; });
   await gp.evaluate(() => __wands.Net.conn.close());
   await hp.waitForFunction(() => __wands.Net.state === 'lost', null, { timeout: 15000 });
-  await hp.waitForFunction(() => document.getElementById('menu') && !document.getElementById('menu').classList.contains('hidden'), null, { timeout: 15000 });
-  ok(true, 'after the window the host is back at the title screen');
+  await hp.waitForFunction(() => __wands.G && __wands.G.menu, null, { timeout: 30000 });
+  ok(true, 'after the window the host is back at the title screen (the menu world)');
   ok(await hp.evaluate(() => { try { const s = JSON.parse(localStorage.getItem('wands2_save_slot1')); return !!s && s.v >= 4 && s.stats.time > 5; } catch (e) { return false; } }), 'and the run\'s save is intact');
   ok(await hp.evaluate(() => __wands.Net.role === null && !__wands.Net.on), 'host Net state reset');
 
@@ -195,13 +230,15 @@ async function boot(browser, name) {
   if (SOAK) {
     console.log('soak ' + SOAK + 's ...');
     // fresh session
-    await goOnline(hp, '#oCreate'); await jc(hp, '#oCreate'); await jc(hp, '#menuSlots .slotRow button.slot');
-    await hp.waitForSelector('.bigCode'); const c2 = (await hp.textContent('.bigCode')).trim();
+    await sleep(1500);
+    const c2 = await hostCreate(hp);
     await gp.evaluate(() => { __wands.Main.toTitle(true); });
-    await gp.waitForSelector('#mOnline', { state: 'visible' });
-    await goOnline(gp, '#oJoin'); await jc(gp, '#oJoin'); await gp.fill('#joinCode', c2); await jc(gp, '#joinGo');
-    await gp.waitForFunction(() => __wands.Net.on && __wands.G, null, { timeout: 40000 });
-    await hp.waitForFunction(() => __wands.Net.on && __wands.Net.state === 'live', null, { timeout: 20000 });
+    await gp.waitForFunction(() => __wands.G && __wands.G.menu, null, { timeout: 30000 }); await sleep(1500);
+    await typeCode(gp, c2);
+    await hp.waitForFunction(() => __wands.G.menu && __wands.G.menu.page === 'cs' && __wands.Net.state === 'live', null, { timeout: 60000 });
+    await readyUp(hp);
+    await hp.waitForFunction(() => __wands.Net.on && __wands.G && !__wands.G.menu && !__wands.G.intro, null, { timeout: 60000 });
+    await gp.waitForFunction(() => __wands.Net.on && __wands.G && !__wands.G.menu && __wands.G.w, null, { timeout: 40000 });
     const keys = ['KeyW', 'KeyA', 'KeyS', 'KeyD'], end = Date.now() + SOAK * 1000;
     let down = null, n = 0;
     while (Date.now() < end) {

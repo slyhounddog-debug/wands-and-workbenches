@@ -279,8 +279,8 @@ R.drawFactory = function (main, dt, rect) {
   for (const it of list) {
     if (it.t === 'bld') {
       const b = it.o, p = R.toScreen(v, b.x + 0.5, b.y + 0.5), spr = R.bldSprite(b);
-      if (spr) R.reflect(ctx, spr, p[0], p[1] + v.hh * 0.9, S, b.done ? 0.22 : 0.1);
-    } else if (it.t === 'builder') {
+      if (spr && R.fallK(b) >= 1) R.reflect(ctx, spr, p[0], p[1] + v.hh * 0.9, S, b.done ? 0.22 : 0.1);
+    } else if (it.t === 'builder' && R.fallK(bd) >= 1 && !(G.outro && G.outro.t0 > 0.05)) {
       const p = R.toScreen(v, bd.x, bd.y);
       R.reflect(ctx, G.hands.length ? SP.builderC : SP.builder, p[0], p[1], S, 0.22);
     }
@@ -288,12 +288,15 @@ R.drawFactory = function (main, dt, rect) {
   if (R.ghost) R.drawGhostGround(ctx, v, R.ghost, t);
   for (const b of f.bld) {
     const k = b.done && FA.def(b).kind;
-    if (!k || k === 'cell') continue;
+    if (!k || k === 'cell' || R.fallK(b) < 1) continue;
     if (k === 'splitter') b.outs.forEach((d, i) => R.splitArrow(ctx, v, b, t, d, FA.splitCol[i], b.pct[d] || 0, b.filt[d]));
     else R.outArrow(ctx, v, b, t);
   }
 
   for (const it of list) {
+    const fk = it.t === 'builder' ? R.fallK(bd) : it.t === 'belt' || it.t === 'bld' ? R.fallK(it.o) : 1;   // (the start sequence: things still to drop in from their portals)
+    if (fk < 0) continue;
+    if (fk < 1) R.fallIn(ctx, v, it, fk, t);
     switch (it.t) {
       case 'belt': R.drawBelt(ctx, v, it.o, t); break;
       case 'bld': R.drawBuilding(ctx, v, it.o, t); break;
@@ -303,9 +306,10 @@ R.drawFactory = function (main, dt, rect) {
       case 'floor': R.drawFloor(ctx, v, it.o.items[0], t); break;
       case 'floorG': R.drawFloorPile(ctx, v, it.o, t); break;
       case 'fly': R.drawFly(ctx, v, it.o, t); break;
-      case 'builder': R.drawBuilder(ctx, v, bd, t); break;
+      case 'builder': if (G.outro) R.drawBuilderOut(ctx, v, bd, t); else R.drawBuilder(ctx, v, bd, t); break;
       case 'ghost': R.drawGhost(ctx, v, it.o, t); break;
     }
+    if (fk < 1) ctx.restore();
   }
   R.drawShrineStreams(ctx, v, t);
   if (R.ghost) R.drawGhostLinks(ctx, v, R.ghost, t);
@@ -352,6 +356,36 @@ R.drawFactory = function (main, dt, rect) {
   main.imageSmoothingEnabled = false;
   main.drawImage(buf.c, 0, 0, RW, CFG.H);
   R.flush(main, 0);
+};
+
+// ----- the start sequence and the way back: things drop out of portals into the factory, the Builder is drawn up into one on his way out -----
+R.fallK = o => (G.intro && o && o.fallAt !== undefined ? (G.intro.t - o.fallAt) / G.intro.drop : 1);   // < 0: not out of its portal yet, 0..1: falling, 1: landed
+R.portalRing = function (c, x, y, rx, t) {   // a small flat portal seen from the front
+  const cols = ['#4a2890', '#8a4ad0', '#c890ff', '#ffffff'];
+  c.save(); c.translate(x, y);
+  for (let i = 0; i < 4; i++) { c.fillStyle = cols[i]; c.beginPath(); c.ellipse(0, 0, rx * (1 - i * 0.22), rx * 0.5 * (1 - i * 0.22), 0, 0, 6.283); c.fill(); }
+  c.fillStyle = '#ffffff'; for (let i = 0; i < 4; i++) { const a = t * 3 + i * 1.57; c.fillRect(Math.round(Math.cos(a) * rx * 0.7), Math.round(Math.sin(a) * rx * 0.35), 6, 6); }
+  c.restore();
+};
+// k in 0..1: the piece falls from a portal high above its tile; its shadow grows on the ground. Leaves a ctx.save() to be matched by the caller's restore.
+R.fallIn = function (ctx, v, it, k, t) {
+  const bld = it.t === 'builder' ? G.bd : it.o, cx = it.t === 'builder' ? bld.x : bld.x + 0.5, cy = it.t === 'builder' ? bld.y : bld.y + 0.5, p = R.toScreen(v, cx, cy), H = 520;
+  ctx.fillStyle = 'rgba(0,0,0,' + (0.1 + 0.25 * k).toFixed(2) + ')'; const r = 0.3 + 0.7 * k; diamond(ctx, p[0], p[1], v.hw * r, v.hh * r); ctx.fill();
+  if (k < 0.5) { const o = Math.sin(k / 0.5 * Math.PI); ctx.globalAlpha = 0.9; R.portalRing(ctx, p[0], p[1] - H - 30, 54 * o, t); ctx.globalAlpha = 1; }
+  ctx.save(); ctx.translate(0, -Math.pow(1 - Math.max(0, k), 2) * H);
+};
+// the Builder on his way out: a portal opens above him and draws him up, spinning and shrinking
+R.drawBuilderOut = function (ctx, v, bd, t) {
+  const O = G.outro, k = Math.min(1, O.t0 / 0.95);
+  if (O.gone || k >= 1) return;
+  const p = R.toScreenLocked(v, bd.x, bd.y), open = Math.min(1, k * 5) * (k > 0.85 ? Math.max(0, 1 - (k - 0.85) * 6) : 1);
+  const lift = (1 - (1 - k) * (1 - k)) * 300 * k, sc = 1 - 0.75 * k * k;
+  ctx.save(); ctx.globalAlpha = 0.28 * open; ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.round(p[0] - 28 * open), Math.round(p[1] - 330), Math.round(56 * open), 330); ctx.restore();
+  R.portalRing(ctx, p[0], p[1] - 330, 80 * open, t);
+  ctx.save();
+  ctx.translate(p[0], p[1] - lift); ctx.scale(sc, sc); ctx.rotate(Math.round(k * 12) / 12 * 6.283 * 1.5); ctx.translate(-p[0], -(p[1] - lift));
+  R.drawBuilder(ctx, v, bd, t);
+  ctx.restore();
 };
 
 // while the Wizard stands on a claimed shrine, its element streams out of the Spell Portal into every boosted harnesser
@@ -1196,9 +1230,11 @@ R.drawWorld = function (main, dt, rect) {
   R.px = P; R.org = X0; R.defer = [];
   const cam = R.wcam;
   const k = Math.min(1, dt * 8);
-  cam.x += (w.x + w.vx * 0.12 - cam.x) * k; cam.y += (w.y + w.vy * 0.12 - cam.y) * k;
+  const cl = G.menu && !G.menu.free ? Menu.camOf() : null;   // the living menu world looks at its patch; it does not follow anyone
+  cam.x += ((cl ? cl.x : w.x + w.vx * 0.12) - cam.x) * k; cam.y += ((cl ? cl.y : w.y + w.vy * 0.12) - cam.y) * k;
   const sh = w.shake > 0 ? w.shake * 24 : 0;
   const v = R.wv; v.org = X0; v.cx = X0 + RW / 2; setView(v, cam, (Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh);
+  const mv = G.menu ? Menu.view(v) : null;   // the menu world's scratch factory (belts, the Builder, the Spell Portal) in the wilds' view
 
   ctx.fillStyle = '#2d4a2a'; ctx.fillRect(X0, 0, RW + P, CFG.H);
   const left = X0, right = X0 + RW;
@@ -1237,6 +1273,7 @@ R.drawWorld = function (main, dt, rect) {
   const alt = G.altar && (G.altar.placed || w.cine) ? G.altar : null, airborne = !!(alt && w.cine && !w.cine.landed);   // the Summoning Altar (still in the air while it lands)
   if (alt) R.drawAltarGround(ctx, v, w);
   for (const f of w.fx_) if (f.type === 'ring' || f.type === 'warn' || f.type === 'shock') R.drawFx(ctx, v, f); else if (f.type === 'drop') R.drawDrop(ctx, v, f, true);
+  if (mv) Menu.drawGround(ctx, v, mv);   // the floor plates
 
   for (const b of w.boulders) objs.push({ d: b.x + b.y, t: 'boulder', o: b });
   for (const dr of w.drops) objs.push({ d: dr.x + dr.y, t: 'drop', o: dr });
@@ -1244,6 +1281,7 @@ R.drawWorld = function (main, dt, rect) {
   for (const e of w.enemies) objs.push({ d: e.x + e.y, t: 'enemy', o: e });
   for (const e of w.allies) objs.push({ d: e.x + e.y, t: 'enemy', o: e });   // the friendly creatures (R.drawEnemy shows them in green)
   objs.push({ d: w.x + w.y, t: 'wiz', o: w });
+  if (mv) Menu.collect(objs, v, mv);
   if (alt && !airborne) objs.push({ d: alt.x + alt.y, t: 'altar', o: alt });
   objs.sort((a, b) => a.d - b.d);
   for (const it of objs) {
@@ -1282,7 +1320,8 @@ R.drawWorld = function (main, dt, rect) {
     else if (it.t === 'lm') R.drawMark(ctx, v, o.lm);
     else if (it.t === 'altar') R.drawAltar(ctx, v, w);
     else if (it.t === 'enemy') R.drawEnemy(ctx, v, o);
-    else if (it.t === 'wiz') R.drawWizard(ctx, v, o);
+    else if (it.t === 'wiz') { if (mv) Menu.drawWizard(ctx, v, o); else R.drawWizard(ctx, v, o); }
+    else if (it.t === 'menu') it.fn(ctx, v);
   }
   for (const z of w.zones) if (TALL_ZONES[z.kind]) R.drawZone(ctx, v, z);   // fire streams, steam clouds, storm clouds, droplets and orbs stand up over the bodies
   for (const m of w.mines) R.drawMine(ctx, v, m);
@@ -1297,6 +1336,7 @@ R.drawWorld = function (main, dt, rect) {
   R.drawKeepCount(ctx, v, wt);
   R.drawMaskHints(ctx, v, wt);
   R.drawWeather(ctx, wt);
+  if (mv) { Menu.drawFx(ctx, mv, wt); Menu.hints(ctx, v, mv); Menu.drawEdge(ctx, v); }
 
   for (const pk of w.pickups) {   // off-screen pointers to pickups
     const p = R.toScreen(v, pk.x, pk.y);
@@ -1316,6 +1356,7 @@ R.drawWorld = function (main, dt, rect) {
   if (R.mapC && !rc.pip) R.defer.push(c => R.drawMinimap(c));
   // the wilds are frozen while anyone is in the skill tree (the DOM banner says so in words)
   if (!Net.on && (UI.treeOpen.L || UI.treeOpen.R)) { ctx.fillStyle = 'rgba(20,10,40,0.45)'; ctx.fillRect(left, 0, RW, CFG.H); }   // (online nothing freezes, so nothing dims)
+  if (mv) R.defer.push(c => Menu.drawText(c, v, mv));   // (the menu world's windows and labels go on last)
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   main.save(); main.beginPath(); main.rect(X0, 0, RW, CFG.H); main.clip();
   main.imageSmoothingEnabled = false;

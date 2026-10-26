@@ -2,6 +2,8 @@
 // Online co-op glue (Phase 1): everything the game itself does to host or join a room. The transport is js/net.js (the only file that knows PeerJS); this file wires it into
 // the menus, the main loop and the HUD. Host = Builder (runs the sim exactly as offline play does), guest = Wizard (renders snapshots, sends a pad). Loaded after main.js.
 //
+// The lobby is the living menu world (js/menu.js): the host's menu world is streamed to the guest like any game state, the guest's pad walks the Wizard in it, and nothing
+// about the wire changes. The game proper starts from there (Main.launch).
 // What changes while Net.on (and nothing changes when it is off):
 //  - nothing ever freezes the sim: a skill tree, the pause menu or the Collection Book only holds ITS player still (Main.menuUp instead of G.paused; no "And..." beat)
 //  - the player's own world fills the stage, the partner's is a picture-in-picture (R.drawPip); job swap is off; the host's Wizard is a virtual pad (Net.drive)
@@ -27,7 +29,6 @@ Main.netBanner = function (kind, msg) {
   if (kind === 'hostLost') h = '<h2>PLAYER 2 DISCONNECTED</h2><p>The game is frozen. They can come back with the same room code in <b id="nbSec">60s</b>.</p>' + code + '<div class="splitBtns"><button class="big ghost" id="nbQuit">SAVE &amp; TITLE</button></div>';
   else if (kind === 'guestLost') h = '<h2>CONNECTION LOST</h2><p id="nbMsg">The host stopped answering. Try to rejoin the same room' + (Net.code ? ' (<b>' + Net.code + '</b>)' : '') + '.</p><div class="splitBtns"><button class="big" id="nbRejoin">REJOIN</button><button class="big ghost" id="nbTitle">TITLE</button></div>';
   else if (kind === 'ended') h = '<h2>GAME OVER</h2><p>' + (msg || 'The host ended the game.') + '</p><div class="splitBtns"><button class="big" id="nbTitle">TITLE</button></div>';
-  else if (kind === 'loading') h = '<h2>JOINED!</h2><p>Waiting for the host\'s world<span class="dots"></span></p><div class="splitBtns"><button class="big ghost" id="nbTitle">CANCEL</button></div>';
   el.innerHTML = '<div class="panel px">' + h + '</div>';
   el.classList.remove('hidden');
   UI.decorate(el);
@@ -61,31 +62,23 @@ Main.netUi = function (mode) {
 
 // ---------- host ----------
 Main.hostHooks = {
-  // the guest said hello: start the game now (a new one or a saved one), with the roles fixed
-  guestJoined() {
-    const p = Net.pending;
-    Players.ctl = { kbB: true, kbW: false, pb: IN.padList.length ? 0 : -1, pw: 1 };   // the host is the Builder (keyboard + mouse, or his pad); the Wizard is a virtual pad in slot 1
-    Net.on = true;
-    if (p.isNew) Main.newGame(p.slot); else Main.loadGame(p.slot);
-    if (!G) return;   // (the save would not load: toTitle already closed the session)
-    Main.netUi('host');
-    UI.toast('Player 2 joined as the Wizard.', 'L', 'ic_check');
-  },
+  // the guest said hello: both go on to the character select in the menu world (the roles are fixed: the host is the Builder, the guest the Wizard); the game itself
+  // starts from there, when both are ready (Main.launch)
+  guestJoined() { if (G && G.menu) Menu.guestJoined(); },
   // somebody is knocking: show how the connection attempt is going (it is the one place the host can see why a join does not complete)
   guestDialing(conn) {
-    const el = () => (Net.state === 'waiting' && !$('menuHost').classList.contains('hidden') ? document.querySelector('#menuHost .netStatus') : null), t0 = performance.now();
+    const t0 = performance.now();
     const tick = async () => {
-      const s = el();
-      if (!s || conn.open || Net.conn) return;
+      const o = G && G.menu && G.menu.online;
+      if (!o || Net.state !== 'waiting' || conn.open || Net.conn) { if (o && Net.state === 'waiting') o.status = ''; return; }
       const p = await Net.probe(conn), secs = Math.round((performance.now() - t0) / 1000);
-      s.innerHTML = 'Player 2 found you, connecting<span class="dots"></span><br><small>' + Net.probeText(p, Net.hdiag) + ' (' + secs + 's)</small><pre class="plog"></pre>';
-      s.querySelector('.plog').textContent = Net.logText(16);
+      o.status = 'Player 2 found you, connecting... ' + Net.probeText(p, Net.hdiag) + ' (' + secs + 's) ' + Net.logText(6).split('\n').join(' | ');
       setTimeout(tick, 1000);
     };
     tick();
   },
-  guestLost() { Main.netBanner('hostLost'); },
-  guestBack() { Main.netBanner(null); UI.toast('Player 2 is back.', 'L', 'ic_check'); },
+  guestLost() { if (!(G && G.menu)) Main.netBanner('hostLost'); },   // (in the lobby the room modal says it)
+  guestBack() { if (G && G.menu) return; Main.netBanner(null); UI.toast('Player 2 is back.', 'L', 'ic_check'); },
   timeout() { Main.toTitle(); },   // 60 s are up: back to the title screen, the save (already written) is intact
   // the guest asked to buy a node: the usual cost logic decides; what it would have toasted goes back to him, the result reaches his screen in the next snapshot
   buy(id) {
@@ -98,17 +91,15 @@ Main.hostHooks = {
     if (ok) for (const t of caps) if (t.side === 'L') UI.toast(t.text, 'L', t.icon);
   },
 };
-Main.hostOnline = function (slot, isNew) {
-  Net.hooks = Main.hostHooks; Net.pending = { slot, isNew };
-  UI.hostLobby('opening');
-  Net.createRoom().then(code => UI.hostLobby('waiting', code)).catch(e => { Net.reset(); UI.hostLobby('error', e.message); });
-};
 
 // ---------- guest ----------
 Main.guestHooks = {
   lost() { Main.netBanner('guestLost'); },
   resumed() { Main.netBanner(null); },
-  ended(msg) { Main.netBanner('ended', msg); },
+  ended(msg) {
+    if (G && G.menu) { Main.toTitle(true); if (G && G.menu) Menu.say(msg || 'The host ended the game.'); return; }   // (the lobby: back to the menu world with a word)
+    Main.netBanner('ended', msg);
+  },
   toast(m) { UI.toast(m.text, 'R', m.icon, true); },
   buyres(m) {
     for (const t of m.toasts || []) if (t.side === 'L') UI.toast(t.text, 'R', t.icon, true);   // the host's answer: "Unlocked: ..." / "Still need ..."
@@ -116,13 +107,14 @@ Main.guestHooks = {
     if (UI.treeOpen.R) UI.renderTree('R');
   },
 };
+// the guest types the code at the keyboard prop in the menu world (Menu typingTick); once the host has said welcome, the host's menu world arrives as snapshots
 Main.joinOnline = function (code) {
   Net.hooks = Main.guestHooks;
   return Net.join(code).then(() => {
-    G = null; STATE = 'guest'; Main.menuUp = false;
-    UI.show('menu', false); UI.show('game', false);
+    STATE = 'guest'; Main.menuUp = false;
+    UI.show('game', false);
     Main.netUi('guest');
-    Main.netBanner('loading');
+    if (G && G.menu && G.menu.typing) G.menu.typing.msg = 'Joined! Waiting for the host...';
   });
 };
 // the first snapshot has arrived: the HUD wakes up
@@ -130,7 +122,7 @@ Main.enterGuest = function () {
   Net.on = true; Main.menuUp = false; Net.helpT = 25;
   Main.winsSeen = G.stats.wins || 0; Main.lastQW = G.quest.W; Main.resShown = false;
   UI.resetCache();
-  UI.show('menu', false); UI.show('players', false); UI.show('game', true);
+  UI.show('game', true);
   UI.show('pause', false); UI.show('results', false); UI.show('victory', false);
   Main.netUi('guest');
   UI.openTree('L', false); UI.openTree('R', false);
@@ -163,8 +155,10 @@ Main.guestFrame = function (dt, ts) {
   const s = Net.takeSnap();
   if (s) {
     G = s;   // the newest whole snapshot replaces the state atomically; nothing here ever mutates it
-    if (!Net.on) Main.enterGuest(); else Main.guestSeen();
+    if (G.menu) Menu.lastEv = Menu.lastEv || G.menu.evN;   // (the lobby: do not replay the events that happened before we got here)
+    else if (!Net.on) Main.enterGuest(); else Main.guestSeen();
   }
+  if (G && G.menu && !Net.on) { AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); Menu.guestFrame(dt, ts); return; }   // the host is still in the menu world
   if (!G || !Net.on) { AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); drawBackdrop(ts); return; }
   Net.mute = !!(UI.treeOpen.R || Main.menuUp || Book.isOpen);
   Net.guestTick(dt);
@@ -182,74 +176,4 @@ Main.guestFrame = function (dt, ts) {
   AU.hum(0); AU.mix(0, Math.min(1, near / 8), !!w.boss); AU.layerMix(G.fac.weather);   // v1: music and UI sounds only, the world's sound effects stay on the host
   AU.muffle(!!(UI.treeOpen.R || Main.menuUp));
   UI.updateHud(dt);
-};
-
-// ---------- menus ----------
-UI.onlinePage = function () {
-  const box = $('menuOnline');
-  box.innerHTML = '<h2>ONLINE</h2><p class="netNote">Two players, two computers. The host plays the Builder and gets a 6-letter room code; the guest types it in and plays the Wizard. No accounts, no installs.</p>' +
-    '<button class="big" id="oCreate">' + UI.img('ic_wrench', 20) + 'CREATE GAME</button><button class="big" id="oJoin">' + UI.img('ic_hat', 20) + 'JOIN GAME</button><button class="big ghost" id="oTest">CHECK THIS COMPUTER</button><div class="netStatus" id="oTestMsg"></div><button class="big ghost back">BACK</button>';
-  $('oTest').onclick = () => {
-    const m = $('oTestMsg'); m.className = 'netStatus'; m.innerHTML = 'Checking<span class="dots"></span>';
-    Net.selfTest().then(r => { m.className = 'netStatus' + (r.ok ? '' : ' err'); m.textContent = r.text; });
-  };
-  $('oCreate').onclick = () => UI.hostSlots();
-  $('oJoin').onclick = () => UI.joinPage();
-  box.querySelector('.back').onclick = () => UI.menuPage('menuMain');
-  UI.menuPage('menuOnline');
-};
-// the host picks the game: a saved one to carry on or a new one
-UI.hostSlots = function () {
-  const box = $('menuSlots');
-  box.innerHTML = '<h2>HOST A GAME</h2><p class="netNote">Pick the game you will play as the Builder. Your partner joins as the Wizard.</p>';
-  for (let i = 1; i <= 3; i++) {
-    const s = UI.slotInfo(i), ok = s && !s.old, row = document.createElement('div');
-    row.className = 'slotRow';
-    const b = document.createElement('button');
-    b.className = 'big slot';
-    b.innerHTML = slotLabel(i, s) + '<em>' + (ok ? 'CONTINUE' : 'NEW GAME') + '</em>';
-    if (s && s.old) b.disabled = true; else b.onclick = () => Main.hostOnline(i, !ok);
-    row.appendChild(b);
-    if (ok) {
-      const ow = document.createElement('button');
-      ow.className = 'big ghost warn ow'; ow.innerHTML = UI.img('ic_warn', 14) + 'NEW';
-      ow.title = 'Start a new game in this slot (overwrites it)';
-      ow.onclick = () => Main.hostOnline(i, true);
-      row.appendChild(ow);
-    }
-    box.appendChild(row);
-  }
-  const back = document.createElement('button'); back.className = 'big ghost back'; back.textContent = 'BACK';
-  back.onclick = () => UI.onlinePage();
-  box.appendChild(back);
-  UI.menuPage('menuSlots');
-};
-UI.hostLobby = function (state, info) {
-  const box = $('menuHost');
-  let h = '<h2>HOST A GAME</h2>';
-  if (state === 'opening') h += '<div class="netStatus">Opening a room<span class="dots"></span></div>';
-  else if (state === 'waiting') h += '<p class="netNote">Tell your partner to open the game, press ONLINE, JOIN GAME and type:</p><div class="bigCode">' + info + '</div><div class="netStatus">Waiting for player 2<span class="dots"></span></div>' + (Net.relay ? '<p class="netNote">A relay is ON (?turn=...): the other computer needs it too.</p>' : '');
-  else h += '<div class="netStatus err">' + (info || 'Something went wrong.') + '</div>';
-  h += '<button class="big ghost back">' + (state === 'error' ? 'BACK' : 'CANCEL') + '</button>';
-  box.innerHTML = h;
-  box.querySelector('.back').onclick = () => { if (Net.role) Net.close(false); UI.hostSlots(); };
-  UI.menuPage('menuHost');
-};
-UI.joinPage = function (msg, isErr) {
-  const box = $('menuJoin');
-  box.innerHTML = '<h2>JOIN A GAME</h2><p class="netNote">Type the 6 letters the host sees on their screen.' + (Net.relay ? ' (A relay is ON.)' : '') + '</p><input id="joinCode" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="------">' +
-    '<div class="netStatus' + (isErr ? ' err' : '') + '" id="joinMsg">' + (msg || '') + '</div><button class="big" id="joinGo">JOIN</button><button class="big ghost back">BACK</button>';
-  const inp = $('joinCode'), go = () => {
-    const code = Net.cleanCode(inp.value);
-    if (code.length !== 6) { $('joinMsg').className = 'netStatus err'; $('joinMsg').textContent = 'The code has 6 letters and numbers.'; return; }
-    inp.disabled = true; $('joinGo').disabled = true;
-    $('joinMsg').className = 'netStatus'; $('joinMsg').innerHTML = 'Connecting<span class="dots"></span>';
-    Main.joinOnline(code).catch(e => { UI.joinPage(e.message, true); const l = document.createElement('pre'); l.className = 'plog'; l.textContent = Net.logText(12); $('joinMsg').appendChild(l); });
-  };
-  inp.oninput = () => { const c = Net.cleanCode(inp.value); if (inp.value !== c) inp.value = c; };
-  inp.onkeydown = e => { if (e.key === 'Enter') go(); e.stopPropagation(); };
-  $('joinGo').onclick = go;
-  box.querySelector('.back').onclick = () => { if (Net.role) Net.close(false); UI.onlinePage(); };
-  UI.menuPage('menuJoin');
-  setTimeout(() => { if (!inp.disabled) inp.focus(); }, 30);
 };

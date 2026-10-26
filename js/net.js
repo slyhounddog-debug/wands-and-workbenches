@@ -17,11 +17,11 @@
 // Transport: PeerJS cloud for signaling only, a reliable ordered WebRTC data channel for traffic, STUN only (no TURN: a relay is Josh's decision, see CLAUDE.md).
 const Net = {
   VERSION: 2,
-  BUILD: 6,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
+  BUILD: 7,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
   SNAP_HZ: 20, PAD_HZ: 30,
-  ALPHA: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789',   // no 0 O 1 I L
+  ALPHA: 'ABCDFGHJKMNPQRSTUVWXYZ23456789',   // no 0 O 1 I L, and no E: E is the cancel key at the menu world's keyboard, so a room code never needs it
   PREFIX: 'ww-',
   role: null,                    // 'host' | 'guest' | null
   on: false,                     // an online game is running (host: the game started; guest: the first snapshot arrived)

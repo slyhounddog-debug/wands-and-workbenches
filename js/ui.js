@@ -846,23 +846,6 @@ UI.slotInfo = function (i, useBak) {
   if (s === undefined || (s.v >= 4 && !Main.saveOk(s))) return bak() || null;   // damaged: the last good autosave
   return s.v >= 4 ? s : { old: true };
 };
-function slotLabel(i, s) {
-  if (!s) return '<b>SLOT ' + i + '</b><span>Empty</span>';
-  if (s.old) return '<b>SLOT ' + i + '</b><span>Save from an older version</span>';
-  const nb = (s.fac && s.fac.bld ? s.fac.bld.length : 0), q = Main.questOf(s);
-  const when = s.at ? new Date(s.at).toLocaleString() : '';
-  return '<b>SLOT ' + i + '</b><span>' + Math.floor(s.xp || 0) + ' XP, ' + nb + ' buildings, goals ' + (q.B + q.W) + '/' + (QUESTS.B.length + QUESTS.W.length) + '</span><small>' + when + '</small>';
-}
-UI.menuPage = function (page) {
-  ['menuMain', 'menuSlots', 'menuHow', 'menuSet', 'menuOnline', 'menuHost', 'menuJoin'].forEach(id => UI.show(id, id === page));
-  if (page === 'menuMain') $('mContinue').classList.toggle('hidden', !UI.lastSlot());
-};
-UI.lastSlot = function () {
-  let best = null, at = 0;
-  for (let i = 1; i <= 3; i++) { const s = UI.slotInfo(i); if (s && !s.old && (s.at || 0) >= at) { at = s.at || 0; best = i; } }
-  return best;
-};
-
 const HOWTO = {
   'THE IDEA': [
     ['Two jobs, one team', 'The <b>Builder</b> (left) runs an elemental factory. The <b>Wizard</b> (right) explores the wilds but has <b>no attack of his own</b>: every spell he casts is made in the factory and sent through the <b>Spell Portal</b>.'],
@@ -908,48 +891,7 @@ const HOWTO = {
     ['Gamepads', 'The Builder pad: stick move, A pick up (hold to sweep; with a building selected: place in front; hold with Belt to lay belts), B throw (LT + B: whole stack), X use, right stick cycle targets, X in the tree: undo the last deposit, LB/RB slot, RT next member of a family slot, Back demolish, L3 pin blueprints, Y tree. The Wizard pad: stick move, right stick aim a Tempest Tear, A roll, X fire the held spell, Y tree. Hold Start to swap. (Which controller plays which job is chosen on the player screen before each game.)'],
   ],
 };
-UI.howPage = function (tab) {
-  const tabs = Object.keys(HOWTO);
-  tab = tab || tabs[0];
-  let body = '';
-  if (HOWTO[tab]) body = HOWTO[tab].map(h => '<h3>' + h[0] + '</h3><p>' + h[1] + '</p>').join('');
-  else {
-    const uses = {
-      wood: 'Every building, belts (1 each), fuel for a Battery',
-      stone: 'Every building, fuel for a Battery',
-      iron: 'Forge, Armory, Battery, Heavy Battery, Stockpile Tiles, every garment and the Warden Key, Floor Tiles after the 28th',
-      shard: 'Rare: only from landmarks and elites. Spawners, garments, the Warden Key; 6 go into the Skill Portal for Summoning',
-      wardkey: 'Forged at the Armory. Sent through the Spell Portal while the Wizard stands at the Stronghold, it opens the door to the Warden',
-      air: 'Spell Portal: Air Gust. Skill Portal: currency. Battery fuel, recipes',
-      water: 'Spell Portal: Water Spray. Skill Portal: currency. Battery fuel, recipes',
-      fire: 'Spell Portal: Fireball. Skill Portal: currency. Battery fuel, recipes',
-      earth: 'Spell Portal: Boulder. Skill Portal: currency. Battery fuel, recipes',
-    };
-    body = '<div class="uses">' + Object.keys(uses).map(k => '<div>' + UI.img(k, 32) + '<b>' + itemName(k) + '</b><span>' + uses[k] + '</span></div>').join('') + '</div>';
-    const byM = {};
-    for (const id in CFG.recipes) (byM[CFG.recipes[id].machine] = byM[CFG.recipes[id].machine] || []).push(id);
-    for (const m in byM) {
-      body += '<h3>' + CFG.buildings[m].name + '</h3><div class="recs big">' + byM[m].map(id => {
-        const R = CFG.recipes[id];
-        return '<span class="rec">' + Object.keys(R.in).map(k => UI.img(k, 24) + (R.in[k] > 1 ? 'x' + R.in[k] : '')).join(' ') + ' > ' + UI.img(R.out, 24) + ' <b>' + recipeName(id) + '</b>' + (R.power ? ' <i>' + R.power + UI.img('ic_bolt', 12) + '</i>' : '') + '</span>';
-      }).join('') + '</div>';
-    }
-    body += '<p class="dim">Eggs hatch into creatures when sent through the Spell Portal (never the Skill Portal). Health Potion heals 35, Greater Elixir heals 80, Shield Potion +35 armor, Greater Shield Potion +70 armor. Combo spells need no unlocking: the Forge makes them as soon as you can feed it the packets (a triple needs its parent pairs made once first).</p>';
-  }
-  $('menuHow').innerHTML = '<h2>HOW TO PLAY</h2><div class="tabs">' + tabs.map(t => '<button class="tab' + (t === tab ? ' on' : '') + '" data-t="' + t + '">' + t + '</button>').join('') + '</div><div class="howBody">' + body + '</div><button class="big ghost back">BACK</button>';
-  $('menuHow').querySelectorAll('.tab').forEach(b => { b.onclick = () => { AU.sfx('tab'); UI.howPage(b.dataset.t); }; });
-  $('menuHow').querySelector('.back').onclick = () => UI.menuPage('menuMain');
-  UI.menuPage('menuHow');
-};
-UI.buildMenu = function () {
-  $('mContinue').onclick = () => { const s = UI.lastSlot(); if (s) Players.open(() => Main.loadGame(s)); };
-  $('mNew').onclick = () => UI.slotPage('new');
-  $('mLoad').onclick = () => UI.slotPage('load');
-  $('mHow').onclick = () => UI.howPage();
-  $('mSet').onclick = () => { UI.settingsPage($('menuSet'), () => UI.menuPage('menuMain')); UI.menuPage('menuSet'); };
-  document.querySelectorAll('#menu button').forEach(b => b.addEventListener('mouseenter', () => AU.sfx('blip')));
-};
-// volume sliders, shared by the title menu and the pause menu
+// volume sliders for the pause menu (the front door has its own: the volume staircases in the menu world)
 UI.settingsPage = function (box, back) {
   const s = AU.settings, row = (k, icon, label) => '<label>' + UI.img(icon, 24) + label + ' <b>' + Math.round(s[k] * 100) + '%</b><input data-k="' + k + '" type="range" min="0" max="100" value="' + Math.round(s[k] * 100) + '"></label>';
   box.classList.remove('wideCtl');
@@ -1074,29 +1016,6 @@ UI.controlsPage = function (box, back) {
   box.innerHTML = '<h2>CONTROLS</h2><div class="ctlBody">' + CONTROLS.map(sec).join('') + '</div><button class="big ghost back">BACK</button>';
   box.querySelector('.back').onclick = back;
 };
-UI.slotPage = function (mode) {
-  const box = $('menuSlots');
-  box.innerHTML = '<h2>' + (mode === 'new' ? 'NEW GAME' : 'LOAD GAME') + '</h2>';
-  for (let i = 1; i <= 3; i++) {
-    const s = UI.slotInfo(i);
-    const b = document.createElement('button');
-    b.className = 'big slot';
-    if (mode === 'new') {
-      b.innerHTML = slotLabel(i, s) + (s ? '<em>' + UI.img('ic_warn', 16) + 'OVERWRITE</em>' : '<em>START</em>');
-      if (s) b.classList.add('warn');
-      b.onclick = () => Players.open(() => Main.newGame(i));   // who is playing + their looks first
-    } else {
-      b.innerHTML = slotLabel(i, s);
-      if (!s || s.old) b.disabled = true; else b.onclick = () => Players.open(() => Main.loadGame(i));
-    }
-    box.appendChild(b);
-  }
-  const back = document.createElement('button'); back.className = 'big ghost back'; back.textContent = 'BACK';
-  back.onclick = () => UI.menuPage('menuMain');
-  box.appendChild(back);
-  UI.menuPage('menuSlots');
-};
-
 // ---------- Splitter settings: one slider, the pink side on its left and the cyan side on its right ----------
 UI.askB = null;
 UI.askDemolish = function (x, y, name) {

@@ -370,7 +370,7 @@
         await sleep(200);   // the game starts listening 100 ms after "ready"
         W.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter', key: 'Enter' }));
         W.dispatchEvent(new KeyboardEvent('keyup', { code: 'Enter', key: 'Enter' }));
-        for (let j = 0; j < 50 && !visible(D.getElementById('menuMain')); j++) await sleep(100);
+        for (let j = 0; j < 50 && !(W.__wands && W.__wands.G && W.__wands.G.menu); j++) await sleep(100);   // (the front door is the living menu world now: wait for it)
         return;
       }
       await sleep(100);

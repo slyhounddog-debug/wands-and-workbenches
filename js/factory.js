@@ -13,7 +13,11 @@ FA.W = () => G.fac.w;
 FA.H = () => G.fac.h;
 FA.base = () => CFG.factory.base;
 // the two portals stand on the east edge of the floor they came with (G.fac.pp = the Spell Portal's top cell; the Skill Portal is 4 rows lower)
-FA.portalCells = () => { const p = G.fac.pp; return [{ x: p.x, y: p.y, which: 'spell' }, { x: p.x, y: p.y + 1, which: 'spell' }, { x: p.x, y: p.y + 4, which: 'skill' }, { x: p.x, y: p.y + 5, which: 'skill' }]; };
+FA.portalCells = () => {
+  const p = G.fac.pp, c = [{ x: p.x, y: p.y, which: 'spell' }, { x: p.x, y: p.y + 1, which: 'spell' }];
+  if (!G.menu) c.push({ x: p.x, y: p.y + 4, which: 'skill' }, { x: p.x, y: p.y + 5, which: 'skill' });   // (the living menu world has only a Spell Portal)
+  return c;
+};
 FA.portal = which => { const p = G.fac.pp; return { x: p.x, y: which === 'skill' ? p.y + 4 : p.y }; };   // top cell of a portal
 // ----- the Stockpile: a physical inventory made of Stockpile tiles (G.fac.land === 2). One tile holds ONE kind, up to CFG.stockCap of it; a kind with more
 // spreads over more tiles. G.stock[kind] is the count, the tiles each kind sits on are worked out from it (G.fac.slots: kind -> [tile index], kept by FA.pileSync).
@@ -301,6 +305,14 @@ FA.onComplete = function (b, quiet) {
     FA.burst(b.x + 0.5, b.y + 0.5, '#ffe36b', 22);
     AU.sfx('complete');
     b.pop = 0.5;
+    FA.landPuff(b.x + 0.5, b.y + 0.5);   // a finished building lands with the same small puff of dust the starting buildings drop in with
+  }
+};
+// the small landing puff: a ring of dust kicked up round a spot (a finished building, a starter building falling out of its portal)
+FA.landPuff = function (cx, cy) {
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * 6.283 + Math.random() * 0.3, s = 0.9 + Math.random() * 0.8;
+    G.fac.parts.push({ x: cx + Math.cos(a) * 0.45, y: cy + Math.sin(a) * 0.45, z: 0.05, vx: Math.cos(a) * s, vy: Math.sin(a) * s, vz: 0.5 + Math.random() * 0.5, g: 2, t: 0.45 + Math.random() * 0.2, col: i % 3 ? '#f4efe0' : '#cdbf9a', dust: true });
   }
 };
 FA.addBelt = function (x, y, dir) {

@@ -1,10 +1,10 @@
 'use strict';
-// Player select + cosmetics. Before a game starts each controller picks a job (Builder / Wizard), then each job is dressed up from
-// the unlocked cosmetics. Cosmetics are purely visual and are unlocked by achievements; the achievements and the chosen looks live in
-// a profile in localStorage (not in a save), so they carry over to every slot.
+// Cosmetics + the profile. Before a game starts each character is dressed up in the living menu world (js/menu.js): every option is a floor plate and walking onto
+// an unlocked one equips it. Cosmetics are purely visual and are unlocked by achievements; the achievements and the chosen looks live in a profile in localStorage
+// (not in a save), so they carry over to every slot. (The old DOM player-select screen is gone; this file is the catalogue, the achievements and the profile.)
 const Players = (() => {
-const Players = { prof: null, open_: false, step: 1, t: 0, ready: { builder: false, wizard: false }, goT: 0, foc: {}, achOpen: false, chips: { kb: 0, p0: -1, p1: 1 }, cb: null, checkT: 1, pads: '', navs: { p0: { k: '', t: 0 }, p1: { k: '', t: 0 } } };
-// who drives what in a running game (G.ctl is a copy): pb / pw = index into IN.pad (-1 = none), kbB / kbW = the keyboard plays that job
+const Players = { prof: null, chips: { kb: 0, p0: -1, p1: 1 }, checkT: 1 };   // (chips: the old player screen's controller positions, kept in the profile untouched)
+// who drives what in a running game (G.ctl is a copy): pb / pw = index into IN.pad (-1 = none), kbB / kbW = the keyboard plays that job. The menu world sets it when the game starts.
 Players.ctl = { kbB: true, kbW: true, pb: 0, pw: 1 };
 
 // ---------- the catalogue ----------
@@ -164,7 +164,7 @@ Players.load = function () {
 Players.save = function () {
   try { localStorage.setItem('wands_profile', JSON.stringify({ ach: Players.prof.ach, seen: Players.prof.seen, look: Players.prof.look, roles: Players.chips })); } catch (e) { /* private mode: the profile just doesn't stick */ }
 };
-Players.init = function () { Players.load(); Players.applyLook(); Players.bindDom(); };
+Players.init = function () { Players.load(); Players.applyLook(); };
 
 // ---------- sprites from a look ----------
 Players.palette = function (role, l) {
@@ -222,7 +222,7 @@ Players.check = function () {
   if (!got.length) return;
   Players.save();
   AU.sfx('chest');
-  if (got.length > 3) { for (const s of ['L', 'R']) UI.toast(got.length + ' achievements unlocked! New looks wait on the player screen.', s, 'ic_trophy'); return; }
+  if (got.length > 3) { for (const s of ['L', 'R']) UI.toast(got.length + ' achievements unlocked! New looks wait in the character select.', s, 'ic_trophy'); return; }
   for (const a of got) {
     const sides = a.who === 'B' ? ['L'] : a.who === 'W' ? ['R'] : ['L', 'R'];
     const items = Players.unlocksOf(a.id).filter(u => u.role === (a.who === 'B' ? 'builder' : a.who === 'W' ? 'wizard' : u.role));
@@ -231,268 +231,37 @@ Players.check = function () {
   }
 };
 
-// ---------- the screen ----------
-// what each controller does, from where the chips sit (-1 = Builder side, 0 = middle, 1 = Wizard side)
-Players.derive = function () {
-  const ch = Players.chips;
-  let pb = -1, pw = -1;
-  [0, 1].forEach(i => { if (!IN.pad[i]) return; const p = ch['p' + i]; if (p < 0 && pb < 0) pb = i; if (p > 0 && pw < 0) pw = i; });
-  const kbB = ch.kb < 0 || (ch.kb === 0 && pb < 0), kbW = ch.kb > 0 || (ch.kb === 0 && pw < 0);
-  return { kbB, kbW, pb, pw, ok: (kbB || pb >= 0) && (kbW || pw >= 0) };
-};
-const $p = () => document.getElementById('players');
-Players.open = function (cb) {
-  if (!Players.prof) Players.load();
-  Players.cb = cb; Players.step = 1; Players.ready = { builder: false, wizard: false }; Players.goT = 0; Players.achOpen = false; Players.msg = '';
-  for (const r in Players.CATS) Players.foc[r] = { row: 0, col: Math.max(0, Players.CATS[r][0].opts.findIndex(x => x.id === Players.prof.look[r][Players.CATS[r][0].key])) };
-  Players.pads = Players.padSig();
-  Players.open_ = true;
-  STATE = 'select';
-  UI.show('menu', false); UI.show('players', true);
-  Players.render();
-  AU.sfx('menu_open');
-};
-Players.cancel = function () {
-  if (Players.achOpen) { Players.achOpen = false; Players.render(); return; }
-  Players.open_ = false; Players.cb = null;
-  STATE = 'menu';
-  UI.show('players', false); UI.show('menu', true);
-  AU.sfx('menu_close');
-};
-Players.padSig = () => (IN.pad[0] ? '1' : '0') + (IN.pad[1] ? '1' : '0');
-Players.next = function () {
-  const d = Players.derive();
-  if (!d.ok) { Players.msg = !(d.kbB || d.pb >= 0) ? 'Nobody has the Builder yet: move a controller to the left.' : 'Nobody has the Wizard yet: move a controller to the right.'; AU.sfx('error'); Players.render(); return; }
-  Players.step = 2; Players.msg = '';
-  AU.sfx('buy');
-  Players.render();
-};
-Players.back = function () {
-  if (Players.step === 2) {
-    if (Players.ready.builder || Players.ready.wizard) Players.ready = { builder: false, wizard: false }; else Players.step = 1;
-    AU.sfx('menu_close'); Players.render();
-  } else Players.cancel();
-};
-Players.move = function (chip, d) {
-  const p = Math.max(-1, Math.min(1, Players.chips[chip] + d));
-  if (p === Players.chips[chip]) return;
-  Players.chips[chip] = p; Players.msg = ''; AU.sfx('tab'); Players.render();
-};
-Players.equip = function (role, row, col, silent) {
-  const cat = Players.CATS[role][row], op = cat && cat.opts[col];
-  if (!op) return;
-  Players.foc[role] = { row, col };
-  if (!Players.has(op)) { if (!silent) AU.sfx('error'); Players.render(); return; }
-  Players.prof.look[role][cat.key] = op.id;
-  if (op.ach) Players.prof.seen[role + '.' + cat.key + '.' + op.id] = 1;
-  Players.ready[role] = false;
-  if (!silent) AU.sfx('pickup');
-  Players.render();
-};
-// move a role's cursor by one cell; walking onto an unlocked option puts it on at once (locked ones just show how to earn them)
-Players.walk = function (role, dx, dy) {
-  const f = Players.foc[role], cats = Players.CATS[role], l = Players.prof.look[role];
-  if (dy) {
-    const row = (f.row + dy + cats.length) % cats.length;
-    Players.foc[role] = { row, col: Math.max(0, cats[row].opts.findIndex(x => x.id === l[cats[row].key])) };
-    AU.sfx('tab'); Players.render(); return;
-  }
-  const n = cats[f.row].opts.length, col = (f.col + dx + n) % n;
-  Players.equip(role, f.row, col);
-};
-Players.toggleReady = function (role) {
-  Players.ready[role] = !Players.ready[role];
-  AU.sfx(Players.ready[role] ? 'buy' : 'menu_close');
-  Players.goT = 0; Players.render();
-};
-Players.commit = function () {
-  const d = Players.derive();
-  Players.ctl = { kbB: d.kbB, kbW: d.kbW, pb: d.pb, pw: d.pw };
+// ---------- the menu world's side of it (js/menu.js) ----------
+// There is no player-select screen any more: the cosmetic options are floor plates in the living menu world (Menu.specs 'cs'), and a character stepping onto one equips it
+// through Players.equipLocal. These helpers are all the plates need: the profile (above), thumbnails for the plates, and which option is on.
+Players.selId = (role, catKey) => (Players.prof.look[role] || {})[catKey];
+Players.equipLocal = function (role, catKey, optId) {
+  const cat = Players.CATS[role].find(c => c.key === catKey), op = cat && cat.opts.find(x => x.id === optId);
+  if (!op) return false;
+  if (!Players.has(op)) return false;   // still locked: the plate only shows what earns it
+  Players.prof.look[role][catKey] = op.id;
+  if (op.ach) Players.prof.seen[role + '.' + catKey + '.' + op.id] = 1;
   Players.save();
   Players.applyLook();
-  Players.open_ = false;
-  UI.show('players', false);
-  const cb = Players.cb; Players.cb = null;
-  AU.sfx('victory');
-  if (cb) cb();
+  return true;
 };
-
-// ---- markup
-const isNew = (role, cat, op) => !!op.ach && Players.has(op) && !Players.prof.seen[role + '.' + cat.key + '.' + op.id];
+// a little canvas for a cosmetic option's plate (swatches and trail dots are drawn by the plate itself): a hat on top of a head, a staff head
 const thumbCache = {};
-function dataURL(rows, pal, k) {
-  const c = mapSprite(rows, pal);
-  return mk(c.width * k, c.height * k, x => { x.imageSmoothingEnabled = false; x.drawImage(c, 0, 0, c.width * k, c.height * k); }).toDataURL();
-}
-function thumb(role, cat, op) {
+Players.thumb = function (role, cat, op) {
   const l = Players.prof.look[role];
-  if (cat.kind === 'color') return '<i class="sw" style="background:linear-gradient(135deg,' + op.a + ' 50%,' + op.b + ' 50%)"></i>';
-  if (cat.kind === 'trail') return op.cols ? '<span class="dots">' + op.cols.slice(0, 4).map(c => '<b style="background:' + c + '"></b>').join('') + '</span>' : UI.img('ic_x', 16);
   if (cat.kind === 'hat') {
     const key = role + op.id + l.hatc + l.skin;
-    if (!thumbCache[key]) thumbCache[key] = dataURL(op.rows.concat((role === 'builder' ? BODY_B : BODY_W).slice(0, 3)), Players.palette(role, Object.assign({}, l, { hat: op.id })), 3);
-    return '<img src="' + thumbCache[key] + '">';
+    return thumbCache[key] || (thumbCache[key] = mapSprite(op.rows.concat((role === 'builder' ? BODY_B : BODY_W).slice(0, 3)), Players.palette(role, Object.assign({}, l, { hat: op.id }))));
   }
-  const key = 'staff' + op.id;
-  if (!thumbCache[key]) thumbCache[key] = dataURL(op.head.concat(['.n.', '.n.', '.n.']), { g: op.gem, h: '#ffffff', n: '#7a4a22' }, 5);
-  return '<img src="' + thumbCache[key] + '">';
-}
-function infoText(role) {
-  const f = Players.foc[role], cat = Players.CATS[role][f.row], op = cat.opts[f.col];
-  if (Players.has(op)) return '<b>' + cat.label + ': ' + op.name + '</b>' + (op.ach ? '<span class="ok">Unlocked by ' + Players.achById[op.ach].name + '</span>' : '<span class="dim">Always yours</span>');
-  const a = Players.achById[op.ach], v = Math.min(a.n, Math.floor(a.val(G || { stats: {}, tree: {}, quest: { B: 0, W: 0 } })));
-  return '<b class="lk">' + UI.img('ic_lock', 16) + ' ' + op.name + '</b><span>Earn <em>' + a.name + '</em>: ' + a.text + (a.n > 1 && G ? ' (' + v + '/' + a.n + ')' : '') + '</span>';
-}
-function chipHtml(id, label, pos) {
-  return '<div class="chip" data-chip="' + id + '"><button data-act="chip" data-chip="' + id + '" data-d="-1"' + (pos <= -1 ? ' disabled' : '') + '>&lt;</button>' +
-    UI.img(id === 'kb' ? 'ic_mouse' : 'ic_pad', 20) + '<span>' + label + '</span>' +
-    '<button data-act="chip" data-chip="' + id + '" data-d="1"' + (pos >= 1 ? ' disabled' : '') + '>&gt;</button></div>';
-}
-function panelHtml(role, d) {
-  const cats = Players.CATS[role], l = Players.prof.look[role], f = Players.foc[role], s2 = Players.step === 2, B = role === 'builder';
-  const chips = [['kb', 'KEYBOARD']].concat(IN.pad[0] ? [['p0', 'PAD 1']] : [], IN.pad[1] ? [['p1', 'PAD 2']] : []).filter(c => Math.sign(Players.chips[c[0]]) === (B ? -1 : 1));
-  const rows = cats.map((cat, ri) => '<div class="pRow"><label>' + cat.label + '</label><div class="opts">' + cat.opts.map((op, ci) => {
-    const cls = ['opt', l[cat.key] === op.id ? 'sel' : '', s2 && f.row === ri && f.col === ci ? 'foc' : '', Players.has(op) ? '' : 'lock', isNew(role, cat, op) ? 'new' : ''].join(' ');
-    return '<button class="' + cls + '" data-act="opt" data-role="' + role + '" data-row="' + ri + '" data-col="' + ci + '" tabindex="-1">' + thumb(role, cat, op) +
-      (Players.has(op) ? '' : '<u>' + UI.img('ic_lock', 12) + '</u>') + (isNew(role, cat, op) ? '<s>NEW</s>' : '') + '</button>';
-  }).join('') + '</div></div>').join('');
-  const kbShared = d.kbB && d.kbW;
-  const hint = !s2 ? '' : B ? (d.kbB ? (kbShared ? 'WASD + E' : 'ARROWS / WASD + ENTER') + (d.pb >= 0 ? ' or PAD ' + (d.pb + 1) : '') : d.pb >= 0 ? 'PAD ' + (d.pb + 1) : '') : (d.kbW ? (kbShared ? 'ARROWS + .' : 'ARROWS / WASD + ENTER') + (d.pw >= 0 ? ' or PAD ' + (d.pw + 1) : '') : d.pw >= 0 ? 'PAD ' + (d.pw + 1) : '');
-  return '<div class="pPanel px' + (Players.ready[role] ? ' rdy' : '') + '" data-role="' + role + '"><div class="pHead"><h3>' + UI.img(B ? 'ic_wrench' : 'ic_hat', 24) + (B ? 'BUILDER' : 'WIZARD') + '</h3><div class="chips">' + chips.map(c => chipHtml(c[0], c[1], Players.chips[c[0]])).join('') + '</div></div>' +
-    '<div class="pBody"><div class="pLeft"><canvas class="pv" data-role="' + role + '" width="200" height="200"></canvas><div class="pKeys">' + hint + '</div></div><div class="pRows' + (s2 ? '' : ' dimmed') + '">' + rows + '</div></div>' +
-    '<div class="pInfo">' + infoText(role) + '</div>' +
-    (s2 ? '<button class="big' + (Players.ready[role] ? '' : ' ghost') + '" data-act="ready" data-role="' + role + '">' + (Players.ready[role] ? 'READY!' : 'READY?') + '</button>' : '') + '</div>';
-}
-function achHtml() {
-  const done = Players.ACH.filter(a => Players.prof.ach[a.id]).length;
-  const row = a => {
-    const ok = !!Players.prof.ach[a.id], v = G ? Math.min(a.n, Math.floor(a.val(G))) : 0;
-    const un = Players.unlocksOf(a.id).map(u => u.op.name).join(', ');
-    return '<div class="aRow' + (ok ? ' ok' : '') + '">' + UI.img(a.icon, 28) + '<div><b>' + a.name + '</b><span>' + a.text + (ok ? '' : (G && a.n > 1 ? ' (' + v + '/' + a.n + ' in this save)' : '')) + '</span><small>Unlocks: ' + un + '</small></div>' +
-      (ok ? UI.img('ic_check', 20) : UI.img('ic_lock', 20)) + '</div>';
-  };
-  const sec = (t, who) => '<h4>' + t + '</h4>' + Players.ACH.filter(a => a.who === who).map(row).join('');
-  return '<div class="pAch px"><h2>ACHIEVEMENTS ' + done + '/' + Players.ACH.length + '</h2><div class="aBody">' +
-    sec('BUILDER', 'B') + sec('WIZARD', 'W') + sec('BOTH', 'BW') + '</div><button class="big ghost" data-act="achClose">CLOSE</button></div>';
-}
-Players.render = function () {
-  if (!Players.open_) return;
-  const d = Players.derive(), s2 = Players.step === 2;
-  const pool = [['kb', 'KEYBOARD']].concat(IN.pad[0] ? [['p0', 'PAD 1']] : [], IN.pad[1] ? [['p1', 'PAD 2']] : []).filter(c => Players.chips[c[0]] === 0);
-  const lines = !s2
-    ? 'STEP 1: PICK A JOB FOR EACH CONTROLLER. Move left / right, then press A / ENTER.'
-    : 'STEP 2: DRESS UP. Up / down picks a row, left / right tries one on. A / ENTER = ready.';
-  const nUnl = Players.ACH.filter(a => Players.prof.ach[a.id]).length;
-  $p().innerHTML = '<h1>WHO IS PLAYING?</h1><div class="pStep">' + lines + '</div>' +
-    '<div class="pWrap">' + panelHtml('builder', d) +
-    '<div class="pPool px"><h3>' + (s2 ? 'JOBS' : 'WAITING') + '</h3>' + (s2 ? '<p>Shared keyboard: WASD plays the Builder, arrows the Wizard.</p>'
-      : pool.map(c => chipHtml(c[0], c[1], 0)).join('') + '<p>' + (pool.some(c => c[0] === 'kb') ? (d.kbB && d.kbW ? 'The keyboard plays both jobs.' : d.kbB ? 'The keyboard plays the Builder.' : d.kbW ? 'The keyboard plays the Wizard.' : 'The keyboard sits this one out.') : '') + '</p>' +
-        (IN.pad[0] ? '' : '<p class="dim">Press a button on a controller to bring it in.</p>')) + '</div>' +
-    panelHtml('wizard', d) + '</div>' +
-    '<div class="pMsg">' + (Players.msg || (d.ok ? '' : 'Someone has to take each job.')) + '</div>' +
-    '<div class="pBar"><button class="big ghost" data-act="back">BACK</button><button class="big ghost" data-act="ach">' + UI.img('ic_trophy', 20) + 'ACHIEVEMENTS ' + nUnl + '/' + Players.ACH.length + '</button>' +
-    (s2 ? '' : '<button class="big" data-act="next"' + (d.ok ? '' : ' disabled') + '>NEXT</button>') + '</div>' + (Players.achOpen ? achHtml() : '');
-};
-Players.bindDom = function () {
-  const root = $p();
-  root.addEventListener('click', e => {
-    const b = e.target.closest('[data-act]');
-    if (!b || b.disabled || !Players.open_) return;
-    const a = b.dataset.act;
-    if (a === 'chip') Players.move(b.dataset.chip, +b.dataset.d);
-    else if (a === 'opt') Players.equip(b.dataset.role, +b.dataset.row, +b.dataset.col);
-    else if (a === 'ready') Players.toggleReady(b.dataset.role);
-    else if (a === 'next') Players.next();
-    else if (a === 'back') Players.back();
-    else if (a === 'ach') { Players.achOpen = true; AU.sfx('menu_open'); Players.render(); }
-    else if (a === 'achClose') Players.cancel();
-  });
-  root.addEventListener('mouseover', e => {   // hovering an option shows what it is (and how to earn it) without putting it on
-    const b = e.target.closest('[data-act="opt"]');
-    if (!b || !Players.open_) return;
-    const f = Players.foc[b.dataset.role], row = +b.dataset.row, col = +b.dataset.col;
-    if (f.row === row && f.col === col) return;
-    Players.foc[b.dataset.role] = { row, col };
-    const el = root.querySelector('.pPanel[data-role="' + b.dataset.role + '"] .pInfo');
-    if (el) el.innerHTML = infoText(b.dataset.role);
-    root.querySelectorAll('.pPanel[data-role="' + b.dataset.role + '"] .opt.foc').forEach(x => x.classList.remove('foc'));
-    if (Players.step === 2) b.classList.add('foc');
-  });
-};
-
-// ---- input + previews (called every frame while the screen is up)
-const dirOf = (p, n, dt) => {   // a pad stick / d-pad turned into single steps with key repeat
-  const ax = Math.abs(p.ix) > Math.abs(p.iy), dx = ax && Math.abs(p.ix) > 0.5 ? Math.sign(p.ix) : 0, dy = !ax && Math.abs(p.iy) > 0.5 ? Math.sign(p.iy) : 0, k = dx + ',' + dy;
-  if (!dx && !dy) { n.k = ''; n.t = 0; return null; }
-  if (k !== n.k) { n.k = k; n.t = 0.35; return [dx, dy]; }
-  if ((n.t -= dt) <= 0) { n.t = 0.12; return [dx, dy]; }
+  if (cat.kind === 'staff') {
+    const key = 'staff' + op.id;
+    return thumbCache[key] || (thumbCache[key] = mapSprite(op.head.concat(['.n.', '.n.', '.n.']), { g: op.gem, h: '#ffffff', n: '#7a4a22' }));
+  }
   return null;
 };
-const kh = (...codes) => codes.some(c => IN.hit(c));
-Players.tick = function (dt) {
-  if (!Players.open_) return;
-  Players.t += dt;
-  const sig = Players.padSig();
-  if (sig !== Players.pads) { Players.pads = sig; Players.ready = { builder: false, wizard: false }; Players.render(); }
-  const p = [IN.pad[0], IN.pad[1]], pd = [p[0] && dirOf(p[0], Players.navs.p0, dt), p[1] && dirOf(p[1], Players.navs.p1, dt)];
-  if (!p[0]) { Players.navs.p0.k = ''; } if (!p[1]) { Players.navs.p1.k = ''; }
-  const esc = kh('Escape', 'Backspace') || (p[0] && p[0].b) || (p[1] && p[1].b);
-  if (Players.achOpen) { if (esc || kh('Enter')) Players.cancel(); }
-  else if (Players.step === 1) {
-    if (kh('ArrowLeft', 'KeyA')) Players.move('kb', -1);
-    if (kh('ArrowRight', 'KeyD')) Players.move('kb', 1);
-    [0, 1].forEach(i => { if (pd[i] && pd[i][0]) Players.move('p' + i, pd[i][0]); });
-    if (kh('Enter', 'Space', 'KeyE', 'Period') || (p[0] && p[0].a) || (p[1] && p[1].a)) Players.next();
-    else if (esc) Players.back();
-  } else {
-    const d = Players.derive(), shared = d.kbB && d.kbW;
-    const act = (role, dir, ok) => { if (dir && dir[0]) Players.walk(role, dir[0], 0); else if (dir && dir[1]) Players.walk(role, 0, dir[1]); if (ok) Players.toggleReady(role); };
-    const kd = (l, r, u, dn) => { const dx = (kh(...r) ? 1 : 0) - (kh(...l) ? 1 : 0), dy = (kh(...dn) ? 1 : 0) - (kh(...u) ? 1 : 0); return dx || dy ? [dx, dx ? 0 : dy] : null; };
-    const WASD = [['KeyA'], ['KeyD'], ['KeyW'], ['KeyS']], ARR = [['ArrowLeft'], ['ArrowRight'], ['ArrowUp'], ['ArrowDown']], ALL = WASD.map((k, i) => k.concat(ARR[i]));
-    if (shared) { act('builder', kd(...WASD), kh('KeyE')); act('wizard', kd(...ARR), kh('Period', 'Enter')); }
-    else if (d.kbB) act('builder', kd(...ALL), kh('Enter', 'Space', 'KeyE', 'Period'));
-    else if (d.kbW) act('wizard', kd(...ALL), kh('Enter', 'Space', 'KeyE', 'Period'));
-    if (d.pb >= 0) act('builder', pd[d.pb], p[d.pb].a);
-    if (d.pw >= 0) act('wizard', pd[d.pw], p[d.pw].a);
-    if (esc) Players.back();
-    if (Players.ready.builder && Players.ready.wizard) { Players.goT += dt; if (Players.goT > 0.7) { Players.commit(); return; } } else Players.goT = 0;
-  }
-  Players.drawPreviews(dt);
-};
-
-// a looping walk-and-idle demo of each job's current look, with its footstep trail
-Players.pv = { builder: { parts: [], tp: 0 }, wizard: { parts: [], tp: 0 } };
-Players.drawPreviews = function (dt) {
-  const root = $p();
-  if (!root) return;
-  root.querySelectorAll('canvas.pv').forEach(cv => {
-    const role = cv.dataset.role, x = cv.getContext('2d'), st = Players.pv[role], l = Players.prof.look[role], key = JSON.stringify(l);
-    if (st.key !== key) { st.key = key; st.sp = Players.make(role, l); }
-    x.imageSmoothingEnabled = false;
-    x.clearRect(0, 0, 200, 200);
-    x.fillStyle = '#1a0f28'; x.fillRect(0, 0, 200, 200);
-    x.fillStyle = '#4a8a3a'; x.fillRect(0, 150, 200, 50);
-    x.fillStyle = '#5ab84a'; x.fillRect(0, 150, 200, 6);
-    const walking = Math.floor(Players.t / 2.4) % 2 === 1, S = 8, step = Math.sin(Players.t * 13) > 0;
-    const spr = role === 'builder' ? st.sp[walking ? (step ? 'builder2' : 'builder') : (Math.floor(Players.t / 1.2) % 4 === 3 ? 'builderC' : 'builder')] : st.sp.wizard;
-    const bob = walking ? (Math.abs(Math.sin(Players.t * 13)) > 0.5 ? 8 : 0) : (Math.sin(Players.t * 3) > 0.6 ? 8 : 0), fx = walking ? Math.sin(Players.t * 2.6) * 22 : 0;
-    const w = spr.width * S, h = spr.height * S, cx = 100 + fx - (role === 'wizard' ? 0 : 0);
-    x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(cx - 40, 150, 80, 8);
-    x.save(); x.translate(cx, 156 - bob);
-    const flip = role === 'wizard' ? 1 : 0;
-    if (flip) x.scale(-1, 1);
-    x.drawImage(spr, -(role === 'wizard' ? 6 : spr.width / 2) * S, -h, w, h);
-    x.restore();
-    // trail
-    const op = Players.optOf(role, 'trail', l.trail);
-    if (walking && op.cols && (st.tp -= dt) <= 0) { st.tp = 0.06; st.parts.push({ x: cx - 6 + Math.random() * 12, y: 154, vx: (Math.random() - 0.5) * 30, vy: -30 - Math.random() * 50, t: 0.7, col: op.cols[(Players.t * 20 | 0) % op.cols.length] }); }
-    for (let i = st.parts.length - 1; i >= 0; i--) {
-      const q = st.parts[i]; q.t -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 90 * dt;
-      if (q.t <= 0) { st.parts.splice(i, 1); continue; }
-      x.globalAlpha = Math.min(1, q.t * 2); x.fillStyle = q.col; x.fillRect(Math.round(q.x / 4) * 4, Math.round(q.y / 4) * 4, 8, 8);
-    }
-    x.globalAlpha = 1;
-  });
+// the achievements as the Achievements plates show them: [{ icon, name, text, ok, unlocks }]
+Players.achRows = function () {
+  return Players.ACH.map(a => ({ icon: a.icon, name: a.name, text: a.text, ok: !!Players.prof.ach[a.id], who: a.who, unlocks: Players.unlocksOf(a.id).map(u => u.op.name).join(', ') }));
 };
 return Players;
 })();

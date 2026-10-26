@@ -169,28 +169,7 @@
     <p id="loadMsg">CONJURING SPRITES...</p>
   </div>
 
-  <div id="menu" class="overlay hidden">
-    <h1 class="title big">WANDS <span>&amp;</span><br>WORKBENCHES</h1>
-    <p class="sub">Build the factory. Arm the wizard. Together.</p>
-    <div id="menuMain" class="menuBox">
-      <button class="big" id="mContinue"><i data-ic="ic_play" data-s="20"></i>CONTINUE</button>
-      <button class="big" id="mNew"><i data-ic="ic_tree" data-s="20"></i>NEW GAME</button>
-      <button class="big ghost" id="mLoad"><i data-ic="ic_folder" data-s="20"></i>LOAD GAME</button>
-      <button class="big ghost" id="mOnline"><i data-ic="ic_portal" data-s="20"></i>ONLINE</button>
-      <button class="big ghost" id="mHow"><i data-ic="ic_book" data-s="20"></i>HOW TO PLAY</button>
-      <button class="big ghost" id="mSet"><i data-ic="ic_gear" data-s="20"></i>SETTINGS</button>
-    </div>
-    <div id="menuSlots" class="menuBox sheet px hidden"></div>
-    <div id="menuHow" class="menuBox sheet wide px hidden"></div>
-    <div id="menuSet" class="menuBox sheet px hidden"></div>
-    <!-- online co-op (js/online.js): the host creates a room and gets a code, the guest joins with it -->
-    <div id="menuOnline" class="menuBox sheet px hidden"></div>
-    <div id="menuHost" class="menuBox sheet px hidden"></div>
-    <div id="menuJoin" class="menuBox sheet px hidden"></div>
-  </div>
-
-  <!-- who is playing: controller -> job, then cosmetics (js/players.js) -->
-  <div id="players" class="overlay hidden"></div>
+  <!-- the front door is the living menu world: it is drawn on the canvas (js/menu.js, js/menudraw.js), there is no DOM menu -->
 </div>
 
 <!-- "Pardon My Games" studio splash (js/intro.js), full-window above everything -->
@@ -224,6 +203,8 @@
 <script src="js/snapshot.js"></script>
 <script src="js/intro.js"></script>
 <script src="js/main.js"></script>
+<script src="js/menu.js"></script>
+<script src="js/menudraw.js"></script>
 <script src="js/online.js"></script>
 </body>
 </html>

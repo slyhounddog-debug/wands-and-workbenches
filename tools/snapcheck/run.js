@@ -27,6 +27,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'playwright-core');
     ['altar lit, ritual', W => { W.step(0.05, 80); const A = W.G.altar, w = W.G.w; A.lit = [true, true, true, true]; W.G.flags.warden = true; w.x = A.x - 3; w.y = A.y; w.time = 50; W.step(0.05, 20); }],   // all sockets lit, the Chimera ritual building
     ['boss out', W => { W.boss(); W.step(0.05, 60); }],
     ['skill tree open', W => { W.UI.openTree('L', true); }],
+    ['the menu world', W => { W.UI.openTree('L', false); W.Main.openMenu(); }],   // the living menu: plates, the belt line, a thrown spell in flight
   ];
   let bad = 0;
   const seen = new Map();

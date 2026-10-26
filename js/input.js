@@ -1,7 +1,7 @@
 'use strict';
 // Keyboard / mouse / gamepad collection. Gameplay reads this once per frame, then IN.endFrame() clears edges.
 const IN = {
-  keys: new Set(), pressed: new Set(),
+  keys: new Set(), pressed: new Set(), order: [],   // order: the keys pressed this frame in the order they went down (typing a room code)
   mouse: { x: 0, y: 0, l: false, r: false, lp: false, rp: false, inside: false },
   wheel: 0,
   pad: [null, null], prevBtn: [[], []], prevRs: [0, 0], padBlock: [false, false],
@@ -13,7 +13,7 @@ const IN = {
   const BLOCK = new Set(['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Slash', 'Space', 'Period', 'Comma', 'Quote', 'F3']);
   window.addEventListener('keydown', e => {
     if (BLOCK.has(e.code) && !(e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) e.preventDefault();
-    if (!e.repeat) { IN.pressed.add(e.code); IN.anyKey = true; }
+    if (!e.repeat) { IN.pressed.add(e.code); IN.order.push(e.code); IN.anyKey = true; }
     IN.keys.add(e.code);
   });
   window.addEventListener('keyup', e => { IN.keys.delete(e.code); });
@@ -46,7 +46,9 @@ const IN = {
   }, { passive: true });
   window.addEventListener('contextmenu', e => { if (e.target && e.target.id === 'cv') e.preventDefault(); });
   window.addEventListener('gamepadconnected', e => {
-    if (window.UI) UI.toast('Controller ' + (e.gamepad.index + 1) + ' connected' + (typeof G !== 'undefined' && G && G.ctl ? (G.ctl.pb === e.gamepad.index ? ': Builder' : G.ctl.pw === e.gamepad.index ? ': Wizard' : '') : ''), 'L', 'ic_pad');
+    const txt = 'Controller ' + (e.gamepad.index + 1) + ' connected' + (typeof G !== 'undefined' && G && G.ctl ? (G.ctl.pb === e.gamepad.index ? ': Builder' : G.ctl.pw === e.gamepad.index ? ': Wizard' : '') : '');
+    if (typeof G !== 'undefined' && G && G.menu && window.Menu) Menu.say(txt);   // (in the menu world it is a note on the canvas)
+    else if (window.UI) UI.toast(txt, 'L', 'ic_pad');
   });
 })();
 
@@ -94,7 +96,7 @@ IN.squelch = function () {
 };
 IN.shift = () => IN.down('ShiftLeft') || IN.down('ShiftRight');
 IN.endFrame = function () {
-  IN.pressed.clear();
+  IN.pressed.clear(); IN.order.length = 0;
   IN.mouse.lp = false; IN.mouse.rp = false; IN.mouse.mv = false;
   IN.wheel = 0;
   IN.anyKey = false;

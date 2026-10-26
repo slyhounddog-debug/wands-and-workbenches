@@ -43,7 +43,17 @@ const Net = {
   const qp = k => { const m = new RegExp('[?&]' + k + '=([^&]*)').exec(location.search); return m ? decodeURIComponent(m[1]) : ''; };
   Net.relay = !!qp('turn');
   const iceServers = () => (Net.relay ? ICE.iceServers.concat([{ urls: qp('turn'), username: qp('tuser'), credential: qp('tpass') }]) : ICE.iceServers);
-  const peerOpts = () => ({ config: { iceServers: iceServers() }, debug: 1 });
+  // PeerJS's own log (every signaling message it sends and receives, ICE events, errors) is kept in a small ring so a failed join can show what the handshake did
+  Net.plog = [];
+  Net.log = (...a) => {
+    const s = a.map(x => { if (x instanceof Error) return x.message; if (x && typeof x === 'object') { try { return JSON.stringify(x); } catch (e) { return '[object]'; } } return String(x); }).join(' ').replace(/\s+/g, ' ');
+    Net.plog.push(((now() - Net.t0) / 1000).toFixed(1) + 's ' + s.slice(0, 110));
+    if (Net.plog.length > 60) Net.plog.shift();
+    console.info('[peerjs]', s.slice(0, 300));
+  };
+  Net.t0 = performance.now();
+  Net.logText = n => Net.plog.slice(-n).join('\n');
+  const peerOpts = () => ({ config: { iceServers: iceServers() }, debug: 3, logFunction: (lvl, ...a) => Net.log(lvl >= 3 ? '' : 'L' + lvl, ...a) });
   const now = () => performance.now();
   const EDGES = ['a', 'b', 'x', 'y', 'lb', 'rb', 'rt', 'l3', 'back'];
   const HELD = ['xHeld', 'aHeld', 'bHeld', 'ltHeld', 'startHeld'];

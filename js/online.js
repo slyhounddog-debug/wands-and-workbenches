@@ -78,7 +78,8 @@ Main.hostHooks = {
       const s = el();
       if (!s || conn.open || Net.conn) return;
       const p = await Net.probe(conn), secs = Math.round((performance.now() - t0) / 1000);
-      s.innerHTML = 'Player 2 found you, connecting<span class="dots"></span><br><small>' + Net.probeText(p, Net.hdiag) + ' (' + secs + 's)</small>';
+      s.innerHTML = 'Player 2 found you, connecting<span class="dots"></span><br><small>' + Net.probeText(p, Net.hdiag) + ' (' + secs + 's)</small><pre class="plog"></pre>';
+      s.querySelector('.plog').textContent = Net.logText(9);
       setTimeout(tick, 1000);
     };
     tick();
@@ -243,7 +244,7 @@ UI.joinPage = function (msg, isErr) {
     if (code.length !== 6) { $('joinMsg').className = 'netStatus err'; $('joinMsg').textContent = 'The code has 6 letters and numbers.'; return; }
     inp.disabled = true; $('joinGo').disabled = true;
     $('joinMsg').className = 'netStatus'; $('joinMsg').innerHTML = 'Connecting<span class="dots"></span>';
-    Main.joinOnline(code).catch(e => UI.joinPage(e.message, true));
+    Main.joinOnline(code).catch(e => { UI.joinPage(e.message, true); const l = document.createElement('pre'); l.className = 'plog'; l.textContent = Net.logText(12); $('joinMsg').appendChild(l); });
   };
   inp.oninput = () => { const c = Net.cleanCode(inp.value); if (inp.value !== c) inp.value = c; };
   inp.onkeydown = e => { if (e.key === 'Enter') go(); e.stopPropagation(); };

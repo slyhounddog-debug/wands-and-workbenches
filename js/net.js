@@ -8,7 +8,8 @@
 // Wire format (bump Net.VERSION on ANY change to it):
 //   guest -> host   { t: 'hello', v, tok }                       first message on a new connection (tok = this guest's random token: lets the SAME guest come back, nobody else)
 //                   { t: 'pad', s: <IN.pad shape>, q }           PAD_HZ, and at once when the input changes: the Wizard's pad (edges latched between sends, held state every packet);
-//                                                                q counts the packets up: the host answers with G.na = the last q it applied (the guest's prediction replays what is newer)
+//                                                                q counts the packets up: the host answers with G.na = the last q it applied, G.nat = how long before the picture it
+//                                                                arrived and G.nft = the picture's moment on the host's clock (the guest's prediction replays from there)
 //                   { t: 'buy', id }                             skill tree purchase intent (the host validates it with the usual cost logic)
 //                   { t: 'ping', at }  { t: 'bye' }
 //   host -> guest   { t: 'welcome', v, seed, sig, runMeta }      handshake reply; the snapshot stream starts after it
@@ -21,7 +22,7 @@
 // hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
   VERSION: 4,
-  BUILD: 10,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
+  BUILD: 11,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
   SNAP_HZ: 20, PAD_HZ: 60,
@@ -36,9 +37,9 @@ const Net = {
   hooks: {}, errs: [], diag: null, hdiag: null, nextAt: 0, takenAt: 0, snapGap: 0.05,
   stats: { rawKB: 0, zipKB: 0, maxZip: 0, snapsOut: 0, bytesOut: 0, kbps: 0, rtt: 0, skipped: 0, path: '', netRtt: 0, chan: '', loss: 0, draw: 0, _rx: 0, _hi: 0, _rx0: 0, _hi0: 0, _f: 0, fps: 0, _t: 0, _b: 0, _n: 0, total: 0 },
   // host
-  snapN: 0, snapAcc: 0, busy: false, gpad: null, gedge: null, gseq: 0, aseq: 0, gsig: '', padDirty: false, snapNow: false,
+  snapN: 0, snapAcc: 0, busy: false, gpad: null, gedge: null, gseq: 0, aseq: 0, aseqAt: 0, frameAt: 0, gsig: '', padDirty: false, snapNow: false,
   // guest
-  mute: false, lastN: 0, next: null, prev: null, latch: null, padAcc: 0, pingAcc: 0, pending: null, padSeq: 0, hist: [], padSig: '', simDelay: 0,
+  mute: false, lastN: 0, next: null, prev: null, latch: null, padAcc: 0, pingAcc: 0, pending: null, padSeq: 0, hist: [], padSig: '', simDelay: 0, frameTs: 0, prevTs: 0,
 };
 (function () {
   const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:global.stun.twilio.com:3478' }] };   // STUN only (PeerJS's own default adds a TURN relay: switched off on purpose)
@@ -256,7 +257,7 @@ const Net = {
     if (sig !== Net.gsig || EDGES.some(k => s[k])) { Net.gsig = sig; Net.padDirty = true; }   // a press, a release or a new direction: the guest is waiting to see what it did
   }
   // called every host frame, right after IN.pollPads: the guest's pad becomes the Wizard's pad (the dev bot's seam)
-  Net.drive = function () {
+  Net.drive = function (ts) {
     if (Net.role !== 'host' || !G || G.ctl.pw < 0) return;
     const g = Net.gpad || {}, e = Net.gedge || {};
     const pad = { ix: Math.max(-1, Math.min(1, g.ix || 0)), iy: Math.max(-1, Math.min(1, g.iy || 0)), rx: Math.max(-1, Math.min(1, g.rx || 0)), ry: Math.max(-1, Math.min(1, g.ry || 0)), cyc: e.cyc || 0, any: !!(g.any || Object.keys(e).length) };
@@ -267,6 +268,11 @@ const Net = {
     IN.pad[G.ctl.pw] = Net.state === 'live' ? pad : null;
     Net.gedge = null;
     if (Net.padDirty) { Net.padDirty = false; Net.snapNow = true; }   // (hostTick, after this frame's sim, sends a snapshot without waiting for the next 20 Hz slot)
+    // Times on the host's FRAME clock (the rAF timestamp the sim is stepped to): this frame's sim runs from the last frame's timestamp to ts with this pad, so a new packet
+    // counts from the last frame's timestamp, and the picture taken after this frame shows the moment ts
+    const t = ts || performance.now();
+    if (Net.gseq !== Net.aseq) Net.aseqAt = Net.frameAt || t;
+    Net.frameAt = t;
     Net.aseq = Net.gseq;   // every pad packet up to this number has now been used by the sim (the snapshot says so: G.na)
   };
   function guestGone(why) {
@@ -294,6 +300,8 @@ const Net = {
     const w = G && G.w;
     if (!w) return;
     G.na = Net.aseq;   // the last guest pad packet the sim has used: the guest replays the newer ones on top of this picture (Main.predSnap)
+    G.nat = Math.max(0, Math.round(Net.frameAt - Net.aseqAt)) / 1000;   // how long before this picture's moment the sim started using it
+    G.nft = Math.round(Net.frameAt);   // and the moment itself, on the host's clock: the guest learns the steady offset between the two clocks from these (Main.predSnap)
     for (const [p, k] of STAMP) {
       const arr = G[p] && G[p][k];
       if (arr) for (const o of arr) if (o && typeof o === 'object' && o.uid === undefined) o.uid = w.uidN = (w.uidN || 0) + 1;
@@ -570,7 +578,7 @@ const Net = {
       Net.padAcc = Math.min(Net.padAcc - 1 / Net.PAD_HZ, 1 / Net.PAD_HZ); if (Net.padAcc < 0) Net.padAcc = 0;
       const s = Net.padNow(), q = ++Net.padSeq, msg = { t: 'pad', s, q };
       Net.padSig = s.ix + ',' + s.iy;
-      Net.hist.push({ q, t: performance.now(), ix: s.ix, iy: s.iy, a: !!s.a }); if (Net.hist.length > 80) Net.hist.shift();
+      Net.hist.push({ q, t: Net.prevTs || performance.now(), ix: s.ix, iy: s.iy, a: !!s.a });   // (from the start of this frame's interval: Main.predictFrame applies it from there) if (Net.hist.length > 80) Net.hist.shift();
       later(() => send(Net.conn, msg));
       Net.latch = {};
     }

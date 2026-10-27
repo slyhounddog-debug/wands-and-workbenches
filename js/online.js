@@ -239,13 +239,28 @@ Main.predSnap = function (s) {
   if (!pr.ok) { pr.s = null; pr.ex = pr.ey = 0; return; }
   const o = {};
   for (const f of PFIELDS) o[f] = w[f];
-  const k = slowOf(w), now = performance.now(), pend = Net.hist.filter(h => h.q > (s.na || 0));
+  // Which moment on the guest's clock does this picture show? Packet na was sent at H[i0].t and arrived (host clock) at nft - nat, so D = sent - arrived = minus (one-way delay +
+  // the clocks' offset), and the picture's moment is nft + D. One sample of D is noisy (the host notices a packet only when its frame is free, the network jitters: a
+  // different few ms each picture, which showed as a tug back and forth while walking), but the noise only ever makes a packet LATE, so the steadiest estimate is the
+  // largest D of the last two seconds (Main.pr.dq). Then every input from that moment to now is replayed (packet na only for what it had left; a newer packet's button
+  // press always, the host has not seen it).
+  // replay up to the moment the current copy stands for (Main.predictFrame then steps it on to this frame), so the two can be compared like for like
+  const now = pr.s && pr.lastTs ? pr.lastTs : (Net.prevTs || performance.now());
+  pr.lastTs = now;
+  const k = slowOf(w), na = s.na || 0, H = Net.hist;
+  let i0 = H.findIndex(h => h.q >= na);
+  if (i0 < 0) i0 = H.length;
+  let t0 = H[i0] ? H[i0].t : now;
+  if (H[i0] && H[i0].q === na && s.nft) {
+    const dq = pr.dq || (pr.dq = []);
+    dq.push(H[i0].t - (s.nft - (s.nat || 0) * 1000)); if (dq.length > 40) dq.shift();
+    t0 = s.nft + Math.max(...dq);
+  }
   let left = 0.6;   // never replay more than this many seconds
-  for (let i = 0; i < pend.length && left > 0; i++) {
-    const h = pend[i];
-    let dur = Math.min(left, Math.max(0, ((i + 1 < pend.length ? pend[i + 1].t : now) - h.t) / 1000));
+  for (let i = i0; i < H.length && left > 0; i++) {
+    const h = H[i], a = Math.max(h.t, t0), b = i + 1 < H.length ? H[i + 1].t : now;
+    let dur = Math.min(left, Math.max(0, (b - a) / 1000)), press = h.q > na && h.a;
     left -= dur;
-    let press = h.a;
     while (dur > 1e-4 || press) { const d = Math.min(dur, 1 / 60); Main.walkStep(o, d, h.ix, h.iy, press, k); press = false; dur -= d; if (d === 0) break; }
   }
   // what was drawn a moment ago, against where the replay says he is now: fade the difference out, unless it is big (a teleport, a long stall)
@@ -253,6 +268,7 @@ Main.predSnap = function (s) {
   if (cur) {
     const ex = cur.x + pr.ex - o.x, ey = cur.y + pr.ey - o.y, e = Math.hypot(ex, ey);
     pr.fix = pr.fix * 0.8 + e * 0.2;
+    pr.last = { e: +e.toFixed(3), ex: +ex.toFixed(3), ey: +ey.toFixed(3), na: s.na, nat: s.nat, hx: +w.x.toFixed(3), hy: +w.y.toFixed(3), hvx: +w.vx.toFixed(2), hvy: +w.vy.toFixed(2), hurt: w.hurtT > 0, kick: !!w.kick, t: Math.round(performance.now()) };   // (diagnostics: the last correction)
     if (e < 2.5) { pr.ex = ex; pr.ey = ey; } else { pr.ex = pr.ey = 0; }
   } else { pr.ex = pr.ey = 0; pr.bob = w.bob || 0; }
   pr.s = o;
@@ -261,8 +277,9 @@ Main.predSnap = function (s) {
 Main.predictFrame = function (dt) {
   const pr = Main.pr, w = G && G.w;
   if (!pr.ok || !pr.s || !w || w.dead) return;
-  const L = Net.liveInput(), k = slowOf(w);
-  let left = Math.min(dt, 0.1), spd = 0, press = L.a;
+  const L = Net.liveInput(), k = slowOf(w), ts = Net.frameTs || performance.now();
+  let left = Math.max(0, Math.min(0.25, (ts - (pr.lastTs || ts)) / 1000)), spd = 0, press = L.a;
+  pr.lastTs = ts;
   while (left > 1e-5 || press) { const d = Math.min(left, 1 / 60); spd = Main.walkStep(pr.s, d, L.ix, L.iy, press, k); press = false; left -= d; if (d === 0) break; }
   const f = Math.exp(-dt / 0.1); pr.ex *= f; pr.ey *= f;
   for (const key of PFIELDS) w[key] = pr.s[key];
@@ -272,6 +289,7 @@ Main.predictFrame = function (dt) {
   w.bob = pr.bob;
 };
 Main.guestFrame = function (dt, ts) {
+  Net.prevTs = Net.frameTs || ts; Net.frameTs = ts;   // (the prediction's clock: frame timestamps, the same clock the host stamps its pictures with)
   const s = Net.takeSnap();
   if (s) {
     const old = G;

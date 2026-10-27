@@ -788,7 +788,7 @@ function frame(ts) {
   lastTs = ts;
   IN.pollPads();
   if (DevBot.on) DevBot.drive(dt);   // dev-only Wizard bot: writes the Wizard's pad state, nothing else
-  if (Net.role === 'host') Net.drive();   // online: the guest's pad becomes the Wizard's pad, the same seam
+  if (Net.role === 'host') Net.drive(ts);   // online: the guest's pad becomes the Wizard's pad, the same seam
   if (STATE === 'guest') {
     try { Main.guestFrame(dt, ts); } catch (e) { R.defer = null; UI.err(e); }
   } else if (STATE === 'menu' && G && G.menu) {

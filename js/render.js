@@ -1246,6 +1246,45 @@ R.prompt = function (ctx, x, y, key, label, maxX, minX) {
 
 // ===================== WIZARD WORLD =====================
 const MENU_TOP = { wiz: 1, menu: 1, enemy: 1, drop: 1, pick: 1 };
+// THE GROUND CACHE. The wilds' ground (one flat diamond per tile, its colour from WZ.terrain / WZ.palette) never changes after WZ.generate, yet it was ~2000 path fills a
+// frame at the online guest's full width (most of a slow laptop's frame). It is drawn once per GC x GC tile chunk into a canvas at buffer resolution and the visible chunks
+// are pasted back to front. Pure function of the world seed (like WZ.bucket in the photo test's ALLOW), so it is NOT render state that could differ from a snapshot; it
+// is a module variable, not a field of R, so the photo test's trip wires never see it. What changes (pond glints, bog marks, scorch, chasms, spell ice / walls) is still
+// drawn every frame on top. R.noGroundCache = true draws the old way (to compare).
+const GC = 16, GROUND = { ter: null, chunks: new Map() };
+function groundChunk(cx, cy, v) {
+  if (GROUND.ter !== WZ.terrain) { GROUND.ter = WZ.terrain; GROUND.chunks.clear(); }
+  const key = cx * 4096 + cy;
+  let ch = GROUND.chunks.get(key);
+  if (ch) return ch;
+  const hw = v.hw, hh = v.hh, P = v.T.P, pad = 2 * P, W = 2 * GC * hw + 2 * pad, H = 2 * GC * hh + 2 * pad, OX = GC * hw + pad;
+  const c = document.createElement('canvas'); c.width = W / P; c.height = H / P;
+  const x = c.getContext('2d'), ter = WZ.terrain, pal = WZ.palette, WW = CFG.WW, WH = CFG.WH;
+  x.setTransform(1 / P, 0, 0, 1 / P, 0, 0);
+  for (let d = 0; d <= 2 * GC - 2; d++) for (let lx = Math.max(0, d - GC + 1); lx <= Math.min(GC - 1, d); lx++) {   // back to front, as the old loop drew them
+    const ly = d - lx, tx = cx * GC + lx, ty = cy * GC + ly;
+    if (tx >= WW || ty >= WH) continue;
+    x.fillStyle = pal[ter[ty * WW + tx]];
+    diamond(x, (lx - ly) * hw + OX, (lx + ly + 1) * hh + pad, hw + 1.5, hh + 1.5); x.fill();
+  }
+  ch = { c, W, H, OX, pad };
+  GROUND.chunks.set(key, ch);
+  return ch;
+}
+// paste the chunks that cover the screen (left..right), back to front (by cx + cy: the seams overlap the way the tiles did)
+function drawGround(ctx, v, left, right) {
+  const hw = v.hw, hh = v.hh, WW = CFG.WW, WH = CFG.WH;
+  const tl = R.toTile(v, left, 0), tr = R.toTile(v, right, 0), bl = R.toTile(v, left, CFG.H), br = R.toTile(v, right, CFG.H);
+  const x0 = Math.max(0, Math.floor(Math.min(tl[0], bl[0]) / GC) - 1), x1 = Math.min(Math.ceil(WW / GC) - 1, Math.floor(Math.max(tr[0], br[0]) / GC) + 1);
+  const y0 = Math.max(0, Math.floor(Math.min(tl[1], tr[1]) / GC) - 1), y1 = Math.min(Math.ceil(WH / GC) - 1, Math.floor(Math.max(bl[1], br[1]) / GC) + 1);
+  for (let s = x0 + y0; s <= x1 + y1; s++) for (let cx = Math.max(x0, s - y1); cx <= Math.min(x1, s - y0); cx++) {
+    const cy = s - cx, X = cx * GC, Y = cy * GC;
+    const sx = (X - Y) * hw + v.ox, sy = (X + Y) * hh + v.oy;   // where the chunk's tile (0, 0) puts its local origin
+    const g = groundChunk(cx, cy, v), lx = sx - g.OX;   // the chunk canvas's left edge
+    if (lx > right || lx + g.W < left || sy - g.pad > CFG.H || sy - g.pad + g.H < 0) continue;
+    ctx.drawImage(g.c, lx, sy - g.pad, g.W, g.H);
+  }
+}
 R.drawWorld = function (main, dt, rect) {
   const T = CFG.WT, S = T.S, P = T.P, w = G.w;
   const rc = R.rect = rect || { x0: CFG.HALF, w: CFG.HALF }, X0 = rc.x0, RW = rc.w;
@@ -1268,7 +1307,8 @@ R.drawWorld = function (main, dt, rect) {
   const WW = CFG.WW, WH = CFG.WH;
   const objs = [];
   const bk = WZ.bucket, ter = WZ.terrain, pal = WZ.palette;
-  const wt = w.t, wind = G.fac.weather.air;
+  const wt = w.t, wind = G.fac.weather.air, cached = !R.noGroundCache;
+  if (cached) drawGround(ctx, v, left, right);
   for (let d = Math.max(0, d0); d <= Math.min(WW + WH - 2, d1); d++) {
     for (let u = uMin; u <= uMax; u++) {
       if (((d + u) & 1) !== 0) continue;
@@ -1277,8 +1317,7 @@ R.drawWorld = function (main, dt, rect) {
       const i = y * WW + x;
       const sx = (x - y) * v.hw + v.ox, sy = (x + y + 1) * v.hh + v.oy;
       const tt = ter[i], ty = tt >> 3, tm = w.tmodN ? w.tmod[i] : null;
-      ctx.fillStyle = pal[tt];
-      diamond(ctx, sx, sy, v.hw + 1.5, v.hh + 1.5); ctx.fill();
+      if (!cached) { ctx.fillStyle = pal[tt]; diamond(ctx, sx, sy, v.hw + 1.5, v.hh + 1.5); ctx.fill(); }
       if (tm && tm.k === 'ice') R.drawIce(ctx, v, sx, sy, tm, x, y, wt);
       else if (ty === T_POND && ((x * 7 + y * 3 + Math.floor(wt * 2)) % 9) === 0) { ctx.fillStyle = '#bfe6ff'; ctx.fillRect(Math.round(sx / 3) * 3 - 9, Math.round(sy / 3) * 3, 18, 3); }
       else if (ty === T_BOG && ((x * 5 + y * 11) % 4) === 0) { ctx.fillStyle = '#4a5a2a'; ctx.fillRect(Math.round(sx / 3) * 3 - 6, Math.round(sy / 3) * 3 - 3, 12, 6); }
@@ -1405,8 +1444,12 @@ R.drawPip = function (main, dt) {
   let sc = R.bufs.pip;
   if (!sc) { const c = document.createElement('canvas'); c.width = CFG.HALF; c.height = CFG.H; sc = R.bufs.pip = { c, x: c.getContext('2d') }; }
   const wilds = Net.role === 'host', v = wilds ? R.wv : R.fv, rect = { x0: 0, w: CFG.HALF, pip: true };
-  sc.x.clearRect(0, 0, CFG.HALF, CFG.H);
-  if (wilds) R.drawWorld(sc.x, dt, rect); else R.drawFactory(sc.x, dt, rect);
+  sc.acc = (sc.acc || 0) + dt;
+  if (!sc.drawn || sc.acc >= 1 / 24) {   // a whole second world is the most expensive thing on screen: redraw the small picture ~24 times a second, not every frame
+    sc.x.clearRect(0, 0, CFG.HALF, CFG.H);
+    if (wilds) R.drawWorld(sc.x, sc.acc, rect); else R.drawFactory(sc.x, sc.acc, rect);
+    sc.drawn = true; sc.acc = 0;
+  }
   const CH = 500, sy = Math.max(0, Math.min(CFG.H - CH, Math.round(v.cy - CH / 2)));
   const W = Math.round(CFG.W * pct / 100), H = Math.round(W * CH / CFG.HALF), x = CFG.W - W - 16, y = CFG.H - H - 16;
   main.save();

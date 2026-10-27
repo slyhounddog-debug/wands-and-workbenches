@@ -125,6 +125,8 @@ async function boot(browser, name) {
     return Math.round((out[2] + out[3]) / 2);
   };
   const predOf = on => gp.evaluate(on => { if (typeof Main.PREDICT !== 'undefined') Main.PREDICT = on; return typeof Main.PREDICT !== 'undefined'; }, on);
+  // (no wild monsters while these measure: walking back and forth for half a minute among them sometimes got him killed, and a dead Wizard is neither predicted nor rolls)
+  await hp.evaluate(() => { const W = __wands; W.CFG.world._cap = W.CFG.world.cap; W.CFG.world.cap = 0; W.G.w.enemies.length = 0; W.G.w.hp = W.WZ.maxHp(); });
   await predOf(false);
   const latOff0 = await latency(0), latOff75 = await latency(75);
   const hasPred = await predOf(true);
@@ -133,11 +135,19 @@ async function boot(browser, name) {
   if (hasPred) ok(latOn75 < 90, 'with prediction the guest\'s own Wizard answers a key press at once even on a 150 ms ping', latOn75 + ' ms');
   if (hasPred) {   // is the prediction RIGHT: a zig-zag and a roll on a 150 ms ping end where the host says he is, and the corrections along the way stay small
     for (const p of [hp, gp]) await p.evaluate(() => { __wands.Net.simDelay = 75; }); await sleep(1500);
-    await hp.evaluate(() => { __wands.G.w.rollCd = 0; });
+    await hp.evaluate(() => { const W = __wands; W.G.w.hp = W.WZ.maxHp(); W.G.w.enemies.length = 0; W.G.w.rollCd = 0; });   // (alive and alone: the long walks meet wild monsters, and a dead Wizard cannot roll)
     let maxFix = 0;
     for (const k of ['KeyD', 'KeyS', 'KeyA', 'KeyW', 'KeyD', 'KeyS']) { await gp.keyboard.down(k); await sleep(380); maxFix = Math.max(maxFix, await gp.evaluate(() => __wands.Main.pr.fix)); await gp.keyboard.up(k); await sleep(140); }
-    await sleep(600); await gp.keyboard.down('KeyD'); await sleep(100); await gp.keyboard.down('Space'); await sleep(70);
+    await hp.evaluate(() => { const W = __wands; W.G.w.hp = W.WZ.maxHp(); W.G.w.enemies.length = 0; W.G.w.rollCd = 0; });
+    await gp.keyboard.down('KeyS'); await sleep(1600);   // a steady walk: the misses at each new picture (no turns in it)
+    const misses = await gp.evaluate(() => new Promise(res => { const m = []; let last = __wands.Net.lastN; const f = () => { if (__wands.Net.lastN !== last) { last = __wands.Net.lastN; m.push(__wands.Main.pr.fix); (window.__tr = window.__tr || []).push(__wands.Main.pr.last); } if (m.length < 15 && performance.now() - t0 < 5000) requestAnimationFrame(f); else res(m); }; const t0 = performance.now(); f(); }));
+    await gp.keyboard.up('KeyS');
+    if (process.env.TRACE) console.log((await gp.evaluate(() => window.__tr)).map(x => JSON.stringify(x)).join('\n'));
+    const med = misses.slice().sort((x, y) => x - y)[misses.length >> 1];
+    ok(med < 0.01 && Math.max(...misses) < 0.12, 'walking straight on a 150 ms ping the prediction needs (almost) no correction: no rubber banding', 'median ' + med.toFixed(3) + ', worst ' + Math.max(...misses).toFixed(3) + ' tiles (the worst: reaching a shore / a foe bumping him)');
+    await sleep(600); await gp.keyboard.down('KeyD'); await sleep(100); await gp.keyboard.down('Space'); await sleep(120);   // (the host's answer cannot be back before ~200 ms at this ping: rolling by then is the prediction)
     const rolling = await gp.evaluate(() => __wands.G.w.roll > 0);
+    if (process.env.TRACE) console.log('ROLL', JSON.stringify(await gp.evaluate(() => { const p = __wands.Main.pr, w = __wands.G.w; return { ok: p.ok, s: p.s && { roll: p.s.roll, rollCd: p.s.rollCd, vx: p.s.vx }, wroll: w.roll, kick: !!w.kick, dead: w.dead, hurt: w.hurtT, mute: __wands.Net.mute }; })));
     await gp.keyboard.up('Space'); await sleep(300); await gp.keyboard.up('KeyD');
     await sleep(2500);
     const hpos = await hp.evaluate(() => [__wands.G.w.x, __wands.G.w.y]), gpos = await gp.evaluate(() => [__wands.G.w.x, __wands.G.w.y]);
@@ -146,6 +156,8 @@ async function boot(browser, name) {
     ok(Math.hypot(hpos[0] - gpos[0], hpos[1] - gpos[1]) < 0.15, 'after a zig-zag and a roll the predicted Wizard rests where the host has him', Math.hypot(hpos[0] - gpos[0], hpos[1] - gpos[1]).toFixed(3) + ' tiles');
     ok(maxFix < 0.4, 'and the corrections along the way stayed small (average miss at each new picture)', maxFix.toFixed(2) + ' tiles');
   }
+  ok(await hp.evaluate(() => !__wands.G.w.dead), 'the Wizard is alive after the input checks (they measured the netcode, not a fight)');
+  await hp.evaluate(() => { const W = __wands; W.CFG.world.cap = W.CFG.world._cap; });
   await sleep(500);
   // smoothness on the guest: while the Wizard walks, how many screen frames actually show him in a new place? (snapshots arrive at 20 Hz; without gliding it is about a third)
   if (process.env.NOTWEEN) await gp.evaluate(() => { Main.tween = () => { Main.tw = []; }; });   // (to see the numbers without the gliding)
@@ -156,7 +168,7 @@ async function boot(browser, name) {
   ok(fr.n > 20 && fr.moved / fr.n > 0.75, 'the guest sees the walking Wizard move on (nearly) every screen frame, not in 20 Hz steps', Math.round(fr.moved / fr.n * 100) + '%');
   await sleep(300);
   // Space = roll
-  await hp.evaluate(() => { __wands.G.w.rollCd = 0; });
+  await hp.evaluate(() => { const W = __wands; W.G.w.hp = W.WZ.maxHp(); W.G.w.enemies.length = 0; W.G.w.rollCd = 0; });   // (alive and alone: the long walks meet wild monsters, and a dead Wizard cannot roll)
   await gp.keyboard.down('KeyA'); await gp.keyboard.press('Space'); await gp.keyboard.up('KeyA');
   await sleep(500);
   const rolled = await hp.evaluate(() => __wands.G.w.rollCd > 0 || __wands.G.w.roll > 0);
@@ -241,6 +253,38 @@ async function boot(browser, name) {
   ok(st.fps >= 15, 'snapshot stream near 20 Hz', st.fps + '/s');
   const ch = await Promise.all([hp, gp].map(p => p.evaluate(() => __wands.Net.stats.chan)));
   ok(process.env.LOSSY0 ? ch.every(c => c === 'reliable') : ch.every(c => c === 'lossy'), 'snapshots travel on the ' + (process.env.LOSSY0 ? 'reliable' : 'unreliable') + ' channel', ch.join(' / '));
+
+  // ---- PROFILE=1 (THROTTLE=<n> slows both pages' CPU n times, like a weaker laptop): where each side's frame time goes, mid-game
+  if (process.env.PROFILE) {
+    if (+process.env.THROTTLE > 1) for (const p of [hp, gp]) { const cdp = await p.context().newCDPSession(p); await cdp.send('Emulation.setCPUThrottlingRate', { rate: +process.env.THROTTLE }); }
+    const prof = async p => p.evaluate(() => new Promise(res => {
+      const P = {}, W = window.__wands, orig = [];
+      const wrap = (o, k, tag) => { const f = o[k]; orig.push([o, k, f]); o[k] = function (...a) { const t = performance.now(); try { return f.apply(this, a); } finally { P[tag] = (P[tag] || 0) + performance.now() - t; } }; };
+      wrap(W.R, 'drawWorld', 'drawWorld (incl. a pip)'); wrap(W.R, 'drawFactory', 'drawFactory (incl. a pip)'); wrap(W.R, 'drawPip', 'drawPip'); wrap(W.UI, 'updateHud', 'updateHud');
+      wrap(W.Snap, 'wire', 'Snap.wire'); wrap(JSON, 'parse', 'JSON.parse'); wrap(W.Main, 'tween', 'tween');
+      if (W.Main.predSnap) { wrap(W.Main, 'predSnap', 'predSnap'); wrap(W.Main, 'predictFrame', 'predictFrame'); }
+      if (W.Main.step) wrap(W.Main, 'step', 'Main.step (sim)');
+      let n = 0, last = performance.now(), gaps = [];
+      const t0 = performance.now(), tick = now => { n++; gaps.push(now - last); last = now; if (now - t0 < 4000) requestAnimationFrame(tick); else { for (const [o, k, f] of orig) o[k] = f; gaps.sort((a, b) => a - b); const out = { fps: +(n / ((now - t0) / 1000)).toFixed(1), frameMs_median: +gaps[gaps.length >> 1].toFixed(1), frameMs_p95: +gaps[Math.floor(gaps.length * 0.95)].toFixed(1) }; for (const k in P) out[k + ' ms/frame'] = +(P[k] / n).toFixed(2); res(out); } };
+      requestAnimationFrame(tick);
+    }));
+    await gp.keyboard.down('KeyD');
+    const cpu = await gp.context().newCDPSession(gp);
+    await cpu.send('Profiler.enable'); await cpu.send('Profiler.start');
+    const [ph, pg] = await Promise.all([prof(hp), prof(gp)]);
+    const { profile } = await cpu.send('Profiler.stop');
+    await gp.keyboard.up('KeyD');
+    // the guest's CPU time by function (self time, top 22)
+    const self = {}, byId = {}, dt = {};
+    for (const nd of profile.nodes) byId[nd.id] = nd;
+    for (let i = 0; i < profile.samples.length; i++) dt[profile.samples[i]] = (dt[profile.samples[i]] || 0) + (profile.timeDeltas[i] || 0);
+    for (const id in dt) { const cf = byId[id].callFrame, k = (cf.functionName || '(anon)') + ' ' + (cf.url.split('/').pop() || '') + ':' + (cf.lineNumber + 1); self[k] = (self[k] || 0) + dt[id] / 1000; }
+    const tot = Object.values(self).reduce((a, b) => a + b, 0);
+    console.log('GUEST CPU (self ms of ' + tot.toFixed(0) + '):\n' + Object.entries(self).sort((a, b) => b[1] - a[1]).slice(0, 22).map(([k, v]) => '  ' + v.toFixed(0).padStart(6) + '  ' + k).join('\n'));
+    console.log('PROFILE host  ' + JSON.stringify(ph));
+    console.log('PROFILE guest ' + JSON.stringify(pg));
+    if (+process.env.THROTTLE > 1) for (const p of [hp, gp]) { const cdp = await p.context().newCDPSession(p); await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 }); }
+  }
 
   // ---- a lossy link (simulated: each packet lost with 10% chance, a snapshot is several packets): the guest keeps getting pictures, reports the loss, and recovers
   if (!process.env.LOSSY0) {

@@ -102,6 +102,51 @@ async function boot(browser, name) {
   ok(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) > 1.0, 'guest WASD moves the Wizard on the host', 'moved ' + Math.hypot(p1[0] - p0[0], p1[1] - p0[1]).toFixed(1) + ' tiles');
   const gx = await gp.evaluate(() => [__wands.G.w.x, __wands.G.w.y]);
   ok(Math.hypot(gx[0] - p1[0], gx[1] - p1[1]) < 1.5, 'and the guest sees him there');
+  // how long from the guest's key press to HIS OWN Wizard moving on HIS screen? (delay = a simulated slow link: that many ms each way, so 75 ms is a 150 ms ping)
+  const latency = async delay => {
+    for (const p of [hp, gp]) await p.evaluate(d => { __wands.Net.simDelay = d; }, delay);
+    await sleep(1800);
+    const out = [];
+    for (let i = 0; i < 6; i++) {
+      const key = i % 2 ? 'KeyA' : 'KeyD';
+      await sleep(1100);
+      const pr = gp.evaluate(() => new Promise(res => {
+        const w = __wands.G.w, x0 = w.x, y0 = w.y; let t0 = 0;
+        addEventListener('keydown', () => { t0 = performance.now(); }, { once: true });
+        const tick = () => { const w2 = __wands.G.w; if (t0 && Math.hypot(w2.x - x0, w2.y - y0) > 0.04) res(performance.now() - t0); else if (t0 && performance.now() - t0 > 3000) res(3000); else requestAnimationFrame(tick); };
+        requestAnimationFrame(tick);
+      }));
+      await sleep(50); await gp.keyboard.down(key);
+      out.push(await pr);
+      await sleep(250); await gp.keyboard.up(key);
+    }
+    for (const p of [hp, gp]) await p.evaluate(() => { __wands.Net.simDelay = 0; });
+    out.sort((a, b) => a - b);
+    return Math.round((out[2] + out[3]) / 2);
+  };
+  const predOf = on => gp.evaluate(on => { if (typeof Main.PREDICT !== 'undefined') Main.PREDICT = on; return typeof Main.PREDICT !== 'undefined'; }, on);
+  await predOf(false);
+  const latOff0 = await latency(0), latOff75 = await latency(75);
+  const hasPred = await predOf(true);
+  const latOn0 = await latency(0), latOn75 = await latency(75);
+  console.log('INPUT LAG (key press -> own Wizard moves on his screen, median): no delay ' + latOff0 + ' ms, 150 ms ping ' + latOff75 + ' ms' + (hasPred ? ' | with prediction: no delay ' + latOn0 + ' ms, 150 ms ping ' + latOn75 + ' ms' : ''));
+  if (hasPred) ok(latOn75 < 90, 'with prediction the guest\'s own Wizard answers a key press at once even on a 150 ms ping', latOn75 + ' ms');
+  if (hasPred) {   // is the prediction RIGHT: a zig-zag and a roll on a 150 ms ping end where the host says he is, and the corrections along the way stay small
+    for (const p of [hp, gp]) await p.evaluate(() => { __wands.Net.simDelay = 75; }); await sleep(1500);
+    await hp.evaluate(() => { __wands.G.w.rollCd = 0; });
+    let maxFix = 0;
+    for (const k of ['KeyD', 'KeyS', 'KeyA', 'KeyW', 'KeyD', 'KeyS']) { await gp.keyboard.down(k); await sleep(380); maxFix = Math.max(maxFix, await gp.evaluate(() => __wands.Main.pr.fix)); await gp.keyboard.up(k); await sleep(140); }
+    await sleep(600); await gp.keyboard.down('KeyD'); await sleep(100); await gp.keyboard.down('Space'); await sleep(70);
+    const rolling = await gp.evaluate(() => __wands.G.w.roll > 0);
+    await gp.keyboard.up('Space'); await sleep(300); await gp.keyboard.up('KeyD');
+    await sleep(2500);
+    const hpos = await hp.evaluate(() => [__wands.G.w.x, __wands.G.w.y]), gpos = await gp.evaluate(() => [__wands.G.w.x, __wands.G.w.y]);
+    for (const p of [hp, gp]) await p.evaluate(() => { __wands.Net.simDelay = 0; });
+    ok(rolling, 'the roll starts on the guest\'s screen at once (150 ms ping)');
+    ok(Math.hypot(hpos[0] - gpos[0], hpos[1] - gpos[1]) < 0.15, 'after a zig-zag and a roll the predicted Wizard rests where the host has him', Math.hypot(hpos[0] - gpos[0], hpos[1] - gpos[1]).toFixed(3) + ' tiles');
+    ok(maxFix < 0.4, 'and the corrections along the way stayed small (average miss at each new picture)', maxFix.toFixed(2) + ' tiles');
+  }
+  await sleep(500);
   // smoothness on the guest: while the Wizard walks, how many screen frames actually show him in a new place? (snapshots arrive at 20 Hz; without gliding it is about a third)
   if (process.env.NOTWEEN) await gp.evaluate(() => { Main.tween = () => { Main.tw = []; }; });   // (to see the numbers without the gliding)
   await gp.evaluate(() => { window.__fr = { n: 0, moved: 0, last: null }; const tick = () => { const f = window.__fr, w = __wands.G && __wands.G.w; if (w) { const k = w.x.toFixed(4) + ',' + w.y.toFixed(4); f.n++; if (f.last !== null && k !== f.last) f.moved++; f.last = k; } if (!f.stop) requestAnimationFrame(tick); }; requestAnimationFrame(tick); });

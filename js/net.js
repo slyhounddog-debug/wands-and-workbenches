@@ -7,7 +7,8 @@
 //
 // Wire format (bump Net.VERSION on ANY change to it):
 //   guest -> host   { t: 'hello', v, tok }                       first message on a new connection (tok = this guest's random token: lets the SAME guest come back, nobody else)
-//                   { t: 'pad', s: <IN.pad shape> }              30 Hz, the Wizard's pad (edges latched between sends, held state every packet)
+//                   { t: 'pad', s: <IN.pad shape>, q }           PAD_HZ, and at once when the input changes: the Wizard's pad (edges latched between sends, held state every packet);
+//                                                                q counts the packets up: the host answers with G.na = the last q it applied (the guest's prediction replays what is newer)
 //                   { t: 'buy', id }                             skill tree purchase intent (the host validates it with the usual cost logic)
 //                   { t: 'ping', at }  { t: 'bye' }
 //   host -> guest   { t: 'welcome', v, seed, sig, runMeta }      handshake reply; the snapshot stream starts after it
@@ -19,11 +20,11 @@
 // toasts) and a second UNRELIABLE, UNORDERED one for the 20 Hz snapshots (a late or lost picture is simply skipped: nothing waits behind it, so one bad packet on a phone
 // hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
-  VERSION: 3,
-  BUILD: 9,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
+  VERSION: 4,
+  BUILD: 10,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
-  SNAP_HZ: 20, PAD_HZ: 30,
+  SNAP_HZ: 20, PAD_HZ: 60,
   ALPHA: 'ABCDFGHJKMNPQRSTUVWXYZ23456789',   // no 0 O 1 I L, and no E: E is the cancel key at the menu world's keyboard, so a room code never needs it
   PREFIX: 'ww-',
   role: null,                    // 'host' | 'guest' | null
@@ -35,9 +36,9 @@ const Net = {
   hooks: {}, errs: [], diag: null, hdiag: null, nextAt: 0, takenAt: 0, snapGap: 0.05,
   stats: { rawKB: 0, zipKB: 0, maxZip: 0, snapsOut: 0, bytesOut: 0, kbps: 0, rtt: 0, skipped: 0, path: '', netRtt: 0, chan: '', loss: 0, draw: 0, _rx: 0, _hi: 0, _rx0: 0, _hi0: 0, _f: 0, fps: 0, _t: 0, _b: 0, _n: 0, total: 0 },
   // host
-  snapN: 0, snapAcc: 0, busy: false, gpad: null, gedge: null,
+  snapN: 0, snapAcc: 0, busy: false, gpad: null, gedge: null, gseq: 0, aseq: 0, gsig: '', padDirty: false, snapNow: false,
   // guest
-  mute: false, lastN: 0, next: null, prev: null, latch: null, padAcc: 0, pingAcc: 0, pending: null,
+  mute: false, lastN: 0, next: null, prev: null, latch: null, padAcc: 0, pingAcc: 0, pending: null, padSeq: 0, hist: [], padSig: '', simDelay: 0,
 };
 (function () {
   const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:global.stun.twilio.com:3478' }] };   // STUN only (PeerJS's own default adds a TURN relay: switched off on purpose)
@@ -168,7 +169,10 @@ const Net = {
     Net.peer = null; Net.conn = null; Net.tok = null; Net.lastRx = 0; Net.lostAt = 0;
     Net.snapN = 0; Net.snapAcc = 0; Net.busy = false; Net.gpad = null; Net.gedge = null;
     Net.lastN = 0; Net.next = null; Net.latch = null; Net.padAcc = 0; Net.pingAcc = 0;
+    Net.gseq = 0; Net.aseq = 0; Net.padSeq = 0; Net.hist = []; Net.padSig = '';
   };
+  // TEST ONLY: Net.simDelay (ms) holds back what this side sends (pads on the guest, snapshots on the host), like a slow link
+  const later = fn => { if (Net.simDelay) setTimeout(fn, Net.simDelay); else fn(); };
   // leave the session for good (title screen, quitting, the host's timeout)
   Net.close = function (tell) {
     if (tell !== false && Net.conn) send(Net.conn, { t: 'bye' });
@@ -224,7 +228,7 @@ const Net = {
       const first = !Net.tok;
       Net.tok = m.tok;
       if (Net.conn && Net.conn !== conn) { const old = Net.conn; Net.conn = null; try { old.close(); } catch (e) { /* ignore */ } }   // the same guest on a fresh connection
-      Net.conn = conn; Net.lastRx = now();
+      Net.conn = conn; Net.lastRx = now(); Net.gseq = 0; Net.aseq = 0;
       snapChannel(conn);
       send(conn, { t: 'welcome', v: Net.VERSION, seed: Net.SEED, sig: Net.sig(), runMeta: { slot: G ? G.slot : (Net.pending ? Net.pending.slot : 0), time: G ? G.stats.time : 0 } });
       Net.snapAcc = 1; Net.busy = false;
@@ -234,7 +238,7 @@ const Net = {
     }
     if (conn !== Net.conn) return;   // only the guest's own connection is listened to
     Net.lastRx = now();
-    if (m.t === 'pad') hostPad(m.s);
+    if (m.t === 'pad') { hostPad(m.s); if (m.q > Net.gseq) Net.gseq = m.q; }
     else if (m.t === 'buy') { if (Net.hooks.buy) Net.hooks.buy(String(m.id)); }
     else if (m.t === 'ping') send(conn, { t: 'pong', at: m.at });
     else if (m.t === 'bye') guestGone('left');
@@ -248,6 +252,8 @@ const Net = {
     for (const k of EDGES) if (s[k]) e[k] = true;
     if (s.cyc) e.cyc = s.cyc;
     g.any = !!s.any;
+    const sig = g.ix.toFixed(1) + g.iy.toFixed(1) + HELD.map(k => (g[k] ? 1 : 0)).join('');
+    if (sig !== Net.gsig || EDGES.some(k => s[k])) { Net.gsig = sig; Net.padDirty = true; }   // a press, a release or a new direction: the guest is waiting to see what it did
   }
   // called every host frame, right after IN.pollPads: the guest's pad becomes the Wizard's pad (the dev bot's seam)
   Net.drive = function () {
@@ -260,6 +266,8 @@ const Net = {
     pad.startHeld = false;   // no job swap online
     IN.pad[G.ctl.pw] = Net.state === 'live' ? pad : null;
     Net.gedge = null;
+    if (Net.padDirty) { Net.padDirty = false; Net.snapNow = true; }   // (hostTick, after this frame's sim, sends a snapshot without waiting for the next 20 Hz slot)
+    Net.aseq = Net.gseq;   // every pad packet up to this number has now been used by the sim (the snapshot says so: G.na)
   };
   function guestGone(why) {
     if (Net.state !== 'live') return;
@@ -274,7 +282,7 @@ const Net = {
     if (Net.state === 'live') {
       if (now() - Net.lastRx > 8000) { guestGone('silent'); return; }   // 30 pad packets a second: 8 s of nothing is a dead connection
       Net.snapAcc += dt;
-      if (Net.snapAcc >= 1 / Net.SNAP_HZ) { Net.snapAcc = Math.min(Net.snapAcc - 1 / Net.SNAP_HZ, 1 / Net.SNAP_HZ); sendSnap(); }
+      if (Net.snapAcc >= 1 / Net.SNAP_HZ || (Net.snapNow && Net.snapAcc >= 0.025)) { Net.snapNow = false; Net.snapAcc = Math.max(0, Math.min(Net.snapAcc - 1 / Net.SNAP_HZ, 1 / Net.SNAP_HZ)); sendSnap(); }
     } else if (Net.state === 'lost' && Net.rejoinLeft() <= 0) {
       if (Net.hooks.timeout) Net.hooks.timeout();
     }
@@ -285,6 +293,7 @@ const Net = {
   Net.stamp = function () {
     const w = G && G.w;
     if (!w) return;
+    G.na = Net.aseq;   // the last guest pad packet the sim has used: the guest replays the newer ones on top of this picture (Main.predSnap)
     for (const [p, k] of STAMP) {
       const arr = G[p] && G[p][k];
       if (arr) for (const o of arr) if (o && typeof o === 'object' && o.uid === undefined) o.uid = w.uidN = (w.uidN || 0) + 1;
@@ -302,7 +311,7 @@ const Net = {
     if (c && typeof z !== 'string' && z.byteLength <= SNAP_BIG) {
       const buf = new Uint8Array(4 + z.byteLength);
       new DataView(buf.buffer).setUint32(0, n); buf.set(z, 4);
-      try { c.send(buf); Net.stats.chan = 'lossy'; return true; } catch (e) { /* fall back to the reliable channel */ }
+      try { later(() => { try { c.send(buf); } catch (e) { /* closing */ } }); Net.stats.chan = 'lossy'; return true; } catch (e) { /* fall back to the reliable channel */ }
     }
     Net.stats.chan = 'reliable';
     return send(conn, { t: 'snap', n, z });
@@ -531,7 +540,17 @@ const Net = {
     out.any = ix !== 0 || iy !== 0 || out.aHeld || out.xHeld || EDGES.some(k => out[k]);
     return out;
   };
-  // every guest frame: collect presses, and send the pad at PAD_HZ (also the heartbeat the host watches)
+  // the input of this very frame (the same sources padNow reads): what the prediction steps with
+  Net.liveInput = function () {
+    if (Net.mute) return { ix: 0, iy: 0, a: false };
+    const gp = IN.pad[0] || null;
+    let ix = (IN.down('KeyD') ? 1 : 0) - (IN.down('KeyA') ? 1 : 0), iy = (IN.down('KeyS') ? 1 : 0) - (IN.down('KeyW') ? 1 : 0);
+    if (!ix && gp) ix = gp.ix;
+    if (!iy && gp) iy = gp.iy;
+    return { ix, iy, a: IN.hit('Space') || !!(gp && gp.a) };
+  };
+  // every guest frame: collect presses, and send the pad at PAD_HZ (also the heartbeat the host watches), and AT ONCE when the held input changes or a button is pressed
+  // (waiting for the next tick would add up to 1 / PAD_HZ of delay to every key press)
   Net.guestTick = function (dt) {
     if (Net.role !== 'guest') return;
     Net.collect();
@@ -546,9 +565,13 @@ const Net = {
     if (Net.state !== 'live') return;
     if (now() - Net.lastRx > 6000) { connLost('silent'); return; }
     Net.padAcc += dt;
-    if (Net.padAcc >= 1 / Net.PAD_HZ) {
-      Net.padAcc = Math.min(Net.padAcc - 1 / Net.PAD_HZ, 1 / Net.PAD_HZ);
-      send(Net.conn, { t: 'pad', s: Net.padNow() });
+    const L = Net.latch || {}, sig = Net.liveInput(), key = sig.ix + ',' + sig.iy + (Net.latch && Object.keys(L).length ? '!' : '');
+    if (Net.padAcc >= 1 / Net.PAD_HZ || (key !== Net.padSig && Net.padAcc >= 0.008)) {
+      Net.padAcc = Math.min(Net.padAcc - 1 / Net.PAD_HZ, 1 / Net.PAD_HZ); if (Net.padAcc < 0) Net.padAcc = 0;
+      const s = Net.padNow(), q = ++Net.padSeq, msg = { t: 'pad', s, q };
+      Net.padSig = s.ix + ',' + s.iy;
+      Net.hist.push({ q, t: performance.now(), ix: s.ix, iy: s.iy, a: !!s.a }); if (Net.hist.length > 80) Net.hist.shift();
+      later(() => send(Net.conn, msg));
       Net.latch = {};
     }
     Net.pingAcc += dt;

@@ -191,11 +191,92 @@ Main.tweenStep = function (now) {
   const k = Math.max(0, Math.min(1, (now - Main.twAt) / (Math.max(0.04, Math.min(0.12, Net.snapGap)) * 1000)));
   for (let i = 0; i < tw.length; i += 4) tw[i][tw[i + 1]] = tw[i + 2] + (tw[i + 3] - tw[i + 2]) * k;
 };
+// ---------- prediction ----------
+// The guest's own Wizard answers his keys at once instead of one round trip later. Every frame the guest steps a private copy of the Wizard (Main.pr.s) with the same walking
+// and rolling rules the host runs (Main.walkStep mirrors the movement block of WZ.update: KEEP THEM IN STEP) and draws that. Each snapshot is the host's truth about where he
+// was when it had used pad packet G.na; Main.predSnap starts again from it and replays the pad packets the host has not seen yet (Net.hist), so the copy lands where he is NOW.
+// The difference to what was drawn before is not snapped but faded out over ~0.1 s (Main.pr.err). Anything the guest cannot know (a geyser jump, a blink, a recoil, death) is
+// not predicted: the host's picture is shown as it is. ?predict=0 turns it off.
+Main.PREDICT = !/[?&]predict=0/.test(location.search);
+Main.pr = { ok: false, s: null, ex: 0, ey: 0, bob: 0, fix: 0 };
+const PFIELDS = ['x', 'y', 'vx', 'vy', 'fx', 'fy', 'roll', 'rollCd', 'rdx', 'rdy'];
+Main.walkStep = function (o, dt, ix, iy, press, slowK) {
+  let dx = 0, dy = 0;
+  if (ix || iy) { dx = ix + iy; dy = iy - ix; }
+  const m = Math.hypot(dx, dy);
+  if (m > 0) { dx /= m; dy /= m; o.fx = dx; o.fy = dy; }
+  if (o.rollCd > 0) o.rollCd -= dt;
+  if (press && o.rollCd <= 0 && o.roll <= 0 && !WZ.has('gale') && !(m === 0 && WZ.forageAt(o.x, o.y))) {   // (the Circlet's roll is a blink and a dig is not a roll: the host decides those)
+    o.roll = CFG.wizard.rollTime; o.rollCd = WZ.rollCd();
+    o.rdx = m > 0 ? dx : o.fx; o.rdy = m > 0 ? dy : o.fy;
+    const rm = Math.hypot(o.rdx, o.rdy) || 1; o.rdx /= rm; o.rdy /= rm;
+  }
+  let sp = WZ.speed();
+  const tn = WZ.tile(o.x, o.y);
+  if (tn === T_BOG && !WZ.has('bog')) sp *= CFG.world.slowTerrain;
+  if (tn === T_SCORCH && !WZ.has('ember')) sp *= CFG.aug.scorch.slow;
+  if (o.roll > 0) { o.roll -= dt; o.vx = o.rdx * sp * CFG.wizard.rollSpeed; o.vy = o.rdy * sp * CFG.wizard.rollSpeed; }
+  else {
+    const wx = dx * sp * slowK, wy = dy * sp * slowK, ex = wx - o.vx, ey = wy - o.vy, el = Math.hypot(ex, ey);
+    const rate = (m > 0 ? CFG.wizard.accel : CFG.wizard.friction) * dt;
+    if (el <= rate) { o.vx = wx; o.vy = wy; } else { o.vx += ex / el * rate; o.vy += ey / el * rate; }
+  }
+  const spd = Math.hypot(o.vx, o.vy);
+  if (spd > 0.01) {
+    const nx = Math.max(0.5, Math.min(CFG.WW - 0.5, o.x + o.vx * dt)), ny = Math.max(0.5, Math.min(CFG.WH - 0.5, o.y + o.vy * dt));
+    const ox = o.x, oy = o.y;
+    WZ.slideW(o, nx, ny, CFG.wizard.radius);
+    if (o.x === ox) o.vx = 0;
+    if (o.y === oy) o.vy = 0;
+  }
+  return spd;
+};
+const slowOf = w => (1 - Math.min(0.8, w.zSlow || 0)) * (w.slowT > 0 ? 1 - w.slowAmt : 1);
+// a new snapshot (G is already it): start the copy from the host's Wizard and replay the pad packets the host has not used yet
+Main.predSnap = function (s) {
+  const pr = Main.pr, w = s.w;
+  pr.ok = Main.PREDICT && !!w && !s.menu && !w.dead && !w.jump && !w.blink && !w.kick && !(w.cine);
+  if (!pr.ok) { pr.s = null; pr.ex = pr.ey = 0; return; }
+  const o = {};
+  for (const f of PFIELDS) o[f] = w[f];
+  const k = slowOf(w), now = performance.now(), pend = Net.hist.filter(h => h.q > (s.na || 0));
+  let left = 0.6;   // never replay more than this many seconds
+  for (let i = 0; i < pend.length && left > 0; i++) {
+    const h = pend[i];
+    let dur = Math.min(left, Math.max(0, ((i + 1 < pend.length ? pend[i + 1].t : now) - h.t) / 1000));
+    left -= dur;
+    let press = h.a;
+    while (dur > 1e-4 || press) { const d = Math.min(dur, 1 / 60); Main.walkStep(o, d, h.ix, h.iy, press, k); press = false; dur -= d; if (d === 0) break; }
+  }
+  // what was drawn a moment ago, against where the replay says he is now: fade the difference out, unless it is big (a teleport, a long stall)
+  const cur = pr.s;
+  if (cur) {
+    const ex = cur.x + pr.ex - o.x, ey = cur.y + pr.ey - o.y, e = Math.hypot(ex, ey);
+    pr.fix = pr.fix * 0.8 + e * 0.2;
+    if (e < 2.5) { pr.ex = ex; pr.ey = ey; } else { pr.ex = pr.ey = 0; }
+  } else { pr.ex = pr.ey = 0; pr.bob = w.bob || 0; }
+  pr.s = o;
+};
+// every frame: step the copy with this frame's own input, fade the correction, and put it where the renderer looks (the snapshot's Wizard fields)
+Main.predictFrame = function (dt) {
+  const pr = Main.pr, w = G && G.w;
+  if (!pr.ok || !pr.s || !w || w.dead) return;
+  const L = Net.liveInput(), k = slowOf(w);
+  let left = Math.min(dt, 0.1), spd = 0, press = L.a;
+  while (left > 1e-5 || press) { const d = Math.min(left, 1 / 60); spd = Main.walkStep(pr.s, d, L.ix, L.iy, press, k); press = false; left -= d; if (d === 0) break; }
+  const f = Math.exp(-dt / 0.1); pr.ex *= f; pr.ey *= f;
+  for (const key of PFIELDS) w[key] = pr.s[key];
+  w.x += pr.ex; w.y += pr.ey;
+  w.moving = spd > 0.3;
+  if (spd > 0.01) pr.bob += dt * 11 * Math.min(1, spd / WZ.speed());
+  w.bob = pr.bob;
+};
 Main.guestFrame = function (dt, ts) {
   const s = Net.takeSnap();
   if (s) {
     const old = G;
     G = s;   // the newest whole snapshot replaces the state atomically (its moving things are then glided from where they were drawn: Main.tween)
+    Main.predSnap(s);   // (before the glide below moves his x / y: it needs the host's own numbers)
     if (old && old.w && s.w && !old.menu && !s.menu) Main.tween(old, s, Net.takenAt); else Main.tw = [];
     if (G.menu) Menu.lastEv = Menu.lastEv || G.menu.evN;   // (the lobby: do not replay the events that happened before we got here)
     else if (!Net.on) Main.enterGuest(); else Main.guestSeen();
@@ -205,6 +286,7 @@ Main.guestFrame = function (dt, ts) {
   Main.tweenStep(performance.now());
   Net.mute = !!(UI.treeOpen.R || Main.menuUp || Book.isOpen);
   Net.guestTick(dt);
+  Main.predictFrame(dt);
   Book.tick(dt);
   Main.guestKeys(dt);
   const bh = Main.hintFor(QUESTS.B[G.quest.B]), wh = Main.hintFor(QUESTS.W[G.quest.W]);

@@ -388,10 +388,11 @@ R.drawBuilderOut = function (ctx, v, bd, t) {
   ctx.restore();
 };
 
-// while the Wizard stands on a claimed shrine, its element streams out of the Spell Portal into every boosted harnesser
+// while a shrine is awake (its ring game won, 30 s), its element streams out of the Spell Portal into every boosted harnesser
 R.drawShrineStreams = function (ctx, v, t) {
-  const el = G.w.shrine;
-  if (!el) return;
+  for (const el of ELEMS) if (G.w.shrines && G.w.shrines[el] > 0) R.drawShrineStream(ctx, v, t, el);
+};
+R.drawShrineStream = function (ctx, v, t, el) {
   const ps = FA.portal('spell'), a = R.toScreen(v, ps.x + 0.5, ps.y + 1), col = ELEM[el].color;
   for (const b of G.fac.bld) {
     if (!b.done || b.el !== el) continue;
@@ -1538,8 +1539,8 @@ R.drawEnemy = function (ctx, v, e) {
   if (e.mut) dspr(ctx, SP[CFG.mutations[e.mut].ic], p[0] - 27, top - 6, S);   // its mutation
   if (e.weak && (e.elite || CFG.enemies[e.type].weak)) dspr(ctx, SP['wk_' + e.weak], p[0] + (e.elite ? 30 : 21), top + 3, S);
 };
-// the Wizard's dig / search button: pad 2 A, the roll key otherwise
-R.wkey = () => (Main.padW() ? 'A' : !Main.kbShared() || G.swapped ? 'SPACE' : '.');
+// the Wizard's dig / search / wake-a-shrine button (Mash): pad X, left click alone on the keyboard, / when sharing it, E when swapped
+R.wkey = () => Main.wizKeyNames().mash;
 // forage spots: a glint says "search me", a bar fills while he mashes, a searched bush stands bare until it regrows
 R.drawForage = function (ctx, v, o) {
   const w = G.w, p = R.toScreen(v, o.x, o.y), S = CFG.WT.S, t = w.t;
@@ -1562,7 +1563,21 @@ R.drawForage = function (ctx, v, o) {
     R.iprompt(ctx, p[0], p[1] - h - 42, R.wkey(), loot, R.rect.x0 + R.rect.w, R.rect.x0, true);
   }
 };
-// landmarks: camps wake when the Wizard walks up, shrines boost harnessers while he stands on them, crypts open if he waits at the door
+// the shrine ring game: the target band (gold, dashed) is where a press counts; the ring closes onto it. Green when it is inside, a flash on a hit, red on a miss
+R.drawShrineGame = function (ctx, v, m, sg, p, t) {
+  const M = CFG.marks, dur = M.ring[Math.min(sg.n, M.ring.length - 1)], col = ELEM[m.el].color, K = 1.414, R0 = 3.6, R1 = 0.4;
+  const rr = f => R0 - (R0 - R1) * f, z0 = rr(M.zone[0]), z1 = rr(M.zone[1]);
+  const lead = Math.max(0, Math.min(1, 1 + sg.k / M.lead)), f = Math.max(0, Math.min(1, sg.k / dur)), inZ = sg.k >= 0 && f >= M.zone[0] && f <= M.zone[1];
+  const ell = (r, lw, c, a, dash, ink) => { ctx.globalAlpha = a; if (dash) { ctx.setLineDash([9, 9]); ctx.lineDashOffset = -Math.floor(t * 8) * 3; } if (ink) { ctx.strokeStyle = '#1a0f28'; ctx.lineWidth = lw + 6; diamond(ctx, p[0], p[1], r * v.hw * K, r * v.hh * K); ctx.stroke(); } ctx.strokeStyle = c; ctx.lineWidth = lw; diamond(ctx, p[0], p[1], r * v.hw * K, r * v.hh * K); ctx.stroke(); if (dash) ctx.setLineDash([]); ctx.globalAlpha = 1; };
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.globalAlpha = 0.5 * lead; diamond(ctx, p[0], p[1], R0 * v.hw * K, R0 * v.hh * K); ctx.fill(); ctx.globalAlpha = 1;
+  ell((z0 + z1) / 2, Math.max(6, Math.round((z0 - z1) * v.hh * K / 3) * 3), '#ffd23a', 0.42 * lead, false);   // the target band
+  ell(z0, 6, '#fff2a8', lead, true, true); ell(z1, 6, '#fff2a8', lead, true, true);
+  if (sg.k >= 0) ell(rr(Math.min(1, f)), 12, inZ ? '#6aff8a' : '#ffffff', 1, false, true);
+  if (sg.flash > 0) ell(rr(M.zone[0] + (M.zone[1] - M.zone[0]) / 2) * (1 + (0.35 - sg.flash) * 2), 9, '#ffffff', sg.flash / 0.35, false);
+  if (sg.failT > 0) ell(R0 * 0.5, 9, '#ff5a6e', Math.min(1, sg.failT / 0.4), false);
+  for (let i = 0; i < M.rings; i++) { ctx.fillStyle = i < sg.n ? '#6aff8a' : '#2b1d3e'; ctx.fillRect(snap(p[0] - (M.rings - 1) * 12 + i * 24 - 6), Math.round((p[1] - 108) / 3) * 3, 12, 12); }   // the rings won so far
+};
+// landmarks: camps wake when the Wizard walks up, shrines wake with the Mash button (a ring game) and then boost harnessers for a while, crypts open if he waits at the door
 R.drawMark = function (ctx, v, m) {
   const w = G.w, s = w.lm[m.id], p = R.toScreen(v, m.x, m.y), S = CFG.WT.S, t = w.t, done = s.state === 'done', M = CFG.marks;
   const d = Math.hypot(w.x - m.x, w.y - m.y);
@@ -1577,8 +1592,8 @@ R.drawMark = function (ctx, v, m) {
     }
     if (s.state === 'active') ic = [['ic_skull', w.enemies.filter(e => e.mark === m.id).length]];   // foes left
   } else if (m.type === 'shrine') {
-    const col = ELEM[m.el].color, on = done && w.shrine === m.el, near = d < CFG.unlockR;
-    ctx.strokeStyle = col; ctx.lineWidth = on || (near && !done) ? 6 : 3; ctx.globalAlpha = on ? (Math.sin(t * 8) > 0 ? 1 : 0.6) : near && !done ? 0.9 : 0.35;
+    const col = ELEM[m.el].color, on = done && s.buff > 0, near = d < CFG.unlockR, ready = WZ.shrineReady(s), cool = done && s.cd > 0;
+    ctx.strokeStyle = col; ctx.lineWidth = on || (near && !done) ? 6 : 3; ctx.globalAlpha = on ? (Math.sin(t * 8) > 0 ? 1 : 0.6) : near && !done ? 0.9 : cool ? 0.2 : 0.35;
     diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4, M.shrineR * v.hh * 1.4); ctx.stroke(); ctx.globalAlpha = 1;
     if (s.flash > 0) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 9; ctx.globalAlpha = s.flash / 0.5; diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.4 * (1.6 - s.flash), M.shrineR * v.hh * 1.4 * (1.6 - s.flash)); ctx.stroke(); ctx.globalAlpha = 1; }   // just claimed
     const wants = ELEMS.filter(e => e !== m.el).map(e => (s.fed && s.fed[e] ? 'ic_check' : 'core_' + e));   // the three Cores it takes (every element but its own); a check for each it already has
@@ -1586,6 +1601,14 @@ R.drawMark = function (ctx, v, m) {
     dspr(ctx, SP.lm_shrine, p[0], p[1], S);
     dspr(ctx, SP['cr_' + m.el], p[0], p[1] - 39 - (Math.sin(t * (on ? 8 : 3)) > 0 ? 3 : 0), S, done && !on ? 0.6 : 1);
     if (!done && !near) ic = wants.map(k => [k]);   // what it wants
+    // awake: the buff left; recharging: a bar that visibly refills; ready: a pulsing ring and the Mash prompt when he stands at it; the ring game itself
+    if (on) R.hpBar(ctx, p[0], p[1] - 72, 54, s.buff / M.buffT, col);
+    else if (cool) { R.hpBar(ctx, p[0], p[1] - 72, 54, 1 - s.cd / M.cdT, '#8a8a96'); ctx.globalAlpha = 0.5; dspr(ctx, SP.ic_clock, p[0], p[1] - 90, 3, 0.8); ctx.globalAlpha = 1; }
+    else if (ready) {
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.globalAlpha = 0.55 + 0.35 * Math.sin(t * 5); diamond(ctx, p[0], p[1], M.shrineR * v.hw * 1.1, M.shrineR * v.hh * 1.1); ctx.stroke(); ctx.globalAlpha = 1;
+      if (d < M.shrineR && !w.sg && !w.dead) R.iprompt(ctx, p[0], p[1] - 150, R.wkey(), ['ic_target'], R.rect.x0 + R.rect.w, R.rect.x0, true);   // press Mash to wake it
+    }
+    if (w.sg && w.sg.id === m.id) R.drawShrineGame(ctx, v, m, w.sg, p, t);
     if (on) {   // boosting: the shrine's power streams up into a little portal (and out of the factory's Spell Portal)
       const top = p[1] - 168, rw = 27 + (Math.sin(t * 6) > 0 ? 3 : 0);
       ctx.fillStyle = '#2a1050'; diamond(ctx, p[0], top, rw, rw / 2.5); ctx.fill();
@@ -1780,6 +1803,33 @@ R.drawAltarParts = function (ctx, v, w) {
     ctx.fillStyle = i % 2 ? '#ffe36b' : '#ffffff'; ctx.fillRect(snap(tx + Math.cos(a) * r * 0.6), Y(ty + Math.sin(a) * r * 0.9), 6, 6);
   }
 };
+// a sprite as grey stone (a pure function of the sprite: cached by its canvas)
+const STONE = new WeakMap();
+function stoneSpr(spr) {
+  let s = STONE.get(spr.c);
+  if (!s) {
+    const c = document.createElement('canvas'); c.width = spr.c.width; c.height = spr.c.height;
+    const x = c.getContext('2d');
+    x.drawImage(spr.c, 0, 0); x.globalCompositeOperation = 'source-atop'; x.fillStyle = 'rgba(138,138,150,0.82)'; x.fillRect(0, 0, c.width, c.height);
+    s = { c, ax: spr.ax, ay: spr.ay, white: spr.white }; STONE.set(spr.c, s);
+  }
+  return s;
+}
+// Riding Wave: a V of water in front of him (the wave that parts foes to the sides), spray off its edges, a foam line behind
+R.drawRide = function (ctx, v, w, p, t) {
+  const W = CFG.wand.water, R0 = w.ride, dx = R0.dx, dy = R0.dy, px = -dy, py = dx, n = 14;
+  for (let i = 0; i <= n; i++) {
+    const k = i / n, side = (i % 2 ? 1 : -1), off = (1 - k) * W.w / 2, back = -0.4 + k * 1.2;   // the arms of the V sweep back from the tip
+    for (const sd of [-1, 1]) {
+      const q = R.toScreen(v, w.x + dx * (0.9 - k * 1.1) + px * sd * (k * W.w / 2), w.y + dy * (0.9 - k * 1.1) + py * sd * (k * W.w / 2)), sz = k > 0.6 ? 9 : 6;
+      ctx.fillStyle = (i + (sd > 0 ? 1 : 0) + Math.floor(t * 12)) % 3 === 0 ? '#ffffff' : (i % 2 ? '#4aa8ff' : '#2a72c8');
+      ctx.fillRect(snap(q[0] - sz / 2), Math.round((q[1] - 9 - (1 - k) * 12) / 3) * 3, sz, sz);
+    }
+  }
+  const b = R.toScreen(v, w.x - dx * 0.9, w.y - dy * 0.9);   // foam behind
+  for (let i = 0; i < 4; i++) { ctx.fillStyle = '#e6f8ff'; ctx.globalAlpha = 0.7 - i * 0.15; ctx.fillRect(snap(b[0] - dx * 8 * i + (dy - dx) * 3 - 3), Math.round((b[1] - 6 + (dx + dy) * 3 * i) / 3) * 3, 9, 6); }
+  ctx.globalAlpha = 1;
+};
 R.drawWizard = function (ctx, v, w) {
   const p = R.toScreenLocked(v, w.x, w.y), S = CFG.WT.S, spr = SP.wizard;
   // the worn augments are drawn over him (boots, robe, charm, hat); the Phoenix Feather greys out while it recharges
@@ -1810,12 +1860,17 @@ R.drawWizard = function (ctx, v, w) {
   const bob = w.moving ? (Math.abs(Math.sin(w.bob)) > 0.5 ? 3 : 0) : 0;
   const flip = (w.fx - w.fy) < -0.05;
   if (w.dead) { ctx.save(); ctx.translate(snap(p[0]), p[1]); ctx.rotate(Math.PI / 2); ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S, spr.c.width * S, spr.c.height * S); ctx.restore(); return; }
+  // the wand: Vanishing Puff makes him a see-through shimmer, Statue turns him to stone, Flame Trail wraps him in embers, Riding Wave puts a wave under him
+  const ia = w.invisT > 0 ? (w.invisT < 1 && Math.floor(w.invisT * 12) % 2 ? 0.6 : 0.26 + 0.06 * Math.sin(tt * 9)) : 1, stone = w.statT > 0;
+  if (w.ride) R.drawRide(ctx, v, w, p, tt);
+  if (w.fireT > 0) { ctx.fillStyle = 'rgba(255,122,48,0.16)'; diamond(ctx, p[0], p[1] + 3, 27, 13); ctx.fill(); for (let i = 0; i < 5; i++) { const a = tt * 5 + i * 1.257, k = (tt * 2.2 + i * 0.2) % 1; ctx.fillStyle = i % 2 ? '#ffe36b' : '#ff7a30'; ctx.fillRect(snap(p[0] + Math.cos(a) * 18 - 3), Math.round((p[1] - 6 - k * 36) / 3) * 3, 6, 6); } }
+  if (w.invisT > 0) { ctx.strokeStyle = '#e6f8ff'; ctx.lineWidth = 3; ctx.globalAlpha = 0.5; ctx.setLineDash([9, 9]); ctx.lineDashOffset = -Math.floor(tt * 10) * 3; diamond(ctx, p[0], p[1] + 3, 24, 11); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
   if (w.roll > 0) {
     const fr = 1 - w.roll / CFG.wizard.rollTime, step = Math.floor(fr * 8) / 8;   // somersault in 8 chunky frames
     // i-frames: he strobes between see-through and a white silhouette, so it's clear he can't be hit
     const ghost = Math.floor(w.roll * 30) % 2 === 0;
     ctx.save(); ctx.translate(snap(p[0]), p[1] - 24); ctx.rotate(step * 6.283 * (flip ? -1 : 1));
-    ctx.globalAlpha = ghost ? 0.4 : 0.9;
+    ctx.globalAlpha = (ghost ? 0.4 : 0.9) * ia;
     ctx.drawImage(ghost ? spr.c : spr.white, -spr.ax * S, -spr.ay * S + 24, spr.c.width * S, spr.c.height * S); wearRot(ghost); ctx.restore();
     ctx.globalAlpha = 1;
     return;
@@ -1834,13 +1889,22 @@ R.drawWizard = function (ctx, v, w) {
     const K = w.kick, heavy = K ? Math.min(1, K.d / 0.55) : 0, sdx = K ? K.x - K.y : 0, lean = (sdx > 0.05 ? 1 : sdx < -0.05 ? -1 : 0) * (0.12 + 0.2 * heavy) * kk;
     const sx = 1 + 0.12 * kk * heavy + 0.2 * sl, sy = 1 - 0.1 * kk * heavy - 0.2 * sl;
     ctx.save(); ctx.translate(snap(p[0] + (sdx > 0 ? 1 : -1) * Math.round(6 * kk * heavy / 3) * 3), Math.round((p[1] - bob) / 3) * 3);
-    ctx.rotate(Math.round(lean * 20) / 20); ctx.scale(sx * (flip ? -1 : 1), sy); ctx.globalAlpha = blink ? 0.4 : 1;
+    ctx.rotate(Math.round(lean * 20) / 20); ctx.scale(sx * (flip ? -1 : 1), sy); ctx.globalAlpha = (blink ? 0.4 : 1) * ia;
     ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S, spr.c.width * S, spr.c.height * S); for (const l of layers) ctx.drawImage(l.s.c, -l.s.ax * S, -l.s.ay * S, l.s.c.width * S, l.s.c.height * S); ctx.restore(); ctx.globalAlpha = 1;
-  } else if (w.mashT > 0) { dsprSq(ctx, spr, p[0], p[1] - bob, S, 1.15, 0.85, blink ? 0.4 : 1, flip); for (const l of layers) dsprSq(ctx, l.s, p[0], p[1] - bob, S, 1.15, 0.85, (blink ? 0.4 : 1) * l.a, flip); }   // squashed while digging
-  else { dspr(ctx, spr, p[0], p[1] - bob, S, blink ? 0.4 : 1, flip); wearAll(blink ? 0.4 : 1, flip, p[0], p[1] - bob); }
+  } else if (w.mashT > 0) { dsprSq(ctx, spr, p[0], p[1] - bob, S, 1.15, 0.85, (blink ? 0.4 : 1) * ia, flip); for (const l of layers) dsprSq(ctx, l.s, p[0], p[1] - bob, S, 1.15, 0.85, (blink ? 0.4 : 1) * l.a * ia, flip); }   // squashed while digging
+  else if (stone) {   // the Statue: grey stone, cracks for every hit he has taken, a bar for the time left
+    const sc = stoneSpr(spr), E = CFG.wand.earth, hits = Math.min(10, w.statHits || 0), k = WZ.statueMul() - 1, pulse = 0.5 + 0.5 * Math.sin(tt * (6 + 10 * k));
+    dspr(ctx, sc, p[0], p[1], S, blink ? 0.6 : 1, flip);
+    for (const l of layers) dspr(ctx, stoneSpr(l.s), p[0], p[1], S, 1, flip);
+    ctx.fillStyle = '#2b1d3e';
+    for (let i = 0; i < hits; i++) { const cx = p[0] + ((i * 37) % 21) - 10, cy = p[1] - 12 - ((i * 53) % 54); ctx.fillRect(snap(cx), Math.round(cy / 3) * 3, 3, 9); ctx.fillRect(snap(cx + (i % 2 ? 3 : -3)), Math.round((cy + 9) / 3) * 3, 3, 6); }
+    ctx.strokeStyle = '#ffb030'; ctx.lineWidth = 3; ctx.globalAlpha = k * (0.4 + 0.5 * pulse); diamond(ctx, p[0], p[1] + 3, 21 + 12 * k, 10 + 6 * k); ctx.stroke(); ctx.globalAlpha = 1;   // the burst's charge: a growing orange ring
+    R.hpBar(ctx, p[0], p[1] + 9, 27, w.statT / E.t, '#b58a4c');
+  }
+  else { dspr(ctx, spr, p[0], p[1] - bob, S, (blink ? 0.4 : 1) * ia, flip); wearAll((blink ? 0.4 : 1) * ia, flip, p[0], p[1] - bob); }
   if (Math.sin(G.w.t * 6) > 0) { ctx.fillStyle = '#fff07a'; ctx.fillRect(snap(p[0] + (flip ? -27 : 21)), Math.round((p[1] - 48 - bob) / 3) * 3, 6, 6); }
   if (w.armor > 0) R.drawShield(ctx, p[0], p[1] - 27 - bob, w.armor / CFG.wizard.armorMax, tt, false);   // the armor bubble round him
-  if (w.rollCd > 0) R.hpBar(ctx, p[0], p[1] + 9, 27, 1 - w.rollCd / WZ.rollCd(), '#ffffff');
+  if (w.rollCd > 0 && !stone) R.hpBar(ctx, p[0], p[1] + 9, 27, 1 - w.rollCd / WZ.rollCd(), '#ffffff');
 };
 // the Shield Potion's armor: a faint bubble round him, pixel-stepped. It brightens and swells a touch with the armor left, a slow shimmer runs round its rim,
 // and nearly spent it flickers. No object, just a hint that something is soaking hits
@@ -1994,9 +2058,22 @@ R.drawProj = function (ctx, v, p) {
   ctx.fillRect(x - 3, y, sz + 6, sz); ctx.fillRect(x, y - 3, sz, sz + 6);
   ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, 6, 6);
 };
-const TALL_ZONES = { flame: 1, steamcloud: 1, storm: 1, tear: 1, mshield: 1, novapull: 1 };   // zones that stand up: drawn over the bodies
+const TALL_ZONES = { flame: 1, steamcloud: 1, storm: 1, tear: 1, mshield: 1, novapull: 1, ftrail: 1 };   // zones that stand up: drawn over the bodies
 R.drawZone = function (ctx, v, z) {
   const s = R.toScreen(v, z.x, z.y), fr = Math.min(1, z.t / z.dur), t = G.w.t, Y = n => Math.round(n / 3) * 3;
+  if (z.kind === 'ftrail') {   // Flame Trail: a flickering flame on every live segment, small and dim as it burns out
+    const F = CFG.wand.fire;
+    z.pts.forEach((pt, i) => {
+      const q = R.toScreen(v, pt.x, pt.y), k = Math.min(1, pt.a / F.life), sz = Y(18 - k * 9), fl = Math.floor(t * 9 + i * 1.7) % 3;
+      ctx.globalAlpha = Math.min(1, (1 - k) * 1.6) * 0.3; ctx.fillStyle = '#ff5a1a'; diamond(ctx, q[0], q[1], F.r * v.hw * 1.3, F.r * v.hh * 1.3); ctx.fill();
+      ctx.globalAlpha = Math.min(1, (1 - k) * 1.6);
+      ctx.fillStyle = '#9a2a1a'; ctx.fillRect(snap(q[0] - sz / 2), Y(q[1] - 6 - sz), sz, sz + 6);
+      ctx.fillStyle = '#ff6a1a'; ctx.fillRect(snap(q[0] - sz / 3), Y(q[1] - 9 - sz - fl * 3), Math.round(sz * 0.66 / 3) * 3, sz + 6);
+      ctx.fillStyle = '#ffd23a'; ctx.fillRect(snap(q[0] - 3), Y(q[1] - 6 - sz * 0.6), 6, Math.round(sz * 0.5 / 3) * 3 + 3);
+    });
+    ctx.globalAlpha = 1;
+    return;
+  }
   if (z.kind === 'flame') {   // the stream of fire: tongues of flame fanning out along his aim, flickering
     const am = Math.hypot(z.ax, z.ay) || 1, ux = z.ax / am, uy = z.ay / am, base = Math.atan2(uy, ux), fade = Math.min(1, z.t / 0.25);
     for (let i = 0; i < 44; i++) {
@@ -2447,7 +2524,18 @@ R.drawFx = function (ctx, v, f) {
     if (fr < 0.14) { ctx.globalAlpha = (0.14 - fr) / 0.14 * 0.55; ctx.fillStyle = '#ffffff'; ctx.fillRect(R.rect.x0, 0, R.rect.w, CFG.H); }
     ctx.globalAlpha = 1;
   } else if (f.type === 'hsuck') R.drawHsuck(ctx, v, f, s, fr);
-  else if (f.type === 'swirl') {   // a Cyclone Gust pulse: curved wind streaks spinning outward
+  else if (f.type === 'puff') {   // Vanishing Puff: a ring of cloud puffs rolling out
+    ctx.globalAlpha = (1 - fr) * 0.9; ctx.fillStyle = f.col;
+    for (let i = 0; i < 14; i++) {
+      const an = i / 14 * 6.283 + 0.3, rr = f.r * (0.2 + fr * 0.8), q = R.toScreen(v, f.x + Math.cos(an) * rr, f.y + Math.sin(an) * rr), sz = Math.round((12 + (1 - fr) * 18) / 3) * 3;
+      ctx.fillRect(snap(q[0] - sz / 2), Math.round((q[1] - 12 - sz / 2) / 3) * 3, sz, sz); ctx.fillStyle = i % 2 ? '#ffffff' : f.col;
+    }
+    ctx.globalAlpha = 1;
+  } else if (f.type === 'statue') {   // the Statue's burst: a stone ring, bigger the more hits it took
+    const st = Math.ceil(fr * 8) / 8, r = CFG.wand.earth.r * st, a = 1 - fr;
+    ctx.globalAlpha = a; ctx.strokeStyle = '#8a8a96'; ctx.lineWidth = 12; diamond(ctx, s[0], s[1], r * v.hw * K, r * v.hh * K); ctx.stroke();
+    ctx.strokeStyle = '#ffb030'; ctx.lineWidth = 4; ctx.globalAlpha = a * Math.min(1, (f.k - 1) + 0.4); diamond(ctx, s[0], s[1], r * 0.9 * v.hw * K, r * 0.9 * v.hh * K); ctx.stroke(); ctx.globalAlpha = 1;
+  } else if (f.type === 'swirl') {   // a Cyclone Gust pulse: curved wind streaks spinning outward
     ctx.globalAlpha = 1 - fr; ctx.fillStyle = f.col;
     for (let i = 0; i < 12; i++) for (let j = 0; j < 4; j++) {
       const an = i / 12 * 6.283 + fr * 4 + j * 0.12, rr = f.r * (0.55 + fr * 0.45) * (0.85 + j * 0.05), q = R.toScreen(v, f.x + Math.cos(an) * rr, f.y + Math.sin(an) * rr);

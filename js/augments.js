@@ -1,5 +1,5 @@
 'use strict';
-// The Wizard's own loot and verbs (plain WZ extensions, loaded after creatures.js). Everything here is plain data in G (G.aug, G.hold, G.flags.glow, G.w.boulders,
+// The Wizard's own loot and verbs (plain WZ extensions, loaded after creatures.js). Everything here is plain data in G (G.aug, G.flags.glow, G.w.boulders,
 // G.w.tmod) so it survives JSON and the photo test:
 //  - CORES (core_<el>): the components of his garments. Creatures of an element drop that element's Core (rare from normals, more from pairs / triples, a
 //    guaranteed chunk from elites); they fly home to the Stockpile like shards. The Builder forges garments (and Ward Keys) from them at the Armory. A shrine takes
@@ -9,7 +9,7 @@
 //  - AUGMENTS (CFG AUGS): garments in four slots (hat, robe, boots, charm) that give him a new VERB, never a number. The Builder forges one at the Armory and
 //    sends it through the portal; it lands in the wilds like a creature drop and he wears it by walking onto it. The garment it replaces pops off and flies
 //    home to the Stockpile (a tile of its own), where the Builder can pick it up and send it back whenever he likes.
-//  - the held-spell slot (G.hold): unlocked when the Warden falls.
+//  - the glow-up the first Warden's fall gives (the held-spell slot it used to come with is gone: the wand, js/wand.js, took its place).
 WZ.augFresh = () => ({
   v: 3, worn: { hat: '', robe: '', boots: '', charm: '' }, door: false,   // door: the Stronghold's door has been opened with the Warden Key
   cd: { phoenix: 0 },   // cd.phoenix: seconds until the Feather can save him again
@@ -292,33 +292,16 @@ WZ.boulderTick = function (dt) {
   }
 };
 
-// ---------- the held-spell slot and the Warden's glow-up ----------
+// ---------- the Warden's glow-up ----------
 WZ.glowUp = function (m) {
   const w = G.w;
-  G.flags.glow = true; G.hold.on = true;
+  G.flags.glow = true;
   w.glowT = CFG.aug.glow.dur;
   w.fx_.push({ type: 'glowup', x: w.x, y: w.y, t: 0, dur: CFG.aug.glow.dur });
   WZ.ring(w.x, w.y, 6, '#fff6c0', 0.9); w.shake = Math.max(w.shake, 0.6);
   FA.pressure(1, '#fff6c0');
   AU.sfx('victory');
-  const msg = 'The Wizard glows! He can HOLD a spell now: the next one delivered waits for ' + Main.holdKeyName();
-  UI.toast(msg, 'R', 'ic_crown'); UI.toast('The Wizard glows: he can hold one spell now', 'L', 'ic_crown');
-};
-WZ.hold = function (spell) {   // a delivered spell goes into the empty slot instead of firing
-  const w = G.w, p = FA.portal('spell');
-  G.hold.spell = spell;
-  WZ.ring(w.x, w.y, 1.6, SPELL_COL[spell] || '#ffffff', 0.4); WZ.icon(w.x, w.y, spell); AU.sfx('powerup');
-  FA.ipop(p.x + 0.5, p.y + 1.8, [[spell], ['ic_hand']]);
-  UI.changed();
-};
-WZ.fireHeld = function () {
-  const w = G.w;
-  if (!G.hold || !G.hold.on || !G.hold.spell || !w || w.dead || w.jump) return false;
-  const s = G.hold.spell;
-  G.hold.spell = null;
-  WZ.cast(s);
-  UI.changed();
-  return true;
+  UI.toast('The Wizard glows! The Warden is down: the Summoning Altar takes spells now', 'R', 'ic_crown'); UI.toast('The Wizard glows: the Warden is down, the Altar is open to spells', 'L', 'ic_crown');
 };
 
 // ---------- the Kilnsight Mask ----------

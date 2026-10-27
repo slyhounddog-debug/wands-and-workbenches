@@ -279,7 +279,8 @@ WZ.spellS = function (spell) {
   o.mk = m;
   return o;
 };
-WZ.speed = () => CFG.wizard.speed * (1 + CFG.upgrade.zoomies * lvl('zoomies'));
+// his walking speed: the tree's Zoomies, the wand's Flame Trail (+15% while it lasts) and Statue (-20% while he is stone)
+WZ.speed = () => { const w = G && G.w; return CFG.wizard.speed * (1 + CFG.upgrade.zoomies * lvl('zoomies')) * (w && w.fireT > 0 ? 1 + CFG.wand.fire.speed : 1) * (w && w.statT > 0 ? CFG.wand.earth.speedMul : 1); };
 WZ.tile = (x, y) => {
   if (x < 0 || y < 0 || x >= CFG.WW || y >= CFG.WH) return T_POND;
   const i = Math.floor(y) * CFG.WW + Math.floor(x), w = G && G.w;
@@ -365,6 +366,7 @@ WZ.fresh = function () {
     roll: 0, rollCd: 0, rdx: 0, rdy: 0, hurtT: 0, moving: false, bob: 0, shake: 0, ghosts: [],
     enemies: [], allies: [], aq: [], proj: [], eproj: [], aproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
     time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
+    fireT: 0, invisT: 0, statT: 0, statHits: 0, ride: null, sg: null, shrines: {},   // the wand's clocks (js/wand.js): Flame Trail speed, Vanishing Puff, Statue (and the hits it took), Riding Wave; the shrine ring game and the shrine buffs running
     cine: null, rit: 0, quake: 0, altarFlash: 0,   // the Altar's landing cinematic, the Chimera ritual countdown, the world shake after the impact, the flash when a spell hits it
     hv: {}, fg: {},   // harvestable / forage node state (see WZ.nodeProps)
     arcs: [], decals: [], bend: {}, tmod, tmodN, kick: null, jump: null,   // deliveries in flight, ground marks, leaning grass, spell terrain, recoil, geyser jump
@@ -438,6 +440,7 @@ WZ.damage = function (d, soft) {   // armor soaks damage first. soft = burning g
   const w = G.w;
   if (G.menu) return;   // the living menu world is a consequence-free preview: nothing can hurt the Wizard there
   if (w.jump) return;   // airborne on a geyser: nothing reaches him
+  if (w.statT > 0) { d *= CFG.wand.earth.take; if (!soft) w.statHits++; }   // the Statue: stone takes 30% of it, and every hit charges the burst that ends it
   if (!soft && d >= CFG.pressure.hit * WZ.maxHp()) FA.pressure(Math.min(1.5, d / WZ.maxHp() * 3), '#ff5a5a');   // a heavy hit shakes the factory too
   const soak = Math.min(w.armor, d);
   w.armor -= soak; d -= soak;
@@ -699,7 +702,6 @@ WZ.chain = function (n, dmg, col, range) {
 WZ.incoming = function (spell) {
   const w = G.w;
   if (!w || w.dead) return;
-  if (G.hold && G.hold.on && !G.hold.spell) { WZ.hold(spell); return; }   // the held-spell slot is empty: the spell waits in it for the Wizard's own button
   const combo = BASICS.indexOf(spell) < 0, dur = CFG.spells[spell].drop || 0.5;
   w.fx_.push({ type: 'drop', spell, x: w.x, y: w.y, col: SPELL_COL[spell] || '#fff', t: 0, dur, big: combo, seed: Math.random() * 6 });
   AU.sfx(combo ? 'incoming_big' : 'incoming');
@@ -711,6 +713,7 @@ WZ.cast = function (spell) {
   const px = w.x, py = w.y, combo = BASICS.indexOf(spell) < 0;
   const ctx = { spell, el: SPELL_EL[spell] || [], hits: 0, kills: 0, weak: 0 };
   if (G.menu) Menu.spellName(spell);   // the menu world toasts the name of every spell that fires
+  WZ.wandCharge(spell);   // the staff trickle-charges: one tick for each element in the spell (js/wand.js)
   // it bursts at his feet, and the Spell Portal back in the factory feels it (harder for higher tiers)
   w.fx_.push({ type: 'arrive', x: px, y: py, col: SPELL_COL[spell] || '#fff', t: 0, dur: combo ? 0.4 : 0.3, big: combo });
   if (combo) {
@@ -1162,6 +1165,7 @@ WZ.icicleHit = function (x, y) {
 // zones that do more than tick round a circle: returns true when the usual circle damage should be skipped
 WZ.zoneSpecial = function (z, dt) {
   const w = G.w, S = z.ctx ? CFG.spells[z.ctx.spell] : null;
+  if (z.kind === 'ftrail') return WZ.trailTick(z, dt);   // the wand's Flame Trail (js/wand.js)
   if (z.kind === 'flame') {   // a cone of fire in front of him, along his aim
     const a = WZ.aim(), m = Math.hypot(a[0], a[1]) || 1;
     z.ax += (a[0] / m - z.ax) * Math.min(1, dt * 10); z.ay += (a[1] / m - z.ay) * Math.min(1, dt * 10);
@@ -1325,10 +1329,9 @@ WZ.foesNear = (m, n) => {
 };
 WZ.updMarks = function (dt) {
   const w = G.w, M = CFG.marks;
-  w.shrine = null;
   for (const m of WZ.marks) {
     const s = w.lm[m.id];
-    if (s.state === 'done' && m.type !== 'shrine') continue;   // claimed shrines keep boosting
+    if (s.state === 'done' && m.type !== 'shrine') continue;   // (claimed shrines are still looked at: their flash)
     const d = Math.hypot(w.x - m.x, w.y - m.y);
     if (m.type === 'camp') {
       if (s.state === 'idle' && d < M.campWake) {
@@ -1361,9 +1364,8 @@ WZ.updMarks = function (dt) {
       }
     } else if (m.type === 'stronghold') {
       WZ.updKeep(m, s, d, dt);
-    } else {   // shrines: claimed by the element's Core coming down on them (WZ.unlockLand), then they boost their element's harnessers while he stands on them
+    } else {   // shrines: claimed by the element's Core coming down on them (WZ.unlockLand); standing there does nothing: he wakes a claimed one with the Mash button (WZ.shrineTick)
       if (s.flash > 0) s.flash -= dt;
-      if (s.state === 'done' && d < M.shrineR) w.shrine = m.el;
     }
   }
 };
@@ -1496,7 +1498,7 @@ WZ.flowDir = function (e, d) {   // unit step toward the Wizard around water, or
 };
 
 // ---------- main update ----------
-WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
+WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash, cast, cycle }: the Wizard's other three buttons (his roll is rollPressed)
   const w = G.w, cfg = CFG.world;
   w.t += dt;
   w.sx = ((rx || 0) + (ry || 0)) / 1.414; w.sy = ((ry || 0) - (rx || 0)) / 1.414;   // the right stick, in world directions (iso, like the movement stick)
@@ -1524,7 +1526,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
   WZ.tmodTick(dt);
   WZ.arcTick(dt);
   WZ.cineTick(dt);   // the Summoning Altar's landing (runs even if he dies meanwhile)
-  if (w.dead) { w.shrine = null; w.dig = null; w.jump = null; w.blink = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
+  if (w.dead) { w.sg = null; w.dig = null; w.jump = null; w.blink = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
   w.time += dt;
   if (w.hurtT > 0) w.hurtT -= dt;
   if (w.mashT > 0) w.mashT -= dt;
@@ -1550,6 +1552,12 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     }
   }
 
+  // the wand's buttons: Cycle picks the armed slot, Cast fires it (a spell-delivery 'act' never comes from the menu world)
+  const A = act || {};
+  if (!G.menu && G.wand) { if (A.cycle && !WZ.wandCycle()) AU.sfx('error'); if (A.cast && !WZ.wandCast() && !w.ride && !(w.statT > 0)) AU.sfx('error'); }   // (nothing ready: a dull no)
+  if (w.ride) { ix = 0; iy = 0; rollPressed = false; w.rollBuf = 0; w.target = null; }   // a Riding Wave has the controls
+  if (w.statT > 0) { rollPressed = false; w.rollBuf = 0; }   // stone does not roll
+
   // movement
   let dx = 0, dy = 0;
   if (ix || iy) { w.target = null; dx = ix + iy; dy = iy - ix; }
@@ -1559,10 +1567,10 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
   }
   const m = Math.hypot(dx, dy);
   if (m > 0) { dx /= m; dy /= m; w.fx = dx; w.fy = dy; }
-  // standing still at a forage spot, the roll button digs instead (move while pressing it to roll away)
-  w.dig = w.roll > 0 ? null : WZ.forageAt(w.x, w.y);
-  if (rollPressed && w.dig && m === 0) { WZ.mash(w.dig); w.mashAt = w.t; rollPressed = false; }
-  else if (rollPressed && m === 0 && w.t - (w.mashAt || -9) < 0.35) rollPressed = false;   // extra mashes after it's dug don't roll him off
+  // the Mash button (its own button now, never the roll): it wakes a claimed shrine's ring game, else digs the forage spot in reach. Mashing is an action: it ends Vanishing Puff
+  w.dig = w.roll > 0 || w.ride ? null : WZ.forageAt(w.x, w.y);
+  const sgBusy = !!w.sg, sgStarted = WZ.shrineTick(dt, !!A.mash && !w.ride);
+  if (A.mash && !w.ride) { WZ.unseen(); if (!sgBusy && !sgStarted && w.dig) { WZ.mash(w.dig); w.mashAt = w.t; } }
   // a roll pressed a moment too early (still rolling / cooling down) is kept for CFG.inputBuffer seconds
   if (rollPressed && (w.rollCd > 0 || w.roll > 0)) { w.rollBuf = CFG.inputBuffer; rollPressed = false; }
   else if (w.rollBuf > 0) { w.rollBuf -= dt; if (w.rollCd <= 0 && w.roll <= 0) { rollPressed = true; w.rollBuf = 0; } }
@@ -1586,6 +1594,8 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     w.ghostT = (w.ghostT || 0) - dt;
     if (w.ghostT <= 0) { w.ghostT = 0.025; w.ghosts.push({ x: w.x, y: w.y, t: 0 }); }
     if (k >= 1) { w.blink = null; w.squashT = 0.12; WZ.ring(w.x, w.y, 1.2, '#e6f8ff', 0.3); WZ.puff(w.x, w.y, '#e6f8ff', 8); }
+  } else if (w.ride) {   // Riding Wave: a straight run along the aim (WZ.rideSet), the wave parts the foes it meets (WZ.rideTick)
+    WZ.rideSet(dt);
   } else if (w.roll > 0) {
     // the roll ignores acceleration: a committed burst
     w.roll -= dt;
@@ -1622,6 +1632,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     if (w.y === oy) w.vy = 0;
     if (w.target && w.x === ox && w.y === oy) w.target = null;
   }
+  WZ.wandTick(dt);   // the wand's clocks: Flame Trail speed, Vanishing Puff, Statue and its burst, the Riding Wave
   WZ.augTick(dt);   // augment cooldowns, washing ashore, the keeps' doors, boulders
   WZ.altarTick(dt);   // the Summoning Altar: placing it, its sockets, the Chimera ritual
   // scorched ground burns (the Emberward Cloak walks it unharmed and throws embers up instead)
@@ -1674,7 +1685,6 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     if (w.enemies.length < cfg.cap) WZ.spawn();
   }
   WZ.updMarks(dt);
-  if (w.shrine) G.stats.shrineT = (G.stats.shrineT || 0) + dt;   // time spent boosting the factory from a claimed shrine
   WZ.eggTick(dt);
   if (G.ev) WZ.evTick(dt);
 
@@ -1706,13 +1716,18 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     if (dw > 45) { const sp2 = WZ.dryNear(w.x, w.y, 8, [cfg.ringMin, cfg.ringMax]); if (sp2) { e.x = sp2[0]; e.y = sp2[1]; } continue; }
     if (dw < 12) { const key = e.elite ? 'elite' : e.boss ? null : (e.weak ? e.type : null); if (key && !w.seen[key]) { w.seen[key] = true; WZ.announce(e, key); } }
     const TG = WZ.foeTarget(e), ex = TG.x - e.x, ey = TG.y - e.y, d = TG.a ? Math.hypot(ex, ey) || 1 : dw;   // an ally within aggro range comes first
-    if (e.boss) WZ.bossAI(e, dt, d, TG);
+    if (e.boss && !TG.mill) WZ.bossAI(e, dt, d, TG);
     const s = e.spd * (1 - e.slow) * (!e.fly && WZ.tile(e.x, e.y) === T_BOG ? cfg.slowTerrain : 1);
     let ux = ex / d, uy = ey / d, steered = false;
     if (e.detour > 0) { e.detour -= dt; const px = -uy * e.side, py = ux * e.side; ux = px; uy = py; }   // last-resort sidestep
-    else if (d > 1.5 && !e.fly && !TG.a) { const f = WZ.flowDir(e, d); if (f) { ux = f[0]; uy = f[1]; steered = true; } }   // (the flow field leads to the Wizard: an ally is chased in a straight line)
+    else if (d > 1.5 && !e.fly && !TG.a && !TG.mill) { const f = WZ.flowDir(e, d); if (f) { ux = f[0]; uy = f[1]; steered = true; } }   // (the flow field leads to the Wizard: an ally is chased in a straight line)
+    if (TG.mill) {   // Vanishing Puff: nobody to go for (he is unseen and no ally is near): it mills about where it stands
+      e.millT = (e.millT || 0) - dt;
+      if (e.millT <= 0) { e.millT = rand(0.7, 1.8); const an = Math.random() * 6.283, st = Math.random() < 0.35 ? 0 : 0.3; e.millX = Math.cos(an) * st; e.millY = Math.sin(an) * st; }
+      ux = e.millX || 0; uy = e.millY || 0; steered = true;
+    }
     let mx = ux * s, my = uy * s;
-    if (e.ai) { const r = WZ.aiTick(e, dt, d, ux, uy, s, TG); if (r) { mx = r[0]; my = r[1]; } }   // a creature's own movement and attacks
+    if (e.ai && !TG.mill) { const r = WZ.aiTick(e, dt, d, ux, uy, s, TG); if (r) { mx = r[0]; my = r[1]; } }   // a creature's own movement and attacks
     // soft separation: bodies keep (rad + rad + sepPad) apart, so packs stay readable and don't land hits in one clump
     for (let j = i + 1; j < en.length; j++) {
       const o = en[j]; if (o.dead) continue;
@@ -1745,7 +1760,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry) {
     e.face = (ex - ey) >= 0 ? 1 : -1;
     // touch damage
     const reach = e.rad + 0.45;
-    if (TG.a) {   // hunting an ally: the touch is for it, not for the Wizard
+    if (TG.mill) { /* it does not know he is there: no touch */ } else if (TG.a) {   // hunting an ally: the touch is for it, not for the Wizard
       if (d < e.rad + TG.a.rad + 0.25 && e.cd <= 0) {
         e.cd = cfg.touchCd * rand(0.85, 1.3);
         WZ.hurtAlly(TG.a, (e.diving && e.diveDmg) || e.dmg, ex / d * 4, ey / d * 4);

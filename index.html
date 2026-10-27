@@ -77,9 +77,10 @@
         <div class="clabel"><i data-ic="ic_hat" data-s="16"></i>WIZARD<span class="stat"><i data-ic="ic_skull" data-s="14"></i><span id="runKills"></span></span><span class="stat"><i data-ic="ic_clock" data-s="14"></i><span id="runTime"></span></span></div>
         <div class="bar hp"><i data-ic="ic_heart" data-s="14"></i><div id="hpFill"></div><span id="hpTxt"></span></div>
         <div class="bar arm"><i data-ic="ic_shield" data-s="14"></i><div id="armFill"></div><span id="armTxt"></span></div>
+        <div id="wandRow"></div>   <!-- the wand: four slots charged by the spells the Builder sends (UI.updateWand) -->
       </div>
-      <!-- the Wizard's worn garments (hat, robe, boots, charm) and, once the first Warden has fallen, the held spell: just a readout, he changes clothes by walking onto garments the Builder sends -->
-      <div class="card px" id="gearCard" title="What the Wizard is wearing (and the held spell). Garments the Builder forges land in the wilds: walk onto one to put it on"></div>
+      <!-- the Wizard's worn garments (hat, robe, boots, charm): just a readout, he changes clothes by walking onto garments the Builder sends -->
+      <div class="card px" id="gearCard" title="What the Wizard is wearing. Garments the Builder forges land in the wilds: walk onto one to put it on"></div>
       <div class="iconbtns right"><button id="btnBookR" class="px" title="Collection Book: every spell and creature"><i data-ic="ic_book" data-s="28"></i><kbd>C</kbd></button><button id="btnTreeR" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>Y</kbd></button></div>
       <div class="card px pin hidden" id="pinR"></div>
     </div>
@@ -98,13 +99,14 @@
       </div>
       <div class="hcol">
         <h3><i data-ic="ic_hat" data-s="16"></i>WIZARD</h3>
-        <div><kbd>ARROWS</kbd> walk &nbsp; <kbd>.</kbd> roll (invulnerable)</div>
+        <div><kbd>ARROWS</kbd> walk &nbsp; <kbd>.</kbd> dodge (invulnerable) &nbsp; <kbd>/</kbd> mash (dig, wake a shrine)</div>
+        <div><kbd>,</kbd> cast the wand &nbsp; <kbd>M</kbd> cycle it (every spell the Builder sends charges it)</div>
         <div>Spells fire by themselves when the factory delivers them. Walk onto a garment the Builder sends to wear it.</div>
         <div>Stand near trees and rocks: spells harvest them too.</div>
         <div>Water blocks you. Bog slows you. The map shows landmarks.</div>
         <div><kbd>Y</kbd> skill tree (pauses the game) &nbsp; hold <kbd>X</kbd> swap</div>
       </div>
-      <div class="hfoot"><i data-ic="ic_pad" data-s="16"></i> Pad 1 = Builder (A pick up / place, B throw, X use, LB/RB slot, RT next in a family, Back demolish). Pad 2 = Wizard (A roll). <kbd>H</kbd> hides this.</div>
+      <div class="hfoot"><i data-ic="ic_pad" data-s="16"></i> Pad 1 = Builder (A pick up / place, B throw, X use, LB/RB slot, RT next in a family, Back demolish). Pad 2 = Wizard (A dodge, X mash, B cast the wand, Y cycle it, Back tree). <kbd>H</kbd> hides this.</div>
     </div>
 
     <div id="treeL" class="tree hidden"></div>
@@ -192,6 +194,7 @@
 <script src="js/creatures.js"></script>
 <script src="js/augments.js"></script>
 <script src="js/altar.js"></script>
+<script src="js/wand.js"></script>
 <script src="js/net.js"></script>
 <script src="js/render.js"></script>
 <script src="js/spellpreview.js"></script>

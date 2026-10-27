@@ -164,7 +164,7 @@ UI.updateHud = function (dt) {
   if (UI.tipT > 0) { UI.tipT -= dt; if (UI.tipT <= 0 && !UI.tipHover) $('hotTip').classList.add('hidden'); }
   UI.tickToasts(dt);
 };
-// the Wizard's gear on his HUD: the four worn augments (a faint outline when a slot is empty) and, once the first Warden has fallen, the held-spell slot
+// the Wizard's gear on his HUD: the four worn augments (a faint outline when a slot is empty); the wand's four slots sit under his health bar (UI.updateWand)
 UI.updateGear = function () {
   const A = G.aug, P = CFG.aug.phoenix;
   let s = '';
@@ -172,11 +172,23 @@ UI.updateGear = function () {
     const id = A.worn[sl[0]], cool = id === 'phoenix' && A.cd.phoenix > 0;
     s += '<span class="gs ' + (id ? '' : 'em ') + (cool ? 'cool' : '') + '" title="' + (id ? AUGS[id].name : sl[1]) + '">' + UI.img(id ? 'aug_' + id : 'aug_' + AUG_ORDER.find(k => AUGS[k].slot === sl[0]), 32) + (id ? '' : '<small>' + sl[1].toUpperCase().slice(0, 4) + '</small>') + (cool ? '<i style="width:' + Math.round((1 - A.cd.phoenix / P.cd) * 38) + 'px"></i>' : '') + '</span>';
   }
-  if (G.hold.on) s += '<span class="gs hold' + (G.hold.spell ? ' full' : '') + '" title="Held spell">' + (G.hold.spell ? UI.img(G.hold.spell, 32) : UI.img('ic_hand', 24)) + '<kbd>' + (Net.role === 'guest' ? (IN.pad[0] ? 'X' : 'E') : Main.holdKeyName()) + '</kbd></span>';
-  else s += '<span class="gs lockd" title="The held-spell slot opens when the first Warden falls">' + UI.img('ic_lock', 24) + '</span>';
   setHtml('gearCard', s);
+  UI.updateWand();
 };
-// The building note sits right above the hotbar and the button prompts (drawn by R.drawFocus) stack above it; UI.inspectH is how tall the note is, so they can clear it.
+// The wand: four slots (Air, Water, Fire, Earth) under his health bar, each an icon filling with the spells that charged it; a READY slot is lit, and the ARMED one (the one Cast fires)
+// has a bright frame and a marker. The key chips are the Cycle and Cast buttons of whoever plays him.
+UI.updateWand = function () {
+  const W = G.wand;
+  if (!W || !$('wandRow')) return;
+  const kn = Main.wizKeyNames();
+  let s = '';
+  for (const el of ELEMS) {
+    const need = CFG.wand.need[el], full = W.full[el], m = W.m[el], on = W.armed === el;
+    s += '<span class="ws' + (full ? ' full' : '') + (on ? ' armed' : '') + '" style="--ec:' + ELEM[el].color + '" title="' + CFG.wandNames[el] + ': ' + (full ? 'READY' + (on ? ' (armed: Cast fires it)' : ' (Cycle arms it)') : m + ' of ' + need + ' spells') + '">' + UI.img('wand_' + el, 24) + '<i style="height:' + Math.round(m / need * 100) + '%"></i>' + (full ? '' : '<b>' + m + '</b>') + (on ? '<u></u>' : '') + '</span>';
+  }
+  s += '<span class="wk" title="Cycle the armed wand attack / Cast it"><kbd>' + kn.cycle + '</kbd><kbd>' + kn.cast + '</kbd></span>';
+  setHtml('wandRow', s);
+};// The building note sits right above the hotbar and the button prompts (drawn by R.drawFocus) stack above it; UI.inspectH is how tall the note is, so they can clear it.
 UI.inspectH = 0;
 UI.setInspect = function (s) {
   const el = $('inspect');
@@ -308,11 +320,11 @@ UI.debugEvent = function () {
   const when = i.active ? 'RUNNING ' + fmtTime(i.active.t) : i.deferred ? 'deferred ' + fmtTime(i.clear) : 'in ' + fmtTime(Math.max(0, i.left));
   return '<div>Event: <b>' + WZ.evTitle(i.plan) + '</b> ' + when + '</div><div class="dim">Crafted alive ' + WZ.craftedAlive() + '/' + CFG.crafted.cap + '  Eggs queued ' + G.fac.eggQ.length + '  made ' + (G.stats.crafted || 0) + '  killed ' + (G.stats.craftedKills || 0) + '  events ' + (G.stats.events || 0) + '</div>';
 };
-// the Wizard's worn garments, the Wardrobe Shelf, open keeps, Cores and held spell (F3 overlay)
+// the Wizard's worn garments, the Wardrobe Shelf, open keeps, Cores and the wand (F3 overlay: * = armed, ! = ready)
 UI.debugGear = function () {
   const A = G.aug, worn = AUG_SLOTS.map(s => s[1] + ' ' + (A.worn[s[0]] ? AUGS[A.worn[s[0]]].name : '-')).join(' | '), al = G.altar;
   return '<div>Worn: <b>' + worn + '</b></div><div class="dim">Stockpile ' + FA.pileList().filter(p => p.n > 0).length + '/' + FA.pileTiles().length + ' tiles  Cores ' + ELEMS.map(e => e[0].toUpperCase() + (G.stock['core_' + e] || 0)).join(' ') +
-    '  Door ' + (A.door ? 'open' : 'locked') + '  Warden ' + (G.flags.warden ? 'dead' : 'alive') + '  Altar ' + (al.placed ? 'lit ' + al.lit.map(l => (l ? 'X' : '.')).join('') : G.tree.summon ? 'landing' : 'not bought') + '  Held spell <b>' + (G.hold.on ? (G.hold.spell || 'empty') : 'locked') + '</b>  Feather ' + Math.ceil(A.cd.phoenix) + 's</div>';
+    '  Door ' + (A.door ? 'open' : 'locked') + '  Warden ' + (G.flags.warden ? 'dead' : 'alive') + '  Altar ' + (al.placed ? 'lit ' + al.lit.map(l => (l ? 'X' : '.')).join('') : G.tree.summon ? 'landing' : 'not bought') + '  Wand <b>' + ELEMS.map(e => e[0].toUpperCase() + (G.wand.full[e] ? (G.wand.armed === e ? '*' : '!') : G.wand.m[e] + '/' + CFG.wand.need[e])).join(' ') + '</b>  Feather ' + Math.ceil(A.cd.phoenix) + 's</div>';
 };
 UI.updateDebug = function (dt) {
   const el = $('debug');
@@ -879,16 +891,17 @@ const HOWTO = {
     ['Pickups', 'Potions and Shield Potions sent through the Spell Portal fall beside the Wizard. Walk over them to use them. They wait if HP or shield is already full.'],
     ['Weaknesses', 'Biome monsters take <b>double damage</b> from one element and half from another: <b>Ember Imps</b> (sand, dirt) hate Water, <b>Bog Lurkers</b> hate Fire, <b>Gale Wisps</b> (far meadows) hate Earth, <b>Stone Golems</b> (far dark woods) hate Air. Combo spells count every element in them. A small diamond over a foe shows its weakness, and yellow numbers with a ! mean a weak hit.'],
     ['Elites', 'Big gold-ringed monsters with a crown. Much tougher, but they drop <b>Aether Shards</b> and lots of XP. Each one is weak to one element.'],
-    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard walks up: clear them. <b>Crypts</b> (purple) open if he waits at the door, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours) want <b>three Cores</b>, one of each element the Shrine does NOT belong to (an Air Shrine takes Water, Fire and Earth): creatures of those elements drop them now and then (elites always do). Stand near the Shrine and have the Builder send the Cores through the Spell Portal one by one: each sails down onto the Shrine, and the third claims the Shard. From then on, while the Wizard stands on it, the factory\'s Harnessers of that element run <b>25% faster</b>.'],
-    ['Foraging', '<b>Dirt Mounds</b>, <b>Stick Piles</b> and <b>Berry Bushes</b> are scattered everywhere. Stand still at one and <b>mash the roll button</b> (<kbd>.</kbd>, pad <b>A</b>) to dig out Stone (sometimes Iron Ore) or Wood, or shake a Health Potion or Armor Plate out of a bush. Move while pressing it to roll away instead. They grow back after a while. Wearing the Kilnsight Mask also shows <b>buried caches</b> glinting in the grass: dig those the same way.'],
-    ['Dodging', 'The roll makes the Wizard <b>invulnerable</b> while he flickers white. A hit he rolls through pops <b>DODGE!</b>.'],
+    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard walks up: clear them. <b>Crypts</b> (purple) open if he waits at the door, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours) want <b>three Cores</b>, one of each element the Shrine does NOT belong to (an Air Shrine takes Water, Fire and Earth): creatures of those elements drop them now and then (elites always do). Stand near the Shrine and have the Builder send the Cores through the Spell Portal one by one: each sails down onto the Shrine, and the third claims the Shard. A claimed Shrine does nothing until the Wizard <b>wakes</b> it: stand beside it and press <b>Mash</b>, then press Mash again each time a closing ring passes through its target zone, three times (a miss only restarts that ring; walking away cancels it). Awake, it speeds up that element\'s Harnessers by 25% for <b>30 seconds</b>, wherever the Wizard goes, then recharges for <b>2 minutes</b> (it visibly refills). Standing on a Shrine gives nothing, and Shrines never charge the wand.'],
+    ['Foraging', '<b>Dirt Mounds</b>, <b>Stick Piles</b> and <b>Berry Bushes</b> are scattered everywhere. Stand at one and <b>mash the Mash button</b> (pad <b>X</b>, left-click, <kbd>/</kbd> on a shared keyboard) to dig out Stone (sometimes Iron Ore) or Wood, or shake a Health Potion or Armor Plate out of a bush. Mash is its own button: the roll never digs. They grow back after a while. Wearing the Kilnsight Mask also shows <b>buried caches</b> glinting in the grass: dig those the same way.'],
+    ['The Wand', 'The Wizard\'s staff holds <b>four wand attacks</b>, one per element, and they are charged by <b>the spells the Builder sends</b>: every spell adds one tick to each element it carries (a Gust ticks Air, a Flamethrower Air and Fire, the Nova all four). A slot is READY after <b>8 Air, 7 Water, 6 Fire or 5 Earth</b> ticks and holds exactly one attack (ticks for a full slot are lost). The four slots sit under his health bar. <b>Cycle</b> (pad <b>Y</b>) picks which ready slot is armed; <b>Cast</b> (pad <b>B</b>) fires it. <b>Flame Trail</b> (Fire): +15% speed for 3 seconds and a trail of fire that burns for 5 seconds. <b>Vanishing Puff</b> (Air): a burst of air that shoves and hurts, then for 4 seconds nothing hostile can target him (mashing or casting ends it early). <b>Riding Wave</b> (Water): he rides a wave in a straight line, about 8 tiles in a second, parting foes to the sides; it stops dead at walls and water. <b>Statue</b> (Earth): 4 seconds of stone, slower but taking only 30% damage, then it bursts, harder for every hit he took.'],
+    ['Dodging', 'The roll (<b>Dodge</b>: pad <b>A</b>, <kbd>Space</kbd>, <kbd>.</kbd>) makes the Wizard <b>invulnerable</b> while he flickers white. A hit he rolls through pops <b>DODGE!</b>.'],
     ['The Primal Chimera', 'The boss. It only takes real damage from its current weakness (shown on the boss bar and its glowing belly), and the weakness changes every quarter of its health, so the factory has to switch what it sends. Roll or walk out of the pink slam marks and dodge its orbs.'],
   ],
   'CONTROLS': [
     ['Builder: keyboard & mouse', '<kbd>WASD</kbd> walk, <kbd>left-click</kbd> pick up one (hold to repeat; walks there first), <kbd>right-click</kbd> throw along the lead line (hold = rapid), <kbd>E</kbd> use: gather, crank, rotate, switch recipe, <kbd>1</kbd>-<kbd>7</kbd> or wheel: slot, <kbd>Q</kbd> (or wheel over a family slot): next member of the slot, <kbd>R</kbd> rotate, click: place (with a building selected), drag belts, <kbd>B</kbd> demolish, <kbd>Enter</kbd> place in front, <kbd>T</kbd> skill tree (in it: right-click a skill to pin it, <kbd>Q</kbd> takes the last deposit back out), <kbd>Tab</kbd> cycle targets, <kbd>Shift</kbd>+<kbd>right-click</kbd> throw the whole stack, <kbd>H</kbd> controls card, <kbd>F3</kbd> or <kbd>`</kbd> debug numbers.'],
-    ['Wizard: keyboard', '<kbd>Arrows</kbd> walk, <kbd>.</kbd> roll-dodge (invulnerable; standing still at a mound, stick pile, bush or cache it digs instead), <kbd>Z</kbd> or <kbd>\'</kbd> fire the held spell, <kbd>Y</kbd> skill tree. Walk onto a garment the Builder sends to wear it.'],
-    ['Swap jobs', 'Hold <kbd>X</kbd> (or Start on a pad) for 1.5s. Then arrows + <kbd>.</kbd> use / <kbd>,</kbd> throw drive the Builder, and WASD + <kbd>Space</kbd> roll + clicking on the right half drive the Wizard.'],
-    ['Gamepads', 'The Builder pad: stick move, A pick up (hold to sweep; with a building selected: place in front; hold with Belt to lay belts), B throw (LT + B: whole stack), X use, right stick cycle targets, X in the tree: undo the last deposit, LB/RB slot, RT next member of a family slot, Back demolish, L3 pin blueprints, Y tree. The Wizard pad: stick move, right stick aim a Tempest Tear, A roll, X fire the held spell, Y tree. Hold Start to swap. (Which controller plays which job is chosen on the player screen before each game.)'],
+    ['Wizard: keyboard', 'Four buttons, always separate: <b>Cycle</b> the wand, <b>Cast</b> it, <b>Dodge</b> (the invulnerable roll), <b>Mash</b> (dig, wake a shrine). Alone on the keyboard: <kbd>WASD</kbd> or arrows walk, <kbd>Q</kbd> Cycle, <kbd>right-click</kbd> Cast, <kbd>Space</kbd> Dodge, <kbd>left-click</kbd> Mash, <kbd>Y</kbd> skill tree. Sharing the keyboard (arrows side): <kbd>M</kbd> Cycle, <kbd>,</kbd> Cast, <kbd>.</kbd> Dodge, <kbd>/</kbd> Mash. Walk onto a garment the Builder sends to wear it.'],
+    ['Swap jobs', 'Hold <kbd>X</kbd> (or Start on a pad) for 1.5s. Then arrows + <kbd>.</kbd> use / <kbd>,</kbd> throw drive the Builder, and WASD + <kbd>Space</kbd> Dodge, <kbd>E</kbd> or left-click Mash, <kbd>Z</kbd> or right-click Cast, <kbd>V</kbd> Cycle drive the Wizard.'],
+    ['Gamepads', 'The Builder pad: stick move, A pick up (hold to sweep; with a building selected: place in front; hold with Belt to lay belts), B throw (LT + B: whole stack), X use, right stick cycle targets, X in the tree: undo the last deposit, LB/RB slot, RT next member of a family slot, Back demolish, L3 pin blueprints, Y tree. The Wizard pad: stick move, right stick aim a Tempest Tear, A dodge, X mash, B cast the wand, Y cycle the wand, Back / Select tree. Hold Start to swap. (Which controller plays which job is chosen on the player screen before each game.)'],
   ],
 };
 // volume sliders for the pause menu (the front door has its own: the volume staircases in the menu world)
@@ -931,10 +944,12 @@ const CONTROLS = [
     [K('ESC'), 'Close / cancel the tool, then pause'],
   ]],
   ['WIZARD: KEYBOARD', [
-    [K('ARROWS'), 'Walk'],
+    [K('ARROWS') + ' &nbsp;or&nbsp; ' + K('WASD'), 'Walk (alone on the keyboard either; sharing it the Wizard has the arrows)'],
     ['Wizard pad: right stick', 'Aim the Tempest Tear droplets (tilt = how far out, up to 6 tiles); with no keyboard stick they aim the way the Wizard faces'],
-    [K('.'), 'Roll (invulnerable); with the Gale Circlet it is a short blink. Standing still at a mound, stick pile, bush or buried cache: dig.'],
-    [K('Z') + ' &nbsp;or&nbsp; ' + K('\''), 'Fire the spell the Wizard is holding (after the first Warden falls: the next spell delivered waits in the slot)'],
+    [K('SPACE') + ' &nbsp;/&nbsp; ' + K('.'), 'DODGE: the roll (invulnerable); with the Gale Circlet it is a short blink. Sharing the keyboard: ' + K('.')],
+    [K('LEFT-CLICK') + ' &nbsp;/&nbsp; ' + K('/'), 'MASH: dig a mound, stick pile, bush or buried cache; wake a claimed shrine (press again as its ring closes). Mash is never the roll. Sharing the keyboard: ' + K('/')],
+    [K('RIGHT-CLICK') + ' &nbsp;/&nbsp; ' + K(','), 'CAST the armed wand attack (it needs a ready slot). Sharing the keyboard: ' + K(',')],
+    [K('Q') + ' &nbsp;/&nbsp; ' + K('M'), 'CYCLE the wand: the next ready slot becomes the armed one (a slot that just filled is armed at once). Sharing the keyboard: ' + K('M')],
     [K('Y'), 'Wizard Skill Tree'],
   ]],
   ['PLAYER SELECT (before each game)', [
@@ -945,24 +960,25 @@ const CONTROLS = [
   ]],
   ['ONLINE (the guest is the Wizard)', [
     [K('W', 'A', 'S', 'D'), 'Guest: walk'],
-    [K('SPACE'), 'Guest: roll (invulnerable), and dig at a mound, stick pile, bush or cache'],
-    [K('E'), 'Guest: fire the held spell'],
+    [K('SPACE'), 'Guest: dodge roll (invulnerable)'],
+    [K('LEFT-CLICK'), 'Guest: mash (dig a mound, pile, bush or cache; wake a shrine)'],
+    [K('RIGHT-CLICK') + ' ' + K('Q'), 'Guest: cast the armed wand attack / cycle the wand'],
     [K('T'), 'Guest: skill tree (a purchase is sent to the host, who checks it). Nothing pauses online: a tree or menu only holds its own player still'],
-    ['Gamepad', 'A pad works as on the Wizard side (A roll, X fire the held spell, Y tree). Job swap is off online'],
+    ['Gamepad', 'A pad works as on the Wizard side (A dodge, X mash, B cast, Y cycle, Back / Select tree). Job swap is off online'],
     ['Settings > PARTNER VIEW', 'How big the other player\'s world is in your corner, 0% (off) to 45%. Only you see it'],
   ]],
   ['BOTH PLAYERS', [
     [K('C'), 'Collection Book: every spell and creature, with live demos (also on the pause menu)'],
     [K('T') + ' &nbsp;/&nbsp; ' + K('Y'), 'Builder / Wizard Skill Tree (the whole game pauses while one is open)'],
     [K('H'), 'Show or hide the controls card'],
-    [K('X') + ' &nbsp;hold 1.5s', 'Swap jobs. Then: Builder arrows, ' + K('.') + ' pick up, ' + K(',') + ' throw, ' + K('/') + ' use. Wizard WASD, ' + K('SPACE') + ' roll, click the right half to walk'],
+    [K('X') + ' &nbsp;hold 1.5s', 'Swap jobs. Then: Builder arrows, ' + K('.') + ' pick up, ' + K(',') + ' throw, ' + K('/') + ' use. Wizard WASD + mouse: ' + K('SPACE') + ' dodge, ' + K('E') + ' / left-click mash, ' + K('Z') + ' / right-click cast, ' + K('V') + ' cycle'],
     [K('ESC'), 'Pause menu (Resume, Settings, Save &amp; Title). Losing window focus pauses too'],
   ]],
   ['SKILL TREE', [
     [K('CLICK'), 'Buy a skill (or A on a pad)'],
     [K('RIGHT-CLICK'), 'Pin a skill to that side (RB on a pad)'],
     [K('Q'), 'Take the last Skill Portal deposit back out (pad X)'],
-    [K('ESC') + ' ' + K('T') + ' ' + K('Y'), 'Close (pad B / Y)'],
+    [K('ESC') + ' ' + K('T') + ' ' + K('Y'), 'Close (pad B; the Wizard pad\'s Back / Select also opens and closes his tree)'],
   ]],
   ['SPLITTER SETTINGS', [
     [K('DRAG'), 'Slide a bar: each output\'s share (colours match the arrows on the tile). With 3 outputs the other two make up the rest, so it is always 100'],
@@ -986,9 +1002,11 @@ const CONTROLS = [
   ]],
   ['GAMEPAD: WIZARD', [
     [K('STICK') + ' ' + K('D-PAD'), 'Walk'],
-    [K('A'), 'Roll (blink with the Gale Circlet) / dig'],
-    [K('X'), 'Fire the held spell'],
-    [K('Y'), 'Wizard Skill Tree'],
+    [K('A'), 'Dodge: the roll (blink with the Gale Circlet)'],
+    [K('X'), 'Mash: dig, wake a shrine'],
+    [K('B'), 'Cast the armed wand attack'],
+    [K('Y'), 'Cycle the wand (the next ready slot)'],
+    [K('BACK'), 'Wizard Skill Tree'],
     [K('START') + ' &nbsp;hold', 'Swap jobs (either pad)'],
   ]],
   ['DEBUG (for now)', [

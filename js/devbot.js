@@ -232,9 +232,9 @@ const DevBot = { on: null, st: null, stats: null };
     const mx = Math.max(Math.abs(ix), Math.abs(iy));
     if (mx > 0) { ix /= mx; iy /= mx; }
     pad.ix = ix; pad.iy = iy;
-    if (st.mash) { st.mashT -= dt; if (st.mashT <= 0) { st.mashT = c.mashGap; pad.a = true; } } else st.mashT = 0;
+    if (st.mash) { st.mashT -= dt; if (st.mashT <= 0) { st.mashT = c.mashGap; pad.x = true; } } else st.mashT = 0;   // (Mash is the pad's X now)
     if (st.rollReq) { pad.a = true; st.rollReq = false; }
-    pad.any = pad.a;
+    pad.any = pad.a || pad.x;
     IN.pad[DevBot.plug()] = pad;
   };
 })();

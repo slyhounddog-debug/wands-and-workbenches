@@ -173,12 +173,30 @@ async function boot(browser, name) {
   await sleep(500);
   const rolled = await hp.evaluate(() => __wands.G.w.rollCd > 0 || __wands.G.w.roll > 0);
   ok(rolled, 'guest Space rolls the Wizard (edge latched through the 30 Hz packets)');
-  // E = fire the held spell (needs the slot: set it up on the host)
-  await hp.evaluate(() => { const W = __wands; W.G.flags.glow = true; W.G.hold.on = true; W.G.hold.spell = 'flamethrower'; });
-  await sleep(300);
-  await gp.keyboard.press('KeyE'); await sleep(600);
-  const held = await hp.evaluate(() => __wands.G.hold.spell);
-  ok(held === null, 'guest E fires the held spell', 'slot now ' + held);
+  // ---- the Wizard's four buttons on the guest's keyboard: Q = Cycle, right click = Cast, left click = Mash, Space = Dodge (each its own field on the pad, no new wire field)
+  await hp.evaluate(() => { const W = __wands, G = W.G, g = G.wand; G.w.hp = 1e5; G.w.enemies.length = 0; G.w.invisT = G.w.fireT = G.w.statT = 0; for (const el of ['air', 'water', 'fire', 'earth']) { g.m[el] = 0; g.full[el] = false; } g.ord = []; g.armed = null; for (const el of ['fire', 'air']) { g.m[el] = W.CFG.wand[el] ? W.CFG.wand.need[el] : 1; g.full[el] = true; g.ord.push(el); } g.armed = 'air'; });
+  await sleep(500);
+  const gh = await gp.evaluate(() => ({ full: Array.from(document.querySelectorAll('#wandRow .ws.full')).length, armed: Array.from(document.querySelectorAll('#wandRow .ws.armed')).length, w: JSON.stringify(__wands.G.wand.full) }));
+  ok(gh.full === 2 && gh.armed === 1, "the guest's HUD shows the two ready wand slots and the armed one", JSON.stringify(gh));
+  await gp.keyboard.press('KeyQ'); await sleep(500);
+  const cyc = await hp.evaluate(() => __wands.G.wand.armed);
+  ok(cyc === 'fire', 'guest Q cycles the wand on the host (air -> fire, only filled slots)', cyc);
+  await gp.mouse.click(760, 440, { button: 'right' }); await sleep(500);
+  const cast = await hp.evaluate(() => ({ fireT: __wands.G.w.fireT, full: __wands.G.wand.full.fire, armed: __wands.G.wand.armed, z: __wands.G.w.zones.some(z => z.kind === 'ftrail') }));
+  ok(cast.fireT > 0 && !cast.full && cast.armed === 'air' && cast.z, 'guest right click casts the armed wand attack (Flame Trail) and arms the next slot', JSON.stringify(cast));
+  const gcast = await gp.evaluate(() => ({ fireT: __wands.G.w.fireT > 0, trail: __wands.G.w.zones.some(z => z.kind === 'ftrail'), full: Array.from(document.querySelectorAll('#wandRow .ws.full')).length }));
+  ok(gcast.fireT && gcast.trail && gcast.full === 1, 'and the guest sees the trail, his speed buff and the spent slot in the snapshot', JSON.stringify(gcast));
+  // Mash (left click) is NOT the roll: it digs a forage spot, and ends Vanishing Puff
+  await hp.evaluate(() => { const W = __wands, o = W.WZ.forage.find(q => !q.broken && q.kind !== 'cache'); W.G.w.x = o.x; W.G.w.y = o.y + 0.4; W.G.w.vx = W.G.w.vy = 0; W.G.w.invisT = 3; W.G.w.rollCd = 0; window.__f = o; o.prog = 0; });
+  await sleep(500);
+  const roll0 = await hp.evaluate(() => __wands.G.stats.dodges + '|' + __wands.G.w.rollCd);
+  await gp.mouse.click(760, 440, { button: 'left' }); await sleep(500);
+  const mash = await hp.evaluate(() => ({ prog: window.__f.prog, invis: __wands.G.w.invisT, rolling: __wands.G.w.roll > 0, rollCd: __wands.G.w.rollCd }));
+  ok(mash.prog > 0 && mash.invis === 0 && !mash.rolling && mash.rollCd === 0, 'guest left click mashes (digs a spot, ends the puff) and never rolls', JSON.stringify(mash));
+  await gp.keyboard.press('Space'); await sleep(400);
+  const dodged = await hp.evaluate(() => ({ cd: __wands.G.w.rollCd, prog: window.__f.prog }));
+  ok(dodged.cd > 0 && dodged.prog <= mash.prog, 'guest Space dodges and never mashes (no dig progress added)', JSON.stringify(dodged));
+  await hp.evaluate(() => { __wands.G.w.zones.length = 0; __wands.G.w.fireT = 0; });
 
   // ---- the guest's right stick aims the Tempest Tear on the host, and the guest sees the fan of droplets
   await gp.evaluate(() => { navigator.getGamepads = () => [{ connected: true, axes: [0, 0, 0.9, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false })) }]; });
@@ -335,6 +353,30 @@ async function boot(browser, name) {
   }
   await sleep(500);
 
+  // ---- soak
+  if (SOAK) {
+    console.log('soak ' + SOAK + 's ...');
+    await hp.evaluate(() => { const W = __wands; W.G.w.hp = W.WZ.maxHp(); W.G.w.enemies.length = 0; });   // (the live session: the functional checks above left it running)
+    const keys = ['KeyW', 'KeyA', 'KeyS', 'KeyD'], end = Date.now() + SOAK * 1000;
+    let down = null, n = 0;
+    while (Date.now() < end) {
+      if (down) await gp.keyboard.up(down);
+      down = keys[Math.floor(Math.random() * 4)]; await gp.keyboard.down(down);
+      if (Math.random() < 0.5) await gp.keyboard.press('Space');
+      const wq = Math.random();   // the wand's buttons on the guest's keyboard: Q cycle, right click cast, left click mash
+      if (wq < 0.2) await gp.keyboard.press('KeyQ'); else if (wq < 0.5) await gp.mouse.click(760, 440, { button: 'right' }); else if (wq < 0.62) await gp.mouse.click(760, 440, { button: 'left' });
+      if (n++ % 12 === 0) await hp.evaluate(() => { const W = __wands; for (const k of ['fire', 'air', 'water', 'earth', 'flamethrower', 'tempest', 'nova', 'thunder']) W.deliver(k); if (W.G.w.dead) W.WZ.reenter(); });
+      if (n % 40 === 0) await hp.evaluate(() => { const W = __wands; W.G.w.hp = W.WZ.maxHp(); });
+      await sleep(700);
+    }
+    if (down) await gp.keyboard.up(down);
+    const rep = await hp.evaluate(() => { const s = __wands.Net.stats; return { total: s.total / 1048576, raw: s.rawKB, zip: s.zipKB, max: s.maxZip, kbps: s.kbps, time: __wands.G.stats.time }; });
+    const wandOk = await Promise.all([hp, gp].map(p => p.evaluate(() => { const g = __wands.G.wand, need = __wands.CFG.wand.need; return ['air', 'water', 'fire', 'earth'].every(e => g.m[e] >= 0 && g.m[e] <= need[e] && (!g.full[e] || g.m[e] === need[e])) && (g.armed === null || g.full[g.armed]) ? __wands.G.stats.wands || 0 : -1; })));
+    ok(wandOk[0] >= 0 && wandOk[1] >= 0, 'the wand stayed legal on both sides through the soak (' + wandOk[0] + ' casts)');
+    console.log('SOAK: ' + rep.time.toFixed(0) + 's of play, ' + rep.total.toFixed(1) + ' MB sent, last snapshot ' + rep.raw.toFixed(0) + ' KB -> ' + rep.zip.toFixed(1) + ' KB (max ' + rep.max.toFixed(1) + '), ' + rep.kbps + ' KB/s');
+  }
+
+
   // ---- disconnect: freeze + rejoin inside the window
   await gp.evaluate(() => __wands.Net.conn.close());
   await hp.waitForFunction(() => __wands.Net.state === 'lost', null, { timeout: 15000 });
@@ -365,34 +407,6 @@ async function boot(browser, name) {
   ok(true, 'after the window the host is back at the title screen (the menu world)');
   ok(await hp.evaluate(() => { try { const s = JSON.parse(localStorage.getItem('wands2_save_slot1')); return !!s && s.v >= 4 && s.stats.time > 5; } catch (e) { return false; } }), 'and the run\'s save is intact');
   ok(await hp.evaluate(() => __wands.Net.role === null && !__wands.Net.on), 'host Net state reset');
-
-  // ---- soak
-  if (SOAK) {
-    console.log('soak ' + SOAK + 's ...');
-    // fresh session
-    await sleep(1500);
-    const c2 = await hostCreate(hp);
-    await gp.evaluate(() => { __wands.Main.toTitle(true); });
-    await gp.waitForFunction(() => __wands.G && __wands.G.menu, null, { timeout: 30000 }); await sleep(1500);
-    await typeCode(gp, c2);
-    await hp.waitForFunction(() => __wands.G.menu && __wands.G.menu.page === 'cs' && __wands.Net.state === 'live', null, { timeout: 60000 });
-    await readyUp(hp);
-    await hp.waitForFunction(() => __wands.Net.on && __wands.G && !__wands.G.menu && !__wands.G.intro, null, { timeout: 60000 });
-    await gp.waitForFunction(() => __wands.Net.on && __wands.G && !__wands.G.menu && __wands.G.w, null, { timeout: 40000 });
-    const keys = ['KeyW', 'KeyA', 'KeyS', 'KeyD'], end = Date.now() + SOAK * 1000;
-    let down = null, n = 0;
-    while (Date.now() < end) {
-      if (down) await gp.keyboard.up(down);
-      down = keys[Math.floor(Math.random() * 4)]; await gp.keyboard.down(down);
-      if (Math.random() < 0.5) await gp.keyboard.press('Space');
-      if (n++ % 12 === 0) await hp.evaluate(() => { const W = __wands; for (const k of ['fire', 'air', 'water', 'earth']) W.deliver(k); if (W.G.w.dead) W.WZ.reenter(); });
-      if (n % 40 === 0) await hp.evaluate(() => { const W = __wands; W.G.w.hp = W.WZ.maxHp(); });
-      await sleep(700);
-    }
-    if (down) await gp.keyboard.up(down);
-    const rep = await hp.evaluate(() => { const s = __wands.Net.stats; return { total: s.total / 1048576, raw: s.rawKB, zip: s.zipKB, max: s.maxZip, kbps: s.kbps, time: __wands.G.stats.time }; });
-    console.log('SOAK: ' + rep.time.toFixed(0) + 's of play, ' + rep.total.toFixed(1) + ' MB sent, last snapshot ' + rep.raw.toFixed(0) + ' KB -> ' + rep.zip.toFixed(1) + ' KB (max ' + rep.max.toFixed(1) + '), ' + rep.kbps + ' KB/s');
-  }
 
   const all = H.errs.concat(Gu.errs);
   ok(all.length === 0, 'no page errors on either side', all.slice(0, 5).join(' // '));

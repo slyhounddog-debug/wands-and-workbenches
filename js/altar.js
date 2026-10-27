@@ -118,7 +118,7 @@ WZ.cineTick = function (dt) {
 // ---------- hits ----------
 // a player spell whose reach (centre x, y, radius r) touches the Altar lights the socket of its tier. No-op for anything that is not a player spell (WZ.ctx).
 WZ.altarTouch = function (x, y, r) {
-  if (!WZ.ctx || !WZ.altarOn()) return false;
+  if (!WZ.ctx || WZ.ctx.wand || !WZ.altarOn()) return false;   // (a wand attack is not a spell: it lights nothing)
   if (Math.hypot(G.altar.x - x, G.altar.y - y) > r + CFG.altar.r) return false;
   WZ.altarHit(WZ.ctx);
   return true;

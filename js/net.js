@@ -21,7 +21,7 @@
 // toasts) and a second UNRELIABLE, UNORDERED one for the 20 Hz snapshots (a late or lost picture is simply skipped: nothing waits behind it, so one bad packet on a phone
 // hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
-  VERSION: 4,
+  VERSION: 5,   // 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
   BUILD: 11,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
@@ -263,7 +263,7 @@ const Net = {
     const pad = { ix: Math.max(-1, Math.min(1, g.ix || 0)), iy: Math.max(-1, Math.min(1, g.iy || 0)), rx: Math.max(-1, Math.min(1, g.rx || 0)), ry: Math.max(-1, Math.min(1, g.ry || 0)), cyc: e.cyc || 0, any: !!(g.any || Object.keys(e).length) };
     for (const k of EDGES) pad[k] = !!e[k];
     for (const k of HELD) pad[k] = !!g[k];
-    pad.y = false;   // T opens the guest's own tree on the guest's screen; it must not open anything here
+    pad.back = false;   // T / Back opens the guest's own tree on the guest's screen; it must not open anything here
     pad.startHeld = false;   // no job swap online
     IN.pad[G.ctl.pw] = Net.state === 'live' ? pad : null;
     Net.gedge = null;
@@ -520,17 +520,20 @@ const Net = {
   }
   function endSession(msg) { Net.state = 'ended'; Net.error = msg; if (Net.hooks.ended) Net.hooks.ended(msg); }
 
-  // The guest's input as an IN.pad-shaped object. Keyboard (built here: the host never sees physical keys): WASD move, Space = a (roll, dig), E = x (fire the held spell),
-  // T = y (skill tree); a real gamepad's state is used as it is. Presses are latched every frame (Net.collect) and ride in the next packet's edge fields; held state goes in
+  // The guest's input as an IN.pad-shaped object. Keyboard (built here: the host never sees physical keys): WASD move, Space = a (dodge), left click = x (mash), right click = b (cast the wand),
+  // Q = y (cycle the wand), T = back (skill tree); a real gamepad's state is used as it is. Presses are latched every frame (Net.collect) and ride in the next packet's edge fields; held state goes in
   // every packet.
   Net.collect = function () {
     if (Net.role !== 'guest') return;
     if (Net.mute) { Net.latch = {}; return; }   // the guest's own tree / menu / book is up: his presses belong to it, not to the Wizard
     const L = Net.latch || (Net.latch = {}), gp = IN.pad[0] || null;
-    if (IN.hit('Space') || (gp && gp.a)) L.a = true;
-    if (IN.hit('KeyE') || (gp && gp.x)) L.x = true;
-    if (IN.hit('KeyT') || (gp && gp.y)) L.y = true;
-    if (gp) { if (gp.b) L.b = true; if (gp.lb) L.lb = true; if (gp.rb) L.rb = true; if (gp.rt) L.rt = true; if (gp.l3) L.l3 = true; if (gp.back) L.back = true; if (gp.cyc) L.cyc = gp.cyc; }
+    // the Wizard's four buttons (see Main.wizBtns): Space / . dodge = a, left click / / mash = x, right click / , cast = b, Q / M cycle = y; T (the tree) goes as Back
+    if (IN.hit('Space') || IN.hit('Period') || (gp && gp.a)) L.a = true;
+    if (IN.mouse.lp || IN.hit('Slash') || (gp && gp.x)) L.x = true;
+    if (IN.mouse.rp || IN.hit('Comma') || (gp && gp.b)) L.b = true;
+    if (IN.hit('KeyQ') || IN.hit('KeyM') || (gp && gp.y)) L.y = true;
+    if (IN.hit('KeyT') || (gp && gp.back)) L.back = true;
+    if (gp) { if (gp.lb) L.lb = true; if (gp.rb) L.rb = true; if (gp.rt) L.rt = true; if (gp.l3) L.l3 = true; if (gp.back) L.back = true; if (gp.cyc) L.cyc = gp.cyc; }
   };
   // a press made on the guest's own UI that has to reach the host as a button (the re-enter button on the results screen is the roll button)
   Net.latchPress = k => { (Net.latch || (Net.latch = {}))[k] = true; };
@@ -542,7 +545,7 @@ const Net = {
     if (!iy && gp) iy = gp.iy;
     const out = {
       ix, iy, rx: gp ? gp.rx || 0 : 0, ry: gp ? gp.ry || 0 : 0, cyc: L.cyc || 0,
-      xHeld: IN.down('KeyE') || !!(gp && gp.xHeld), aHeld: IN.down('Space') || !!(gp && gp.aHeld), bHeld: !!(gp && gp.bHeld), ltHeld: !!(gp && gp.ltHeld), startHeld: false,
+      xHeld: IN.mouse.l || IN.down('Slash') || !!(gp && gp.xHeld), aHeld: IN.down('Space') || IN.down('Period') || !!(gp && gp.aHeld), bHeld: !!(gp && gp.bHeld), ltHeld: !!(gp && gp.ltHeld), startHeld: false,
     };
     for (const k of EDGES) out[k] = !!L[k];
     out.any = ix !== 0 || iy !== 0 || out.aHeld || out.xHeld || EDGES.some(k => out[k]);
@@ -555,7 +558,7 @@ const Net = {
     let ix = (IN.down('KeyD') ? 1 : 0) - (IN.down('KeyA') ? 1 : 0), iy = (IN.down('KeyS') ? 1 : 0) - (IN.down('KeyW') ? 1 : 0);
     if (!ix && gp) ix = gp.ix;
     if (!iy && gp) iy = gp.iy;
-    return { ix, iy, a: IN.hit('Space') || !!(gp && gp.a) };
+    return { ix, iy, a: IN.hit('Space') || IN.hit('Period') || !!(gp && gp.a) };
   };
   // every guest frame: collect presses, and send the pad at PAD_HZ (also the heartbeat the host watches), and AT ONCE when the held input changes or a button is pressed
   // (waiting for the next tick would add up to 1 / PAD_HZ of delay to every key press)

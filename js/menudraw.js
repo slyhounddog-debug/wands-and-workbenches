@@ -683,7 +683,7 @@ function charsOverTips(c, v, mv) {
   c.restore();
 }
 function keyPrompt(c, x, y, role, icons) {
-  const key = role === 'B' ? (Main.padB() ? 'X' : (G.ctl.kbB && !(Main.kbShared() && G.swapped) ? 'E' : '/')) : (Main.padW() ? 'X' : (G.ctl.kbB ? 'Z' : 'E'));
+  const key = role === 'B' ? (Main.padB() ? 'X' : (G.ctl.kbB && !(Main.kbShared() && G.swapped) ? 'E' : '/')) : (Main.padW() ? 'X' : (G.ctl.kbB && !G.swapped ? '/' : 'E'));
   R.iprompt(c, x, y, key, icons);
 }
 // the Builder's hints: what the pick and throw buttons are

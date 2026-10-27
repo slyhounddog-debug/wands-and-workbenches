@@ -205,7 +205,9 @@ WZ.foeTarget = function (e) {
     const d = Math.hypot(a.x - e.x, a.y - e.y);
     if (d < bd) { bd = d; best = a; }
   }
-  return best ? { x: best.x, y: best.y, a: best } : { x: w.x, y: w.y, a: null };
+  if (best) return { x: best.x, y: best.y, a: best };
+  if (WZ.invisible()) return { x: e.x, y: e.y, a: null, mill: true };   // Vanishing Puff: nothing hostile targets him (an ally comes first, otherwise it mills about)
+  return { x: w.x, y: w.y, a: null };
 };
 // damage to an ally, from any hostile attack: exactly what the Wizard would take, minus his armor and rolls
 WZ.hurtAlly = function (a, d, kx, ky) {
@@ -674,6 +676,6 @@ WZ.claimKeep = function (m) {
   AU.sfx('chest');
   const msg = first ? 'The Warden is dead! The Summoning Altar will answer spells now' : 'The Stronghold is cleared again';
   UI.toast(msg, 'L', 'ic_crown'); UI.toast(msg, 'R', 'ic_crown');
-  if (!G.flags.glow) WZ.glowUp(m);   // the first Warden to fall (per save): the Wizard glows for good and gains the held-spell slot
+  if (!G.flags.glow) WZ.glowUp(m);   // the first Warden to fall (per save): the Wizard glows for good
   UI.changed();
 };

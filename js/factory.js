@@ -161,11 +161,11 @@ FA.throwGap = base => base * (1 - CFG.upgrade.rapid * lvl('rapid'));   // Rapid 
 FA.builderSpeed = () => CFG.builder.speed * (1 + CFG.upgrade.hustle * lvl('hustle'));   // Hustle
 FA.hasRoll = () => lvl('tumble') >= 1;
 FA.rollCd = () => CFG.builder.roll.cd * (1 - CFG.upgrade.tumble * Math.max(0, lvl('tumble') - 1));   // Tumble: tier 1 is the roll, tiers 2-4 shorten its cooldown
-// the Wizard standing at a shrine speeds up that element's harnessers (G.w.shrine, set by WZ.updMarks)
+// an ACTIVATED shrine (its ring game won, WZ.shrineTick: G.w.shrines = element -> seconds of buff left) speeds up that element's harnessers wherever the Wizard is
 FA.shrineBoost = b => {
   const el = b.el, w = G.w;
   if (!w || !el) return 1;
-  return (w.shrine && w.shrine === el ? 1 + CFG.marks.shrineBoost : 1) * (w.surge && w.surge === el ? 1 + CFG.events.storm.boost : 1);   // a claimed shrine, and the Portal Storm's surging element
+  return (w.shrines && w.shrines[el] > 0 ? 1 + CFG.marks.shrineBoost : 1) * (w.surge && w.surge === el ? 1 + CFG.events.storm.boost : 1);   // a claimed shrine, and the Portal Storm's surging element
 };
 FA.cycle = b => CFG.harness[b.el].cycle / (1 + CFG.upgrade.swift * lvl('swift')) / FA.shrineBoost(b);
 // a Harnesser makes nothing while its crystal grows (CFG.harness.growT s after every switch) or shakes (shakeT s once it is grown)
@@ -743,7 +743,7 @@ FA.updWeather = function (dt) {
     f.elAct[el] *= dec;
     const rate = f.elAct[el] * 60 / C.tau;   // packets a minute (an exponential window of tau seconds)
     let goal = Math.max(0, Math.min(1, (rate - C.min) / (C.full - C.min)));
-    if (w && (w.shrine === el || w.surge === el)) goal = Math.min(1, goal + C.shrine);
+    if (w && ((w.shrines && w.shrines[el] > 0) || w.surge === el)) goal = Math.min(1, goal + C.shrine);
     f.weather[el] += Math.max(-C.ease * dt, Math.min(C.ease * dt, goal - f.weather[el]));
   }
 };
@@ -1595,7 +1595,7 @@ FA.statusText = function (b) {
     let st = 'producing';
     if (FA.growing(b)) return n + ' (' + ELEM_WORD[b.el] + '): the crystal is growing, ' + Math.ceil(CFG.harness.growT - b.grow) + 's until it makes packets. F switches the element';
     if (b.out.length >= CFG.buffer) st = 'BLOCKED: nothing takes its output. Belt it away or take it (click)'; else if (!b.powered) st = 'NO POWER';
-    else if (FA.shrineBoost(b) > 1) st = 'producing, SHRINE BOOST +' + Math.round(CFG.marks.shrineBoost * 100) + '% (the Wizard is at a ' + ELEM_WORD[b.el] + ' Shrine)';
+    else if (G.w.shrines && G.w.shrines[b.el] > 0) st = 'producing, SHRINE BOOST +' + Math.round(CFG.marks.shrineBoost * 100) + '% (a ' + ELEM_WORD[b.el] + ' Shrine is awake: ' + Math.ceil(G.w.shrines[b.el]) + 's left)';
     return n + ' (' + ELEM_WORD[b.el] + '): ' + b.out.length + '/' + CFG.buffer + ' ready, ' + st;
   }
   if (d.kind === 'crafter') {

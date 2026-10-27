@@ -68,6 +68,25 @@ const CFG = {
     rollTime: 0.45, rollSpeed: 2.3, rollCd: 1.1, armorMax: 100, dodgeCd: 0.3,
     kickT: 0.16,              // aimed spells push him back over this many seconds (each spell's recoil in CFG.spells = tiles)
   },
+  wandNames: { air: 'Vanishing Puff', water: 'Riding Wave', fire: 'Flame Trail', earth: 'Statue' },
+  // THE WAND (js/wand.js): the staff holds four attacks, one per element, charged by the spells the Builder sends. Every delivered spell adds one tick to each element it carries
+  // (a Gust ticks Air, a Flamethrower Air + Fire, the Nova all four); a slot is READY when its meter holds `need` ticks, and a full slot holds exactly one attack (ticks for it are
+  // lost). Damage is about HALF of the matching basic spell wherever a verb damages (the Book's "most it can deal": Gust 13.2, Seeker Fireball 22.5, Tidal Wave 10, Boulder 96).
+  wand: {
+    half: 0.5,   // every wand attack that damages is about this fraction of the matching basic spell (the numbers below are worked out from CFG.spells after the overrides: see the end of this file)
+    need: { air: 8, water: 7, fire: 6, earth: 5 },   // spells it takes to fill each slot
+    // Flame Trail: +speed for t s while he leaves a trail of fire (a segment every gap tiles, each lives life s, r wide). The damage is a BUDGET: an enemy that stands in the trail for
+    // a segment's whole life takes `total` once (= half of a Seeker Fireball's 22.5), spread over that life (total / life per second), never stacked by overlapping segments
+    fire: { speed: 0.15, t: 3, life: 5, gap: 0.4, r: 0.95, total: 11.25 },
+    // Vanishing Puff: a burst of air r tiles round him (dmg once, push shove: half of Cyclone Gust's 13.2) and he is unseen for t s (nothing hostile targets him; his own actions end it)
+    air: { r: 5, dmg: 6.6, push: 6.5, t: 4 },   // (the numbers here are the stock values; dmg / push are worked out from Cyclone Gust)
+    // Riding Wave: he rides a wave in a straight line along his aim for dist tiles in t s (a Tidal Wave's speed 10 x life 0.85 = 8.5 tiles). w = its width (a V / U smaller than the
+    // spell's 3.4), dmg = half of Tidal Wave's 10, once per foe; foes are parted to the SIDES (push), not carried. Stops dead at a wall or a water edge
+    water: { dist: 8.5, t: 1, w: 2.2, dmg: 5, push: 8 },
+    // Statue: stone for t s: speed x speedMul, damage taken x take; every hit taken charges the ending burst by perHit (of its base), capped at cap (+100%). The burst: dmg (half of a
+    // Bouncing Boulder's 96) in r tiles, push shove (grows with the charge too)
+    earth: { t: 4, speedMul: 0.8, take: 0.3, perHit: 0.2, cap: 1, r: 3.4, dmg: 48, push: 9 },
+  },
   world: {
     respawn: 120, vacuum: 2, minSpawnDist: 8,
     spawnStart: 21, spawnMul: 0.96, spawnFloor: 5.5, cap: 160,   // wild spawns are a trickle: the factory's creatures are the real fight
@@ -105,10 +124,14 @@ const CFG = {
   marks: {        // landmarks in the wilds: the only source of Aether Shards besides elites
     camps: 9, shrines: 8, crypts: 4, spacing: 16,
     campWake: 8, campFoes: 6, campShards: 3,
-    shrineR: 2.6, shrineBoost: 0.25,   // standing at a claimed shrine speeds up that element's harnessers
+    shrineR: 2.6, shrineBoost: 0.25,   // an ACTIVATED shrine speeds up that element's harnessers (shrineBoost) for buffT seconds, wherever the Wizard goes; then it recharges for cdT s
     // claiming a shrine: the Builder sends that element's Core (dropped by its creatures) through the Spell Portal while the Wizard is within CFG.unlockR of it; the Core flies down onto the shrine.
     // shrineShards = Aether Shards paid out when it is claimed (unchanged from the mini-game days)
     shrineShards: 1,
+    // activating a claimed, ready shrine (the Wizard's Mash button within shrineR): a ring closes toward the target zone, press Mash with the ring inside it; rings good ones in a row
+    // activate it. A miss restarts that ring (no other penalty); walking off cancels it, nothing is consumed. ring[i] = seconds one ring takes to close; the zone is the stretch of it
+    // (fractions) that counts; netLag = seconds a guest's press is treated as earlier (he sees the ring that much late)
+    buffT: 30, cdT: 120, rings: 3, ring: [1.3, 1.15, 1.0], zone: [0.72, 0.88], lead: 0.5, netLag: 0.25,
     cryptHold: 1.5, cryptShards: 5, cryptMinions: 7, xpBonus: 6,
   },
   // forage spots in the wilds: the Wizard stands still at one and mashes the roll button to dig / search it.
@@ -431,6 +454,18 @@ const CFG = {
 };
 // the dev tool's Variables tab (overrides/tuning.js) lands here, before anything below derives from CFG
 if (window.OV) OV.tune(CFG, window.TUNING);
+// The wand's numbers are HALF of the matching basic spell's (CFG.wand.half), read here AFTER the dev-tool overrides so a Gust (or Fireball, Tidal Wave, Boulder) you tuned keeps its
+// wand attack in step. A wand number tuned on purpose in the Variables tab (it is in window.TUNING) wins. Gust's total counts its pulses and the bonk, like the Book's "most it can deal".
+(function () {
+  const W = CFG.wand, S = CFG.spells, h = W.half, T = window.TUNING || {}, r2 = v => Math.round(v * 100) / 100;
+  const set = (path, o, k, v) => { if (T[path] === undefined) o[k] = r2(v); };
+  set('wand.air.dmg', W.air, 'dmg', h * (S.gust.pulses * S.gust.dmg + S.gust.bonk));
+  set('wand.air.push', W.air, 'push', h * S.gust.pulses * S.gust.push);   // half of the shove its three pulses give
+  set('wand.fire.total', W.fire, 'total', h * (S.fireball.dmg + S.fireball.splash));
+  set('wand.water.dmg', W.water, 'dmg', h * S.spray.dmg);
+  set('wand.water.dist', W.water, 'dist', S.spray.speed * S.spray.life);   // as far as a Tidal Wave flies
+  set('wand.earth.dmg', W.earth, 'dmg', h * S.boulder.hops * S.boulder.dmg);
+})();
 
 // ----- skill-tree rebalance: the literal above is the pre-rebalance price list; XP x0.7, banked spells x0.5, rounded, never below 1 -----
 (function () {
@@ -709,7 +744,7 @@ const QUESTS = {
   W: [
     { from: 1,  icon: 'ic_hat', text: 'Stand right next to a tree. The factory\'s Air Gusts will chop it down', xp: 4, done: g => g.stats.harvested >= 1, hint: { harv: 1 } },
     { icon: 'stone', text: 'Gather 10 more Wood or Stone: stand by trees and rocks while spells land', xp: 4, stat: g => g.stats.harvested || 0, n: 10, hint: { harv: 1 } },
-    { icon: 'ic_boot', text: 'Forage 3 spots: stand still next to a mound, sticks or bush and mash the roll button', xp: 6, stat: g => g.stats.foraged || 0, n: 3, hint: { forage: 1 } },
+    { icon: 'ic_boot', text: 'Forage 3 spots: stand next to a mound, sticks or bush and mash Mash (X)', xp: 6, stat: g => g.stats.foraged || 0, n: 3, hint: { forage: 1 } },
     { from: 4,  icon: 'egg_zephyr', text: 'Defeat a creature the factory made (the Spawner\'s Eggs arrive through the Spell Portal)', xp: 6, done: g => (g.stats.craftedKills || 0) >= 1, hint: { crafted: 1 } },
     { from: 8,  icon: 'ic_skull', text: 'Defeat 15 monsters', xp: 8, done: g => g.stats.kills >= 15, prog: g => [g.stats.kills, 15] },
     { icon: 'ic_shield', text: 'Dodge 3 hits: roll into an attack (you can\'t be hurt mid-roll)', xp: 8, stat: g => g.stats.dodges || 0, n: 3 },
@@ -717,7 +752,7 @@ const QUESTS = {
     { icon: 'potion', text: 'Walk over 2 Potions or Shield Potions the Builder sends you', xp: 8, stat: g => g.stats.used || 0, n: 2 },
     { icon: 'ic_bolt', text: 'Hit weaknesses: finish off 10 monsters with a yellow ! hit (match the element)', xp: 12, gift: { pickup: ['potion'], stock: { core_air: 1, core_water: 1, core_fire: 1, core_earth: 1 } }, stat: g => g.stats.weakKills || 0, n: 10 },   // the Cores are for the next goal: any Shrine takes one of each of the three OTHER elements, so one of each is enough for the first
     { icon: 'ic_flag', text: 'Claim a Shrine: while the Wizard stands by it, send the Cores of the 3 other elements', xp: 12, gift: { pickup: ['plate'] }, stat: g => g.stats.shrines || 0, n: 1, hint: { mark: 'shrine' } },
-    { icon: 'ic_fast', text: 'Stand on a claimed Shrine for 20 seconds: that element\'s Harnessers run faster', xp: 10, stat: g => g.stats.shrineT || 0, n: 20, hint: { mark: 'myshrine' } },
+    { icon: 'ic_fast', text: 'Activate a claimed Shrine: press Mash as the ring closes, 3 times', xp: 10, stat: g => g.stats.shrineAct || 0, n: 1, hint: { mark: 'myshrine' } },
     { from: 14, icon: 'ic_flag', text: 'Clear a Monster Camp or an Ancient Crypt (see the map) for Aether Shards', xp: 15, gift: { pickup: ['potion', 'plate'] }, stat: g => g.stats.clears || 0, n: 1, hint: { mark: 'camp' } },
     { icon: 'ic_skull', text: 'Defeat 60 monsters', xp: 12, done: g => g.stats.kills >= 60, prog: g => [g.stats.kills, 60] },
     { icon: 'flamethrower', text: 'Finish off 10 monsters with combo spells (two elements). Ask the Builder!', xp: 20, gift: { pickup: ['elixir'] }, stat: g => g.stats.k2 || 0, n: 10 },

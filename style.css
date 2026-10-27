@@ -501,10 +501,19 @@ button.big.warn { background: #ff7a5a; color: #fff; box-shadow: 0 -4px 0 0 var(-
 #gearCard .gs.cool img { opacity: .4; filter: grayscale(1); }
 #gearCard .gs.cool::after { content: ''; position: absolute; left: 3px; right: 3px; bottom: 3px; height: 4px; background: var(--ink); }
 #gearCard .gs.cool i { position: absolute; left: 3px; bottom: 3px; height: 4px; background: var(--gold); }
-#gearCard .gs.hold { margin-left: auto; box-shadow: inset 0 0 0 2px var(--gold); }
-#gearCard .gs.hold.full { animation: hintBlink .6s steps(2) infinite; }
-#gearCard .gs.hold kbd { position: absolute; right: -6px; bottom: -8px; font-size: 7px; min-width: 14px; padding: 2px 3px 1px; }
-#gearCard .gs.lockd { margin-left: auto; opacity: .45; }
+/* the wand: four slots under his health bar (UI.updateWand). A slot fills from the bottom with the spells that charged it; READY = lit in its element's colour; ARMED = the bright frame + marker */
+#wandRow { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+#wandRow .ws { position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: var(--panel-lo); box-shadow: inset 0 0 0 2px var(--ink); overflow: hidden; }
+#wandRow .ws img { position: relative; z-index: 1; opacity: .5; filter: grayscale(.7); }
+#wandRow .ws i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--ec); opacity: .38; }
+#wandRow .ws b { position: absolute; right: 3px; bottom: 1px; z-index: 2; font: 9px var(--display); color: #fff; text-shadow: 2px 0 var(--ink), -2px 0 var(--ink), 0 2px var(--ink), 0 -2px var(--ink); }
+#wandRow .ws.full { box-shadow: inset 0 0 0 3px var(--ec); }
+#wandRow .ws.full img { opacity: 1; filter: none; }
+#wandRow .ws.full i { opacity: .55; }
+#wandRow .ws.armed { box-shadow: inset 0 0 0 3px #fff, 0 0 0 3px var(--ec); animation: hintBlink .8s steps(2) infinite; }
+#wandRow .ws u { position: absolute; left: 50%; top: 0; margin-left: -4px; border: 4px solid transparent; border-top-color: #fff; z-index: 3; }
+#wandRow .wk { margin-left: auto; display: flex; flex-direction: column; gap: 3px; }
+#wandRow .wk kbd { font-size: 7px; min-width: 16px; padding: 3px 4px 2px; text-align: center; }
 /* the Collection Book (Wardrobe page shares its layout) */
 .bookPanel h3 { margin: 14px 0 8px; font: 10px var(--display); color: var(--sky); }
 .cnt { font: 10px var(--display); color: var(--gold); display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }

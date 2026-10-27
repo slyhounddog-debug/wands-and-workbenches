@@ -1,10 +1,10 @@
 'use strict';
 // The Collection Book: a reference for every spell and every creature (they left the skill tree: production is their only gate).
-// Two pages. Each entry shows what the tree's hover card used to (name, icon, description, recipe / production, stats) with a looping demo:
+// Four pages (spells, creatures, the wardrobe, the wand). Each entry shows what the tree's hover card used to (name, icon, description, recipe / production, stats) with a looping demo:
 // SPV for spells (spellpreview.js), CPV for creatures (creaturepreview.js). It opens over the paused game from the button beside the
 // skill-tree button (or C), or from the pause menu, and nothing runs while it is closed.
-const PAGES = ['spells', 'creatures', 'wardrobe'];
-const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 'zephyr', wardrobe: 'tide' }, from: 'play', navT: 0 };
+const PAGES = ['spells', 'creatures', 'wardrobe', 'wand'];
+const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 'zephyr', wardrobe: 'tide', wand: 'fire' }, from: 'play', navT: 0 };
 (function () {
   const SPELL_ORDER = ['gust', 'fireball', 'spray', 'boulder', 'flamethrower', 'tempest', 'steam', 'sandstorm', 'magma', 'mud', 'meteor', 'thunder', 'blizzard', 'geyser', 'nova'];
   // the Creatures page lists every enemy type: the crafted creatures, then the wild foes, the Warden and the Chimera (each with its drop table)
@@ -82,7 +82,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     const coreIcons = els => els.map(e => UI.img('core_' + e, 16)).join('');
     let s = '<div class="bkdc"><h4>NORMAL DROPS</h4>';
     if (id === 'boss') s += line(UI.img('gem', 16), D.gem[0] + ' XP Gems') + line(UI.img('shard', 16), CFG.boss.shards + ' Aether Shards') + line(coreIcons(ELEMS), C.boss + ' of every Core');
-    else if (id === 'warden') s += line(UI.img('shard', 16), 'keep claimed: ' + CFG.strong.shards + ' Shards, ' + CFG.strong.gems + ' XP Gems') + line(coreIcons(ELEMS), C.warden + ' Cores of every element') + line(UI.img('b:altar', 16), 'its death opens the Summoning Altar to spells') + line(UI.img('ic_crown', 16), 'the glow-up and the held-spell slot');
+    else if (id === 'warden') s += line(UI.img('shard', 16), 'keep claimed: ' + CFG.strong.shards + ' Shards, ' + CFG.strong.gems + ' XP Gems') + line(coreIcons(ELEMS), C.warden + ' Cores of every element') + line(UI.img('b:altar', 16), 'its death opens the Summoning Altar to spells') + line(UI.img('ic_crown', 16), 'the glow-up (it leaves a faint aura round the Wizard for good)');
     else {
       s += line(UI.img('gem', 16), 'XP Gems: ' + gemPct(D.gem, kind === 'wild' ? CFG.world.wildGem : 1));
       if (I.els.length) s += line(coreIcons(I.els), pct(I.core) + ' chance of a ' + I.els.map(e => CORE_NAME[e]).join(' or ') + ' (rides home to the Stockpile)');
@@ -142,8 +142,27 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   const st = () => G.stats;
   const seenSpell = id => ((st().made || {})[id] || 0) > 0 || ((st().sent || {})[id] || 0) > 0 || (!!BASIC_EL[id] && ((st().sent || {})[BASIC_EL[id]] || 0) > 0);
   const seenCreature = id => ((st().met || {})[id] || 0) > 0 || ((st().sent || {})['egg_' + id] || 0) > 0;
-  const seen = (pg, id) => (pg === 'spells' ? seenSpell(id) : pg === 'creatures' ? seenCreature(id) : FA.augMade(id));
-  const idsOf = pg => (pg === 'spells' ? SPELL_ORDER : pg === 'creatures' ? CREATURE_ORDER : AUG_ORDER);
+  const seen = (pg, id) => (pg === 'spells' ? seenSpell(id) : pg === 'creatures' ? seenCreature(id) : pg === 'wand' ? ((st().wandUsed || {})[id] || 0) > 0 : FA.augMade(id));
+  const idsOf = pg => (pg === 'spells' ? SPELL_ORDER : pg === 'creatures' ? CREATURE_ORDER : pg === 'wand' ? WAND_ORDER : AUG_ORDER);
+  // ---- the Wand page: the four wand attacks, what charges them and what each does (every number read off CFG.wand, so it never drifts from js/wand.js) ----
+  const WAND_ORDER = ['fire', 'air', 'water', 'earth'];
+  const WAND_BOOK = {
+    fire: s => ({ total: s.total, dur: s.t, text: 'The Wizard runs ' + pct(s.speed) + ' faster for ' + s.t + ' seconds and leaves a trail of fire behind him. Every piece of the trail burns for ' + s.life + ' seconds; an enemy that stands in it takes ' + s.total + ' damage in total over that time (half of a Seeker Fireball), however many pieces overlap. It burns trees and rocks too.' }),
+    air: s => ({ total: s.dmg, dur: s.t, text: 'A burst of air ' + s.r + ' tiles round the Wizard shoves foes away and hurts them for ' + s.dmg + ' (half of Cyclone Gust). Then, for ' + s.t + ' seconds, he is invisible: no hostile targets him (allies are targeted instead; with none near they just mill about). A delivered spell does not break it. Mashing, or casting another wand attack, ends it at once. Area damage can still hit him.' }),
+    water: s => ({ total: s.dmg, dur: s.t, text: 'The Wizard rides a wave in a straight line along his aim, ' + s.dist + ' tiles in about ' + s.t + ' second (as far as a Tidal Wave flies). The wave is a small ' + s.w + '-tile V that parts foes to the sides (it does not carry them) and hits each once for up to ' + s.dmg + ' (half of Tidal Wave). It stops dead at walls and water edges: a ride, never a crossing.' }),
+    earth: s => ({ total: s.dmg * (1 + s.cap), dur: s.t, text: 'For ' + s.t + ' seconds the Wizard is stone: ' + pct(1 - s.speedMul) + ' slower, but he takes only ' + pct(s.take) + ' of all damage. Every hit he takes charges the burst that ends it (+' + pct(s.perHit) + ' of its base each, up to +' + pct(s.cap) + '). The statue then explodes for ' + s.dmg + ' damage (half of a Bouncing Boulder), up to ' + s.dmg * (1 + s.cap) + ' fully charged, in ' + s.r + ' tiles, shoving everything away.' }),
+  };
+  const WAND_CAP = { fire: 'RUN: the trail burns for 5 seconds behind him', air: 'PUFF, then unseen: foes mill about until he acts', water: 'RIDE: foes part to the sides, a wall stops him dead', earth: 'STONE: hits charge the burst that ends it' };
+  const wandBook = el => { const b = WAND_BOOK[el](CFG.wand[el]); return { total: Math.round(b.total * 10) / 10, dur: b.dur, text: b.text }; };
+  function wandRows(el) {
+    const need = CFG.wand.need[el], b = wandBook(el), carriers = Object.keys(SPELL_EL).filter(sp => SPELL_EL[sp].indexOf(el) >= 0);
+    const rows = [elStrip([el])];
+    rows.push(main([badge('ic_flame', b.total, 'Most damage it can deal' + (el === 'fire' ? ' to one enemy over the trail\'s life' : ''), 96, '', 'dmg')]));
+    rows.push(sub([badge('wand_' + el, need, 'Spells with ' + ELEM_WORD[el] + ' in them it takes to charge this slot', 48), badge('ic_clock', b.dur + 's', 'How long it lasts', 48)]));
+    rows.push('<div class="bkr"><span>Charged by</span><em>' + carriers.map(sp => UI.img(sp, 24)).join('') + '</em></div>');
+    rows.push(row('Slot', 'one attack at a time; spells that arrive while it is full add nothing'));
+    return rows.join('');
+  }
 
   // The shell (header, tabs, list, detail) is built once per open; picking an entry only swaps the text, the stats and the demo, so nothing
   // jumps and the list keeps its place. Both pages share one layout: the list tiles, the header, the demo box (same size) and the stats column.
@@ -151,7 +170,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   Book.build = function () {
     const el = $('book');
     el.innerHTML = '<div class="bookPanel px"><div class="treeHead"><h2>' + UI.img('ic_book', 32) + 'COLLECTION BOOK</h2><div class="tabs bkTabs">' +
-      '<button class="tab" data-p="spells">SPELLS</button><button class="tab" data-p="creatures">CREATURES</button><button class="tab" data-p="wardrobe">WARDROBE</button></div><div class="bkCount"></div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>' +
+      '<button class="tab" data-p="spells">SPELLS</button><button class="tab" data-p="creatures">CREATURES</button><button class="tab" data-p="wardrobe">WARDROBE</button><button class="tab" data-p="wand">WAND</button></div><div class="bkCount"></div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>' +
       '<div class="bookBody"><div class="bookList"></div><div class="bookDetail"><div class="tth bkh"></div>' +
       '<div class="bkLeft"><p class="bkDesc"></p><div class="bkDemoBox"><canvas class="bkDemo"></canvas></div><div class="spvc"></div></div><div class="bkRows"></div><div class="bkDrops"></div></div></div>' +
       '<p class="hint"></p></div>';
@@ -163,20 +182,21 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   };
   const hintHtml = pg => '<kbd>C</kbd> / Esc closes. <kbd>W</kbd><kbd>S</kbd> or <kbd>UP</kbd><kbd>DOWN</kbd> pick an entry, <kbd>A</kbd><kbd>D</kbd> or <kbd>TAB</kbd> flip the page' + (IN.padList.length ? ' <kbd>STICK</kbd> pick <kbd>LB</kbd><kbd>RB</kbd> page <kbd>B</kbd> close' : '');
   Book.fillList = function () {   // the tiles of the current page (once per page flip)
-    const pg = Book.page, sp = pg === 'spells', aug = pg === 'wardrobe', ids = idsOf(pg);
+    const pg = Book.page, sp = pg === 'spells', aug = pg === 'wardrobe', wd = pg === 'wand', ids = idsOf(pg);
     ref.hint.innerHTML = hintHtml(pg);
     ref.list.innerHTML = ids.map(i => {
-      const nm = sp ? SPELLS[i] : aug ? AUGS[i].name : CFG.enemies[i].name, icon = sp ? spellIcon(i) : aug ? 'aug_' + i : i;
+      const nm = sp ? SPELLS[i] : aug ? AUGS[i].name : wd ? CFG.wandNames[i] : CFG.enemies[i].name, icon = sp ? spellIcon(i) : aug ? 'aug_' + i : wd ? 'wand_' + i : i;
       return '<div class="bkItem" data-id="' + i + '">' + UI.img(icon, 32) + '<b>' + nm + '</b><u></u></div>';
     }).join('');
     ref.list.querySelectorAll('.bkItem').forEach(b => { b.onclick = () => Book.pick(b.dataset.id); });
     ref.list.querySelectorAll('.bkItem').forEach(b => { const ok = seen(pg, b.dataset.id); b.classList.toggle('unseen', !ok); b.querySelector('u').textContent = ok ? '' : '?'; });
     ref.el.querySelectorAll('.tab').forEach(bt => bt.classList.toggle('on', bt.dataset.p === pg));
     const n = ids.filter(i => seen(pg, i)).length;
-    ref.count.textContent = (sp || aug ? 'MADE ' : 'MET ') + n + ' / ' + ids.length;
+    ref.count.textContent = (wd ? 'CAST ' : sp || aug ? 'MADE ' : 'MET ') + n + ' / ' + ids.length;
   };
   Book.fillDetail = function () {   // the selected entry: text, stats and demo, swapped in place
     if (Book.page === 'wardrobe') return Book.fillGarment();
+    if (Book.page === 'wand') return Book.fillWand();
     const pg = Book.page, sp = pg === 'spells', id = Book.sel[pg], ok = seen(pg, id);
     ref.list.querySelectorAll('.bkItem').forEach(b => b.classList.toggle('on', b.dataset.id === id));
     const crafted = !sp && kindOf(id) === 'crafted';
@@ -193,6 +213,22 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     if (ref.page !== pg) { ref.page = pg; ref.cv.width = sp ? 186 : CPV.W; ref.cv.height = sp ? 100 : CPV.H; }   // both fill the same box on screen
     SPV.stop(); CPV.stop();
     if (sp || crafted) (sp ? SPV : CPV).mount(ref.cv, id); else Book.stillLife(ref.cv, id);
+    ref.list.querySelector('.bkItem.on').scrollIntoView({ block: 'nearest' });
+  };
+  Book.fillWand = function () {   // the Wand page's selected attack: what it does, what charges it, a looping demo
+    const el = Book.sel.wand, W = G.wand, ok = seen('wand', el), full = W && W.full[el], m = W ? W.m[el] : 0, need = CFG.wand.need[el];
+    ref.list.querySelectorAll('.bkItem').forEach(b => b.classList.toggle('on', b.dataset.id === el));
+    ref.head.innerHTML = UI.img('wand_' + el, 48) + '<div><b>' + CFG.wandNames[el] + '</b><small>' + ELEM_WORD[el].toUpperCase() + ' WAND ATTACK</small></div>' +
+      '<span class="bkSt' + (full ? ' on' : '') + '">' + (full ? UI.img('ic_check', 12) + 'READY' : UI.img('ic_bolt', 12) + 'CHARGING ' + m + ' / ' + need) + '</span>';
+    ref.desc.textContent = wandBook(el).text;
+    ref.cap.textContent = WAND_CAP[el];
+    ref.rows.innerHTML = wandRows(el);
+    ref.drops.innerHTML = '<div class="bkdc"><h4>HOW THE WAND WORKS</h4><div class="bkd"><span>Every spell the Builder sends adds one tick to each element in it. Cycle picks which ready slot is armed, Cast fires it. Shrines never charge it.</span></div></div>';
+    ref.drops.className = 'bkDrops';
+    ref.detail.classList.toggle('unseen', !ok);
+    if (ref.page !== 'wand') { ref.page = 'wand'; ref.cv.width = CPV.W; ref.cv.height = CPV.H; }
+    SPV.stop(); CPV.stop();
+    CPV.mount(ref.cv, 'wand_' + el);
     ref.list.querySelector('.bkItem.on').scrollIntoView({ block: 'nearest' });
   };
   Book.fillGarment = function () {   // the Wardrobe page's selected garment: the Wizard wearing it, what it does, its recipe and where the Cores come from

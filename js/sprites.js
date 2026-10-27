@@ -601,6 +601,13 @@ task(() => {
     c: '#7be0ff', k: '#f2c9a0', p: '#9a5ad0', P: '#6a3aa0', n: '#8a5a30', N: '#5a3a1a', a: '#a8b0b8', A: '#6a7280', m: '#ff9ad0',
     O: '#ff8a2b', q: '#8a84a0' };
   const icon = (name, rows) => reg('ic_' + name, mapSprite(rows, pal), Math.max.apply(null, rows.map(r => r.length)) / 2, rows.length);
+  // the wand's four attacks (WZ.icon floats them, the HUD slots and the Book show them): a flame with its trail, a vanishing puff, a riding wave and a stone statue
+  { const wp = { o: '#2b1d3e', w: '#ffffff', O: '#ff7a30', y: '#ffd23a', r: '#c8431a', a: '#c8efff', A: '#7ec3e8', b: '#4aa8ff', B: '#2a72c8', s: '#a8a8b4', S: '#6a6a78', n: '#b58a4c', N: '#7a5a2c' };
+    const wand = (name, rows) => reg('wand_' + name, mapSprite(rows, wp), Math.max.apply(null, rows.map(r => r.length)) / 2, rows.length);
+    wand('fire', ['.........o.', '........oOo', '.......oOyo', '..o....oOyO', '.oro..oOyyO', 'orOo.oOyyyo', '.orOOOOyyOo', '..orOOOOOo.', '...ooooooo.']);
+    wand('air', ['...ooooo...', '..oaaaaao..', '.oawwwwwao.', 'oawwo.owwao', 'oawo...owao', 'oaAo.o.oAao', '.oAAo.oAAo.', '..oAAAAAo..', '...ooooo...']);
+    wand('water', ['o.........o', 'ob.......bo', 'obb.....bbo', 'obBb...bBbo', '.obBb.bBbo.', '.obwBbBwbo.', '..obbbbbbo.', '...oBBBBo..', '....oooo...']);
+    wand('earth', ['...ooooo...', '..osssssso.', '.osswsswso.', '.osssssssso', '.ossSSSSsso', '..osssssso.', '.onnssssnno', '.onNnnnnNno', '.ooooooooo.']); }
   icon('heart', ['.oo.oo.', 'orrorro', 'orwrrro', 'orrrrro', '.orrro.', '..oro..', '...o...']);
   icon('shield', ['ooooooo', 'obbwbbo', 'obbwbbo', 'obbwbbo', '.obwbo.', '.obbbo.', '..obo..', '...o...']);
   icon('clock', ['.ooooo.', 'owwowwo', 'owwowwo', 'owwooow', 'owwwwwo', 'owwwwwo', '.ooooo.']);

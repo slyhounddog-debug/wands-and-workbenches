@@ -28,7 +28,7 @@ function blankState(slot) {
     credits: { battery: 0, heavybat: 0 },
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
     flags: {}, quest: { B: 0, W: 0 }, qbase: { B: null, W: null }, bankLog: [], pins: { L: null, R: null }, lock: null,
-    altar: WZ.altarFresh(), aug: WZ.augFresh(), hold: { on: false, spell: null },   // the Summoning Altar (where it stands, which sockets are lit)   // what he wears and which keeps are open, and the held-spell slot (unlocked by the first Warden)
+    altar: WZ.altarFresh(), aug: WZ.augFresh(), wand: WZ.wandFresh(),   // the Summoning Altar (where it stands, which sockets are lit), what he wears and which keeps are open, the staff's four charge meters
     hands: [], swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
@@ -74,9 +74,10 @@ Main.applySave = function (slot, s) {
   delete G.stock.core;
   const captured = (G.stats.keeps || 0) > 0 || !!G.flags.warden;
   if (captured) G.flags.glow = true;
-  G.hold = { on: !!(G.flags.glow || (s.hold && s.hold.on)), spell: s.hold && SPELL_COL[s.hold.spell] ? s.hold.spell : null };
-  if (G.hold.on) G.flags.glow = true;
-  if (!G.hold.on) G.hold.spell = null;
+  // the held-spell slot is gone (the wand replaced it). A spell an old save was still holding comes back as the item it was made from, into the Stockpile (a combo spell, or the
+  // element packet of a basic one; what does not fit spills onto the floor like any overflow), so nothing is lost and nothing fires out of nowhere
+  { const held = s.hold && s.hold.spell, k = held && (Object.keys(BASIC_SPELL).find(el => BASIC_SPELL[el] === held) || held); if (k && FA.storable(k)) G.stock[k] = (G.stock[k] || 0) + 1; }
+  G.wand = WZ.wandFix(s.wand);
   if (s.qbase && typeof s.quest === 'object') G.qbase = Object.assign(G.qbase, s.qbase);   // null = measured from when the goal first shows
   if ((s.qv || 1) < 6) G.qbase.B = null;   // the Builder's goals moved: its old baseline belonged to another goal
   G.refund = Main.refundTree();   // spells, creatures and other removed nodes: what they cost comes back (toasted in Main.enter)
@@ -168,7 +169,7 @@ Main.save = function () {
     const data = JSON.stringify({
       v: SAVE_VERSION, qv: QUEST_VERSION, tv: TREE_VERSION, xp: G.xp, tree: G.tree, stock: stockSaved, ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
       flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: Main.facSaved(), at: Date.now(),
-      bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp, aug: G.aug, hold: G.hold, altar: G.altar,
+      bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp, aug: G.aug, wand: G.wand, altar: G.altar,
     });
     if (!Main.saveOk(JSON.parse(data))) throw new Error('the new save failed its own check');
     // rolling backup: the save we're about to replace becomes the backup, if it was good
@@ -206,7 +207,7 @@ Main.helpFoot = function () {
   if (!el) return;
   const pb = c.pb >= 0 ? 'Pad ' + (c.pb + 1) : '', pw = c.pw >= 0 ? 'Pad ' + (c.pw + 1) : '';
   el.innerHTML = UI.img('ic_pad', 16) + ' ' + (pb ? pb + ' = Builder (A pick up / place, B throw, X use, LB/RB slot, RT next in a family, Back demolish). ' : '') +
-    (pw ? pw + ' = Wizard (A roll). ' : '') + '<kbd>H</kbd> hides this.';
+    (pw ? pw + ' = Wizard (A dodge, X mash, B cast the wand, Y cycle it, Back tree). ' : '') + '<kbd>H</kbd> hides this.';
 };
 // Back to the title: the living menu world. From a running game the Builder is sucked up into a portal, the factory slides away, he drops back into the Wizard's world,
 // both are teleported to the start of the wilds and the main menu's plates pop up (Main.exitFrame / Menu.retTick). noSave / instant skip the show.
@@ -254,6 +255,32 @@ Main.mouseW = () => G.ctl.kbW && (!G.ctl.kbB || G.swapped);
 Main.altB = () => G.ctl.kbB && (!G.ctl.kbW || G.swapped);   // the Builder may use the . , / keys
 Main.padB = () => (G.ctl.pb >= 0 ? IN.pad[G.ctl.pb] : null);
 Main.padW = () => (G.ctl.pw >= 0 ? IN.pad[G.ctl.pw] : null);
+// The Wizard's FOUR action buttons, separate on every scheme: Cycle (pad Y), Cast (pad B), Dodge (pad A), Mash (pad X). On the keyboard:
+//   alone on it: Q (or M) cycle, right click (or ,) cast, Space (or .) dodge, left click (or /) mash
+//   shared, Wizard on the arrows: M cycle, , cast, . dodge, / mash          shared and swapped (Wizard on WASD + the mouse): V cycle, Z / right click cast, Space dodge, E / left click mash
+// These write the same fields the pad does, so the online guest's keyboard (Net.collect) fills the same four actions. hit = the keyboard edge test (the menu world gates it while typing).
+Main.WKEYS = {
+  solo: { cycle: ['KeyQ', 'KeyM'], cast: ['Comma'], dodge: ['Space', 'Period'], mash: ['Slash'] },
+  duo: { cycle: ['KeyM'], cast: ['Comma'], dodge: ['Period'], mash: ['Slash'] },
+  swap: { cycle: ['KeyV'], cast: ['KeyZ'], dodge: ['Space'], mash: ['KeyE'] },
+};
+// what the four buttons are called for whoever plays him (the HUD chips, the prompts over a shrine or a dig spot)
+Main.wizKeyNames = function () {
+  const guest = Net.role === 'guest', pad = guest ? !!IN.pad[0] : !!Main.padW();
+  if (pad) return { cycle: 'Y', cast: 'B', dodge: 'A', mash: 'X' };
+  if (guest || !Main.kbShared()) return { cycle: 'Q', cast: 'RMB', dodge: 'SPACE', mash: 'LMB' };
+  return G.swapped ? { cycle: 'V', cast: 'Z', dodge: 'SPACE', mash: 'E' } : { cycle: 'M', cast: ',', dodge: '.', mash: '/' };
+};
+Main.wizBtns = function (hit, p1, noMouse) {
+  const c = G.ctl, sh = Main.kbShared(), K = c.kbW ? Main.WKEYS[sh ? (G.swapped ? 'swap' : 'duo') : 'solo'] : null, mouse = Main.mouseW() && !noMouse;
+  const key = list => !!K && list.some(code => hit(code));
+  return {
+    cycle: key(K ? K.cycle : []) || !!(p1 && p1.y),
+    cast: key(K ? K.cast : []) || (mouse && IN.mouse.rp) || !!(p1 && p1.b),
+    roll: key(K ? K.dodge : []) || !!(p1 && p1.a),
+    mash: key(K ? K.mash : []) || (mouse && IN.mouse.lp) || !!(p1 && p1.x),
+  };
+};
 const useMouseAim = () => G.lastInput === 'mouse' && mouseInFactory() && Main.mouseB();
 // where a throw would land right now: the cursor with the mouse, otherwise auto-aim along the Builder's facing
 function aimNow() {
@@ -314,12 +341,6 @@ function handleMouseFactory(dt) {
   if (!m.l) G.drag = null;
 }
 
-function handleMouseWizard() {
-  const m = IN.mouse;
-  if (!Main.mouseW() || !m.moved || m.x < CFG.HALF || !m.l || UI.treeOpen.L || UI.treeOpen.R) return;
-  const [px, py] = hoverPoint(R.wv);
-  G.w.target = { x: Math.max(0.5, Math.min(CFG.WW - 0.5, px)), y: Math.max(0.5, Math.min(CFG.WH - 0.5, py)) };
-}
 
 // returns true if it did something; quiet = don't complain yet (the input buffer will retry)
 function placeInFront(quiet) {
@@ -366,9 +387,8 @@ Main.controls = function (dt) {
   let broll = (c.kbB && ((sh && !G.swapped) || !c.kbW) && IN.hit('Space')) || (c.kbB && sh && G.swapped && IN.hit('ShiftRight')) || (p0 && p0.a && p0.ltHeld);
   const throwHeld = (altB && IN.down('Comma')) || (p0 && p0.bHeld);
   // a Wizard keyboard: arrows + . when it is shared and not swapped, WASD + Space when swapped; alone on the keyboard it takes both
-  let roll = (c.kbW && !(sh && G.swapped) && IN.hit('Period')) || (c.kbW && (!sh || G.swapped) && IN.hit('Space')) || (c.kbW && sh && G.swapped && IN.hit('KeyE')) || (p1 && p1.a);
-  // the Wizard's own button: fire the held spell (Z or ' on the keyboard, X on his pad)
-  let hold = (c.kbW && (IN.hit('KeyZ') || IN.hit('Quote'))) || (p1 && p1.x);
+  const wb = Main.wizBtns(IN.hit, p1);
+  let roll = wb.roll, act = { mash: wb.mash, cast: wb.cast, cycle: wb.cycle };
   // throw the whole stack: Shift + right-click (Shift + , when swapped), or LT + B on a pad
   const stackThrow = (IN.shift() && ((IN.mouse.rp && mouseInFactory() && Main.mouseB()) || (altB && IN.hit('Comma')))) || (p0 && p0.b && p0.ltHeld);
   // pick a target on purpose: right stick / R3 on a pad, Tab / Shift+Tab on the keyboard
@@ -383,7 +403,7 @@ Main.controls = function (dt) {
     else Main.pause(true);
   }
   if (IN.hit('KeyT') || (p0 && p0.y && !UI.splitB)) UI.openTree('L');
-  if (!Net.on && (IN.hit('KeyY') || (p1 && p1.y))) UI.openTree('R');   // (online the Wizard's tree is on the guest's screen)
+  if (!Net.on && (IN.hit('KeyY') || (p1 && p1.back))) UI.openTree('R');   // (online the Wizard's tree is on the guest's screen) Back / Select on his pad: Y is the wand's Cycle now
   if (IN.hit('KeyH')) { UI.help(); G.helpT = 0; }
   if (IN.hit('KeyC') && !frozenNow() && !UI.splitB && !UI.askB) Book.open();   // the Collection Book: every spell and creature
   if ((IN.hit('KeyP') || (p0 && p0.l3)) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
@@ -396,7 +416,7 @@ Main.controls = function (dt) {
   if (IN.hit('BracketRight') || (p0 && p0.rb)) rot = 1;
   if (IN.wheel && IN.mouse.x < Main.viewW() && !UI.treeOpen.L) rot = IN.wheel > 0 ? 1 : -1;
   if (rot && !(UI.treeOpen.L || UI.treeOpen.R)) UI.cycle(rot);
-  if (!(UI.treeOpen.L || UI.treeOpen.R) && Main.graceT <= 0 && (IN.hit('KeyQ') || (p0 && p0.rt))) UI.cycleFam(IN.shift() ? -1 : 1);   // next member of a family slot
+  if (!(UI.treeOpen.L || UI.treeOpen.R) && Main.graceT <= 0 && ((c.kbB && IN.hit('KeyQ')) || (p0 && p0.rt))) UI.cycleFam(IN.shift() ? -1 : 1);   // next member of a family slot
   if (IN.hit('KeyB') || IN.hit('Delete') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt, or an empty tile to lift it (full refund). Esc cancels.', 'L', 'ic_bomb'); }
   if (IN.hit('KeyR') && !frozenNow()) {
     // R turns whatever is already placed under the cursor (or in front / in reach); only with nothing there does it turn the next placement
@@ -419,7 +439,7 @@ Main.controls = function (dt) {
       G.swapHold = 0; G.swapCd = CFG.swapCooldown;
       UI.swapRing(null); AU.sfx('swap');
       G.bd.target = null; G.w.target = null;
-      const msg = sh ? (G.swapped ? 'Swapped! Builder: arrows, . pick up, , throw, / use. Wizard: WASD, Space roll, click right side.' : 'Swapped back!') : 'Swapped jobs!';
+      const msg = sh ? (G.swapped ? 'Swapped! Builder: arrows, . pick up, , throw, / use. Wizard: WASD + mouse (Space dodge, E or click mash, Z or right-click cast, V cycle).' : 'Swapped back!') : 'Swapped jobs!';
       UI.toast(msg, 'L', 'ic_swap'); UI.toast(msg, 'R', 'ic_swap');
     }
   } else {
@@ -431,7 +451,7 @@ Main.controls = function (dt) {
   const inTree = UI.treeOpen.L || UI.treeOpen.R, frozen = inTree || Main.graceT > 0;
   if (inTree && (IN.hit('KeyQ') || (p0 && p0.x) || (!Net.on && p1 && p1.x))) UI.undoBank();   // Q / pad X: take the last deposit back out
   if (inTree) Main.treePads(dt, p0, Net.on ? null : p1);
-  if (frozen) { bix = 0; biy = 0; use = false; pick = false; broll = false; if (!Net.on) { wix = 0; wiy = 0; wrx = 0; wry = 0; roll = false; hold = false; } }   // (online a tree only holds ITS player still: the sim and the other player carry on)
+  if (frozen) { bix = 0; biy = 0; use = false; pick = false; broll = false; if (!Net.on) { wix = 0; wiy = 0; wrx = 0; wry = 0; roll = false; act = {}; } }   // (online a tree only holds ITS player still: the sim and the other player carry on)
   // a demolish question is open: E / Enter / A confirms, Esc / B backs out
   if (UI.askB && !frozen) {
     if (use || IN.hit('Enter') || (p0 && p0.a)) UI.askClose(true);
@@ -462,7 +482,7 @@ Main.controls = function (dt) {
     G.bd.gather = null; G.noThrow = true; IN.mouse.rp = false; AU.sfx('blip');
   }
 
-  if (!frozen) { handleMouseFactory(dt); handleMouseWizard(); }
+  if (!frozen) handleMouseFactory(dt);   // (the Wizard's mouse is two buttons now: left click = Mash, right click = Cast; there is no click-to-walk)
   if (!frozen) {
     if (cyc) FA.cycleLock(cyc);
     if (stackThrow && G.hands.length && !G.bd.gather && !G.noThrow) {   // a burst at one aim point, one item every throwStackGap
@@ -521,10 +541,8 @@ Main.controls = function (dt) {
       }
     } else G.lastFeet = null;
   }
-  return { bix, biy, wix, wiy, wrx, wry, roll, hold: !!hold, broll: !!broll };
+  return { bix, biy, wix, wiy, wrx, wry, roll, act, broll: !!broll };
 };
-// the name of the key that fires the held spell, for the toast
-Main.holdKeyName = () => (Main.padW() ? 'X' : 'Z');
 
 // ---------- per-frame simulation ----------
 Main.step = function (dt, ctl) {
@@ -540,8 +558,7 @@ Main.step = function (dt, ctl) {
     FA.update(dt);
   }
   if (!frozen) {
-    if (ctl.hold) WZ.fireHeld();   // the Wizard fires the spell he is holding (it aims like a delivered one)
-    WZ.update(dt, ctl.wix, ctl.wiy, ctl.roll, ctl.wrx, ctl.wry);
+    WZ.update(dt, ctl.wix, ctl.wiy, ctl.roll, ctl.wrx, ctl.wry, ctl.act);
   }
   if (!G) return;   // a victory screen button may have gone to the title mid-step
   // soft footsteps, one stride timer each
@@ -593,7 +610,7 @@ Main.treePads = function (dt, p0, p1) {
     else if ((n.t -= dt) <= 0) { n.t = 0.12; UI.treeNav(side, dx, dy); }
     if (pd.a) UI.treeBuy(side);
     if (pd.rb) UI.treePin(side);
-    if (pd.b) UI.openTree(side, false);
+    if (pd.b || (side === 'R' && pd.back)) UI.openTree(side, false);
   }
 };
 // the skill tree just closed: drop every buffered / held input (nobody should act on a press from before the pause),

@@ -15,7 +15,7 @@ Main.modal = () => Net.role === 'host' && (Main.menuUp || Book.isOpen);
 Main.wizardOnly = function () {
   const p1 = Main.padW();
   if (IN.hit('Escape') && Main.menuUp && !Book.isOpen) Main.pause(false);
-  return { bix: 0, biy: 0, wix: p1 ? p1.ix : 0, wiy: p1 ? p1.iy : 0, wrx: p1 ? p1.rx || 0 : 0, wry: p1 ? p1.ry || 0 : 0, roll: !!(p1 && p1.a), hold: !!(p1 && p1.x), broll: false };
+  return { bix: 0, biy: 0, wix: p1 ? p1.ix : 0, wiy: p1 ? p1.iy : 0, wrx: p1 ? p1.rx || 0 : 0, wry: p1 ? p1.ry || 0 : 0, roll: !!(p1 && p1.a), act: p1 ? { mash: !!p1.x, cast: !!p1.b, cycle: !!p1.y } : {}, broll: false };
 };
 
 // ---------- banners over the game ----------
@@ -52,9 +52,9 @@ Main.netUi = function (mode) {
   if (Main.helpHtml === undefined) Main.helpHtml = help.innerHTML;
   if (mode === 'guest') {
     help.innerHTML = '<div class="hcol"><h3>' + UI.img('ic_hat', 16) + 'YOU ARE THE WIZARD</h3>' +
-      '<div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk &nbsp; <kbd>SPACE</kbd> roll (invulnerable), or dig at a mound, pile or bush</div>' +
-      '<div><kbd>E</kbd> fire the held spell &nbsp; <kbd>T</kbd> skill tree &nbsp; <kbd>C</kbd> book &nbsp; <kbd>ESC</kbd> menu</div>' +
-      '<div>Spells fire by themselves when the Builder sends them. Nothing pauses: the game goes on while you shop. A gamepad works too (A roll, X held spell, Y tree).</div></div>' +
+      '<div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk &nbsp; <kbd>SPACE</kbd> dodge roll (invulnerable) &nbsp; <kbd>LEFT CLICK</kbd> mash (dig, wake a shrine)</div>' +
+      '<div><kbd>RIGHT CLICK</kbd> cast the wand &nbsp; <kbd>Q</kbd> cycle the wand &nbsp; <kbd>T</kbd> skill tree &nbsp; <kbd>C</kbd> book &nbsp; <kbd>ESC</kbd> menu</div>' +
+      '<div>Spells fire by themselves when the Builder sends them, and charge your wand. Nothing pauses: the game goes on while you shop. A gamepad works too (A dodge, X mash, B cast, Y cycle, Back / Select tree).</div></div>' +
       '<div class="hfoot"><kbd>H</kbd> hides this.</div>';
   } else if (Main.helpHtml !== help.innerHTML) { help.innerHTML = Main.helpHtml; UI.decorate(help); }
   if (!mode) Main.menuUp = false;
@@ -133,7 +133,7 @@ Main.enterGuest = function () {
 Main.guestKeys = function (dt) {
   const p = IN.pad[0];
   if (IN.hit('Escape')) { if (UI.treeOpen.R) UI.openTree('R', false); else if (!Book.isOpen) Main.pause(!Main.menuUp); }
-  if (!Main.menuUp && !Book.isOpen && (IN.hit('KeyT') || IN.hit('KeyY') || (p && p.y))) UI.openTree('R');
+  if (!Main.menuUp && !Book.isOpen && (IN.hit('KeyT') || IN.hit('KeyY') || (p && p.back))) UI.openTree('R');
   if (IN.hit('KeyC') && !UI.treeOpen.R && !Main.menuUp && !Book.isOpen) Book.open();
   if (IN.hit('KeyH')) UI.help();
   if (Net.helpT > 0) { Net.helpT -= dt; if (Net.helpT <= 0) UI.help(false); }
@@ -206,7 +206,7 @@ Main.walkStep = function (o, dt, ix, iy, press, slowK) {
   const m = Math.hypot(dx, dy);
   if (m > 0) { dx /= m; dy /= m; o.fx = dx; o.fy = dy; }
   if (o.rollCd > 0) o.rollCd -= dt;
-  if (press && o.rollCd <= 0 && o.roll <= 0 && !WZ.has('gale') && !(m === 0 && WZ.forageAt(o.x, o.y))) {   // (the Circlet's roll is a blink and a dig is not a roll: the host decides those)
+  if (press && o.rollCd <= 0 && o.roll <= 0 && !WZ.has('gale') && !(G.w.statT > 0)) {   // (the Circlet's roll is a blink: the host decides that; a statue does not roll)
     o.roll = CFG.wizard.rollTime; o.rollCd = WZ.rollCd();
     o.rdx = m > 0 ? dx : o.fx; o.rdy = m > 0 ? dy : o.fy;
     const rm = Math.hypot(o.rdx, o.rdy) || 1; o.rdx /= rm; o.rdy /= rm;
@@ -235,7 +235,7 @@ const slowOf = w => (1 - Math.min(0.8, w.zSlow || 0)) * (w.slowT > 0 ? 1 - w.slo
 // a new snapshot (G is already it): start the copy from the host's Wizard and replay the pad packets the host has not used yet
 Main.predSnap = function (s) {
   const pr = Main.pr, w = s.w;
-  pr.ok = Main.PREDICT && !!w && !s.menu && !w.dead && !w.jump && !w.blink && !w.kick && !(w.cine);
+  pr.ok = Main.PREDICT && !!w && !s.menu && !w.dead && !w.jump && !w.blink && !w.kick && !w.ride && !(w.cine);   // (a Riding Wave is the host's: shown as it is)
   if (!pr.ok) { pr.s = null; pr.ex = pr.ey = 0; return; }
   const o = {};
   for (const f of PFIELDS) o[f] = w[f];

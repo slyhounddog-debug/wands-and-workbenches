@@ -273,6 +273,70 @@ const CPV = {};
       });
     } },
   };
+  // ---- the wand's four attacks (the Book's Wand page): the same toolkit, a training dummy (a Wisp / Golem) for the foes ----
+  const stone = (g, wx, wy, a) => { g.wiz(wx, wy); spr(g.x, 'wizard', sx(wx), sy(wy), { white: true, a: a === undefined ? 0.55 : a }); };
+  const wandLife = () => CFG.wand.fire.life;
+  Object.assign(SC, {
+    wand_fire: { len: 9, f(g, u) {   // he runs left to right (faster), a trail of fire behind him; a dummy standing in it burns for the trail's whole life
+      const F = CFG.wand.fire, x0 = -5, x1 = 5, run = seg(u, 0.5, 0.5 + F.t), wx = lerp(x0, x1, run);
+      const pts = [];
+      for (let i = 0; i * 0.1 < F.t; i++) { const t0 = 0.5 + i * 0.1, age = u - t0; if (age < 0 || age > F.life) continue; pts.push({ x: lerp(x0, x1, (i * 0.1) / F.t), a: age / F.life }); }
+      const inTrail = pts.some(p => Math.abs(p.x - 0.4) < 1.2), burn = clamp((u - 2.2) / (0.5 + F.life - 1.5), 0, 1);
+      const dmgK = inTrail ? 1 : 0;
+      for (const p of pts) { const fl = Math.floor(u * 9 + p.x * 3) % 3, h = Math.round(7 - p.a * 4); g.x.globalAlpha = Math.min(1, (1 - p.a) * 1.6); g.x.fillStyle = '#9a2a1a'; g.x.fillRect(sx(p.x) - 3, sy(0.6) - h, 7, h + 2); g.x.fillStyle = '#ff6a1a'; g.x.fillRect(sx(p.x) - 2, sy(0.6) - h - fl, 5, h); g.x.fillStyle = '#ffd23a'; g.x.fillRect(sx(p.x) - 1, sy(0.6) - 3, 3, 3); }
+      g.x.globalAlpha = 1;
+      g.crt('zephyr', 0.4, 0.6, { z: 0, white: g.flash(2.2 + 1.3) > 0 || (dmgK && Math.floor(u * 4) % 2 && u > 2.2 && u < 6.5) });
+      hp(g.x, sx(0.4), sy(0.6) - 22, 1 - 0.5 * clamp((u - 2.2) / 4.5, 0, 1), 16);
+      g.wiz(wx, 0.6, { flip: false });
+      if (u > 0.5 && u < 0.5 + F.t) { g.x.fillStyle = '#ffe36b'; for (let i = 0; i < 3; i++) g.x.fillRect(sx(wx) - 14 - i * 5, sy(0.6) - 4 - i * 2, 3, 3); }
+      g.pop(0.4, 0.6, '-' + Math.round(F.total) + ' over 5 s', 6.8);
+    } },
+    wand_air: { len: 8, f(g, u) {   // a puff shoves the foes back and hurts them, then they mill about while he stands unseen; a mash ends it
+      const A = CFG.wand.air, puff = 1.2, unseen = u > puff && u < puff + A.t + 1.2;
+      const foes = [[3.6, -1.1], [-3.4, 0.9], [2.6, 2.0]];
+      foes.forEach((f, i) => {
+        const approach = u < puff ? lerp(1, 0.55, seg(u, 0, puff)) : 1;
+        const push = u >= puff ? 1.7 * (1 - Math.exp(-(u - puff) * 7)) : 0, mill = unseen && u > puff + 0.8 ? Math.sin(u * 1.3 + i * 2) * 0.5 : 0;
+        const dx = f[0] * approach + Math.sign(f[0]) * push + mill, dy = f[1] * approach + Math.sign(f[1]) * push * 0.3 + (unseen ? Math.cos(u * 1.1 + i) * 0.35 : 0);
+        g.crt('zephyr', dx, dy, { z: 10 + Math.sin(u * 7 + i) * 2, white: u > puff && u < puff + 0.15 });
+      });
+      g.burst(0, 0, A.r * 0.9, '#e6f8ff', puff, 0.5);
+      const a = unseen ? 0.28 + 0.07 * Math.sin(u * 9) : 1;
+      g.shadow(0, 0); spr(g.x, 'wizard', sx(0), sy(0), { a });
+      if (unseen) dots(g.x, 0, 0, 0.9, '#e6f8ff', 0.7, true, u);
+      g.pop(2.6, -0.6, '-' + A.dmg, puff + 0.1);
+      if (u > puff + A.t + 0.9 && u < puff + A.t + 1.7) g.pop(0, 0, 'MASH ends it', puff + A.t + 0.9, '#ffffff');
+    } },
+    wand_water: { len: 6, f(g, u) {   // he rides a V of water along a straight line, foes part to the sides, a wall stops him dead
+      const W = CFG.wand.water, t0 = 1, k = seg(u, t0, t0 + W.t), wx = lerp(-5, 3.6, k), wallX = 4.7;
+      g.x.fillStyle = '#6a6a78'; g.x.fillRect(sx(wallX), sy(-2.4) - 16, 6, sy(2.6) - sy(-2.4) + 16); g.x.fillStyle = '#8a8a96'; g.x.fillRect(sx(wallX), sy(-2.4) - 16, 3, sy(2.6) - sy(-2.4) + 16);
+      const foes = [[-1.2, 0.6], [-0.6, -0.5]];
+      foes.forEach((f, i) => {
+        const hit = wx > f[0] - 0.6, side = i ? -1 : 1, off = hit ? Math.min(1.9, (wx - f[0] + 0.6) * 1.6) : 0;
+        g.crt('zephyr', f[0], f[1] + side * off, { z: 10, white: hit && wx < f[0] + 0.4 });
+        if (hit) g.pop(f[0], f[1] + side * off, '-' + W.dmg, t0 + W.t * (f[0] + 5) / 8.6);
+      });
+      if (k > 0 && k < 1) {   // the V of the wave round and ahead of him
+        for (let i = 0; i <= 9; i++) for (const sd of [-1, 1]) { const q = i / 9, px = wx + 1.2 - q * 1.6, py = 0 + sd * q * (W.w / 2 + 0.2); g.x.fillStyle = (i + Math.floor(u * 12)) % 3 ? '#4aa8ff' : '#ffffff'; g.x.fillRect(sx(px) - 2, sy(py) - 6 - (1 - q) * 6, 4, 4); }
+      }
+      g.wiz(wx, 0, { flash: k >= 1 && u < t0 + W.t + 0.2 });
+      if (u > t0 + W.t) g.pop(wx, 0, 'STOPS DEAD', t0 + W.t + 0.1, '#ffffff');
+    } },
+    wand_earth: { len: 8.5, f(g, u) {   // four seconds of stone with foes chewing on him, then the burst, bigger for every hit
+      const E = CFG.wand.earth, t0 = 0.8, tEnd = t0 + E.t, burst = u >= tEnd;
+      const hitsAt = [1.6, 2.2, 2.9, 3.5, 4.1], hits = hitsAt.filter(h => u >= h).length, k = 1 + Math.min(E.cap, hits * E.perHit);
+      const foes = [[3, 0.5], [-3, -0.6], [0.4, 3.2]];
+      foes.forEach((f, i) => {
+        let dx = f[0] * (u < 1.5 ? lerp(1.3, 0.55, seg(u, 0, 1.5)) : 0.55) , dy = f[1] * (u < 1.5 ? lerp(1.3, 0.55, seg(u, 0, 1.5)) : 0.55);
+        if (burst) { const kk = 1 - Math.exp(-(u - tEnd) * 6); dx = f[0] * (0.55 + 1.1 * kk * k / 1.5); dy = f[1] * (0.55 + 1.1 * kk * k / 1.5); }
+        g.crt('zephyr', dx, dy, { z: 10 + Math.sin(u * 7 + i) * 2, white: burst && u < tEnd + 0.15 });
+      });
+      if (u < t0) g.wiz(0, 0); else if (!burst) { stone(g, 0, 0); g.x.strokeStyle = '#ffb030'; g.x.globalAlpha = (k - 1) * 0.9; g.x.beginPath(); g.x.ellipse(sx(0), sy(0), 8 + 10 * (k - 1), 4 + 5 * (k - 1), 0, 0, 6.283); g.x.stroke(); g.x.globalAlpha = 1; hitsAt.forEach(h => g.pop(0, 0, '-' + Math.round(CFG.creatures.zephyr.dmg * E.take), h)); } else g.wiz(0, 0);
+      if (!burst && u > t0) hp(g.x, sx(0), sy(0) + 6, (tEnd - u) / E.t, 20);
+      g.burst(0, 0, E.r * (0.8 + 0.4 * (k - 1)), '#b58a4c', tEnd, 0.45);
+      g.pop(0, 0, '-' + Math.round(E.dmg * k), tEnd + 0.05, '#ffd23a');
+    } },
+  });
   CPV.ids = Object.keys(SC);
 
   function draw(id, u, x) {

@@ -340,7 +340,7 @@ function readInput(dt) {
   B.throwHeld = (altB && !typing && IN.down('Comma')) || !!(p0 && p0.bHeld);
   B.mouseL = mouseB && IN.mouse.lp && !typing; B.mouseR = mouseB && IN.mouse.r && !typing;
   W.roll = (c.kbW && !(sh && G.swapped) && hit('Period')) || (c.kbW && (!sh || G.swapped) && hit('Space')) || !!(p1 && p1.a);
-  W.use = (c.kbW && (hit('KeyZ') || hit('Quote'))) || (c.kbW && !c.kbB && hit('KeyE')) || (c.kbW && sh && G.swapped && hit('KeyE')) || !!(p1 && p1.x);
+  W.use = (c.kbW && sh && !G.swapped && hit('Slash')) || (c.kbW && !c.kbB && hit('KeyE')) || (c.kbW && sh && G.swapped && hit('KeyE')) || !!(p1 && p1.x);
   if (bk[0] || bk[1] || B.use || B.pick || B.mouseL) m.kbUsed.B = m.kbUsed.B || !!c.kbB;
   if (wk[0] || wk[1] || W.roll || W.use) m.kbUsed.W = m.kbUsed.W || !!c.kbW;
   if (IN.mouse.mv) G.lastInput = 'mouse'; else if (bk[0] || bk[1]) G.lastInput = 'kb'; else if (p0 && (p0.ix || p0.iy || p0.any)) G.lastInput = 'pad';

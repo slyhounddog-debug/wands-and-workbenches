@@ -12,12 +12,15 @@
 //                   { t: 'ping', at }  { t: 'bye' }
 //   host -> guest   { t: 'welcome', v, seed, sig, runMeta }      handshake reply; the snapshot stream starts after it
 //                   { t: 'refuse', why, v }                      version / room full
-//                   { t: 'snap', n, z }                          20 Hz, z = the state G as JSON, deflated (Snap.wire); n counts up
+//                   { t: 'snap', n, z }                          20 Hz, z = the state G as JSON, deflated (Snap.wire); n counts up. Normally NOT sent like this: see the snapshot channel
+//                   [4 bytes n][z]                               the same snapshot as raw bytes on the second, unreliable data channel (negotiated id 5, unordered, packets live 150 ms)
 //                   { t: 'toast', text, icon }  { t: 'buyres', id, ok, toasts }  { t: 'pong', at }  { t: 'bye' }
-// Transport: PeerJS cloud for signaling only, a reliable ordered WebRTC data channel for traffic, STUN only (no TURN: a relay is Josh's decision, see CLAUDE.md).
+// Transport: PeerJS cloud for signaling only. Two WebRTC data channels on the one connection: PeerJS's reliable ordered one for everything small (hello, pad, buy, ping,
+// toasts) and a second UNRELIABLE, UNORDERED one for the 20 Hz snapshots (a late or lost picture is simply skipped: nothing waits behind it, so one bad packet on a phone
+// hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
-  VERSION: 2,
-  BUILD: 7,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
+  VERSION: 3,
+  BUILD: 8,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
   SNAP_HZ: 20, PAD_HZ: 30,
@@ -30,7 +33,7 @@ const Net = {
   peer: null, conn: null, tok: null, lastRx: 0, lostAt: 0,
   BACKLOG: 16000,                // bytes allowed to wait on the channel before snapshots are dropped (about two of them)
   hooks: {}, errs: [], diag: null, hdiag: null, nextAt: 0, takenAt: 0, snapGap: 0.05,
-  stats: { rawKB: 0, zipKB: 0, maxZip: 0, snapsOut: 0, bytesOut: 0, kbps: 0, rtt: 0, skipped: 0, path: '', netRtt: 0, fps: 0, _t: 0, _b: 0, _n: 0, total: 0 },
+  stats: { rawKB: 0, zipKB: 0, maxZip: 0, snapsOut: 0, bytesOut: 0, kbps: 0, rtt: 0, skipped: 0, path: '', netRtt: 0, chan: '', fps: 0, _t: 0, _b: 0, _n: 0, total: 0 },
   // host
   snapN: 0, snapAcc: 0, busy: false, gpad: null, gedge: null,
   // guest
@@ -110,6 +113,30 @@ const Net = {
     s.onerror = () => rej(new Error('Could not load the networking library (offline?)'));
     document.head.appendChild(s);
   });
+  // THE SNAPSHOT CHANNEL. A reliable channel delivers everything in order, so on a lossy link (a phone hotspot) one lost packet holds back every picture behind it until it is
+  // resent, and the pictures then arrive in a burst, late. Snapshots are whole pictures that go stale in 50 ms, so they go on a second channel that may lose them and
+  // never waits (unordered, a packet is dropped after 150 ms); the guest just uses the newest one that arrives (Net.lastN). Both sides open the channel themselves with the
+  // same id ("negotiated"), so PeerJS never sees it. ?lossy=0 switches it off (everything on the reliable channel, as before); a snapshot over SNAP_BIG bytes, or a
+  // channel that is not open, falls back to the reliable one.
+  Net.LOSSY = !/[?&]lossy=0/.test(location.search);
+  const SNAP_ID = 5, SNAP_BIG = 60000;
+  function snapChannel(conn) {
+    if (!Net.LOSSY || conn._snapCh) return;
+    const pc = conn.peerConnection;
+    if (!pc) return;
+    try {
+      const ch = pc.createDataChannel('snap', { negotiated: true, id: SNAP_ID, ordered: false, maxPacketLifeTime: 150 });
+      ch.binaryType = 'arraybuffer';
+      ch.onmessage = e => {
+        if (conn !== Net.conn || Net.role !== 'guest' || !(e.data instanceof ArrayBuffer) || e.data.byteLength < 5) return;
+        Net.lastRx = now();
+        snapIn(new DataView(e.data).getUint32(0), new Uint8Array(e.data, 4), 'lossy');
+      };
+      ch.onopen = () => Net.log('snapshot channel open');
+      conn._snapCh = ch;
+    } catch (e) { conn._snapCh = null; Net.log('snapshot channel failed: ' + (e && e.message)); }
+  }
+  const lossyOf = conn => { const c = conn && conn._snapCh; return c && c.readyState === 'open' ? c : null; };
   const send = (conn, m) => { try { if (conn && conn.open) { conn.send(m); return true; } } catch (e) { UI.err(e); } return false; };
   const encode = async str => {
     if (typeof CompressionStream === 'undefined') return str;
@@ -196,6 +223,7 @@ const Net = {
       Net.tok = m.tok;
       if (Net.conn && Net.conn !== conn) { const old = Net.conn; Net.conn = null; try { old.close(); } catch (e) { /* ignore */ } }   // the same guest on a fresh connection
       Net.conn = conn; Net.lastRx = now();
+      snapChannel(conn);
       send(conn, { t: 'welcome', v: Net.VERSION, seed: Net.SEED, sig: Net.sig(), runMeta: { slot: G ? G.slot : (Net.pending ? Net.pending.slot : 0), time: G ? G.stats.time : 0 } });
       Net.snapAcc = 1; Net.busy = false;
       if (first) { Net.state = 'live'; if (Net.hooks.guestJoined) Net.hooks.guestJoined(); }
@@ -262,7 +290,18 @@ const Net = {
   };
   // how much is already waiting to go out on the data channel (bytes). Every snapshot is a whole picture, so a late one is worth nothing: when the link is slower than the
   // stream, snapshots are DROPPED (the stream slows to what the link carries) instead of queued (which made every message, the ping included, arrive seconds late).
-  const backlog = conn => (conn.dataChannel ? conn.dataChannel.bufferedAmount : 0) + (conn.bufferSize > 3 ? 1e6 : 0);
+  const backlog = conn => (conn.dataChannel ? conn.dataChannel.bufferedAmount : 0) + (conn.bufferSize > 3 ? 1e6 : 0) + (lossyOf(conn) ? lossyOf(conn).bufferedAmount : 0);
+  // one snapshot out: the lossy channel (4 byte number + the bytes) when it is there, else the reliable one
+  function snapOut(conn, n, z) {
+    const c = lossyOf(conn);
+    if (c && typeof z !== 'string' && z.byteLength <= SNAP_BIG) {
+      const buf = new Uint8Array(4 + z.byteLength);
+      new DataView(buf.buffer).setUint32(0, n); buf.set(z, 4);
+      try { c.send(buf); Net.stats.chan = 'lossy'; return true; } catch (e) { /* fall back to the reliable channel */ }
+    }
+    Net.stats.chan = 'reliable';
+    return send(conn, { t: 'snap', n, z });
+  }
   function sendSnap() {
     const conn = Net.conn;
     if (Net.busy || !conn || !conn.open || !G) return;
@@ -275,7 +314,7 @@ const Net = {
       Net.busy = false;
       if (Net.conn !== conn || Net.state !== 'live') return;
       if (backlog(conn) > Net.BACKLOG) { Net.stats.skipped++; return; }   // (encoding took a moment: look again)
-      if (send(conn, { t: 'snap', n, z })) {
+      if (snapOut(conn, n, z)) {
         const zk = typeof z === 'string' ? z.length : z.byteLength, st = Net.stats;
         st.rawKB = str.length / 1024; st.zipKB = zk / 1024; st.snapsOut++; st.bytesOut += zk; st._b += zk; st._n++; st.total += zk;
         if (st.zipKB > st.maxZip) st.maxZip = st.zipKB;
@@ -315,7 +354,7 @@ const Net = {
         const conn = peer.connect(Net.PREFIX + Net.code, { reliable: true, serialization: 'binary' });
         Net.conn = conn;
         Net.diag = watchIce(conn); traceClose(conn, 'guest');
-        conn.on('open', () => send(conn, { t: 'hello', v: Net.VERSION, tok: Net.tok }));
+        conn.on('open', () => { snapChannel(conn); send(conn, { t: 'hello', v: Net.VERSION, tok: Net.tok }); });
         conn.on('data', m => guestMsg(conn, m, res, fail, again));
         conn.on('close', () => { if (conn === Net.conn) connLost('closed'); });
         conn.on('error', () => { if (conn === Net.conn) connLost('error'); });
@@ -430,21 +469,26 @@ const Net = {
         if (Net.state === 'opening') fail(m.why === 'version' ? 'Game version differs from the host (theirs ' + m.v + ', yours ' + Net.VERSION + '). Reload the page (Ctrl+F5) so both of you run the same build.' : 'That room already has its second player.');
         else endSession('Could not rejoin.');
         break;
-      case 'snap': decode(m.z).then(txt => {
-        if (m.n <= Net.lastN) return;   // an older one finished unpacking after a newer one
-        Net.lastN = m.n;
-        const st = Net.stats; st.zipKB = (typeof m.z === 'string' ? m.z.length : m.z.byteLength) / 1024; st.rawKB = txt.length / 1024; st._n++; st._b += st.zipKB * 1024;
-        Net.prev = Net.next; Net.next = JSON.parse(txt);   // the newest two are kept; the frame loop takes the newest whole one
-        const t = performance.now();
-        if (Net.nextAt) Net.snapGap = Net.snapGap * 0.9 + Math.min(0.3, (t - Net.nextAt) / 1000) * 0.1;   // seconds between snapshots, smoothed (how long a glide should take)
-        Net.nextAt = t;
-        if (Net.hooks.snap) Net.hooks.snap();
-      }).catch(e => UI.err(e)); break;
+      case 'snap': snapIn(m.n, m.z, 'reliable'); break;
       case 'toast': if (Net.hooks.toast) Net.hooks.toast(m); break;
       case 'buyres': if (Net.hooks.buyres) Net.hooks.buyres(m); break;
       case 'pong': Net.stats.rtt = Math.round(performance.now() - m.at); break;
       case 'bye': endSession('The host ended the game.'); break;
     }
+  }
+  // a snapshot arrived (either channel): unpack it, and keep it if it is newer than the one before
+  function snapIn(n, z, via) {
+    if (n <= Net.lastN) return;   // an older picture (the unordered channel can deliver them out of turn): not worth unpacking
+    decode(z).then(txt => {
+      if (n <= Net.lastN) return;   // an older one finished unpacking after a newer one
+      Net.lastN = n;
+      const st = Net.stats; st.chan = via; st.zipKB = (typeof z === 'string' ? z.length : z.byteLength) / 1024; st.rawKB = txt.length / 1024; st._n++; st._b += st.zipKB * 1024;
+      Net.prev = Net.next; Net.next = JSON.parse(txt);   // the newest two are kept; the frame loop takes the newest whole one
+      const t = performance.now();
+      if (Net.nextAt) Net.snapGap = Net.snapGap * 0.9 + Math.min(0.3, (t - Net.nextAt) / 1000) * 0.1;   // seconds between snapshots, smoothed (how long a glide should take)
+      Net.nextAt = t;
+      if (Net.hooks.snap) Net.hooks.snap();
+    }).catch(e => UI.err(e));
   }
   function connLost(why) {
     if (Net.state !== 'live') return;

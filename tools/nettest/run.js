@@ -10,7 +10,7 @@
 const path = require('path'), fs = require('fs');
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'playwright-core');
 const SOAK = +process.env.SOAK || 0, SHOTS = process.env.SHOTS || '';
-const URL = 'file:///' + path.resolve(__dirname, '../../index.html').split(path.sep).join('/');
+const URL = 'file:///' + path.resolve(__dirname, '../../index.html').split(path.sep).join('/') + (process.env.LOSSY0 ? '?lossy=0' : '');
 let fails = 0;
 const ok = (c, msg, extra) => { console.log((c ? 'PASS ' : 'FAIL ') + msg + (extra !== undefined ? '  ' + extra : '')); if (!c) fails++; };
 const jc = async (p, sel) => { await p.waitForSelector(sel, { state: 'attached', timeout: 20000 }); await p.evaluate(s => document.querySelector(s).click(), sel); };   // (in-game DOM buttons: the banners)
@@ -194,6 +194,8 @@ async function boot(browser, name) {
   const st = await hp.evaluate(() => { const s = __wands.Net.stats; return { raw: s.rawKB, zip: s.zipKB, max: s.maxZip, kbps: s.kbps, fps: s.fps, total: s.total, snaps: s.snapsOut }; });
   console.log('SNAPSHOT: ' + st.raw.toFixed(0) + ' KB raw JSON, ' + st.zip.toFixed(1) + ' KB deflated (max ' + st.max.toFixed(1) + '), ' + st.fps + ' snapshots/s, ' + st.kbps + ' KB/s out');
   ok(st.fps >= 15, 'snapshot stream near 20 Hz', st.fps + '/s');
+  const ch = await Promise.all([hp, gp].map(p => p.evaluate(() => __wands.Net.stats.chan)));
+  ok(process.env.LOSSY0 ? ch.every(c => c === 'reliable') : ch.every(c => c === 'lossy'), 'snapshots travel on the ' + (process.env.LOSSY0 ? 'reliable' : 'unreliable') + ' channel', ch.join(' / '));
 
   // ---- the architecture guardrails with a session live: the wire format is the audit serializer's clone, and the photo test passes on the host AND on the guest
   ok(await hp.evaluate(() => JSON.stringify(__wands.Snap.capture().G) === __wands.Snap.wire()), 'Snap.wire() equals Snap.capture().G (the same clone the photo test audits)');

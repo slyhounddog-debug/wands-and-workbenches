@@ -1,0 +1,7 @@
+# what Vercel does not need to publish: the game runs from index.html, js/, fonts/, audio/music, audio/playStudioIntro.wav, overrides/ and style.css (plus api/ for the relay function)
+tools
+layout-editor-handoff
+pardon-my-games-intro-handoff
+audio/Breath of the Waltz Stems
+play.bat
+CLAUDE.md

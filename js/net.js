@@ -43,7 +43,24 @@ const Net = {
   // no longer resolves in DNS), and a relay carries all of that session's traffic through a third party's server.
   const qp = k => { const m = new RegExp('[?&]' + k + '=([^&]*)').exec(location.search); return m ? decodeURIComponent(m[1]) : ''; };
   Net.relay = !!qp('turn');
-  const iceServers = () => (Net.relay ? ICE.iceServers.concat([{ urls: qp('turn').split(','), username: qp('tuser'), credential: qp('tpass') }]) : ICE.iceServers);
+  // THE RELAY: on a web address the game asks its own server (api/turn.js, a Vercel function holding the Cloudflare TURN key) for a short-lived relay login whenever a
+  // room is created or joined. If that is not there (offline, file://, GitHub Pages, not set up, any error) the game just goes without: direct connections only, as before.
+  // ?api=<url> points it at another address (testing). An explicit ?turn= (above) wins.
+  Net.RELAY_API = (() => { const m = /[?&]api=([^&]*)/.exec(location.search); return m ? decodeURIComponent(m[1]) : /^https?:$/.test(location.protocol) ? '/api/turn' : ''; })();
+  Net.cfIce = null;
+  const getRelay = async () => {
+    Net.cfIce = null;
+    if (Net.relay || !Net.RELAY_API) return;
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 4000);
+    try {
+      const r = await fetch(Net.RELAY_API, { cache: 'no-store', signal: ctl.signal });
+      if (r.ok) { const j = await r.json(); if (j && Array.isArray(j.iceServers) && j.iceServers.length) Net.cfIce = j.iceServers; }
+    } catch (e) { /* no relay: direct connections only */ }
+    clearTimeout(timer);
+    Net.log('relay login ' + (Net.cfIce ? 'received' : 'not available (direct connections only)'));
+  };
+  Net.relayOn = () => Net.relay || !!Net.cfIce;
+  const iceServers = () => (!Net.relay && Net.cfIce ? ICE.iceServers.concat(Net.cfIce) : Net.relay ? ICE.iceServers.concat([{ urls: qp('turn').split(','), username: qp('tuser'), credential: qp('tpass') }]) : ICE.iceServers);
   // PeerJS's own log (every signaling message it sends and receives, ICE events, errors) is kept in a small ring so a failed join can show what the handshake did
   Net.plog = [];
   Net.log = (...a) => {
@@ -120,7 +137,7 @@ const Net = {
   // open a room: resolves with the code. The game itself starts when the guest has joined (hooks.guestJoined).
   Net.createRoom = function () {
     Net.reset(); Net.role = 'host'; Net.state = 'opening';
-    return loadLib().then(() => new Promise((res, rej) => {
+    return Promise.all([loadLib(), getRelay()]).then(() => new Promise((res, rej) => {
       let tries = 0;
       const attempt = () => {
         const code = Net.makeCode(), peer = new Peer(Net.PREFIX + code, peerOpts());
@@ -263,7 +280,7 @@ const Net = {
     return open(true);
   };
   function open(again) {
-    return loadLib().then(() => new Promise((res, rej) => {
+    return Promise.all([loadLib(), getRelay()]).then(() => new Promise((res, rej) => {
       const fail = msg => { if (Net.state === 'opening') { Net.state = again ? 'lost' : 'idle'; if (again) Net.lostAt = now(); rej(new Error(msg)); } };
       const peer = new Peer(peerOpts());
       Net.peer = peer;

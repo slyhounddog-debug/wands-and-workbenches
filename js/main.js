@@ -569,13 +569,14 @@ Main.step = function (dt, ctl) {
   }
   if (G.w.dead && !G.w.deadHandled) {
     G.w.deadHandled = true;
-    if (!Net.on) setTimeout(() => { if (G && G.w.dead) UI.showResults(); }, 900);
-    else UI.toast('The Wizard is down. The factory waits until he is back.', 'L', 'ic_skull');   // (the guest sees the results screen on his side)
+    setTimeout(() => { if (G && G.w.dead) UI.showResults(); }, 900);   // (online the guest's screen opens it from the snapshots: Main.guestSeen)
   }
-  if (Net.on && G.w.dead) {   // online the Wizard re-enters with his roll button (the results screen on the guest's side is the same press)
+  if (G.w.dead) {   // the game over screen: both players ready up with RESTART (the Wizard's roll button also readies him), then the run starts again
     G.w.deadT = (G.w.deadT || 0) + dt;
-    const p1 = Main.padW();
-    if (G.w.deadT > 1 && p1 && p1.a) { WZ.reenter(); R.wcam.x = G.w.x; R.wcam.y = G.w.y; AU.sfx('buy'); }
+    const p1 = Main.padW(), rd = G.w.ready || (G.w.ready = { B: false, W: false });
+    if (G.w.deadT > 1 && p1 && p1.a) rd.W = true;
+    if (rd.B && rd.W) { WZ.reenter(); R.wcam.x = G.w.x; R.wcam.y = G.w.y; AU.sfx('buy'); UI.show('results', false); }
+    else UI.resultsSync();
   }
   if (!frozen) { G.stats.time += dt; Main.sample(dt); }
   // the soundtrack follows the game: factory activity, monsters crowding the Wizard, the Chimera
@@ -758,6 +759,8 @@ Main.pause = function (on) {
   if (Net.on) {   // online the menu is only a screen: the sim (and the other player) keep going
     if (Main.menuUp !== on) AU.sfx(on ? 'menu_open' : 'menu_close');
     Main.menuUp = on;
+    if (Net.role === 'host') Main.setHold('host', on);   // either player's pause menu stops the game for both
+    else if (Net.role === 'guest') Net.sendPause(on);
     const c = $('pCode');
     c.classList.toggle('hidden', !Net.code);
     const ns = Net.stats;
@@ -824,11 +827,12 @@ function frame(ts) {
       else {
       if (!G.paused && !(Net.role === 'host' && Net.state !== 'live')) Main.step(dt);   // (online, the host waits while the guest is away)
       else AU.hum(0);
-      if (Net.role === 'host') { Net.hostTick(dt); Main.netBannerTick(); }
+      if (Net.role === 'host') { Net.hostTick(dt); Main.netBannerTick(); Main.pausedBanner(); }
       if (G && Net.on) {   // online the Builder's world fills the stage with the Wizard's in a corner; nothing is ever frozen, so nothing is skipped
         ctx.clearRect(0, 0, CFG.W, CFG.H);
-        R.drawFactory(ctx, dt, { x0: 0, w: CFG.W });
-        R.drawPip(ctx, dt);
+        const pd = G.paused ? 0 : dt;   // (a pause menu on either machine holds the picture too)
+        R.drawFactory(ctx, pd, { x0: 0, w: CFG.W });
+        R.drawPip(ctx, pd);
       } else if (G) {
         // A frozen game (pause menu, a skill tree, the "And..." beat) is the same picture every frame: once it has settled for a few frames the canvas is left alone,
         // and a half hidden under its own opaque tree panel is not drawn at all. Main.still counts the frames since anything changed (UI.changed resets it).

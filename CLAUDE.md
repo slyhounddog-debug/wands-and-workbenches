@@ -472,3 +472,10 @@ A **developer tool, not a game feature**: it plays the Wizard just badly enough 
 - The flow field covers a 97×97 window; monsters outside it (they teleport closer past 45 tiles anyway) fall back to straight lines.
 - A Wizard request/ping button and accessibility options (remapping, colourblind glyphs, shake toggle) are still open ideas.
 - Real two-player play with two gamepads hasn't been tested in-session; only headless tests and screenshots.
+
+## Game over, online pause, Tempest speeds (2026-10-27)
+
+- **Game over screen for both players**: the Wizard's death opens `UI.showResults` on every screen (online too: the guest from the snapshot, `Main.guestSeen`). `G.w.ready = { B, W }` (plain data) holds who pressed RESTART; the Builder's button is the host's / the shared screen's, the Wizard's the guest's (his press is the roll button latched; the host reads it as the pad) or the shared screen's offline; the Wizard's roll button also readies him. When both are ready `Main.step` calls `WZ.reenter()`. `UI.resultsSync` keeps the buttons in step.
+- **Online pause** (`Net.VERSION` 6): either player's pause menu stops the game for both. `G.pauseBy = { host, guest }`, `G.paused` = either (`Main.setHold`); the guest sends `{ t: 'pause', on }` (`Net.sendPause` -> `Net.hooks.pause`); the other screen shows "X PAUSED THE GAME" (`Main.pausedBanner`). The guest's prediction stands still while `G.paused`.
+- **Tempest Tear speed**: each tear has its own `spd` (`WZ.tearSpeed`): 3-4x the Wizard's speed, at least 10% apart from every live tear (5% once 10+ are live); if the range cannot hold them apart it stretches upward. `CFG.spells.tempest` `speedMin / speedMax / gapPref / gapMin / manyTears`.
+- The menu world's belt line now carries up to 5 spells (was 4). "Packets" are called "Spells" in all player-facing text (ids, `G.stats.packets` etc. unchanged). The ? station says a Core's augments are made at the Armory.

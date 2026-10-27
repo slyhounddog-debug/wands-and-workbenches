@@ -112,8 +112,8 @@ const st = k => g => g.stats[k] || 0;
 const node = id => g => (g.tree[id] ? 1 : 0);
 Players.ACH = [
   A('first_send', 'B', 'First Delivery', 'ic_portal', 'Send something through a portal', 1, st('deliveries')),
-  A('packets_100', 'B', 'Packet Pusher', 'ic_bolt', 'Send 100 element packets', 100, st('packets')),
-  A('packets_1500', 'B', 'Element Tycoon', 'ic_trophy', 'Send 1500 element packets', 1500, st('packets')),
+  A('packets_100', 'B', 'Packet Pusher', 'ic_bolt', 'Send 100 element spells', 100, st('packets')),
+  A('packets_1500', 'B', 'Element Tycoon', 'ic_trophy', 'Send 1500 element spells', 1500, st('packets')),
   A('forge', 'B', 'Forgemaster', 'b:forge', 'Unlock the Elemental Forge', 1, node('forge')),
   A('logistics', 'B', 'Traffic Controller', 'b:splitter', 'Unlock Logistics', 1, node('logistics')),
   A('expand', 'B', 'Room to Grow', 'ic_expand', 'Add 20 Floor Tiles to the factory', 20, g => Math.max(g.stats.tiles || 0, (g.tree.expand || 0) * 8)),

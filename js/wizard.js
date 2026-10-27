@@ -365,7 +365,7 @@ WZ.fresh = function () {
     x: SPAWN.x, y: SPAWN.y, hp: WZ.maxHp(), armor: 0, fx: 1, fy: 1, sx: 0, sy: 0, mines: [], booms: [], eidN: 0, vx: 0, vy: 0, target: null,
     roll: 0, rollCd: 0, rdx: 0, rdy: 0, hurtT: 0, moving: false, bob: 0, shake: 0, ghosts: [],
     enemies: [], allies: [], aq: [], proj: [], eproj: [], aproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
-    time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
+    time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, ready: { B: false, W: false }, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
     fireT: 0, invisT: 0, statT: 0, statHits: 0, ride: null, sg: null, shrines: {},   // the wand's clocks (js/wand.js): Flame Trail speed, Vanishing Puff, Statue (and the hits it took), Riding Wave; the shrine ring game and the shrine buffs running
     cine: null, rit: 0, quake: 0, altarFlash: 0,   // the Altar's landing cinematic, the Chimera ritual countdown, the world shake after the impact, the flash when a spell hits it
     hv: {}, fg: {},   // harvestable / forage node state (see WZ.nodeProps)
@@ -767,7 +767,7 @@ WZ.cast = function (spell) {
     }
     case 'tempest':   // a controllable water droplet: it joins the fan of live ones (WZ.zoneSpecial 'tear'), its own clock running
       AU.sfx('zap_water');
-      WZ.zone({ kind: 'tear', x: px, y: py, r: S.r, t: S.life, col: '#4fc3ff', trT: 0 });
+      WZ.zone({ kind: 'tear', x: px, y: py, r: S.r, t: S.life, col: '#4fc3ff', trT: 0, spd: WZ.tearSpeed(S) });
       WZ.epuff(px, py, 'water', 6);
       break;
     case 'mud': {   // blue / brown orbs circle him; each goes off on the first foe it touches (WZ.zoneSpecial 'mshield')
@@ -1163,6 +1163,17 @@ WZ.icicleHit = function (x, y) {
   });
 };
 // zones that do more than tick round a circle: returns true when the usual circle damage should be skipped
+// A new Tempest Tear's speed (x the Wizard's): between speedMin and speedMax, and at least gapPref (10%) different from every live tear (gapMin, 5%, once there are
+// manyTears of them); the most spread-out value in the range wins. If the range cannot hold that many tears apart it is stretched upward rather than let two match.
+WZ.tearSpeed = function (S) {
+  const used = G.w.zones.filter(o => o.kind === 'tear' && o.t > 0).map(o => o.spd || S.speedMul);
+  const gapOf = c => used.reduce((m, o) => Math.min(m, Math.abs(c - o) / Math.min(c, o)), 9);
+  const search = hi => { let best = S.speedMin, bg = -1; for (let c = S.speedMin; c <= hi + 1e-9; c += 0.01) { const g = gapOf(c); if (g > bg + 1e-9) { bg = g; best = c; } } return [best, bg]; };
+  for (const gap of used.length < S.manyTears ? [S.gapPref, S.gapMin] : [S.gapMin]) { const r = search(S.speedMax); if (r[1] >= gap) return +r[0].toFixed(2); }
+  let r = search(S.speedMax);
+  for (let hi = S.speedMax + 0.5; hi < 40 && r[1] < S.gapMin; hi += 0.5) r = search(hi);
+  return +r[0].toFixed(2);
+};
 WZ.zoneSpecial = function (z, dt) {
   const w = G.w, S = z.ctx ? CFG.spells[z.ctx.spell] : null;
   if (z.kind === 'ftrail') return WZ.trailTick(z, dt);   // the wand's Flame Trail (js/wand.js)
@@ -1186,7 +1197,7 @@ WZ.zoneSpecial = function (z, dt) {
     const sib = w.zones.filter(o => o.kind === 'tear'), n = sib.length, i = sib.indexOf(z), st = WZ.stickAim();
     const an = Math.atan2(st ? st[1] : w.fy, st ? st[0] : w.fx) + (i - (n - 1) / 2) * S.spread * Math.PI / 180;
     const reach = st ? Math.max(S.minReach, S.reach * st[2]) : S.reach;
-    const dx = w.x + Math.cos(an) * reach - z.x, dy = w.y + Math.sin(an) * reach - z.y, d = Math.hypot(dx, dy), step = WZ.speed() * S.speedMul * dt;
+    const dx = w.x + Math.cos(an) * reach - z.x, dy = w.y + Math.sin(an) * reach - z.y, d = Math.hypot(dx, dy), step = WZ.speed() * (z.spd || S.speedMul) * dt;
     if (d > 0.001) { const k = Math.min(1, step / d); z.x += dx * k; z.y += dy * k; }
     const lx = z.x - w.x, ly = z.y - w.y, ld = Math.hypot(lx, ly);
     if (ld > S.reach) { z.x = w.x + lx / ld * S.reach; z.y = w.y + ly / ld * S.reach; }   // the leash: never more than reach tiles from him

@@ -11,6 +11,7 @@
 //                                                                q counts the packets up: the host answers with G.na = the last q it applied, G.nat = how long before the picture it
 //                                                                arrived and G.nft = the picture's moment on the host's clock (the guest's prediction replays from there)
 //                   { t: 'buy', id }                             skill tree purchase intent (the host validates it with the usual cost logic)
+//                   { t: 'pause', on }                           the guest's pause menu opened / closed (it stops the game for both: G.pauseBy)
 //                   { t: 'ping', at }  { t: 'bye' }
 //   host -> guest   { t: 'welcome', v, seed, sig, runMeta }      handshake reply; the snapshot stream starts after it
 //                   { t: 'refuse', why, v }                      version / room full
@@ -21,7 +22,7 @@
 // toasts) and a second UNRELIABLE, UNORDERED one for the 20 Hz snapshots (a late or lost picture is simply skipped: nothing waits behind it, so one bad packet on a phone
 // hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
-  VERSION: 5,   // 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
+  VERSION: 6,   // 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
   BUILD: 11,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
@@ -241,6 +242,7 @@ const Net = {
     Net.lastRx = now();
     if (m.t === 'pad') { hostPad(m.s); if (m.q > Net.gseq) Net.gseq = m.q; }
     else if (m.t === 'buy') { if (Net.hooks.buy) Net.hooks.buy(String(m.id)); }
+    else if (m.t === 'pause') { if (Net.hooks.pause) Net.hooks.pause(!!m.on); }
     else if (m.t === 'ping') send(conn, { t: 'pong', at: m.at });
     else if (m.t === 'bye') guestGone('left');
   }
@@ -588,6 +590,7 @@ const Net = {
     Net.pingAcc += dt;
     if (Net.pingAcc >= 2) { Net.pingAcc = 0; send(Net.conn, { t: 'ping', at: performance.now() }); Net.pathProbe(); }
   };
+  Net.sendPause = on => { if (Net.role === 'guest' && Net.state === 'live') send(Net.conn, { t: 'pause', on: !!on }); };
   Net.sendBuy = id => { if (Net.role === 'guest' && Net.state === 'live') send(Net.conn, { t: 'buy', id }); };
   // the newest whole snapshot, once (the frame loop swaps G for it atomically)
   Net.takeSnap = function () { const s = Net.next; Net.next = null; if (s) Net.takenAt = Net.nextAt; return s; };

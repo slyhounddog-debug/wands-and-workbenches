@@ -375,7 +375,7 @@ function feedBelt(dt) {
   if ((m.beltT -= dt) > 0) return;
   m.beltT = 2.4;
   const f = G.fac, first = f.belts.find(b => b.x === BELT.x && b.y === BELT.y0);
-  if (!first || first.item || f.belts.filter(b => b.item).length >= 4 || f.floor.length > 6) return;
+  if (!first || first.item || f.belts.filter(b => b.item).length >= 5 || f.floor.length > 6) return;
   const p = pool();
   first.item = { kind: p[Math.floor(Math.random() * p.length)], prog: 0, moved: true };
 }

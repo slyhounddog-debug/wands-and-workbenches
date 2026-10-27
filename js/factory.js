@@ -125,7 +125,7 @@ FA.qInfo = function (k) {
   if (k === 'wood' || k === 'stone') use = 'Builds things. Burns in a Battery.';
   else if (k === 'iron') use = 'Builds Forges, Armory, Batteries.';
   else if (k === 'shard') use = 'Rare. Spawners, garments, keys. Skill Portal: Summoning.';
-  else if (isCoreKind(k)) use = 'Forges garments and the Warden Key. Opens other Shrines. At a Spawner: grows a FRIENDLY creature.';
+  else if (isCoreKind(k)) use = 'Augments are made at the Armory. Also opens Shrines and grows FRIENDLY creatures at a Spawner.';
   else if (isKeyKind(k)) use = 'Spell Portal: opens the Stronghold door.';
   else if (ELEM[k]) use = 'Feeds Forge, Spawner, Battery.';
   else if (ITEMS[k] && ITEMS[k].spell) use = SEED_SPELL[k] ? 'Cast it, bank it, or hatch a ' + CFG.creatures[SEED_SPELL[k]].name + ' at the Spawner.' : 'Cast it: Spell Portal. Bank it: Skill.';
@@ -1111,7 +1111,7 @@ FA.updCell = function (b, dt) {
   if (b.bat < M * CFG.chargeTipAt && !G.flags.chargeTip) {   // the first time a Battery runs half down
     G.flags.chargeTip = true;
     if (!G.flags.fed) {
-      UI.toast('Battery below half: throw element packets, Wood or Stone at it to charge it', 'L', 'ic_bolt');
+      UI.toast('Battery below half: throw element spells, Wood or Stone at it to charge it', 'L', 'ic_bolt');
       FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_bolt']]);
     }
   }
@@ -1593,14 +1593,14 @@ FA.statusText = function (b) {
   if (!b.done) return n + ': blueprint, needs ' + (FA.needText(FA.needOf(b)) || 'nothing');
   if (d.kind === 'harness') {
     let st = 'producing';
-    if (FA.growing(b)) return n + ' (' + ELEM_WORD[b.el] + '): the crystal is growing, ' + Math.ceil(CFG.harness.growT - b.grow) + 's until it makes packets. F switches the element';
+    if (FA.growing(b)) return n + ' (' + ELEM_WORD[b.el] + '): the crystal is growing, ' + Math.ceil(CFG.harness.growT - b.grow) + 's until it makes spells. F switches the element';
     if (b.out.length >= CFG.buffer) st = 'BLOCKED: nothing takes its output. Belt it away or take it (click)'; else if (!b.powered) st = 'NO POWER';
     else if (G.w.shrines && G.w.shrines[b.el] > 0) st = 'producing, SHRINE BOOST +' + Math.round(CFG.marks.shrineBoost * 100) + '% (a ' + ELEM_WORD[b.el] + ' Shrine is awake: ' + Math.ceil(G.w.shrines[b.el]) + 's left)';
     return n + ' (' + ELEM_WORD[b.el] + '): ' + b.out.length + '/' + CFG.buffer + ' ready, ' + st;
   }
   if (d.kind === 'crafter') {
     if (b.type === 'spawner') {
-      if (!b.recipe) return n + ': feed it ONE thing: a packet = its basic creature, or a seed spell: ' + Object.keys(SEED_SPELL).map(k => itemName(k) + ' = ' + CFG.creatures[SEED_SPELL[k]].name).join(', ') + '. Or throw it a CORE to grow a FRIENDLY one';
+      if (!b.recipe) return n + ': feed it ONE thing: a spell = its basic creature, or a seed spell: ' + Object.keys(SEED_SPELL).map(k => itemName(k) + ' = ' + CFG.creatures[SEED_SPELL[k]].name).join(', ') + '. Or throw it a CORE to grow a FRIENDLY one';
       const R = CFG.recipes[b.recipe], c = FA.eggOf(b.recipe), ally = FA.spawnerAlly(b);
       let s = n + ': growing ' + (ally ? 'a FRIENDLY ' : '') + c.name + ' from ' + FA.spawnerHave(b).map(itemName).join(' + ') + ' ' + Math.min(99, Math.floor(b.prog / R.time * 100)) + '%' + (ally && FA.spawnerCan(b).length ? ' (another Core of a different element makes it bigger)' : '');
       if (b.draw > 0 && !b.powered) s += '. NO POWER';
@@ -1623,7 +1623,7 @@ FA.statusText = function (b) {
     const dn = ['east', 'south', 'west', 'north'];
     return n + ': ' + b.outs.map(o => (b.pct[o] || 0) + '% ' + dn[o] + (FA.splitHas(b, o) ? ' (' + b.filt[o].map(itemName).join(' + ') + ')' : '')).join(', ') + (b.blocked && b.out.length ? '. BLOCKED' : '') + ' (click to set)';
   }
-  if (d.kind === 'crate') return n + ': ' + (b.cn > 0 ? b.cn + ' ' + itemName(b.ck) : 'empty (takes element packets or Eggs, one kind)') + '. Belt in, it feeds its arrow side; point it at nothing to just store';
+  if (d.kind === 'crate') return n + ': ' + (b.cn > 0 ? b.cn + ' ' + itemName(b.ck) : 'empty (takes element spells or Eggs, one kind)') + '. Belt in, it feeds its arrow side; point it at nothing to just store';
   if (d.kind === 'cell') {
     const act = Object.keys(b.fuel).filter(k => b.fuel[k] > 0);
     let s = n + ': charge ' + Math.round(b.bat) + '/' + CFG.batteryMax + (b.bat > 0 ? ', +' + (CFG.stationGen + (b.over > 0 ? CFG.overcharge.power : 0)) + ' power, ' + Math.ceil(FA.life(b)) + 's left at this load' : ' (flat)') + (b.over > 0 ? '. OVERCHARGED ' + Math.ceil(b.over) + 's' : '');
@@ -1631,7 +1631,7 @@ FA.statusText = function (b) {
     if (b.bat < CFG.batteryMax && act.length) {
       const nt = Math.max(b.types.length, act.length), rate = CFG.batteryMax / (CFG.chargeBase / Math.pow(CFG.chargeBoost, nt - 1));
       s += ', full in ' + Math.ceil((CFG.batteryMax - b.bat) / rate) + 's';
-    } else if (b.bat < CFG.batteryMax) s += ': throw it element packets, Wood or Stone';
+    } else if (b.bat < CFG.batteryMax) s += ': throw it element spells, Wood or Stone';
     return s;
   }
   return n;

@@ -10,6 +10,26 @@
 //  - the guest runs no simulation: Main.guestFrame draws the newest snapshot of G and its HUD reads it
 Main.menuUp = false;   // online: the pause menu is up (G.paused stays false)
 Main.isPaused = () => !!(G && (G.paused || Main.menuUp));
+// online pause: either player's pause menu stops the whole game. G.pauseBy = { host, guest } is plain data (it rides the snapshots, so the other screen can say who),
+// G.paused is true while either is set (the host's loop skips Main.step on it, as offline)
+Main.setHold = function (who, on) {
+  if (!G) return;
+  const p = G.pauseBy || (G.pauseBy = { host: false, guest: false });
+  p[who] = !!on;
+  G.paused = p.host || p.guest;
+};
+// the banner on the machine whose own menu is not the one that stopped the game
+Main.pausedBanner = function () {
+  let el = $('pausedBy');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'pausedBy'; el.className = 'px hidden';
+    el.style.cssText = 'position:absolute;left:50%;top:70px;transform:translateX(-50%);padding:10px 18px;background:#1d1830;color:#ffe36b;font-family:var(--display);font-size:16px;z-index:40;pointer-events:none';
+    $('stage').appendChild(el);
+  }
+  const p = G && G.pauseBy, other = Net.role === 'guest' ? p && p.host : p && p.guest;
+  el.classList.toggle('hidden', !(Net.on && other && !Main.menuUp));
+  if (other) el.textContent = (Net.role === 'guest' ? 'BUILDER' : 'WIZARD') + ' PAUSED THE GAME';
+};
 Main.modal = () => Net.role === 'host' && (Main.menuUp || Book.isOpen);
 // the host's Builder is held still behind a menu / the book; the Wizard (the guest's virtual pad) carries on
 Main.wizardOnly = function () {
@@ -77,7 +97,8 @@ Main.hostHooks = {
     };
     tick();
   },
-  guestLost() { if (!(G && G.menu)) Main.netBanner('hostLost'); },   // (in the lobby the room modal says it)
+  guestLost() { if (G && !G.menu) Main.setHold('guest', false); if (!(G && G.menu)) Main.netBanner('hostLost'); },
+  pause(on) { if (G && !G.menu && Net.state === 'live') Main.setHold('guest', on); },   // the guest opened / closed his pause menu   // (in the lobby the room modal says it)
   guestBack() { if (G && G.menu) return; Main.netBanner(null); UI.toast('Player 2 is back.', 'L', 'ic_check'); },
   timeout() { Main.toTitle(); },   // 60 s are up: back to the title screen, the save (already written) is intact
   // the guest asked to buy a node: the usual cost logic decides; what it would have toasted goes back to him, the result reaches his screen in the next snapshot
@@ -142,6 +163,7 @@ Main.guestKeys = function (dt) {
 };
 // things the guest notices by watching the snapshots go by
 Main.guestSeen = function () {
+  Main.pausedBanner();
   if (G.quest.W > Main.lastQW) {   // the host completed a Wizard goal: the card flashes like it does offline
     const el = $('questW'); el.classList.remove('done'); void el.offsetWidth; el.classList.add('done'); AU.sfx('complete');
   }
@@ -150,6 +172,7 @@ Main.guestSeen = function () {
   const down = G.w.dead && (G.w.deadT || 0) > 0.9;   // the death screen: the roll button (or its button) re-enters
   if (down && !Main.resShown) { Main.resShown = true; UI.showResults(); }
   else if (!G.w.dead && Main.resShown) { Main.resShown = false; UI.show('results', false); }
+  else if (G.w.dead) UI.resultsSync();
 };
 // ---------- smoothing ----------
 // The guest gets a new picture of the world about 20 times a second; drawn as they come, everything would move in 20 Hz steps. So when one arrives, every thing that
@@ -277,7 +300,8 @@ Main.predSnap = function (s) {
 Main.predictFrame = function (dt) {
   const pr = Main.pr, w = G && G.w;
   if (!pr.ok || !pr.s || !w || w.dead) return;
-  const L = Net.liveInput(), k = slowOf(w), ts = Net.frameTs || performance.now();
+  if (G.paused) { pr.lastTs = Net.frameTs || performance.now(); return; }   // the game is stopped (either player's pause menu): nothing walks
+  const L =Net.liveInput(), k = slowOf(w), ts = Net.frameTs || performance.now();
   let left = Math.max(0, Math.min(0.25, (ts - (pr.lastTs || ts)) / 1000)), spd = 0, press = L.a;
   pr.lastTs = ts;
   while (left > 1e-5 || press) { const d = Math.min(left, 1 / 60); spd = Main.walkStep(pr.s, d, L.ix, L.iy, press, k); press = false; left -= d; if (d === 0) break; }

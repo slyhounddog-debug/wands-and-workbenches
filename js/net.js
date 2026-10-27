@@ -28,7 +28,7 @@ const Net = {
   state: 'idle',                 // idle | opening | waiting (host: room open, nobody yet) | live | lost | ended
   code: null, error: '',
   peer: null, conn: null, tok: null, lastRx: 0, lostAt: 0,
-  hooks: {}, errs: [], diag: null, hdiag: null,
+  hooks: {}, errs: [], diag: null, hdiag: null, nextAt: 0, takenAt: 0, snapGap: 0.05,
   stats: { rawKB: 0, zipKB: 0, maxZip: 0, snapsOut: 0, bytesOut: 0, kbps: 0, rtt: 0, fps: 0, _t: 0, _b: 0, _n: 0, total: 0 },
   // host
   snapN: 0, snapAcc: 0, busy: false, gpad: null, gedge: null,
@@ -216,12 +216,23 @@ const Net = {
       if (Net.hooks.timeout) Net.hooks.timeout();
     }
   };
+  // Everything that moves gets a stable id the first time a snapshot is taken (Net.stamp; G.w.uidN is the counter), so the guest can match "the same foe" between two
+  // snapshots and glide it from one place to the next (Main.tween in online.js). The id is a plain field on the object and rides along in every snapshot.
+  const STAMP = [['w', 'enemies'], ['w', 'allies'], ['w', 'proj'], ['w', 'eproj'], ['w', 'aproj'], ['w', 'drops'], ['w', 'pickups'], ['w', 'boulders'], ['w', 'zones'], ['w', 'mines'], ['w', 'booms'], ['w', 'arcs'], ['fac', 'flying']];
+  Net.stamp = function () {
+    const w = G && G.w;
+    if (!w) return;
+    for (const [p, k] of STAMP) {
+      const arr = G[p] && G[p][k];
+      if (arr) for (const o of arr) if (o && typeof o === 'object' && o.uid === undefined) o.uid = w.uidN = (w.uidN || 0) + 1;
+    }
+  };
   function sendSnap() {
     const conn = Net.conn;
     if (Net.busy || !conn || !conn.open || !G) return;
     if (conn.dataChannel && conn.dataChannel.bufferedAmount > 600000) return;   // the link cannot keep up: skip this one rather than queue stale state
     let str;
-    try { str = Snap.wire(); } catch (e) { UI.err(e); return; }
+    try { Net.stamp(); str = Snap.wire(); } catch (e) { UI.err(e); return; }
     const n = ++Net.snapN;
     Net.busy = true;
     encode(str).then(z => {
@@ -387,6 +398,9 @@ const Net = {
         Net.lastN = m.n;
         const st = Net.stats; st.zipKB = (typeof m.z === 'string' ? m.z.length : m.z.byteLength) / 1024; st.rawKB = txt.length / 1024; st._n++; st._b += st.zipKB * 1024;
         Net.prev = Net.next; Net.next = JSON.parse(txt);   // the newest two are kept; the frame loop takes the newest whole one
+        const t = performance.now();
+        if (Net.nextAt) Net.snapGap = Net.snapGap * 0.9 + Math.min(0.3, (t - Net.nextAt) / 1000) * 0.1;   // seconds between snapshots, smoothed (how long a glide should take)
+        Net.nextAt = t;
         if (Net.hooks.snap) Net.hooks.snap();
       }).catch(e => UI.err(e)); break;
       case 'toast': if (Net.hooks.toast) Net.hooks.toast(m); break;
@@ -450,5 +464,5 @@ const Net = {
   };
   Net.sendBuy = id => { if (Net.role === 'guest' && Net.state === 'live') send(Net.conn, { t: 'buy', id }); };
   // the newest whole snapshot, once (the frame loop swaps G for it atomically)
-  Net.takeSnap = function () { const s = Net.next; Net.next = null; return s; };
+  Net.takeSnap = function () { const s = Net.next; Net.next = null; if (s) Net.takenAt = Net.nextAt; return s; };
 })();

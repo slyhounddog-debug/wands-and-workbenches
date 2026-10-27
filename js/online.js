@@ -151,15 +151,58 @@ Main.guestSeen = function () {
   if (down && !Main.resShown) { Main.resShown = true; UI.showResults(); }
   else if (!G.w.dead && Main.resShown) { Main.resShown = false; UI.show('results', false); }
 };
+// ---------- smoothing ----------
+// The guest gets a new picture of the world about 20 times a second; drawn as they come, everything would move in 20 Hz steps. So when one arrives, every thing that
+// moves (matched with the one in the previous picture by its stable id, see Net.stamp) starts again from where it was DRAWN and glides to where the host says it is over
+// about one snapshot interval, and every frame moves it a little further (Main.tweenStep). A jump bigger than a few tiles (a respawn, a blink) is not smoothed.
+Main.tw = [];   // [object, field, from, to, ...]
+Main.twAt = 0;
+const TWEEN_ARR = [['w', 'enemies'], ['w', 'allies'], ['w', 'proj'], ['w', 'eproj'], ['w', 'aproj'], ['w', 'drops'], ['w', 'pickups'], ['w', 'boulders'], ['w', 'zones'], ['w', 'mines'], ['w', 'booms']];
+Main.tween = function (a, b, at) {
+  const tw = [];
+  const push = (o, n, f, max, mono) => {
+    const x = o[f], y = n[f];
+    if (typeof x !== 'number' || typeof y !== 'number' || x === y || Math.abs(y - x) > max || (mono && y < x)) return;
+    tw.push(n, f, x, y); n[f] = x;
+  };
+  const pair = (oa, na, fields, max, mono) => {
+    if (!oa || !na) return;
+    const m = new Map();
+    for (const o of oa) if (o && o.uid !== undefined) m.set(o.uid, o);
+    for (const n of na) { const o = n && m.get(n.uid); if (o) for (const f of fields) push(o, n, f, max, mono); }
+  };
+  if (a.w && b.w) { push(a.w, b.w, 'x', 4); push(a.w, b.w, 'y', 4); push(a.w, b.w, 't', 1, true); }
+  if (a.bd && b.bd) { push(a.bd, b.bd, 'x', 4); push(a.bd, b.bd, 'y', 4); }
+  if (a.fac && b.fac) {
+    push(a.fac, b.fac, 't', 1, true);
+    pair(a.fac.flying, b.fac.flying, ['t'], 3, true);
+    const ob = a.fac.belts, nb = b.fac.belts;   // the items riding the belts
+    if (ob && nb) for (let i = 0; i < Math.min(ob.length, nb.length); i++) { const o = ob[i], n = nb[i]; if (o.x === n.x && o.y === n.y && o.item && n.item && o.item.kind === n.item.kind) push(o.item, n.item, 'prog', 0.6, true); }
+  }
+  if (a.w && b.w) {
+    for (const [p, k] of TWEEN_ARR) pair(a[p] && a[p][k], b[p] && b[p][k], ['x', 'y'], 4);
+    pair(a.w.arcs, b.w.arcs, ['t'], 2, true);
+  }
+  Main.tw = tw; Main.twAt = at || performance.now();
+};
+Main.tweenStep = function (now) {
+  const tw = Main.tw;
+  if (!tw.length) return;
+  const k = Math.max(0, Math.min(1, (now - Main.twAt) / (Math.max(0.04, Math.min(0.12, Net.snapGap)) * 1000)));
+  for (let i = 0; i < tw.length; i += 4) tw[i][tw[i + 1]] = tw[i + 2] + (tw[i + 3] - tw[i + 2]) * k;
+};
 Main.guestFrame = function (dt, ts) {
   const s = Net.takeSnap();
   if (s) {
-    G = s;   // the newest whole snapshot replaces the state atomically; nothing here ever mutates it
+    const old = G;
+    G = s;   // the newest whole snapshot replaces the state atomically (its moving things are then glided from where they were drawn: Main.tween)
+    if (old && old.w && s.w && !old.menu && !s.menu) Main.tween(old, s, Net.takenAt); else Main.tw = [];
     if (G.menu) Menu.lastEv = Menu.lastEv || G.menu.evN;   // (the lobby: do not replay the events that happened before we got here)
     else if (!Net.on) Main.enterGuest(); else Main.guestSeen();
   }
   if (G && G.menu && !Net.on) { AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); Menu.guestFrame(dt, ts); return; }   // the host is still in the menu world
   if (!G || !Net.on) { AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); drawBackdrop(ts); return; }
+  Main.tweenStep(performance.now());
   Net.mute = !!(UI.treeOpen.R || Main.menuUp || Book.isOpen);
   Net.guestTick(dt);
   Book.tick(dt);

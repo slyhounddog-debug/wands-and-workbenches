@@ -102,6 +102,14 @@ async function boot(browser, name) {
   ok(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) > 1.0, 'guest WASD moves the Wizard on the host', 'moved ' + Math.hypot(p1[0] - p0[0], p1[1] - p0[1]).toFixed(1) + ' tiles');
   const gx = await gp.evaluate(() => [__wands.G.w.x, __wands.G.w.y]);
   ok(Math.hypot(gx[0] - p1[0], gx[1] - p1[1]) < 1.5, 'and the guest sees him there');
+  // smoothness on the guest: while the Wizard walks, how many screen frames actually show him in a new place? (snapshots arrive at 20 Hz; without gliding it is about a third)
+  if (process.env.NOTWEEN) await gp.evaluate(() => { Main.tween = () => { Main.tw = []; }; });   // (to see the numbers without the gliding)
+  await gp.evaluate(() => { window.__fr = { n: 0, moved: 0, last: null }; const tick = () => { const f = window.__fr, w = __wands.G && __wands.G.w; if (w) { const k = w.x.toFixed(4) + ',' + w.y.toFixed(4); f.n++; if (f.last !== null && k !== f.last) f.moved++; f.last = k; } if (!f.stop) requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
+  await gp.keyboard.down('KeyS'); await sleep(1500); await gp.keyboard.up('KeyS');
+  const fr = await gp.evaluate(() => { window.__fr.stop = true; return { n: window.__fr.n, moved: window.__fr.moved }; });
+  console.log('GUEST SMOOTHNESS: ' + fr.moved + ' of ' + fr.n + ' screen frames showed the walking Wizard in a new place');
+  ok(fr.n > 20 && fr.moved / fr.n > 0.75, 'the guest sees the walking Wizard move on (nearly) every screen frame, not in 20 Hz steps', Math.round(fr.moved / fr.n * 100) + '%');
+  await sleep(300);
   // Space = roll
   await hp.evaluate(() => { __wands.G.w.rollCd = 0; });
   await gp.keyboard.down('KeyA'); await gp.keyboard.press('Space'); await gp.keyboard.up('KeyA');

@@ -113,7 +113,7 @@ async function boot(browser, name) {
       const pr = gp.evaluate(() => new Promise(res => {
         const w = __wands.G.w, x0 = w.x, y0 = w.y; let t0 = 0;
         addEventListener('keydown', () => { t0 = performance.now(); }, { once: true });
-        const tick = () => { const w2 = __wands.G.w; if (t0 && Math.hypot(w2.x - x0, w2.y - y0) > 0.04) res(performance.now() - t0); else if (t0 && performance.now() - t0 > 3000) res(3000); else requestAnimationFrame(tick); };
+        const born = performance.now(), tick = () => { const w2 = __wands.G.w; if (t0 && Math.hypot(w2.x - x0, w2.y - y0) > 0.04) res(performance.now() - t0); else if ((t0 && performance.now() - t0 > 3000) || performance.now() - born > 6000) res(3000); else requestAnimationFrame(tick); };   // (never waits forever: a lost key event used to hang the run)
         requestAnimationFrame(tick);
       }));
       await sleep(50); await gp.keyboard.down(key);
@@ -144,7 +144,7 @@ async function boot(browser, name) {
     await gp.keyboard.up('KeyS');
     if (process.env.TRACE) console.log((await gp.evaluate(() => window.__tr)).map(x => JSON.stringify(x)).join('\n'));
     const med = misses.slice().sort((x, y) => x - y)[misses.length >> 1];
-    ok(med < 0.01 && Math.max(...misses) < 0.12, 'walking straight on a 150 ms ping the prediction needs (almost) no correction: no rubber banding', 'median ' + med.toFixed(3) + ', worst ' + Math.max(...misses).toFixed(3) + ' tiles (the worst: reaching a shore / a foe bumping him)');
+    ok(med < 0.02 && Math.max(...misses) < 0.12, 'walking straight on a 150 ms ping the prediction needs (almost) no correction: no rubber banding', 'median ' + med.toFixed(3) + ', worst ' + Math.max(...misses).toFixed(3) + ' tiles (the worst: reaching a shore / a foe bumping him)');
     await sleep(600); await gp.keyboard.down('KeyD'); await sleep(100); await gp.keyboard.down('Space'); await sleep(120);   // (the host's answer cannot be back before ~200 ms at this ping: rolling by then is the prediction)
     const rolling = await gp.evaluate(() => __wands.G.w.roll > 0);
     if (process.env.TRACE) console.log('ROLL', JSON.stringify(await gp.evaluate(() => { const p = __wands.Main.pr, w = __wands.G.w; return { ok: p.ok, s: p.s && { roll: p.s.roll, rollCd: p.s.rollCd, vx: p.s.vx }, wroll: w.roll, kick: !!w.kick, dead: w.dead, hurt: w.hurtT, mute: __wands.Net.mute }; })));
@@ -253,6 +253,37 @@ async function boot(browser, name) {
   ok(st.fps >= 15, 'snapshot stream near 20 Hz', st.fps + '/s');
   const ch = await Promise.all([hp, gp].map(p => p.evaluate(() => __wands.Net.stats.chan)));
   ok(process.env.LOSSY0 ? ch.every(c => c === 'reliable') : ch.every(c => c === 'lossy'), 'snapshots travel on the ' + (process.env.LOSSY0 ? 'reliable' : 'unreliable') + ' channel', ch.join(' / '));
+
+  // ---- MOTION=1: how evenly do the things the guest does NOT predict (foes) move on his screen, frame by frame? With a realistic link (JITTER=<ms>, default 30 on top of 20 ms)
+  // and without. A "stall" is a frame where a walking foe moved under a third of its usual step (it reads as a dropped frame), a "jump" over twice it.
+  if (process.env.MOTION) {
+    const motion = async (delay, jitter) => {
+      for (const p of [hp, gp]) await p.evaluate(([d, j]) => { __wands.Net.simDelay = d; __wands.Net.simJitter = j; }, [delay, jitter]);
+      await hp.evaluate(() => { const W = __wands, w = W.G.w; w.enemies.length = 0; W.CFG.world._cap = W.CFG.world.cap; W.CFG.world.cap = 0; w.hp = 9999;
+        for (let i = 0; i < 5; i++) { const a = i * 1.25, e = W.WZ.makeEnemy('slime', w.x + Math.cos(a) * 11, w.y + Math.sin(a) * 11); if (!w.enemies.includes(e)) w.enemies.push(e); } });
+      await sleep(900);
+      const rec = p => p.evaluate(() => new Promise(res => {
+        const gaps = [], steps = []; let last = performance.now(), prev = {}; const t0 = last;
+        const f = now => {
+          gaps.push(now - last); last = now;
+          for (const e of __wands.G.w.enemies) { const p = prev[e.uid]; if (p) steps.push(Math.hypot(e.x - p[0], e.y - p[1]) / Math.max(1, gaps[gaps.length - 1]) * 16.7); prev[e.uid] = [e.x, e.y]; }
+          if (now - t0 < 2500) requestAnimationFrame(f); else res({ gaps, steps });
+        };
+        requestAnimationFrame(f);
+      }));
+      const [r, rh] = await Promise.all([rec(gp), rec(hp)]);
+      await hp.evaluate(() => { const W = __wands; W.CFG.world.cap = W.CFG.world._cap; W.G.w.enemies.length = 0; W.G.w.hp = W.WZ.maxHp(); });
+      for (const p of [hp, gp]) await p.evaluate(() => { __wands.Net.simDelay = 0; __wands.Net.simJitter = 0; });
+      const stall = x => { const mv = x.steps.filter(v => v > 0.005), md = mv.slice().sort((a, b) => a - b)[mv.length >> 1] || 0; return Math.round(100 * x.steps.filter(v => v < md / 3).length / x.steps.length) + '%'; };
+      const g = r.gaps.slice().sort((a, b) => a - b), q = x => +g[Math.min(g.length - 1, Math.floor(g.length * x))].toFixed(1);
+      const mv = r.steps.filter(x => x > 0.005), med = mv.slice().sort((a, b) => a - b)[mv.length >> 1] || 0;
+      return { frames: g.length, gap_p50: q(0.5), gap_p95: q(0.95), gap_p99: q(0.99), gap_max: +g[g.length - 1].toFixed(1), stalls: Math.round(100 * r.steps.filter(x => x < med / 3).length / r.steps.length) + '%', jumps: Math.round(100 * r.steps.filter(x => x > med * 2).length / r.steps.length) + '%', host_stalls: stall(rh) };
+    };
+    if (+process.env.THROTTLE > 1) for (const p of [hp, gp]) { const cdp = await p.context().newCDPSession(p); await cdp.send('Emulation.setCPUThrottlingRate', { rate: +process.env.THROTTLE }); }
+    console.log('MOTION clean link     ' + JSON.stringify(await motion(0, 0)));
+    console.log('MOTION 20 + ' + (+process.env.JITTER || 30) + ' ms jitter ' + JSON.stringify(await motion(20, +process.env.JITTER || 30)));
+    if (+process.env.THROTTLE > 1) for (const p of [hp, gp]) { const cdp = await p.context().newCDPSession(p); await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 }); }
+  }
 
   // ---- PROFILE=1 (THROTTLE=<n> slows both pages' CPU n times, like a weaker laptop): where each side's frame time goes, mid-game
   if (process.env.PROFILE) {

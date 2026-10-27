@@ -288,10 +288,61 @@ Main.predictFrame = function (dt) {
   if (spd > 0.01) pr.bob += dt * 11 * Math.min(1, spd / WZ.speed());
   w.bob = pr.bob;
 };
+// ---------- interpolation ----------
+// Gliding toward each new picture as it arrives (Main.tween / tweenStep) moves things in fits and starts whenever pictures do not come exactly 50 ms apart (they never do:
+// the network jitters and the host sends an extra one right after a change of input): a quarter of the screen frames showed a walking foe standing still. So, in the game,
+// the guest keeps the last few pictures with the host's own timestamp (G.nft) and shows the world a fixed little time behind: one picture interval plus the jitter it has
+// measured (Main.interpDelay, 60-250 ms), blending the two pictures either side of that moment by their timestamps. Everything then moves at exactly the host's pace,
+// whenever the pictures arrive. The guest's OWN Wizard is not delayed: he is predicted from the newest picture (Main.predSnap) as before. ?interp=0 turns it off.
+Main.INTERP = !/[?&]interp=0/.test(location.search);
+Main.sb = []; Main.sbOff = []; Main.pairB = null; Main.wRaw = null; Main.interpDelay = 0;
+Main.sbRestore = function () {   // the picture on show goes back to the host's own numbers (it may become the "from" side of the next pair)
+  const tw = Main.tw;
+  for (let i = 0; i < tw.length; i += 4) tw[i][tw[i + 1]] = tw[i + 3];
+  if (Main.pairB && Main.wRaw) Object.assign(Main.pairB.s.w, Main.wRaw);
+  Main.tw = []; Main.wRaw = null;
+};
+Main.sbReset = function () { if (Main.pairB) Main.sbRestore(); Main.sb = []; Main.sbOff = []; Main.pairB = null; };
+Main.sbPush = function (s, at) {
+  const sb = Main.sb;
+  if (sb.length && s.nft <= sb[sb.length - 1].t) return;
+  sb.push({ s, t: s.nft });
+  if (sb.length > 12) sb.splice(0, sb.length - 12);
+  const o = Main.sbOff;   // host clock minus guest clock at arrival: the largest = the least delayed picture, the spread = the jitter
+  o.push(s.nft - at); if (o.length > 40) o.shift();
+};
+Main.interpFrame = function (now) {
+  const sb = Main.sb, so = Main.sbOff.slice().sort((a, b) => a - b);
+  if (!sb.length || !so.length) return;
+  const hi = so[so.length - 1], lo = so[Math.floor(so.length * 0.05)], gap = 1000 / Net.SNAP_HZ;
+  Main.interpDelay = Math.max(gap + 15, Math.min(250, gap + (hi - lo) + 15));
+  const tr = now + hi - Main.interpDelay;   // the host moment to show
+  let bi = sb.findIndex(e => e.t > tr);
+  if (bi < 0) bi = sb.length - 1;
+  if (bi === 0 && sb.length > 1) bi = 1;
+  const B = sb[bi], A = bi > 0 ? sb[bi - 1] : null;
+  if (B !== Main.pairB) {
+    if (Main.pairB) Main.sbRestore();
+    Main.wRaw = {};
+    for (const f of PFIELDS) Main.wRaw[f] = B.s.w[f];
+    Main.pairB = B;
+    if (A) Main.tween(A.s, B.s); else Main.tw = [];
+    G = B.s;
+    Main.guestSeen();
+    if (bi > 1) sb.splice(0, bi - 1);   // nothing older than A is needed again
+  }
+  const k = A ? Math.max(0, Math.min(1 + 60 / Math.max(1, B.t - A.t), (tr - A.t) / Math.max(1, B.t - A.t))) : 1, tw = Main.tw;   // (a late picture: carry on along the last pair for up to 60 ms rather than stand still)
+  for (let i = 0; i < tw.length; i += 4) tw[i][tw[i + 1]] = tw[i + 2] + (tw[i + 3] - tw[i + 2]) * k;
+};
 Main.guestFrame = function (dt, ts) {
   Net.prevTs = Net.frameTs || ts; Net.frameTs = ts;   // (the prediction's clock: frame timestamps, the same clock the host stamps its pictures with)
   const s = Net.takeSnap();
-  if (s) {
+  if (s && Main.INTERP && Net.on && s.w && !s.menu && s.nft && G && G.w && !G.menu) {   // in the game: into the buffer (Main.interpFrame picks what is shown)
+    const keep = G;
+    G = s; Main.predSnap(s); G = keep;   // (the prediction learns from the newest picture at once)
+    Main.sbPush(s, Net.takenAt);
+  } else if (s) {
+    if (Main.sb.length || Main.pairB) Main.sbReset();
     const old = G;
     G = s;   // the newest whole snapshot replaces the state atomically (its moving things are then glided from where they were drawn: Main.tween)
     Main.predSnap(s);   // (before the glide below moves his x / y: it needs the host's own numbers)
@@ -301,7 +352,7 @@ Main.guestFrame = function (dt, ts) {
   }
   if (G && G.menu && !Net.on) { AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); Menu.guestFrame(dt, ts); return; }   // the host is still in the menu world
   if (!G || !Net.on) { AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); drawBackdrop(ts); return; }
-  Main.tweenStep(performance.now());
+  if (Main.sb.length) Main.interpFrame(performance.now()); else Main.tweenStep(performance.now());
   Net.mute = !!(UI.treeOpen.R || Main.menuUp || Book.isOpen);
   Net.guestTick(dt);
   Main.predictFrame(dt);

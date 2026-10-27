@@ -39,7 +39,7 @@ const Net = {
   // host
   snapN: 0, snapAcc: 0, busy: false, gpad: null, gedge: null, gseq: 0, aseq: 0, aseqAt: 0, frameAt: 0, gsig: '', padDirty: false, snapNow: false,
   // guest
-  mute: false, lastN: 0, next: null, prev: null, latch: null, padAcc: 0, pingAcc: 0, pending: null, padSeq: 0, hist: [], padSig: '', simDelay: 0, frameTs: 0, prevTs: 0,
+  mute: false, lastN: 0, next: null, prev: null, latch: null, padAcc: 0, pingAcc: 0, pending: null, padSeq: 0, hist: [], padSig: '', simDelay: 0, simJitter: 0, frameTs: 0, prevTs: 0,
 };
 (function () {
   const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:global.stun.twilio.com:3478' }] };   // STUN only (PeerJS's own default adds a TURN relay: switched off on purpose)
@@ -173,7 +173,7 @@ const Net = {
     Net.gseq = 0; Net.aseq = 0; Net.padSeq = 0; Net.hist = []; Net.padSig = '';
   };
   // TEST ONLY: Net.simDelay (ms) holds back what this side sends (pads on the guest, snapshots on the host), like a slow link
-  const later = fn => { if (Net.simDelay) setTimeout(fn, Net.simDelay); else fn(); };
+  const later = fn => { const d = Net.simDelay + (Net.simJitter ? Math.random() * Net.simJitter : 0); if (d) setTimeout(fn, d); else fn(); };   // (+ Net.simJitter: up to that many ms more, at random, like a real link)
   // leave the session for good (title screen, quitting, the host's timeout)
   Net.close = function (tell) {
     if (tell !== false && Net.conn) send(Net.conn, { t: 'bye' });

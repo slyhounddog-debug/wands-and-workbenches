@@ -116,18 +116,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   });
   ok(dorm.stayed === 'slots' && dorm.after === 'cs', 'a plate that popped in under a character stays dormant until they step off and on again', dorm.stayed + ' -> ' + dorm.after);
   await stepOn('B', 'back', 1500); await stepOn('B', 'back', 1500);
-  // a spell's reach: Back / How to Play / Settings... are pressable, New Game and the slot plates are not
+  // a spell's reach presses no plate, safe or not: only a character standing on one does
   const sp1 = await ev(() => { const m = __wands.G.menu, p = m.plates.find(q => q.act === 'go:new'); __wands.menu.touch(p.x, p.y, 2.5); return m.page; });
   ok(sp1 === 'main', 'a spell landing on the New Game plate does not press it');
-  await sleep(700);
-  const sp2 = await ev(() => { const m = __wands.G.menu, p = m.plates.find(q => q.act === 'doc:howto'); __wands.menu.touch(p.x, p.y, 0.5); return m.page; });
-  ok(sp2 === 'howto', 'a spell landing on the How to Play plate presses it');
-  await sleep(1600); await shot('05_howto');
+  const sp2 = await ev(() => { const m = __wands.G.menu, p = m.plates.find(q => q.act === 'doc:howto'); __wands.menu.touch(p.x, p.y, 0.5); return m.page + '/' + m.modals.length; });
+  ok(sp2 === 'main/0', 'a spell landing on the How to Play plate does not press it either', sp2);
+  await stepOn('W', 'doc:howto', 1600); await shot('05_howto');
   ok(await ev(() => __wands.G.menu.modals.some(m => m.kind === 'doc' && m.t > 0.9)), 'the How to Play text is a window hovering over its plate');
   await stepOn('W', 'pg:1', 700); ok(await ev(() => __wands.G.menu.doc.pg === 1), 'the NEXT plate turns the page');
-  await ev(() => { const G = __wands.G, p = G.menu.plates.find(q => q.key === 'back'); __wands.menu.touch(p.x, p.y, 0.5); });
-  await sleep(1300);
-  ok((await pageOf()) === 'main' && await ev(() => !__wands.G.menu.modals.length), 'a spell presses its Back plate: the window is gone and the main set is back');
+  await stepOn('W', 'back', 1300);
+  ok((await pageOf()) === 'main' && await ev(() => !__wands.G.menu.modals.length), 'stepping on the Back plate: the window is gone and the main set is back');
   ok(!(await plates()).includes('doc:controls'), 'there is no Controls plate in the start menu (the controls are in the pause menu)');
   await stepOn('W', 'go:ach', 1300); await stepOn('W', 'ach:0', 1200); await shot('07_ach');
   ok(await ev(() => __wands.G.menu.modals.some(m => m.kind === 'ach' && m.page === 0)), 'Achievements: the first page is a window above its plate');

@@ -500,7 +500,12 @@ R.drawBeltItem = function (ctx, v, b, t) {
   const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), lift = 8, dd = DIRS[b.dir];
   p[0] += FA.quake(b.x, b.y);
   const sdx = (dd[0] - dd[1]) * v.hw, sdy = (dd[0] + dd[1]) * v.hh, ph = Math.min(0.5, b.item.prog - 0.5);
-  R.item(ctx, b.item.kind, p[0] + sdx * ph, p[1] - lift + sdy * ph - 4, 4, t);
+  const pk = !!G.menu && R.pickOf(b);   // (in the game the focus ring round the belt tile, R.drawFocus, says it; the menu world has no prompt stack, so the item lights up like a loose one)
+  if (pk) {
+    ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffec8c' : '#ffd23a'; ctx.lineWidth = 6; diamond(ctx, p[0], p[1], v.hw * 1.02, v.hh * 1.02); ctx.stroke();
+    R.pickFx(ctx, p[0] + sdx * ph, p[1] + sdy * ph, t, 1);
+  }
+  R.item(ctx, b.item.kind, p[0] + sdx * ph, p[1] - lift + sdy * ph - 4 - (pk && Math.sin(t * 10) > 0 ? 8 : 0), 4, t);
 };
 
 // the Builder is standing at it (its prompt is up) or the mouse is over it

@@ -318,15 +318,9 @@ function wrapLines(s, n) {
 }
 Menu.wrapLines = wrapLines;
 
-// a spell's reach (or a bolt flying over) presses the SAFE plates only
-Menu.touch = function (x, y, r) {
-  const m = G && G.menu;
-  if (!m || m.seq) return;
-  for (const p of m.plates) {
-    if (p.st !== 'up' || !p.safe || p.cd > 0) continue;
-    if (Math.abs(x - p.x) < p.r + r * 0.8 && Math.abs(y - p.y) < p.r + r * 0.8) Menu.fire(p, null);
-  }
-};
+// a spell's reach (or a bolt flying over) presses nothing: only a character standing on a plate chooses an option
+// (the hook stays, WZ.each and the flying bolts still call it)
+Menu.touch = function () {};
 
 // ---------- input: the same keys and pads as the game (Main.controls), for the two characters ----------
 function readInput(dt) {
@@ -342,6 +336,7 @@ function readInput(dt) {
   const W = { ix: clampv(wk[0] + (p1 ? p1.ix : 0)), iy: clampv(wk[1] + (p1 ? p1.iy : 0)) };
   B.use = (c.kbB && !(sh && G.swapped) && hit('KeyE')) || (altB && hit('Slash')) || !!(p0 && p0.x && !p0.ltHeld);
   B.pick = (altB && hit('Period')) || !!(p0 && p0.a && !p0.ltHeld);
+  B.pickHeld = (altB && !typing && IN.down('Period')) || !!(p0 && p0.aHeld && !p0.ltHeld);
   B.throwHeld = (altB && !typing && IN.down('Comma')) || !!(p0 && p0.bHeld);
   B.mouseL = mouseB && IN.mouse.lp && !typing; B.mouseR = mouseB && IN.mouse.r && !typing;
   W.roll = (c.kbW && !(sh && G.swapped) && hit('Period')) || (c.kbW && (!sh || G.swapped) && hit('Space')) || !!(p1 && p1.a);
@@ -385,6 +380,41 @@ function feedBelt(dt) {
   first.item = { kind: p[Math.floor(Math.random() * p.length)], prog: 0, moved: true };
 }
 
+// the pick button exactly as Main.controls runs it: a press that finds nothing yet is buffered for CFG.inputBuffer, holding repeats
+// (and sweeps up the same kind once something is in hand)
+function pickTick(dt, B) {
+  if (B.pick) {
+    const a = FA.interact('pick', true);
+    G.ibuf = a && a.fn ? null : { mode: 'pick', t: CFG.inputBuffer };
+    G.pRepeat = a && a.fn && a.rep ? CFG.pickRepeat * 1.5 : 0;
+  } else if (G.ibuf) {
+    const b = G.ibuf;
+    b.t -= dt;
+    const a = FA.interact('pick', b.t > 0);
+    if ((a && a.fn) || b.t <= 0) { G.ibuf = null; if (a && a.fn) G.pRepeat = a.rep ? CFG.pickRepeat * 1.5 : 0; }
+  } else if (B.pickHeld && G.pRepeat > 0) {
+    G.pRepeat -= dt;
+    if (G.pRepeat <= 0) {
+      const t = G.hands.length ? FA.sweepTarget(FA.topKind()) : FA.findTarget('pick'), a = t && FA.actionFor(t, 'pick');
+      if (a && a.rep && a.fn) { a.fn(); G.pRepeat = G.hands.length ? CFG.sweepRepeat : CFG.pickRepeat; }
+    }
+  } else if (!B.pickHeld) G.pRepeat = 0;
+}
+// what the pick button would take right now (the mouse's hovered thing, else the nearest in reach), as Main.updateFocus works it out:
+// R.focus drives the floor items' hop + ring (R.pickOf) and the belt highlight in Menu.hints
+function pickFocus() {
+  const m = G.menu;
+  let list = [];
+  if (m.conn.B && !m.hideB && !m.seq && !m.typing) {
+    let tp;
+    if (G.lastInput === 'mouse' && Main.mouseB()) { const [px, py] = hoverFac(); tp = FA.thingAt(Math.floor(px), Math.floor(py), px, py); }
+    else tp = FA.findTarget('pick');
+    const a = tp && FA.actionFor(tp, 'pick');
+    if (a && a.fn) list = [{ t: tp, a, key: 'pick' }];
+  }
+  R.focus = list.length ? { list } : null;
+}
+
 // ---------- the step ----------
 Menu.step = function (dt) {
   const m = G.menu, f = G.fac, w = G.w;
@@ -392,7 +422,7 @@ Menu.step = function (dt) {
   m.t += dt;
   G.ctl = Menu.ctlFor(m);
   G.swapped = m.swap && G.ctl.kbB && G.ctl.kbW;
-  if (m.ret) { retTick(dt); for (const md of m.modals) md.t = clamp(md.t + dt * 3.2, -2, 1); Menu.react(); return; }
+  if (m.ret) { R.focus = null; retTick(dt); for (const md of m.modals) md.t = clamp(md.t + dt * 3.2, -2, 1); Menu.react(); return; }
   updateConn();
   const inp = readInput(dt);
   let B = inp.B, W = inp.W;   // (a character nobody plays gets no input at all; it rocks back and forth on the spot: Menu.idleBob, drawn by menudraw.js)
@@ -408,11 +438,12 @@ Menu.step = function (dt) {
       if (thing) { bd.then = thing; bd.target = { x: thing.x, y: thing.y }; } else if (FA.owned(tx, ty)) { bd.then = null; bd.target = { x: px, y: py }; }
       bd.stuckT = 0;
     }
-    if (B.pick) FA.interact('pick', true);
+    pickTick(dt, B);
     if (B.mouseR || B.throwHeld) throwAlong();
     FA.moveBuilder(dt, B.ix, B.iy);
   }
   FA.update(dt);
+  pickFocus();
   WZ.update(dt, W.ix, W.iy, W.roll, 0, 0);
   if (G.menu !== m) return;
   // stay inside the patch; the patch and the camera glide to where the page wants them

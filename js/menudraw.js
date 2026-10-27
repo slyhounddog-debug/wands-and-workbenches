@@ -690,10 +690,9 @@ function keyPrompt(c, x, y, role, icons) {
 Menu.hints = function (ctx, v, mv) {
   const m = G.menu, bd = G.bd;
   if (m.hideB || m.seq || !m.conn.B) return;
-  const tgt = FA.findTarget('pick');
-  if (tgt && !G.hands.length) {
-    const a = FA.actionFor(tgt, 'pick');
-    if (a.fn) { const s = R.toScreen(mv, tgt.x, tgt.y); R.iprompt(ctx, s[0], s[1] - 100, R.key('pick'), a.ic || []); }
+  const pk = R.focus && R.focus.list.find(e => e.key === 'pick');   // (what the pick button takes: Menu.step works it out like Main.updateFocus)
+  if (pk && !G.hands.length) {
+    const s = R.toScreen(mv, pk.t.x, pk.t.y); R.iprompt(ctx, s[0], s[1] - 100, R.key('pick'), pk.a.ic || []);
   } else if (G.hands.length && !bd.gather) {
     const aim = Menu.aimNow();
     if (aim && aim.obj && (aim.obj.type === 'portal' || aim.obj === 'wiz')) {

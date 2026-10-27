@@ -539,9 +539,9 @@ crafting: { 3: { flamethrower: 1 }, 4: { steam: 1 }, 5: { sandstorm: 1, meteor: 
   for (const n of CFG.tree) if (n.tiers) n.combos = CFG.trackCombos[n.id] || {};
   // the three branches of the tree, with every node in the order it is shown (the machine tracks first, so they stay put as the unlocks below them change)
   CFG.branches = [
+    { id: 'bldr', name: 'BUILDER', icon: 'ic_wrench', nodes: ['manual', 'satchel', 'longarm', 'tumble', 'hustle', 'rapid'] },
     { id: 'bld', name: 'BUILDINGS', icon: 'ic_factory', nodes: ['crafting', 'swift', 'belts', 'alchemy', 'forge', 'armory', 'logistics', 'heavy', 'summon'] },
     { id: 'wiz', name: 'WIZARD', icon: 'ic_hat', nodes: ['zoomies', 'hearty', 'remedies', 'wardwoven', 'slippery', 'mighty', 'harvest', 'forager', 'gems', 'magnet'] },
-    { id: 'bldr', name: 'BUILDER', icon: 'ic_wrench', nodes: ['manual', 'satchel', 'longarm', 'tumble', 'hustle', 'rapid'] },
   ];
 })();
 

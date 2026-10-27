@@ -1406,14 +1406,16 @@ FA.updGather = function (dt) {
 // ---------- what the pick and use buttons do: one resolver for the prompts, the buttons and click-to-walk ----------
 FA.candidates = function () {
   const bd = G.bd, out = [];
-  for (const it of G.fac.floor) out.push({ kind: 'floor', o: it, x: it.x, y: it.y, r: 1.3 });
+  const menu = !!G.menu;   // (the menu world is generous: the spells on its belt line are easy to take)
+  for (const it of G.fac.floor) out.push({ kind: 'floor', o: it, x: it.x, y: it.y, r: menu ? 2.2 : 1.3 });
   for (const p of FA.pileList()) if (p.n > 0) out.push({ kind: 'pile', o: p.kind, x: p.x, y: p.y, r: CFG.reach });   // every Stockpile tile with something on it
   for (const b of G.fac.bld) out.push({ kind: 'bld', o: b, x: b.x + 0.5, y: b.y + 0.5, r: CFG.reach });
   for (const p of FA.portalCells(G.fac.w, G.fac.h)) out.push({ kind: 'portal', o: FA.cell(p.x, p.y), x: p.x + 0.5, y: p.y + 0.5, r: CFG.reach });
   const tx = Math.floor(bd.x), ty = Math.floor(bd.y);
-  for (let yy = ty - 1; yy <= ty + 1; yy++) for (let xx = tx - 1; xx <= tx + 1; xx++) {
+  const bn = menu ? 2 : 1;
+  for (let yy = ty - bn; yy <= ty + bn; yy++) for (let xx = tx - bn; xx <= tx + bn; xx++) {
     const c = FA.cell(xx, yy);
-    if (c && c.type === 'belt') out.push({ kind: 'belt', o: c, x: xx + 0.5, y: yy + 0.5, r: 1.15, weak: !c.item });
+    if (c && c.type === 'belt') out.push({ kind: 'belt', o: c, x: xx + 0.5, y: yy + 0.5, r: menu ? 2.4 : 1.15, weak: !c.item });
   }
   return out;
 };

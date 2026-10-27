@@ -497,7 +497,7 @@ UI.openTree = function (side, open) {
 UI.nodeOf = id => CFG.tree.find(t => t.id === id);
 UI.renderTree = function (side) {
   const el = $(side === 'L' ? 'treeL' : 'treeR');
-  const cols = CFG.branches;   // three branches: Buildings, Wizard, Builder (spells and creatures live in the Collection Book)
+  const cols = CFG.branches;   // three branches, left to right: Builder, Buildings, Wizard (spells and creatures live in the Collection Book)
   const bank = BANK_KINDS.filter(k => G.bank[k] > 0).map(k => '<span class="bk">' + UI.img(k, 16) + G.bank[k] + '</span>').join('') || '<span class="dim">empty: send spells into the Skill Portal</span>';
   let h = '<div class="treeHead"><h2>' + UI.img(side === 'L' ? 'ic_wrench' : 'ic_hat', 32) + 'SKILL TREE</h2><div class="xpbig">' + UI.img('ic_xp', 24) + Math.floor(G.xp) + '</div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>';
   const un = UI.undoKind();

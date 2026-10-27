@@ -175,12 +175,15 @@ Menu.collect = function (objs, v, mv) {
   const push = (d, fn) => objs.push({ d, t: 'menu', fn });
   // the spell belt line, and what is on it
   if (m.beltOn !== false) {
-    for (const b of f.belts) push(wx(b.x) + wy(b.y) + 0.4, (c) => drawBeltLine(c, v, mv, b, t));
+    for (const b of f.belts) {
+      push(wx(b.x) + wy(b.y) + 0.4, (c) => drawBeltLine(c, v, mv, b, t));
+      if (b.item && b.sk === undefined) push(wx(b.x) + wy(b.y) + 1.6, (c) => R.drawBeltItem(c, mv, b, t));   // what rides a belt is drawn over the belts after it, never under them
+    }
     const pp = f.pp;
     push(wx(pp.x) + wy(pp.y) + 2, (c) => { c.save(); const k = Math.min(portalFade(m), m.beltAt === undefined ? 1 : clamp((m.t - m.beltAt) / 0.5, 0, 1)), pa = CFG.portalAlpha; if (k < 1) c.globalAlpha = k; CFG.portalAlpha = 0.85; if (k > 0) R.drawPortal(c, mv, t, 'spell'); CFG.portalAlpha = pa; c.restore(); });
   }
-  for (const o of f.floor) push(wx(o.x) + wy(o.y), c => R.drawFloor(c, mv, o, t));
-  for (const o of f.flying) push(wx(o.x) + wy(o.y) + 0.5, c => R.drawFly(c, mv, o, t));
+  for (const o of f.floor) push(wx(o.x) + wy(o.y) + 1.2, c => R.drawFloor(c, mv, o, t));
+  for (const o of f.flying) push(wx(o.x) + wy(o.y) + 1.8, c => R.drawFly(c, mv, o, t));
   if (!m.hideB && !(m.dropB && m.t < m.dropB.t0)) push(wx(G.bd.x) + wy(G.bd.y), c => drawBuilderMenu(c, v, mv, m, t));
   if (m.sx && !m.hideBPortalDone) push(1e5, c => drawSuckPortal(c, v, m, t));
   if (m.kb) push(m.kb.x + m.kb.y, c => drawKeyboard(c, v, m, t));
@@ -204,7 +207,7 @@ function drawBeltLine(c, v, mv, b, t) {
     c.globalAlpha = 1;
     return;
   }
-  R.drawBelt(c, mv, b, t);
+  R.drawBelt(c, mv, b, t, true);
 }
 const portalRing = R.portalRing;
 function drawBuilderMenu(c, v, mv, m, t) {

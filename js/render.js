@@ -458,7 +458,7 @@ R.splitArrow = function (ctx, v, b, t, dir, col, pct, filt) {
   }   // the share itself is only written in the Splitter's settings (UI.openSplit)
 };
 
-R.drawBelt = function (ctx, v, b, t) {
+R.drawBelt = function (ctx, v, b, t, noItem) {
   const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), hw = v.hw * 0.9, hh = v.hh * 0.9, lift = 8;
   p[0] += FA.quake(b.x, b.y);   // a shockwave passing through
   ctx.fillStyle = 'rgba(30,70,30,0.3)';
@@ -493,10 +493,14 @@ R.drawBelt = function (ctx, v, b, t) {
     ctx.beginPath(); ctx.moveTo(cx - nx * 9 + px * 16, cy - ny * 9 + py * 8); ctx.lineTo(cx + nx * 9, cy + ny * 9); ctx.lineTo(cx - nx * 9 - px * 16, cy - ny * 9 - py * 8); ctx.stroke();
   }
   ctx.restore();
-  if (b.item) {
-    const ph = Math.min(0.5, b.item.prog - 0.5);
-    R.item(ctx, b.item.kind, p[0] + sdx * ph, p[1] - lift + sdy * ph - 4, 4, t);
-  }
+  if (b.item && !noItem) R.drawBeltItem(ctx, v, b, t);
+};
+// the item riding a belt (the menu world draws these in a pass of their own, above every belt)
+R.drawBeltItem = function (ctx, v, b, t) {
+  const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), lift = 8, dd = DIRS[b.dir];
+  p[0] += FA.quake(b.x, b.y);
+  const sdx = (dd[0] - dd[1]) * v.hw, sdy = (dd[0] + dd[1]) * v.hh, ph = Math.min(0.5, b.item.prog - 0.5);
+  R.item(ctx, b.item.kind, p[0] + sdx * ph, p[1] - lift + sdy * ph - 4, 4, t);
 };
 
 // the Builder is standing at it (its prompt is up) or the mouse is over it
@@ -527,6 +531,24 @@ R.pips = function (ctx, x, y, list, t) {
     if (q.on) { ctx.fillStyle = '#ffffff'; ctx.fillRect(px + 4, y0 + 4, 4, 4); }
   });
 };
+// a blueprint's needs as a row of chips (material icon + have/need), centred on x with its bottom on y; a paid material turns green with a check
+R.needChips = function (c, x, y, cost, got) {
+  c.imageSmoothingEnabled = false;
+  const items = Object.keys(cost).map(k => {
+    const s = R.spr(k), S = s ? R.icS(s) : 1, have = Math.min(got[k] || 0, cost[k]), txt = have + '/' + cost[k];
+    return { s, S, txt, ok: have >= cost[k], w: (s ? s.c.width * S : 0) + 8 + txt.length * 13 + 8 };
+  });
+  const gap = 6, tot = items.reduce((a, e) => a + e.w, 0) + (items.length - 1) * gap;
+  let x0 = Math.round(x - tot / 2);
+  for (const e of items) {
+    c.fillStyle = e.ok ? '#1f7a3a' : '#1a0f28'; c.fillRect(x0 - 3, y - 39, e.w + 6, 39);
+    c.fillStyle = e.ok ? '#2e8a3e' : '#3a2a52'; c.fillRect(x0, y - 36, e.w, 33);
+    let cx = x0 + 6;
+    if (e.s) { const w = e.s.c.width * e.S, h = e.s.c.height * e.S; c.drawImage(e.s.c, cx, Math.round(y - 20 - h / 2), w, h); cx += w; }
+    drawText(c, e.txt, cx + 8, y - 11, 12, e.ok ? '#d8ffd8' : '#ffffff', 'left', 'd');
+    x0 += e.w + gap;
+  }
+};
 R.drawBuilding = function (ctx, v, b, t) {
   const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), S = 4, d = FA.def(b);
   const qk = FA.quake(b.x, b.y);   // a shockwave from the Spell Portal passing through: it rattles sideways and flickers
@@ -550,13 +572,9 @@ R.drawBuilding = function (ctx, v, b, t) {
     diamond(ctx, p[0], p[1], v.hw * 0.95, v.hh * 0.95); ctx.stroke(); ctx.setLineDash([]);
     }
     const cost = FA.costOf(b), tot = Object.values(cost).reduce((a, b2) => a + b2, 0), got = Object.values(b.got).reduce((a, b2) => a + b2, 0);
-    // what it has been given is stacked on it, and faint copies show what it still needs: no numbers
-    const keys = Object.keys(cost);
-    keys.forEach((k, i) => {
-      const x = p[0] + (i - (keys.length - 1) / 2) * 30, have = b.got[k] || 0;
-      R.pile(ctx, R.rep(k, have), x, base - 44, t, i + b.id);
-      R.pile(ctx, R.rep(k, (cost[k] || 0) - have), x, base - 44 - have * 8, t, 0, 0.35);
-    });
+    // what it still needs: one chip per material (icon + have/need), green once that material is paid, above the blueprint
+    const nb = FA.isTile(b.type) ? p[1] - 56 : base - 112;
+    R.defer.push(c => R.needChips(c, p[0], nb, cost, b.got));
     R.rim(ctx, v, p, got / tot, '#7be0ff', 0.86);
     return;
   }
@@ -1285,9 +1303,10 @@ R.drawWorld = function (main, dt, rect) {
   if (mv) Menu.collect(objs, v, mv);
   if (alt && !airborne) objs.push({ d: alt.x + alt.y, t: 'altar', o: alt });
   objs.sort((a, b) => a.d - b.d);
-  // the menu world: the floor plates lie over all the scenery (grass, shrubs...) and under everything that stands or moves on them
-  const order = mv ? objs.filter(i => !MENU_TOP[i.t]).concat([{ t: 'plates' }], objs.filter(i => MENU_TOP[i.t])) : objs;
+  // the menu world: the scenery, then the fog outside the patch + its rim, then the floor plates, then everything that stands or moves on them
+  const order = mv ? objs.filter(i => !MENU_TOP[i.t]).concat([{ t: 'edge' }, { t: 'plates' }], objs.filter(i => MENU_TOP[i.t])) : objs;
   for (const it of order) {
+    if (it.t === 'edge') { Menu.drawEdge(ctx, v); continue; }   // the fog outside the patch goes over the scenery only: everything of the menu stands over it
     if (it.t === 'plates') { Menu.drawGround(ctx, v, mv); continue; }
     const o = it.o;
     if (it.t === 'deco') {
@@ -1340,7 +1359,7 @@ R.drawWorld = function (main, dt, rect) {
   R.drawKeepCount(ctx, v, wt);
   R.drawMaskHints(ctx, v, wt);
   R.drawWeather(ctx, wt);
-  if (mv) { Menu.drawFx(ctx, mv, wt); Menu.hints(ctx, v, mv); Menu.drawEdge(ctx, v); }
+  if (mv) { Menu.drawFx(ctx, mv, wt); Menu.hints(ctx, v, mv); }
 
   for (const pk of w.pickups) {   // off-screen pointers to pickups
     const p = R.toScreen(v, pk.x, pk.y);
@@ -1742,7 +1761,6 @@ R.drawWizard = function (ctx, v, w) {
   }
   const bob = w.moving ? (Math.abs(Math.sin(w.bob)) > 0.5 ? 3 : 0) : 0;
   const flip = (w.fx - w.fy) < -0.05;
-  if (w.armor > 0 && !(w.roll > 0) && !w.jump && !w.dead) R.drawShield(ctx, p[0] + (flip ? 18 : -18), p[1] - 30 - bob, w.armor / CFG.wizard.armorMax, tt, true);   // behind him: the far edge of the shield on his off arm
   if (w.dead) { ctx.save(); ctx.translate(snap(p[0]), p[1]); ctx.rotate(Math.PI / 2); ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S, spr.c.width * S, spr.c.height * S); ctx.restore(); return; }
   if (w.roll > 0) {
     const fr = 1 - w.roll / CFG.wizard.rollTime, step = Math.floor(fr * 8) / 8;   // somersault in 8 chunky frames
@@ -1773,27 +1791,25 @@ R.drawWizard = function (ctx, v, w) {
   } else if (w.mashT > 0) { dsprSq(ctx, spr, p[0], p[1] - bob, S, 1.15, 0.85, blink ? 0.4 : 1, flip); for (const l of layers) dsprSq(ctx, l.s, p[0], p[1] - bob, S, 1.15, 0.85, (blink ? 0.4 : 1) * l.a, flip); }   // squashed while digging
   else { dspr(ctx, spr, p[0], p[1] - bob, S, blink ? 0.4 : 1, flip); wearAll(blink ? 0.4 : 1, flip, p[0], p[1] - bob); }
   if (Math.sin(G.w.t * 6) > 0) { ctx.fillStyle = '#fff07a'; ctx.fillRect(snap(p[0] + (flip ? -27 : 21)), Math.round((p[1] - 48 - bob) / 3) * 3, 6, 6); }
-  if (w.armor > 0) R.drawShield(ctx, p[0] + (flip ? 15 : -15), p[1] - 27 - bob, w.armor / CFG.wizard.armorMax, tt, false);   // the shield itself, strapped on his off arm in front of him
+  if (w.armor > 0) R.drawShield(ctx, p[0], p[1] - 27 - bob, w.armor / CFG.wizard.armorMax, tt, false);   // the armor bubble round him
   if (w.rollCd > 0) R.hpBar(ctx, p[0], p[1] + 9, 27, 1 - w.rollCd / WZ.rollCd(), '#ffffff');
 };
-// the Shield Potion's armor: a heater shield on his off arm (steel rim, blue field, a gold cross), its field filled from the bottom by how much armor is left;
-// back = only the dark edge behind him, so it reads as a solid thing he carries. A glint runs down it now and then; nearly spent, it blinks
+// the Shield Potion's armor: a faint bubble round him, pixel-stepped. It brightens and swells a touch with the armor left, a slow shimmer runs round its rim,
+// and nearly spent it flickers. No object, just a hint that something is soaking hits
 R.drawShield = function (ctx, x, y, fr, t, back) {
-  const u = 3, W = 6, H = 14, X = n => snap(x + n * u), Yp = n => Math.round((y + n * u) / u) * u;
-  const half = r => (r < H * 0.5 ? W : Math.max(0, Math.round(W * (1 - (r - H * 0.5) / (H * 0.5)) + 0.4)));   // flat top half, then it tapers to a point
-  if (back) { ctx.fillStyle = '#2a3a5a'; for (let r = 0; r <= H; r++) { const h = half(r); if (h > 0) ctx.fillRect(X(-h + 1), Yp(r - H / 2 + 1), (2 * h) * u, u); } return; }
+  if (back) return;
   if (fr < 0.2 && Math.floor(t * 6) % 2) return;
-  for (let r = 0; r <= H; r++) {
-    const h = half(r), ry = Yp(r - H / 2);
-    if (h <= 0) { ctx.fillStyle = '#e6eef8'; ctx.fillRect(X(-0.5), ry, u, u); continue; }
-    ctx.fillStyle = '#e6eef8'; ctx.fillRect(X(-h), ry, (2 * h + 1) * u, u);   // steel rim
-    if (r === 0 || h < 2) continue;
-    const filled = (H - r) / H <= fr + 0.02;
-    ctx.fillStyle = filled ? (r < 3 ? '#7ab4ff' : '#3a78e0') : '#1c2a48'; ctx.fillRect(X(-h + 1), ry, (2 * h - 1) * u, u);
-    if (filled && h >= 3) { ctx.fillStyle = '#ffd23a'; if (r === 5) ctx.fillRect(X(-2), ry, 5 * u, u); else if (r > 1 && r < 11) ctx.fillRect(X(0), ry, u, u); }   // the cross
+  const u = 3, cx = x, cy = y + 3, rx = 21 + fr * 3, ry = 30 + fr * 3, n = 40;
+  const base = 0.22 + 0.2 * fr, sh = (t * 0.6) % 1;
+  ctx.fillStyle = '#bfe0ff'; ctx.globalAlpha = 0.07 + 0.05 * fr;
+  for (let r = -ry; r < ry; r += u) { const w = Math.sqrt(1 - (r / ry) * (r / ry)) * rx; ctx.fillRect(snap(cx - w), Math.round((cy + r) / u) * u, Math.round(2 * w / u) * u, u); }
+  for (let i = 0; i < n; i++) {
+    const a = i / n * 6.2832, k = ((i / n) - sh + 1) % 1;
+    ctx.globalAlpha = base * (0.5 + 0.5 * Math.max(0, 1 - k * 3));
+    ctx.fillStyle = k < 0.12 ? '#ffffff' : '#9fd0ff';
+    ctx.fillRect(snap(cx + Math.cos(a) * rx), Math.round((cy + Math.sin(a) * ry) / u) * u, u, u);
   }
-  const g = (t * 0.7) % 1.6;   // a glint sliding down the steel
-  if (g < 1) { ctx.fillStyle = '#ffffff'; ctx.fillRect(X(-W + 1), Yp(-H / 2 + 1 + Math.floor(g * (H - 3))), u, 2 * u); }
+  ctx.globalAlpha = 1;
 };
 // everything the Wizard picks up spirals up into a little portal over his head (WZ.hsuck). A rejected one (no room in the Stockpile) is spat back out:
 // the portal flashes red, the item drops to where it lay and bounces twice

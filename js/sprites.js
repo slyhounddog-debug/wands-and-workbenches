@@ -442,13 +442,157 @@ task(() => {
   }), 5, 4);
 });
 
-// ---------- combo spell orbs (pixel stars in the spell colour) ----------
+// ---------- combo spell items: each one is its own little picture, meshed from the shapes of its elements ----------
+// (air = ring / swirl, water = drop, fire = flame, earth = block / rock, so a spell reads from its silhouette and its colours alone: the same
+// motifs the element packets use. A pair shows two of them fused, a triple three, the Nova all four round one white heart.)
 task(() => {
-  const star = ['....o....', '...oco...', '...oco...', 'ooocccooo', 'occcwccco', '.occccco.', '..occco..', '.occocco.', '.oco.oco.', '.oo...oo.'];
-  for (const k in SPELL_COL) {
-    if (['gust', 'fireball', 'spray', 'boulder'].indexOf(k) >= 0) continue;
-    reg('it_' + k, mapSprite(star, { o: '#2b1d3e', c: SPELL_COL[k], w: '#ffffff' }), 4.5, 10);
-  }
+  const pal = { o: '#2b1d3e', a: '#e6f8ff', A: '#8fd0f0', b: '#4aa8ff', B: '#2a72c8', f: '#ff8a30', F: '#c8431a', e: '#c4986a', E: '#7a5a2c',
+    y: '#ffe36b', w: '#ffffff', g: '#9aa4b8', G: '#5a6278', k: '#3a3a4e' };
+  const S = {
+    // Air + Fire: a flame jet blown out of a swirl of wind
+    flamethrower: [
+      '...............',
+      '..oooo.....o.o.',
+      '.oaAAao...ofofo',
+      'oaAooAAo.offyfo',
+      'oAo..oAAoffyyfo',
+      'oAo..oAAofyyfFo',
+      'oaAooAAaoffffFo',
+      '.oaAAAao.oFFFo.',
+      '..oooo....oo...'],
+    // Air + Water: a droplet riding inside a ring of wind
+    tempest: [
+      '....ooooo....',
+      '..ooaaaAAoo..',
+      '.oaa..o..AAo.',
+      'oaa..obo..AAo',
+      'oa..obbbo..Ao',
+      'oA.obbwbbo.Ao',
+      'oA.obwbbBo.Ao',
+      'oAA.obbBBo.Ao',
+      '.oAA.oBBo.Aao',
+      '..ooAA.oo.ao.',
+      '....oooooo...'],
+    // Fire + Water: a spiked mine, half flame half water, steam puffing off it
+    steam: [
+      '.a....a..a...',
+      '..aa.aa.a....',
+      '.....ooo.....',
+      '..o.ooBfoo.o.',
+      '...oBBBfffo..',
+      '.ooBBwBffyfoo',
+      '..oBBBBfffo..',
+      '...oBBBFFFo..',
+      '..o.ooBFFoo.o',
+      '.....ooo.....'],
+    // Air + Earth: a boomerang, earth in the body and a streak of wind along its edge
+    sandstorm: [
+      '..oo.....oo..',
+      '.oeeo...oeeo.',
+      'oeEEeo.oeEEeo',
+      'oeEEEeooeEEEo',
+      'oaeEEEeeEEEeo',
+      '.oaeEEEEEEeo.',
+      '..oaAeEEEeo..',
+      '...oaAeeeo...',
+      '....oaAAo....',
+      '.....ooo.....'],
+    // Fire + Earth: a lump of rock split by glowing lava, a drip falling
+    magma: [
+      '....ooooo....',
+      '..ooeeeeEoo..',
+      '.oeeEfEeeEEo.',
+      'oeeEEfyEEeEEo',
+      'oeEEfyfEEEEEo',
+      'oeEfyfFEEeEEo',
+      'oEEEfFEEEEEEo',
+      '.oEEFEEEfEEo.',
+      '..ooEEEEfoo..',
+      '....oooof....',
+      '.........F...'],
+    // Water + Earth: a blue orb and a brown orb locked together in orbit
+    mud: [
+      '.oooo........',
+      'obbbbo.......',
+      'obwbbBo......',
+      'obbbBBo...aa.',
+      '.oBBBBo.oooAa',
+      '..oooo.oeeeEo',
+      'aA...oeweeEEo',
+      '.aa..oeeeEEEo',
+      '......oEEEEo.',
+      '.......oooo..'],
+    // Air + Fire + Earth: a rock falling in a tail of flame and wind
+    meteor: [
+      '.aa..........',
+      '..aAo.....ooo',
+      'o.oFFo...oeeEo',
+      '.oFffFo.oeEEEo',
+      '..oFffFooEwEEo',
+      '...oFfyFeEEEo.',
+      '....oFyfoEEo..',
+      '.aa..oFfFooo..',
+      '..aAo.oFFo....',
+      '...ooa..oo....'],
+    // Air + Fire + Water: a storm cloud, rain, and a bolt of fire-yellow lightning
+    thunder: [
+      '...ooo.oo....',
+      '..oaaaoaaoo..',
+      '.oaaaaaaaaao.',
+      'oaaAggaaAAggo',
+      'oAggGGggGGGGo',
+      '.oGGGoyyoGGo.',
+      '..b..oyyo..b.',
+      '.....oyyo....',
+      '..b.oyyyyo.b.',
+      '.....ofFyo...',
+      '..b...ofo..b.',
+      '.......o.....'],
+    // Air + Water + Earth: a snowflake of ice and wind with a pebble heart and icicles hanging
+    blizzard: [
+      '.....oo......',
+      'o....aa....o.',
+      'oa...aA...ao.',
+      '.oab.aA.baao.',
+      '..oabaAbao...',
+      'aaaaAeEEaAAaa',
+      '..oabAAbbo...',
+      '.oab.aA.bAo..',
+      'oA...aA...Ao.',
+      'o...obbo...o.',
+      '....obbo.....',
+      '.....oo......'],
+    // Fire + Water + Earth: a rocky vent throwing up a column of water crowned with flame
+    geyser: [
+      '.....oo......',
+      '....offo.....',
+      '...offyfo....',
+      '....ofyo.....',
+      '...obwbbo....',
+      '...obbBBo....',
+      '....obBo.....',
+      '....obBo.....',
+      '..oooobBoooo.',
+      '.oeeEobBoEEeo',
+      'oeEEeEoooEEEEo',
+      'oEEEEEEEEEEEo'],
+    // all four: a white heart in a ring of the four elements, flaring out in eight rays
+    nova: [
+      '.....oyo.....',
+      '..o..oyo..o..',
+      '.ofo.oyo.obo.',
+      '..offoyyoobbo',
+      '...offyyybbo.',
+      'oyyoffwwwbbyyo',
+      'yyyyyywwwyyyyy',
+      'oyyoeewwwaayyo',
+      '...oeeyyyaao.',
+      '..oeeooyooaao',
+      '.oeo.oyo.oao.',
+      '..o..oyo..o..',
+      '.....oyo.....'],
+  };
+  for (const k in S) { const rows = S[k]; reg('it_' + k, mapSprite(rows, pal), Math.max.apply(null, rows.map(r => r.length)) / 2, rows.length); }
 });
 
 // ---------- UI icons (pixel art, replace every emoji) ----------

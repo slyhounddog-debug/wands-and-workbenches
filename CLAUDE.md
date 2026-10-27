@@ -56,6 +56,14 @@ The original design doc was "Complete Game Spec v5.0" (pasted by the user, not s
 
 Scripts are plain globals loaded in order (overrides/tuning.js, layout.js, audio.js → js/overrides.js → config → audio → sprites → input → factory → wizard → creatures → augments → altar → net → render → spellpreview → creaturepreview → ui → book → wardrobe → players → devbot → snapshot → intro → main → menu → menudraw → online). Keep it that way (no modules/bundler).
 
+## Readability pass (2026-10-26)
+
+- **Spell items are pictures**: `it_<spell>` for the 10 combos + the Nova are hand-drawn pixel maps in sprites.js (`S` in the "combo spell items" task), each meshed from its elements' shapes (flamethrower = wind ring + flame, tempest = drop in a ring, steam = a spiked half-fire half-water mine, sandstorm = boomerang, magma = cracked lava rock, mud = a blue and a brown orb, meteor = rock in a flame tail, thunder = cloud + bolt + rain, blizzard = snowflake with a pebble heart, geyser = rocky vent with a water column, nova = all four round a white heart). They show in the tree costs, bank, belts and hands: a new spell needs a map there.
+- **Armor is a faint bubble** round the Wizard (`R.drawShield`: a pixel-stepped ellipse with a slow shimmer, brighter with more armor, flickers under 20%); the old heater-shield object is gone.
+- **Blueprints show their needs** as chips (`R.needChips`: material icon + have/need, green when that material is paid) above the blueprint; the faint item piles are gone.
+- **Skill tree branch order** (`CFG.branches`): BUILDER left, BUILDINGS middle, WIZARD right.
+- **Menu world fog**: `Menu.drawEdge` (fog outside the patch + the rim + outline) is drawn after the scenery and before the plates, so the portal, characters, spells and effects are never dimmed. Spells riding the belts are drawn in a pass of their own over every belt (`R.drawBeltItem`, `R.drawBelt(..., noItem)`), floor / flying items sit over the belts too, and in the menu world `FA.candidates` is generous (belts within 2 tiles, reach 2.4; floor items 2.2).
+
 ## Architecture guardrails (online co-op roadmap)
 
 Online co-op will be added later, **host-authoritative**: one machine runs the full sim, the guest sends pad input (through the same `IN` seam the dev bot uses) and renders state snapshots of `G`. It is **not being built now** (no networking code, no net.js). Gameplay comes first, but every system built from now on must keep that build cheap. Follow these in ALL future work:

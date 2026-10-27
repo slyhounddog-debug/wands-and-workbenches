@@ -563,9 +563,9 @@ const Net = {
     if (Net.role !== 'guest') return;
     Net.collect();
     const st = Net.stats;
-    st._t += dt; st._f++;
+    st._t += dt; st._f++; st._mx = Math.max(st._mx || 0, (Net.frameTs - Net.prevTs) || 0);   // (the slowest frame of the second: a dip the average hides)
     if (st._t >= 1) {
-      st.kbps = Math.round(st._b / 1024 / st._t); st.fps = +(st._n / st._t).toFixed(1); st.draw = Math.round(st._f / st._t); st._f = 0;
+      st.kbps = Math.round(st._b / 1024 / st._t); st.fps = +(st._n / st._t).toFixed(1); st.draw = Math.round(st._f / st._t); st._f = 0; st.worst = Math.round(st._mx); st._mx = 0;
       const want = st._hi - st._hi0, got = st._rx - st._rx0;   // numbers the host sent this second vs. pictures that arrived (the host never skips a number)
       st.loss = want > 0 ? Math.max(0, Math.round(100 * (1 - got / want))) : 0; st._hi0 = st._hi; st._rx0 = st._rx;
       st._t = 0; st._b = 0; st._n = 0;

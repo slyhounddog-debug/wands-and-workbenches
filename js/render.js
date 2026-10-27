@@ -1902,7 +1902,14 @@ R.drawWizard = function (ctx, v, w) {
     R.hpBar(ctx, p[0], p[1] + 9, 27, w.statT / E.t, '#b58a4c');
   }
   else { dspr(ctx, spr, p[0], p[1] - bob, S, (blink ? 0.4 : 1) * ia, flip); wearAll((blink ? 0.4 : 1) * ia, flip, p[0], p[1] - bob); }
-  if (Math.sin(G.w.t * 6) > 0) { ctx.fillStyle = '#fff07a'; ctx.fillRect(snap(p[0] + (flip ? -27 : 21)), Math.round((p[1] - 48 - bob) / 3) * 3, 6, 6); }
+  const arm = G.wand && G.wand.armed && G.wand.full[G.wand.armed] ? G.wand.armed : null;
+  if (arm) {   // the staff glows in the armed wand attack's element colour (dark when nothing is armed), switching the frame the armed element changes
+    const gx = p[0] + (flip ? -24 : 24), gy = Math.round((p[1] - 45 - bob) / 3) * 3, pu = 0.5 + 0.5 * Math.sin(tt * 6);
+    ctx.fillStyle = ELEM[arm].color;
+    ctx.globalAlpha = 0.18 + 0.08 * pu; ctx.fillRect(snap(gx - 12), gy - 12, 24, 24);
+    ctx.globalAlpha = 0.4 + 0.15 * pu; ctx.fillRect(snap(gx - 6), gy - 6, 12, 12);
+    ctx.globalAlpha = 1; ctx.fillRect(snap(gx - 3), gy - 3, 6, 6);
+  }
   if (w.armor > 0) R.drawShield(ctx, p[0], p[1] - 27 - bob, w.armor / CFG.wizard.armorMax, tt, false);   // the armor bubble round him
   if (w.rollCd > 0 && !stone) R.hpBar(ctx, p[0], p[1] + 9, 27, 1 - w.rollCd / WZ.rollCd(), '#ffffff');
 };

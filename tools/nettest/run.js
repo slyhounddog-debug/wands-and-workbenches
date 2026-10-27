@@ -197,6 +197,16 @@ async function boot(browser, name) {
   const ch = await Promise.all([hp, gp].map(p => p.evaluate(() => __wands.Net.stats.chan)));
   ok(process.env.LOSSY0 ? ch.every(c => c === 'reliable') : ch.every(c => c === 'lossy'), 'snapshots travel on the ' + (process.env.LOSSY0 ? 'reliable' : 'unreliable') + ' channel', ch.join(' / '));
 
+  // ---- a lossy link (simulated: each packet lost with 10% chance, a snapshot is several packets): the guest keeps getting pictures, reports the loss, and recovers
+  if (!process.env.LOSSY0) {
+    await hp.evaluate(() => { __wands.Net.simLoss = 0.1; }); await sleep(4500);
+    const ls = await gp.evaluate(() => { const s = __wands.Net.stats; return { loss: s.loss, pics: s.fps, draw: s.draw }; });
+    await hp.evaluate(() => { __wands.Net.simLoss = 0; }); await sleep(2500);
+    const ok2 = await gp.evaluate(() => { const s = __wands.Net.stats; return { loss: s.loss, pics: s.fps }; });
+    ok(ls.loss > 15 && ls.pics >= 3 && ls.draw >= 20, 'on a simulated lossy link the guest keeps drawing, gets some pictures and reports the loss', JSON.stringify(ls));
+    ok(ok2.loss < 15 && ok2.pics >= 15, 'and recovers when the link does', JSON.stringify(ok2));
+  }
+
   // ---- the architecture guardrails with a session live: the wire format is the audit serializer's clone, and the photo test passes on the host AND on the guest
   ok(await hp.evaluate(() => JSON.stringify(__wands.Snap.capture().G) === __wands.Snap.wire()), 'Snap.wire() equals Snap.capture().G (the same clone the photo test audits)');
   for (const [name, pg] of [['host', hp], ['guest', gp]]) {

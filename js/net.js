@@ -13,14 +13,14 @@
 //   host -> guest   { t: 'welcome', v, seed, sig, runMeta }      handshake reply; the snapshot stream starts after it
 //                   { t: 'refuse', why, v }                      version / room full
 //                   { t: 'snap', n, z }                          20 Hz, z = the state G as JSON, deflated (Snap.wire); n counts up. Normally NOT sent like this: see the snapshot channel
-//                   [4 bytes n][z]                               the same snapshot as raw bytes on the second, unreliable data channel (negotiated id 5, unordered, packets live 150 ms)
+//                   [4 bytes n][z]                               the same snapshot as raw bytes on the second, unreliable data channel (negotiated id 5, unordered, packets live 500 ms)
 //                   { t: 'toast', text, icon }  { t: 'buyres', id, ok, toasts }  { t: 'pong', at }  { t: 'bye' }
 // Transport: PeerJS cloud for signaling only. Two WebRTC data channels on the one connection: PeerJS's reliable ordered one for everything small (hello, pad, buy, ping,
 // toasts) and a second UNRELIABLE, UNORDERED one for the 20 Hz snapshots (a late or lost picture is simply skipped: nothing waits behind it, so one bad packet on a phone
 // hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
   VERSION: 3,
-  BUILD: 8,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
+  BUILD: 9,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
   SNAP_HZ: 20, PAD_HZ: 30,
@@ -33,7 +33,7 @@ const Net = {
   peer: null, conn: null, tok: null, lastRx: 0, lostAt: 0,
   BACKLOG: 16000,                // bytes allowed to wait on the channel before snapshots are dropped (about two of them)
   hooks: {}, errs: [], diag: null, hdiag: null, nextAt: 0, takenAt: 0, snapGap: 0.05,
-  stats: { rawKB: 0, zipKB: 0, maxZip: 0, snapsOut: 0, bytesOut: 0, kbps: 0, rtt: 0, skipped: 0, path: '', netRtt: 0, chan: '', fps: 0, _t: 0, _b: 0, _n: 0, total: 0 },
+  stats: { rawKB: 0, zipKB: 0, maxZip: 0, snapsOut: 0, bytesOut: 0, kbps: 0, rtt: 0, skipped: 0, path: '', netRtt: 0, chan: '', loss: 0, draw: 0, _rx: 0, _hi: 0, _rx0: 0, _hi0: 0, _f: 0, fps: 0, _t: 0, _b: 0, _n: 0, total: 0 },
   // host
   snapN: 0, snapAcc: 0, busy: false, gpad: null, gedge: null,
   // guest
@@ -115,17 +115,19 @@ const Net = {
   });
   // THE SNAPSHOT CHANNEL. A reliable channel delivers everything in order, so on a lossy link (a phone hotspot) one lost packet holds back every picture behind it until it is
   // resent, and the pictures then arrive in a burst, late. Snapshots are whole pictures that go stale in 50 ms, so they go on a second channel that may lose them and
-  // never waits (unordered, a packet is dropped after 150 ms); the guest just uses the newest one that arrives (Net.lastN). Both sides open the channel themselves with the
+  // never waits (unordered, a packet is dropped after LIFE ms); the guest just uses the newest one that arrives (Net.lastN). Both sides open the channel themselves with the
   // same id ("negotiated"), so PeerJS never sees it. ?lossy=0 switches it off (everything on the reliable channel, as before); a snapshot over SNAP_BIG bytes, or a
   // channel that is not open, falls back to the reliable one.
   Net.LOSSY = !/[?&]lossy=0/.test(location.search);
-  const SNAP_ID = 5, SNAP_BIG = 60000;
+  // LIFE: how long the network may keep trying to deliver one packet. It has to be a few ROUND TRIPS (a hotspot + relay is 150 ms or more): at 150 ms the first lost packet
+  // could never be resent and killed the whole snapshot (about 10 packets), which showed as 5-20 snapshots a second. Unordered, so a packet being resent holds nothing else up.
+  const SNAP_ID = 5, SNAP_BIG = 60000, LIFE = 500;
   function snapChannel(conn) {
     if (!Net.LOSSY || conn._snapCh) return;
     const pc = conn.peerConnection;
     if (!pc) return;
     try {
-      const ch = pc.createDataChannel('snap', { negotiated: true, id: SNAP_ID, ordered: false, maxPacketLifeTime: 150 });
+      const ch = pc.createDataChannel('snap', { negotiated: true, id: SNAP_ID, ordered: false, maxPacketLifeTime: LIFE });
       ch.binaryType = 'arraybuffer';
       ch.onmessage = e => {
         if (conn !== Net.conn || Net.role !== 'guest' || !(e.data instanceof ArrayBuffer) || e.data.byteLength < 5) return;
@@ -288,12 +290,15 @@ const Net = {
       if (arr) for (const o of arr) if (o && typeof o === 'object' && o.uid === undefined) o.uid = w.uidN = (w.uidN || 0) + 1;
     }
   };
+  // positions and timers carry 15 digits (12.345678901234); the guest only draws them, so three decimals are plenty and the snapshot is a third smaller
+  const SHORT = /(\d+\.\d{3})\d+/g;
   // how much is already waiting to go out on the data channel (bytes). Every snapshot is a whole picture, so a late one is worth nothing: when the link is slower than the
   // stream, snapshots are DROPPED (the stream slows to what the link carries) instead of queued (which made every message, the ping included, arrive seconds late).
   const backlog = conn => (conn.dataChannel ? conn.dataChannel.bufferedAmount : 0) + (conn.bufferSize > 3 ? 1e6 : 0) + (lossyOf(conn) ? lossyOf(conn).bufferedAmount : 0);
   // one snapshot out: the lossy channel (4 byte number + the bytes) when it is there, else the reliable one
   function snapOut(conn, n, z) {
     const c = lossyOf(conn);
+    if (Net.simLoss && c && Math.random() > Math.pow(1 - Net.simLoss, Math.ceil(z.byteLength / 1100))) return true;   // TEST ONLY: lose it like a network losing each packet with this chance
     if (c && typeof z !== 'string' && z.byteLength <= SNAP_BIG) {
       const buf = new Uint8Array(4 + z.byteLength);
       new DataView(buf.buffer).setUint32(0, n); buf.set(z, 4);
@@ -307,7 +312,7 @@ const Net = {
     if (Net.busy || !conn || !conn.open || !G) return;
     if (backlog(conn) > Net.BACKLOG) { Net.stats.skipped++; return; }   // the link cannot keep up: skip this one rather than queue stale state
     let str;
-    try { Net.stamp(); str = Snap.wire(); } catch (e) { UI.err(e); return; }
+    try { Net.stamp(); str = Snap.wire().replace(SHORT, '$1'); } catch (e) { UI.err(e); return; }
     const n = ++Net.snapN;
     Net.busy = true;
     encode(str).then(z => {
@@ -478,6 +483,7 @@ const Net = {
   }
   // a snapshot arrived (either channel): unpack it, and keep it if it is newer than the one before
   function snapIn(n, z, via) {
+    const st0 = Net.stats; st0._rx++; if (n > st0._hi) st0._hi = n;   // (every arrival counts, before the unpacking)
     if (n <= Net.lastN) return;   // an older picture (the unordered channel can deliver them out of turn): not worth unpacking
     decode(z).then(txt => {
       if (n <= Net.lastN) return;   // an older one finished unpacking after a newer one
@@ -530,8 +536,13 @@ const Net = {
     if (Net.role !== 'guest') return;
     Net.collect();
     const st = Net.stats;
-    st._t += dt;
-    if (st._t >= 1) { st.kbps = Math.round(st._b / 1024 / st._t); st.fps = +(st._n / st._t).toFixed(1); st._t = 0; st._b = 0; st._n = 0; }
+    st._t += dt; st._f++;
+    if (st._t >= 1) {
+      st.kbps = Math.round(st._b / 1024 / st._t); st.fps = +(st._n / st._t).toFixed(1); st.draw = Math.round(st._f / st._t); st._f = 0;
+      const want = st._hi - st._hi0, got = st._rx - st._rx0;   // numbers the host sent this second vs. pictures that arrived (the host never skips a number)
+      st.loss = want > 0 ? Math.max(0, Math.round(100 * (1 - got / want))) : 0; st._hi0 = st._hi; st._rx0 = st._rx;
+      st._t = 0; st._b = 0; st._n = 0;
+    }
     if (Net.state !== 'live') return;
     if (now() - Net.lastRx > 6000) { connLost('silent'); return; }
     Net.padAcc += dt;

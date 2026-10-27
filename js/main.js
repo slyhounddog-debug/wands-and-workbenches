@@ -743,7 +743,8 @@ Main.pause = function (on) {
     Main.menuUp = on;
     const c = $('pCode');
     c.classList.toggle('hidden', !Net.code);
-    c.innerHTML = Net.code ? 'ROOM <b>' + Net.code + '</b>' + (Net.stats.kbps ? ' &nbsp; ' + Net.stats.kbps + ' KB/s' : '') : '';
+    const ns = Net.stats;
+    c.innerHTML = Net.code ? 'ROOM <b>' + Net.code + '</b>' + (ns.kbps ? ' &nbsp; ' + ns.kbps + ' KB/s' : '') + (ns.path ? ' &nbsp; ' + ns.path : '') + (ns.netRtt ? ' &nbsp; net ' + ns.netRtt + ' ms' : '') + (Net.role === 'guest' && ns.rtt ? ' &nbsp; ping ' + ns.rtt + ' ms' : '') + (ns.skipped ? ' &nbsp; skipped ' + ns.skipped : '') : '';
     $('pQuit').textContent = Net.role === 'host' ? 'END ONLINE GAME' : 'LEAVE GAME';
   } else {
     if (G.paused !== on) AU.sfx(on ? 'menu_open' : 'menu_close');

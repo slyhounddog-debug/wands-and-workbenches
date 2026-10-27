@@ -28,8 +28,9 @@ const Net = {
   state: 'idle',                 // idle | opening | waiting (host: room open, nobody yet) | live | lost | ended
   code: null, error: '',
   peer: null, conn: null, tok: null, lastRx: 0, lostAt: 0,
+  BACKLOG: 16000,                // bytes allowed to wait on the channel before snapshots are dropped (about two of them)
   hooks: {}, errs: [], diag: null, hdiag: null, nextAt: 0, takenAt: 0, snapGap: 0.05,
-  stats: { rawKB: 0, zipKB: 0, maxZip: 0, snapsOut: 0, bytesOut: 0, kbps: 0, rtt: 0, fps: 0, _t: 0, _b: 0, _n: 0, total: 0 },
+  stats: { rawKB: 0, zipKB: 0, maxZip: 0, snapsOut: 0, bytesOut: 0, kbps: 0, rtt: 0, skipped: 0, path: '', netRtt: 0, fps: 0, _t: 0, _b: 0, _n: 0, total: 0 },
   // host
   snapN: 0, snapAcc: 0, busy: false, gpad: null, gedge: null,
   // guest
@@ -58,6 +59,21 @@ const Net = {
     } catch (e) { /* no relay: direct connections only */ }
     clearTimeout(timer);
     Net.log('relay login ' + (Net.cfIce ? 'received' : 'not available (direct connections only)'));
+  };
+  // which path the browser picked (direct / relayed over udp, tcp or tls) and the ICE-level round trip: the network's own delay, without our queueing
+  Net.pathProbe = async function () {
+    const pc = Net.conn && Net.conn.peerConnection;
+    if (!pc) return;
+    try {
+      const st = await pc.getStats(), by = {};
+      let sel = null;
+      st.forEach(r => { by[r.id] = r; if (r.type === 'transport' && r.selectedCandidatePairId) sel = r.selectedCandidatePairId; });
+      const pair = sel && by[sel];
+      if (!pair) return;
+      const l = by[pair.localCandidateId] || {}, rm = by[pair.remoteCandidateId] || {}, relay = l.candidateType === 'relay' || rm.candidateType === 'relay';
+      Net.stats.path = relay ? 'relay ' + (l.relayProtocol || l.protocol || '?') : l.candidateType === 'srflx' || rm.candidateType === 'srflx' ? 'direct (public)' : 'direct';
+      Net.stats.netRtt = Math.round((pair.currentRoundTripTime || 0) * 1000);
+    } catch (e) { /* ignore */ }
   };
   Net.relayOn = () => Net.relay || !!Net.cfIce;
   const iceServers = () => (!Net.relay && Net.cfIce ? ICE.iceServers.concat(Net.cfIce) : Net.relay ? ICE.iceServers.concat([{ urls: qp('turn').split(','), username: qp('tuser'), credential: qp('tpass') }]) : ICE.iceServers);
@@ -244,10 +260,13 @@ const Net = {
       if (arr) for (const o of arr) if (o && typeof o === 'object' && o.uid === undefined) o.uid = w.uidN = (w.uidN || 0) + 1;
     }
   };
+  // how much is already waiting to go out on the data channel (bytes). Every snapshot is a whole picture, so a late one is worth nothing: when the link is slower than the
+  // stream, snapshots are DROPPED (the stream slows to what the link carries) instead of queued (which made every message, the ping included, arrive seconds late).
+  const backlog = conn => (conn.dataChannel ? conn.dataChannel.bufferedAmount : 0) + (conn.bufferSize > 3 ? 1e6 : 0);
   function sendSnap() {
     const conn = Net.conn;
     if (Net.busy || !conn || !conn.open || !G) return;
-    if (conn.dataChannel && conn.dataChannel.bufferedAmount > 600000) return;   // the link cannot keep up: skip this one rather than queue stale state
+    if (backlog(conn) > Net.BACKLOG) { Net.stats.skipped++; return; }   // the link cannot keep up: skip this one rather than queue stale state
     let str;
     try { Net.stamp(); str = Snap.wire(); } catch (e) { UI.err(e); return; }
     const n = ++Net.snapN;
@@ -255,6 +274,7 @@ const Net = {
     encode(str).then(z => {
       Net.busy = false;
       if (Net.conn !== conn || Net.state !== 'live') return;
+      if (backlog(conn) > Net.BACKLOG) { Net.stats.skipped++; return; }   // (encoding took a moment: look again)
       if (send(conn, { t: 'snap', n, z })) {
         const zk = typeof z === 'string' ? z.length : z.byteLength, st = Net.stats;
         st.rawKB = str.length / 1024; st.zipKB = zk / 1024; st.snapsOut++; st.bytesOut += zk; st._b += zk; st._n++; st.total += zk;
@@ -477,7 +497,7 @@ const Net = {
       Net.latch = {};
     }
     Net.pingAcc += dt;
-    if (Net.pingAcc >= 2) { Net.pingAcc = 0; send(Net.conn, { t: 'ping', at: performance.now() }); }
+    if (Net.pingAcc >= 2) { Net.pingAcc = 0; send(Net.conn, { t: 'ping', at: performance.now() }); Net.pathProbe(); }
   };
   Net.sendBuy = id => { if (Net.role === 'guest' && Net.state === 'live') send(Net.conn, { t: 'buy', id }); };
   // the newest whole snapshot, once (the frame loop swaps G for it atomically)

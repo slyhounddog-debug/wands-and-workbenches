@@ -383,7 +383,7 @@ Main.guestFrame = function (dt, ts) {
   Book.tick(dt);
   Main.guestKeys(dt);
   const bh = Main.hintFor(QUESTS.B[G.quest.B]), wh = Main.hintFor(QUESTS.W[G.quest.W]);
-  R.hint = bh.f; R.whint = wh.w; R.focus = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null;
+  R.hint = bh.f; R.whint = wh.w; R.focus = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null; R.rot = null;
   UI.setHint(null, false, wh.tree);
   ctx.clearRect(0, 0, CFG.W, CFG.H);
   R.drawWorld(ctx, dt, { x0: 0, w: CFG.W });

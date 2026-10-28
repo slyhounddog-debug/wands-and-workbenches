@@ -607,8 +607,6 @@ WZ.decal = function (x, y, r, dec) {
   if (w.decals.length > CFG.decalMax) w.decals.shift();
 };
 WZ.mark = (x, y, r) => { const c = WZ.ctx, S = c && CFG.spells[c.spell]; if (S && S.dec && !WZ.wet(x, y)) WZ.decal(x, y, r, S.dec); };   // the current spell's mark
-// an aimed spell kicks the Wizard back a little (CFG.spells[s].recoil tiles, over wizard.kickT seconds)
-WZ.recoil = function (a, d) { const w = G.w; if (d && !(w.roll > 0) && !w.jump) w.kick = { x: -a[0], y: -a[1], t: CFG.wizard.kickT, d }; };
 // Geyser Jump: shot into the air and over water / bog to the farthest dry spot ahead (up to J.dist tiles), untouchable while airborne
 WZ.launch = function (J) {
   const w = G.w, m = Math.hypot(w.fx, w.fy) || 1, ux = w.fx / m, uy = w.fy / m;
@@ -732,23 +730,19 @@ WZ.cast = function (spell) {
     case 'fireball':   // small, very fast, and it homes in (WZ.projSpecial)
       AU.sfx('zap_fire');
       WZ.proj({ vx: a[0] * S.speed, vy: a[1] * S.speed, life: S.life, dmg: S.dmg, splash: S.splash, sr: S.sr, col: '#ff7a30', kind: 'fire', size: 5, r: 0.45, home: S.turn, seek: S.seek, trT: 0 });
-      WZ.recoil(a, S.recoil);
       break;
     case 'spray':   // a crescent wave that rolls out and carries what it catches
       AU.sfx('zap_water');
       w.hp = Math.min(WZ.maxHp(), w.hp + S.heal);
       WZ.proj({ x: px + a[0] * 0.6, y: py + a[1] * 0.6, vx: a[0] * S.speed, vy: a[1] * S.speed, life: S.life, dmg: S.dmg, slow: S.slow, slowT: S.slowT, push: S.push, mk: S.mk, w: S.w, col: '#4aa8ff', kind: 'wave', size: 6, r: 0.7, sid, trT: 0 });
-      WZ.recoil(a, S.recoil);
       break;
     case 'boulder':   // it bounces: every landing crushes what is round it
       AU.sfx('zap_earth');
       WZ.proj({ vx: a[0] * S.speed, vy: a[1] * S.speed, life: 30, dmg: S.dmg, sr: S.sr, push: S.push, col: '#8a6a3c', kind: 'boulder', size: 9, r: 0.75, hops: S.hops, h0: S.hops, hop: S.hop, ht: 0, n: 0 });
-      WZ.recoil(a, S.recoil);
       break;
     case 'flamethrower':   // a stream of fire out in front of him for S.t seconds (it follows his aim)
       AU.sfx('zap_fire');
       WZ.zone({ kind: 'flame', follow: true, r: S.range, t: S.t, dps: S.dps, half: S.half, ax: a[0], ay: a[1], col: '#ff9a2b', trT: 0, snd: 0 });
-      WZ.recoil(a, S.recoil);
       break;
     case 'steam':   // a mine is lobbed a short way along the aim and sits dormant (WZ.mineTick)
       AU.sfx('zap_combo');
@@ -762,7 +756,6 @@ WZ.cast = function (spell) {
       AU.sfx('zap_fire');
       const tg = WZ.crowdAt(px, py, S.range, S.sr) || [px + a[0] * 6, py + a[1] * 6];
       WZ.lob('magma', px, py, tg[0], tg[1], S.flight, 3.4, 10, '#ff4a1a');
-      WZ.recoil(a, S.recoil);
       break;
     }
     case 'tempest':   // a controllable water droplet: it joins the fan of live ones (WZ.zoneSpecial 'tear'), its own clock running
@@ -1132,13 +1125,17 @@ WZ.projSpecial = function (p, dt) {
     WZ.puff(p.x, p.y, '#7ad0ff', 10);
     return true;
   }
-  if (p.kind === 'fire' && p.home) {   // homing: it turns toward the nearest foe ahead of it within seek tiles
-    let best = null, bd = p.seek;
+  if (p.kind === 'fire' && p.home) {   // homing: it turns toward the foe that needs the least turning within seek tiles (a nearer one wins a close call); only a foe almost straight behind is ignored
+    let best = null, bs = 1e9;
     const sp = Math.hypot(p.vx, p.vy) || 1;
     for (const e of w.enemies) {
       if (e.dead || e.fall > 0) continue;
       const dx = e.x - p.x, dy = e.y - p.y, d = Math.hypot(dx, dy);
-      if (d < bd && (dx * p.vx + dy * p.vy) / (d * sp || 1) > -0.2) { bd = d; best = e; }
+      if (d > p.seek) continue;
+      const c = (dx * p.vx + dy * p.vy) / (d * sp || 1);
+      if (c <= S.behind) continue;
+      const sc = Math.acos(Math.max(-1, Math.min(1, c))) + d * S.nearBias;
+      if (sc < bs) { bs = sc; best = e; }
     }
     if (best) {
       const want = Math.atan2(best.y - p.y, best.x - p.x), cur = Math.atan2(p.vy, p.vx);
@@ -1618,7 +1615,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     const rate = (m > 0 ? CFG.wizard.accel : CFG.wizard.friction) * dt;
     if (el <= rate) { w.vx = wx; w.vy = wy; } else { w.vx += ex / el * rate; w.vy += ey / el * rate; }
   }
-  if (w.kick) {   // an aimed spell's recoil: a short shove backwards (it slides along water like any move)
+  if (w.kick) {   // a short shove (the Altar's shockwaves; spells no longer recoil) (it slides along water like any move)
     const K = w.kick, s = K.d / CFG.wizard.kickT;
     if (w.roll > 0 || w.jump || (K.t -= dt) <= 0) w.kick = null;
     else WZ.slideW(w, w.x + K.x * s * dt, w.y + K.y * s * dt, CFG.wizard.radius);

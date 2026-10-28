@@ -46,7 +46,7 @@ Menu.make = function (ret) {
   g.slot = 0; g.menu = Menu.fresh();
   G = g;   // (WZ / FA helpers read the global G)
   for (const k in g.stock) g.stock[k] = 0;   // (there is no Stockpile here: starting materials would spill out onto the floor)
-  R.focus = null; R.hint = null; R.whint = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null;   // (whatever the last game was pointing at)
+  R.focus = null; R.hint = null; R.whint = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null; R.rot = null;   // (whatever the last game was pointing at)
   g.w = WZ.fresh();
   for (const o of WZ.harv.concat(WZ.forage)) if (Menu.cleared(o)) { o.broken = true; o.respawn = 1e9; }   // (no trees, rocks or dig spots on the menu's floor: they would sit under the plates)
   for (const k in g.w.tmod) { const t = +k; if (Menu.cleared({ x: t % CFG.WW + 0.5, y: Math.floor(t / CFG.WW) + 0.5 })) { delete g.w.tmod[k]; g.w.tmodN--; } }   // (nor cracked rock or vines)

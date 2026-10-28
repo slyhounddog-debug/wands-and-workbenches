@@ -37,7 +37,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   // possible damage (the badge). Built from CFG.spells so it never drifts from WZ.cast.
   const SPELL_BOOK = {
     gust: s => ({ total: s.pulses * s.dmg + s.bonk, text: 'A cyclone spins out of the Wizard in ' + s.pulses + ' pulses, each hitting for ' + s.dmg + ' out to ' + s.r + ' tiles and shoving foes away. Foes flung into each other bonk for ' + s.bonk + ' more. Chops trees and rocks.' }),
-    fireball: s => ({ total: s.dmg + s.splash, text: 'A very fast fireball that homes in on the nearest foe. It hits for ' + s.dmg + ' and splashes ' + s.splash + ' to everything within ' + s.sr + ' tiles, leaving a trail of embers.' }),
+    fireball: s => ({ total: s.dmg + s.splash, text: 'A fast fireball that curves toward the foe it has to turn least for (only a foe straight behind it is ignored). It hits for ' + s.dmg + ' and splashes ' + s.splash + ' to everything within ' + s.sr + ' tiles, leaving a trail of embers.' }),
     spray: s => ({ total: s.dmg, text: 'A crescent wave ' + s.w + ' tiles wide rolls out and carries every foe it catches along, hitting each for ' + s.dmg + ' and slowing them ' + pct(s.slow) + ' for ' + s.slowT + 's. It heals the Wizard ' + s.heal + '.' }),
     boulder: s => ({ total: s.hops * s.dmg, text: 'A boulder that bounces ' + s.hops + ' times along the ground, crushing everything within ' + s.sr + ' tiles of each landing for ' + s.dmg + '.' }),
     flamethrower: s => ({ total: s.dps * s.t, text: 'A roaring stream of fire blown ' + s.range + ' tiles out in front of the Wizard for ' + s.t + ' seconds, burning everything in the cone for ' + s.dps + ' damage per second and scorching the ground.' }),

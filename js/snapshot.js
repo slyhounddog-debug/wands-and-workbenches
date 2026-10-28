@@ -32,7 +32,7 @@ const Snap = { snap: null, mode: 'off', img: null, report: null, MODES: ['live',
   Snap.KNOWN = {
     leaks: new Set([
       'read R.fcam', 'read R.wcam',                                  // smoothed cameras live on R
-      'read R.focus', 'read R.hoverB', 'read R.ghost', 'read R.demo', 'read R.aim', 'read R.hint', 'read R.whint', 'read R.padMode',   // prompts, pointers, placement ghost: computed in Main.updateFocus, stored on R
+      'read R.focus', 'read R.hoverB', 'read R.ghost', 'read R.rot', 'read R.demo', 'read R.aim', 'read R.hint', 'read R.whint', 'read R.padMode',   // prompts, pointers, placement ghost: computed in Main.updateFocus, stored on R
       'read UI.treeOpen',                                            // the skill tree being open lives in UI (and it freezes the sim)
     ]),
     issues: [

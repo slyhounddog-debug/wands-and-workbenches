@@ -6,7 +6,7 @@ const SPV = {};
   const TX = 9, TY = 4.5, OX = 93, OY = 62, BW = 186, BH = 100, HP = 100, CAST = 0.5;
   const BASIC_NODE = { air: 'gust', water: 'spray', fire: 'fireball', earth: 'boulder' };
   const CAP = {
-    gust: 'CYCLONE: three pulses fling foes into each other', fireball: 'SEEKER: very fast, homes in on a foe',
+    gust: 'CYCLONE: three pulses fling foes into each other', fireball: 'SEEKER: fast, curves toward a foe',
     spray: 'WAVE: rolls out and carries foes with it', boulder: 'BOUNCER: crushes round every landing',
     flamethrower: 'STREAM: a cone of fire for two seconds', steam: 'STEAM MINE: wakes near a foe, bursts, steam cloud',
     sandstorm: 'BOOMERANG: out, back, catch it for a 2nd throw', magma: 'LOB: blast, lava pool, splattering blobs',

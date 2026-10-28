@@ -299,7 +299,17 @@ R.drawFactory = function (main, dt, rect) {
     if (fk < 1) R.fallIn(ctx, v, it, fk, t);
     switch (it.t) {
       case 'belt': R.drawBelt(ctx, v, it.o, t); break;
-      case 'bld': R.drawBuilding(ctx, v, it.o, t); break;
+      case 'bld': {
+        const lift = !!G.carry && G.carry.id === it.o.id;   // picked up: it stays put, faded, until it is set down
+        if (lift) ctx.globalAlpha = 0.4;
+        R.drawBuilding(ctx, v, it.o, t);
+        if (lift) ctx.globalAlpha = 1;
+        const bp = R.toScreen(v, it.o.x + 0.5, it.o.y + 0.5);
+        if (G.carryHold && G.carryHold.id === it.o.id) R.rim(ctx, v, bp, Math.min(1, G.carryHold.t / CFG.carry.holdT), '#ffd23a', 0.86);   // the hold ring
+        if (it.o.rot > 0) R.drawRotFlash(ctx, v, bp, it.o, t, 0);
+        else if (R.rot && R.rot.x === it.o.x && R.rot.y === it.o.y) R.drawRotSoft(ctx, v, bp, t, 0);
+        break;
+      }
       case 'portal': R.drawPortal(ctx, v, t, it.o); break;
       case 'pile': R.drawPile(ctx, v, it.o); break;
       case 'q': R.drawQ(ctx, v, t); break;
@@ -486,15 +496,35 @@ R.drawBelt = function (ctx, v, b, t, noItem) {
     ctx.lineTo(cx + ny * 16 + nx * 6, cy - nx * 8 + ny * 6); ctx.lineTo(cx - ny * 16 + nx * 6, cy + nx * 8 + ny * 6);
     ctx.fill();
   }
-  // bold chevrons chase along the belt so the direction it runs is obvious at a glance
-  const px = -ny, py = nx;
-  ctx.strokeStyle = '#fff1c0'; ctx.lineWidth = 6; ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
-  for (let i = 0; i < 2; i++) {
-    const ph2 = Math.floor(((t * speed * 0.8 + i / 2) % 1) * 8) / 8 - 0.5, cx = p[0] + sdx * ph2, cy = p[1] - lift + sdy * ph2;
-    ctx.beginPath(); ctx.moveTo(cx - nx * 9 + px * 16, cy - ny * 9 + py * 8); ctx.lineTo(cx + nx * 9, cy + ny * 9); ctx.lineTo(cx - nx * 9 - px * 16, cy - ny * 9 - py * 8); ctx.stroke();
-  }
+  // a solid arrowhead on the downstream half says which way the belt runs even when nothing moves (the slats still scroll); the upstream edge gets a dark notch
+  const px = -ny, py = nx, cx0 = p[0], cy0 = p[1] - lift;
+  ctx.fillStyle = '#4a3018';
+  ctx.beginPath(); ctx.moveTo(cx0 - sdx * 0.5 + px * 22, cy0 - sdy * 0.5 + py * 11); ctx.lineTo(cx0 - sdx * 0.5 + nx * 10, cy0 - sdy * 0.5 + ny * 10); ctx.lineTo(cx0 - sdx * 0.5 - px * 22, cy0 - sdy * 0.5 - py * 11); ctx.lineTo(cx0 - sdx * 0.5 - nx * 4 - px * 22, cy0 - sdy * 0.5 - ny * 4 - py * 11); ctx.lineTo(cx0 - sdx * 0.5 - nx * 4 + px * 22, cy0 - sdy * 0.5 - ny * 4 + py * 11); ctx.fill();
+  const head = (k, col) => {
+    ctx.beginPath(); ctx.moveTo(cx0 + sdx * 0.40, cy0 + sdy * 0.40); ctx.lineTo(cx0 - sdx * 0.05 + px * 24 * k, cy0 - sdy * 0.05 + py * 12 * k); ctx.lineTo(cx0 - sdx * 0.05 + px * 9 * k - nx * 8, cy0 - sdy * 0.05 + py * 4.5 * k - ny * 8);
+    ctx.lineTo(cx0 - sdx * 0.05 - px * 9 * k - nx * 8, cy0 - sdy * 0.05 - py * 4.5 * k - ny * 8); ctx.lineTo(cx0 - sdx * 0.05 - px * 24 * k, cy0 - sdy * 0.05 - py * 12 * k); ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+  };
+  head(1.25, '#2a1a0a'); head(1, '#fff1c0');
   ctx.restore();
+  if (b.rot > 0) R.drawRotFlash(ctx, v, p, b, t, lift);
+  else if (R.rot && R.rot.x === b.x && R.rot.y === b.y) R.drawRotSoft(ctx, v, p, t, lift);
   if (b.item && !noItem) R.drawBeltItem(ctx, v, b, t);
+};
+// R is about to turn this one (the tile under the mouse / in front): a pulsing gold rim with a turn arrow
+R.drawRotSoft = function (ctx, v, p, t, lift) {
+  ctx.strokeStyle = Math.sin(t * 8) > 0 ? '#ffe36b' : '#ff9d2a'; ctx.lineWidth = 6; diamond(ctx, p[0], p[1] - lift, v.hw * 0.98, v.hh * 0.98); ctx.stroke();
+};
+// just turned: a white flash on the tile and a big arrow over it pointing the way it runs now (it shrinks away)
+R.drawRotFlash = function (ctx, v, p, b, t, lift) {
+  const k = Math.max(0, b.rot / CFG.rotFlash), dd = DIRS[b.dir], sx = (dd[0] - dd[1]) * v.hw, sy = (dd[0] + dd[1]) * v.hh, m = Math.hypot(sx, sy), nx = sx / m, ny = sy / m, px = -ny, py = nx;
+  ctx.globalAlpha = 0.5 * k; ctx.fillStyle = '#ffffff'; diamond(ctx, p[0], p[1] - lift, v.hw * 0.95, v.hh * 0.95); ctx.fill(); ctx.globalAlpha = 1;
+  ctx.strokeStyle = '#ffd23a'; ctx.lineWidth = 6; diamond(ctx, p[0], p[1] - lift, v.hw * (0.9 + 0.2 * (1 - k)), v.hh * (0.9 + 0.2 * (1 - k))); ctx.stroke();
+  const cx = p[0], cy = p[1] - lift - 40 - (1 - k) * 12, L = 44 * (0.6 + 0.4 * k), W = 12 * (0.6 + 0.4 * k);
+  const pts = [[L, 0], [0, 2.2 * W], [0, W], [-L, W], [-L, -W], [0, -W], [0, -2.2 * W]].map(([a, c2]) => [cx + nx * a + px * c2 * 1.6, cy + ny * a + py * c2 * 0.8]);
+  for (const [col, w] of [['#2a1a0a', 8], ['#fff1c0', 0]]) {
+    ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.closePath();
+    if (w) { ctx.lineWidth = w; ctx.lineJoin = 'round'; ctx.strokeStyle = col; ctx.stroke(); } else { ctx.fillStyle = col; ctx.fill(); }
+  }
 };
 // the item riding a belt (the menu world draws these in a pass of their own, above every belt)
 R.drawBeltItem = function (ctx, v, b, t) {
@@ -537,23 +567,27 @@ R.pips = function (ctx, x, y, list, t) {
     if (q.on) { ctx.fillStyle = '#ffffff'; ctx.fillRect(px + 4, y0 + 4, 4, 4); }
   });
 };
-// a blueprint's needs as a row of chips (material icon + have/need), centred on x with its bottom on y; a paid material turns green with a check
+// a blueprint's STILL MISSING materials as a small row of chips (icon + have/need), centred on x with its bottom on y. Only drawn near the Builder or under the mouse
+// (R.inTip), low against the tile's front edge; the P pin card lists every blueprint's needs from anywhere.
 R.needChips = function (c, x, y, cost, got) {
   c.imageSmoothingEnabled = false;
-  const items = Object.keys(cost).map(k => {
-    const s = R.spr(k), S = s ? R.icS(s) : 1, have = Math.min(got[k] || 0, cost[k]), txt = have + '/' + cost[k];
-    return { s, S, txt, ok: have >= cost[k], w: (s ? s.c.width * S : 0) + 8 + txt.length * 13 + 8 };
+  const items = Object.keys(cost).filter(k => (got[k] || 0) < cost[k]).map(k => {
+    const s = R.spr(k), S = s ? Math.max(1, Math.floor(18 / Math.max(s.c.width, s.c.height))) : 1, txt = (got[k] || 0) + '/' + cost[k];
+    return { s, S, txt, w: (s ? s.c.width * S : 0) + 4 + txt.length * 9 + 8 };
   });
-  const gap = 6, tot = items.reduce((a, e) => a + e.w, 0) + (items.length - 1) * gap;
+  if (!items.length) return;
+  const gap = 4, tot = items.reduce((a, e) => a + e.w, 0) + (items.length - 1) * gap;
   let x0 = Math.round(x - tot / 2);
+  c.globalAlpha = 0.9;
   for (const e of items) {
-    c.fillStyle = e.ok ? '#1f7a3a' : '#1a0f28'; c.fillRect(x0 - 3, y - 39, e.w + 6, 39);
-    c.fillStyle = e.ok ? '#2e8a3e' : '#3a2a52'; c.fillRect(x0, y - 36, e.w, 33);
-    let cx = x0 + 6;
-    if (e.s) { const w = e.s.c.width * e.S, h = e.s.c.height * e.S; c.drawImage(e.s.c, cx, Math.round(y - 20 - h / 2), w, h); cx += w; }
-    drawText(c, e.txt, cx + 8, y - 11, 12, e.ok ? '#d8ffd8' : '#ffffff', 'left', 'd');
+    c.fillStyle = '#1a0f28'; c.fillRect(x0 - 2, y - 26, e.w + 4, 26);
+    c.fillStyle = '#3a2a52'; c.fillRect(x0, y - 24, e.w, 22);
+    let cx = x0 + 4;
+    if (e.s) { const w = e.s.c.width * e.S, h = e.s.c.height * e.S; c.drawImage(e.s.c, cx, Math.round(y - 13 - h / 2), w, h); cx += w; }
+    drawText(c, e.txt, cx + 4, y - 8, 8, '#ffffff', 'left', 'd');
     x0 += e.w + gap;
   }
+  c.globalAlpha = 1;
 };
 R.drawBuilding = function (ctx, v, b, t) {
   const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), S = 4, d = FA.def(b);
@@ -578,9 +612,8 @@ R.drawBuilding = function (ctx, v, b, t) {
     diamond(ctx, p[0], p[1], v.hw * 0.95, v.hh * 0.95); ctx.stroke(); ctx.setLineDash([]);
     }
     const cost = FA.costOf(b), tot = Object.values(cost).reduce((a, b2) => a + b2, 0), got = Object.values(b.got).reduce((a, b2) => a + b2, 0);
-    // what it still needs: one chip per material (icon + have/need), green once that material is paid, above the blueprint
-    const nb = FA.isTile(b.type) ? p[1] - 56 : base - 112;
-    R.defer.push(c => R.needChips(c, p[0], nb, cost, b.got));
+    // what it still needs: a small row of chips low on the tile, only near the Builder or under the mouse
+    if (R.inTip(b)) { const nb = p[1] + v.hh + 28; R.defer.push(c => R.needChips(c, p[0], nb, cost, b.got)); }
     R.rim(ctx, v, p, got / tot, '#7be0ff', 0.86);
     return;
   }
@@ -972,9 +1005,9 @@ R.drawSuck = function (ctx, v, s, base) {
   }
 };
 
-// one Stockpile tile's stack: the items piled up (two leaning columns, at most 8 drawn: past that only the number keeps climbing), the count under it
+// one Stockpile tile's stack: the items piled up (two leaning columns, at most CFG.stockShow drawn: past that only the number keeps climbing), the count under it
 R.drawPile = function (ctx, v, pl) {
-  const p = R.toScreen(v, pl.x, pl.y), n = pl.n, k = pl.kind, cnt = Math.min(8, n), t = G.fac.t;
+  const p = R.toScreen(v, pl.x, pl.y), n = pl.n, k = pl.kind, cnt = Math.min(CFG.stockShow, n), t = G.fac.t;
   const pk = !!R.focus && R.focus.list.some(e => e.key === 'pick' && e.t.kind === 'pile' && e.t.o === k && e.t.x === pl.x && e.t.y === pl.y);
   if (pk) R.pickFx(ctx, p[0], p[1], t, 1.3);
   ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(Math.round((p[0] - 24) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 48, 12);
@@ -1885,7 +1918,7 @@ R.drawWizard = function (ctx, v, w) {
   const blink = w.hurtT > 0 && Math.floor(w.hurtT * 20) % 2;
   const kk = w.kick ? w.kick.t / CFG.wizard.kickT : 0, sl = w.squashT > 0 ? w.squashT / 0.2 : 0;
   if (kk > 0 || sl > 0) {
-    // an aimed spell's recoil: he rocks back away from the shot (further for heavier spells) and squashes; a geyser landing squashes him
+    // a shove (the Altar's shockwaves): he rocks back away from the shot (further for heavier spells) and squashes; a geyser landing squashes him
     const K = w.kick, heavy = K ? Math.min(1, K.d / 0.55) : 0, sdx = K ? K.x - K.y : 0, lean = (sdx > 0.05 ? 1 : sdx < -0.05 ? -1 : 0) * (0.12 + 0.2 * heavy) * kk;
     const sx = 1 + 0.12 * kk * heavy + 0.2 * sl, sy = 1 - 0.1 * kk * heavy - 0.2 * sl;
     ctx.save(); ctx.translate(snap(p[0] + (sdx > 0 ? 1 : -1) * Math.round(6 * kk * heavy / 3) * 3), Math.round((p[1] - bob) / 3) * 3);

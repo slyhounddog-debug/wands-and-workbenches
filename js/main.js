@@ -13,7 +13,7 @@ window.addEventListener('resize', fit);
 
 // ---------- new / load / save ----------
 const SAVE_VERSION = 4;
-const TREE_VERSION = 2;   // v2: spells and creatures left the skill tree (Main.refundTree gives back what was spent on every removed node)
+const TREE_VERSION = 3;   // v2: spells and creatures left the skill tree (Main.refundTree gives back what was spent on every removed node)
 const QUEST_VERSION = 6;   // v6 re-sequenced the Builder goals around building things with elements (each carried-over goal has v5 = its old index: Main.questOf); v5 split the single goal chain into two tracks, Builder and Wizard (Main.splitQuest); v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1; v4 inserted the first-creature-kill goal at 5 and the two Stronghold goals before Summoning: goals from the old 5 shift by 1, from the old 21 (Summoning) by 3
 // the Stockpile: the starting materials, and a count (0) for every other resource (shards, Cores, element Cores, Ward Keys) and element packet
 function blankStock() {
@@ -29,7 +29,7 @@ function blankState(slot) {
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
     flags: {}, quest: { B: 0, W: 0 }, qbase: { B: null, W: null }, bankLog: [], pins: { L: null, R: null }, lock: null,
     altar: WZ.altarFresh(), aug: WZ.augFresh(), wand: WZ.wandFresh(),   // the Summoning Altar (where it stands, which sockets are lit), what he wears and which keeps are open, the staff's four charge meters
-    hands: [], swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
+    hands: [], carry: null, carryHold: null, autoPick: !!AU.settings.autoPick, swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
 }
@@ -118,6 +118,7 @@ const REMOVED_NODES = {
 };
 const REMOVED_EXPAND = [[21, { air: 8 }], [31, { air: 11, water: 11 }], [46, { air: 11, water: 11, fire: 11 }], [59, { air: 14, fire: 14, earth: 14, sandstorm: 1 }],
   [74, { air: 13, water: 13, fire: 13, earth: 13, blizzard: 1, thunder: 1 }], [91, { air: 16, water: 16, fire: 16, earth: 16, meteor: 1, geyser: 1 }]];   // tier 1..6 of Factory Expansion
+for (const id in CFG.freeNodes) REMOVED_NODES[id] = [CFG.freeNodes[id].xp, CFG.freeNodes[id].pay];   // the building unlocks went too: a save that bought one gets it back
 Main.refundTree = function () {
   const back = { xp: 0, core: 0, bank: {} };
   const give = (xp, pay, core) => { back.xp += xp; back.core += core || 0; for (const k in pay) back.bank[k] = (back.bank[k] || 0) + pay[k]; };
@@ -221,7 +222,7 @@ Main.toTitle = function (noSave, instant) {
   UI.splitB = null; UI.show('splitModal', false); UI.askB = null; UI.show('askModal', false);
   UI.show('game', false);
   Main.introPending = false;
-  if (show) { Main.xs = { g, t: 0 }; STATE = 'exit'; g.paused = false; g.outro = { t0: 0 }; R.focus = null; R.hint = null; R.whint = null; R.aim = null; R.ghost = null; R.demo = null; return; }
+  if (show) { Main.xs = { g, t: 0 }; STATE = 'exit'; g.paused = false; g.outro = { t0: 0 }; R.focus = null; R.rot = null; R.hint = null; R.whint = null; R.aim = null; R.ghost = null; R.demo = null; return; }
   Main.openMenu();
 };
 // the front door: a fresh living menu world
@@ -380,7 +381,10 @@ Main.controls = function (dt) {
   // Builder: left-click / A picks up, right-click / B throws, E / X uses (swapped keyboard: . pick, , throw, / use)
   // F (Shift + F = backwards) / LT + X on a pad switches the element of the Harnesser in reach
   const swapEl = (c.kbB && IN.hit('KeyF')) || (p0 && p0.x && p0.ltHeld);
-  let use = (c.kbB && !(sh && G.swapped) && IN.hit('KeyE')) || (altB && IN.hit('Slash')) || (p0 && p0.x && !p0.ltHeld);
+  // carry (move a building): hold Shift + E (Shift + / on a swapped keyboard) or LT + RB on a pad on a finished building
+  const carryKey = (c.kbB && IN.shift() && IN.down('KeyE')) || (altB && IN.shift() && IN.down('Slash')) || !!(p0 && p0.ltHeld && p0.rbHeld);
+  const apTog = (c.kbB && IN.hit('KeyG')) || (p0 && p0.y && p0.ltHeld);   // G / LT + Y: the slight pickup range on or off
+  let use = (c.kbB && !(sh && G.swapped) && !IN.shift() && IN.hit('KeyE')) || (altB && !IN.shift() && IN.hit('Slash')) || (p0 && p0.x && !p0.ltHeld);
   let pick = (altB && IN.hit('Period')) || (p0 && p0.a && !p0.ltHeld);
   const pickHeld = (altB && IN.down('Period')) || (p0 && p0.aHeld && !p0.ltHeld);
   // Tumble (a skill-tree track): the Builder's dodge roll, in the Wizard's input language: Space (Right Shift when the keyboard is swapped, Space is the Wizard's then), LT + A on a pad
@@ -402,7 +406,7 @@ Main.controls = function (dt) {
     else if (G.selected !== 'hand') UI.select('hand');
     else Main.pause(true);
   }
-  if (IN.hit('KeyT') || (p0 && p0.y && !UI.splitB)) UI.openTree('L');
+  if (IN.hit('KeyT') || (p0 && p0.y && !p0.ltHeld && !UI.splitB)) UI.openTree('L');
   if (!Net.on && (IN.hit('KeyY') || (p1 && p1.back))) UI.openTree('R');   // (online the Wizard's tree is on the guest's screen) Back / Select on his pad: Y is the wand's Cycle now
   if (IN.hit('KeyH')) { UI.help(); G.helpT = 0; }
   if (IN.hit('KeyC') && !frozenNow() && !UI.splitB && !UI.askB) Book.open();   // the Collection Book: every spell and creature
@@ -413,15 +417,16 @@ Main.controls = function (dt) {
   if (!UI.splitB) CFG.hotkeys.forEach((k, i) => { if (IN.hit(k)) UI.select(CFG.hotbar[i]); });   // 1-4 toggle a Splitter output's filters while its settings are open
   let rot = 0;
   if (IN.hit('BracketLeft') || (p0 && p0.lb)) rot = -1;
-  if (IN.hit('BracketRight') || (p0 && p0.rb)) rot = 1;
+  if (IN.hit('BracketRight') || (p0 && p0.rb && !p0.ltHeld)) rot = 1;
   if (IN.wheel && IN.mouse.x < Main.viewW() && !UI.treeOpen.L) rot = IN.wheel > 0 ? 1 : -1;
   if (rot && !(UI.treeOpen.L || UI.treeOpen.R)) UI.cycle(rot);
   if (!(UI.treeOpen.L || UI.treeOpen.R) && Main.graceT <= 0 && ((c.kbB && IN.hit('KeyQ')) || (p0 && p0.rt))) UI.cycleFam(IN.shift() ? -1 : 1);   // next member of a family slot
   if (IN.hit('KeyB') || IN.hit('Delete') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt, or an empty tile to lift it (full refund). Esc cancels.', 'L', 'ic_bomb'); }
   if (IN.hit('KeyR') && !frozenNow()) {
     // R turns whatever is already placed under the cursor (or in front / in reach); only with nothing there does it turn the next placement
-    const at = rotateTile();
-    if (UI.splitB) { /* a Splitter has no front to turn */ }
+    const at = rotateTile(), cb = G.carry && FA.byId(G.carry.id);
+    if (cb) { if (FA.def(cb).kind !== 'splitter' && !FA.isCell(cb)) { cb.dir = (cb.dir + 1) % 4; cb.pop = 0.2; AU.sfx('blip'); } }   // carrying one: R turns its output
+    else if (UI.splitB) { /* a Splitter has no front to turn */ }
     else if (!(at && FA.rotateAt(at[0], at[1]))) { G.placeDir = (G.placeDir + 1) % 4; AU.sfx('blip'); }
   }
 
@@ -517,6 +522,8 @@ Main.controls = function (dt) {
       }
     }
     if (use) press('use');
+    Main.carryTick(dt, carryKey, (IN.mouse.rp && Main.mouseB()) || (altB && IN.hit('Comma')) || !!(p0 && p0.b));
+    if (apTog) Main.toggleAutoPick();
     if (swapEl) { const hb = FA.harnessNear(); if (hb) FA.cycleElem(hb, IN.shift() ? -1 : 1); else AU.sfx('error'); }
     // A / . picks up one item (holding keeps grabbing); with a building selected it places in front instead
     if (pick) {
@@ -617,6 +624,32 @@ Main.treePads = function (dt, p0, p1) {
 // the skill tree just closed: drop every buffered / held input (nobody should act on a press from before the pause),
 // then hold the game for a beat with a big "And..." so both players are ready when it resumes
 Main.graceT = 0;
+// the slight pickup range (loose items hop into the hands) is off until the Builder turns it on; the choice is kept on this machine (AU.settings) and lives in G for the sim
+Main.toggleAutoPick = function () {
+  if (!G || G.menu || Net.role === 'guest') return;
+  G.autoPick = !G.autoPick; AU.setAutoPick(G.autoPick); AU.sfx('blip'); UI.changed();
+  FA.say({ label: G.autoPick ? 'AUTO-PICKUP ON' : 'AUTO-PICKUP OFF' });
+};
+// Moving a building: hold the carry key on a finished building for CFG.carry.holdT s to pick it up (G.carryHold counts it, G.carry = { id } once it is up). The ghost
+// follows the aim like a placement; letting go sets it down there (a taken spot gives an error and leaves it where it was), R turns its output, right-click / B cancels.
+const carryAim = () => (useMouseAim() || (G.lastInput === 'mouse' && mouseInFactory()) ? hoverTile(R.fv) : frontTile());
+Main.carryTick = function (dt, held, cancel) {
+  if (G.carry) {
+    const b = FA.byId(G.carry.id);
+    if (!b || cancel || frozenNow()) { G.carry = null; G.carryHold = null; return; }
+    if (!held) {
+      const [gx, gy] = carryAim();
+      G.carry = null;
+      if (!FA.moveBuilding(b, gx, gy)) { AU.sfx('error'); FA.say({ label: 'NO ROOM THERE' }); }
+    }
+    return;
+  }
+  if (!held || frozenNow() || G.demolish) { G.carryHold = null; return; }
+  const t = rotateTile(), b = t && FA.cell(t[0], t[1]);
+  if (!FA.canCarry(b)) { G.carryHold = null; return; }
+  if (!G.carryHold || G.carryHold.id !== b.id) G.carryHold = { id: b.id, t: 0 };
+  if ((G.carryHold.t += dt) >= CFG.carry.holdT) { G.carry = { id: b.id }; G.carryHold = null; AU.sfx('pickup'); if (G.bd.gather && G.bd.gather.b === b) G.bd.gather = null; }
+};
 Main.treeClosed = function () {
   if (!G) return;
   if (Net.role === 'guest') { IN.squelch(); return; }
@@ -733,7 +766,7 @@ Main.updateFocus = function () {
   R.aim = null;
   const frozen = UI.treeOpen.L || UI.treeOpen.R || Main.graceT > 0;
   if (G.hands.length && !frozen && G.selected === 'hand' && !G.demolish) R.aim = aimNow();   // with a building selected the placement ghost is the only preview (a throw still works, it just isn't outlined)
-  R.ghost = null; R.demo = null;
+  R.ghost = null; R.demo = null; R.rot = null;
   if (frozen) return;
   const [gx, gy] = useMouseAim() || (G.lastInput === 'mouse' && mouseInFactory()) ? hoverTile(R.fv) : frontTile();
   if (G.demolish) {
@@ -746,10 +779,18 @@ Main.updateFocus = function () {
       R.demo = { x: gx, y: gy, tile: true, refund: Object.keys(cost).map(k => [k, cost[k]]) };
     }
     else R.demo = { x: gx, y: gy };
+  } else if (G.carry) {   // carrying a building: its ghost follows the aim
+    const cb = FA.byId(G.carry.id);
+    if (cb && FA.inb(gx, gy)) R.ghost = { type: cb.type, x: gx, y: gy, ok: (gx === cb.x && gy === cb.y) || FA.canPlace(gx, gy), dir: cb.dir };
   } else if (G.selected !== 'hand' && FA.inb(gx, gy)) {
     const c = FA.cell(gx, gy);
     const ok = G.selected === 'belt' ? (FA.canPlace(gx, gy) || (c && c.type === 'belt')) : FA.isTile(G.selected) ? FA.canPut(G.selected, gx, gy) : FA.canPlace(gx, gy) && FA.unlocked(G.selected);
     R.ghost = { type: G.selected, x: gx, y: gy, ok: !!ok, dir: G.placeDir };
+  }
+  // the belt / machine R would turn gets a pulsing rim (with the mouse, or while a belt is selected); a turn flashes it with a big arrow (R.drawRotFlash)
+  if (!G.demolish && !G.carry && (G.lastInput === 'mouse' || G.selected === 'belt') && !UI.splitB) {
+    const rt = rotateTile(), rc = rt && FA.cell(rt[0], rt[1]);
+    if (rc && rc.type !== 'portal' && (rc.type === 'belt' || (FA.def(rc).kind !== 'cell' && FA.def(rc).kind !== 'splitter'))) R.rot = { x: rt[0], y: rt[1] };
   }
 };
 
@@ -942,7 +983,7 @@ Main.launch = function (pend, mG) {
   G.swapped = !!swapped && G.ctl.kbB && G.ctl.kbW;
   G.w.x = wiz.x; G.w.y = wiz.y; G.w.fx = wiz.fx; G.w.fy = wiz.fy;
   R.wcam.x = cam.x; R.wcam.y = cam.y;
-  R.focus = null; R.hint = null; R.whint = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null;
+  R.focus = null; R.hint = null; R.whint = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null; R.rot = null;
   if (online) Main.netUi('host');
 };
 Main.makeIntro = function () {

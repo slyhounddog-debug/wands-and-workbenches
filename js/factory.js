@@ -796,7 +796,21 @@ FA.pushSide = function (b, di) {
   b.out.shift();
   return true;
 };
-FA.tryOut = b => FA.pushSide(b, b.dir);
+// a machine's output goes out of its arrow side (a belt, portal or building there) AND onto any belt that runs past one of its other sides (parallel or
+// perpendicular, but not one that points into it); with several ways out they take turns (b.orr)
+FA.outSides = function (b) {
+  const sides = [b.dir];
+  for (let k = 1; k < 4; k++) {
+    const di = (b.dir + k) % 4, dd = DIRS[di], c = FA.cell(b.x + dd[0], b.y + dd[1]);
+    if (c && c.type === 'belt' && (c.dir + 2) % 4 !== di) sides.push(di);
+  }
+  return sides;
+};
+FA.tryOut = function (b) {
+  const sides = FA.outSides(b), n = sides.length, s0 = (b.orr || 0) % n;
+  for (let i = 0; i < n; i++) if (FA.pushSide(b, sides[(s0 + i) % n])) { b.orr = (s0 + i + 1) % n; return true; }
+  return false;
+};
 // ---------- the Splitter: a router with no front, so it never needs turning. The side items arrive from is its input; every other side with
 // something that can take items is an output (up to 3, found every frame: FA.splitConn). Outputs share by b.pct[dir] (always 100 in all; a new
 // set of outputs resets them to 50 / 50 or 34 / 33 / 33). An output with filters (b.filt[dir] = item kinds) takes only those kinds, and
@@ -943,6 +957,7 @@ FA.update = function (dt) {
   f.working = 0;
   for (const b of f.bld) {
     if (b.pop > 0) b.pop -= dt;
+    if (b.rot > 0) b.rot -= dt;
     if (b.thump > 0) b.thump -= dt;
     if (!b.done) continue;
     const d = FA.def(b);
@@ -994,7 +1009,7 @@ FA.update = function (dt) {
 
   // belts: advance, then hand items forward (two passes so chains flow)
   const bt = FA.beltTime();
-  for (const bl of f.belts) if (bl.item) { bl.item.prog += dt / bt; bl.item.moved = false; }
+  for (const bl of f.belts) { if (bl.rot > 0) bl.rot -= dt; if (bl.item) { bl.item.prog += dt / bt; bl.item.moved = false; } }   // (rot: the flash after a belt was turned)
   for (let pass = 0; pass < 2; pass++) {
     for (const bl of f.belts) {
       const it = bl.item;
@@ -1064,7 +1079,7 @@ FA.absorbFloor = function () {
 FA.autoPick = function (dt) {
   const A = CFG.autoPick, bd = G.bd;
   if (bd.apT > 0) { bd.apT -= dt; return; }
-  if (bd.gather || A.r <= 0) return;
+  if (bd.gather || A.r <= 0 || !G.autoPick) return;   // off until the Builder turns it on (G / LT + Y)
   let best = null, bs = A.r;
   for (const o of G.fac.floor) {
     if (o.t < A.delay || o.z > 0.05) continue;
@@ -1515,13 +1530,13 @@ FA.bldAction = function (b, pick) {
   return NONE;
 };
 // Switching a Harnesser's element (F / LT + X): the old crystal bursts into particles, the new one grows from nothing for CFG.harness.growT seconds
-// (switching again while it grows starts the 15 seconds over), and nothing is harnessed until it has grown and shaken.
+// (switching again while it grows starts the 7.5 seconds over), and nothing is harnessed until it has grown and shaken.
 FA.setElem = function (b, el) {
   if (!ELEM[el] || b.el === el) return false;
   const cx = b.x + 0.5, cy = b.y + 0.5;
   if (b.done) { FA.eburst(cx, cy, b.el, 22); FA.burst(cx, cy, '#ffffff', 8); AU.sfx('el_' + el); b.pop = 0.4; }
   b.el = el; b.timer = 0; b.hand = 0; b.shake = 0;
-  if (b.done) b.grow = 0;
+  if (b.done) { b.grow = 0; G.flags.switched = true; }   // (goal: switch the Harnesser to another element)
   if (G.bd.gather && G.bd.gather.b === b) G.bd.gather = null;
   UI.changed();
   return true;
@@ -1546,8 +1561,24 @@ FA.rotateAt = function (tx, ty) {
   const c = FA.cell(tx, ty);
   if (!c || c.type === 'portal') return false;
   if (c.type !== 'belt') { const k = FA.def(c).kind; if (k === 'cell' || k === 'splitter') return false; c.pop = 0.2; }   // a Splitter routes itself
-  c.dir = (c.dir + 1) % 4;
+  c.dir = (c.dir + 1) % 4; c.rot = CFG.rotFlash;   // the turned belt / machine flashes and shows a big arrow the way it now points (R.drawBelt, R.drawRotMark)
   AU.sfx('blip'); FA.ipop(tx + 0.5, ty + 0.5, [['ic_rotate']]); UI.changed();
+  return true;
+};
+// ---------- moving a building: hold the carry key on a finished building, walk, let go where the ghost is (Main.carryTick). The building stays where it is, faded,
+// until it is set down: nothing is lifted out of the grid, so a save or a cancel never loses it. Contents, progress and recipe come along. ----------
+FA.byId = id => G.fac.bld.find(b => b.id === id) || null;
+FA.canCarry = c => !!c && c.type !== 'portal' && c.type !== 'belt' && !!c.done && !FA.isTile(c.type);
+FA.moveBuilding = function (b, tx, ty) {
+  if (tx === b.x && ty === b.y) return true;
+  if (!FA.inb(tx, ty) || !FA.canPlace(tx, ty)) return false;
+  FA.setCell(b.x, b.y, null);
+  FA.landPuff(b.x + 0.5, b.y + 0.5);
+  b.x = tx; b.y = ty; b.pop = 0.4; b.blocked = false;
+  FA.setCell(tx, ty, b);
+  for (const o of G.fac.floor.slice()) if (Math.floor(o.x) === tx && Math.floor(o.y) === ty) { G.fac.floor.splice(G.fac.floor.indexOf(o), 1); FA.dropAt(o.kind, o.x, o.y, true); }   // loose items make way
+  if (G.bd.gather && G.bd.gather.b === b) G.bd.gather = null;
+  FA.landPuff(tx + 0.5, ty + 0.5); AU.sfx('place'); UI.changed();
   return true;
 };
 FA.takePile = function (r) {   // one item per press (hold to keep grabbing)

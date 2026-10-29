@@ -49,8 +49,8 @@ const OUT = process.env.SHOTS || '';
   let r = await run(() => {
     const W = __wands, G = W.G, WZ = W.WZ, o = {}; T.clear(); T.reset();
     const need = W.CFG.wand.need;
-    o.need = JSON.stringify(need);
-    for (let i = 0; i < 7; i++) WZ.cast('gust');
+    o.need = JSON.stringify(need); o.nd = need;
+    for (let i = 0; i < need.air - 1; i++) WZ.cast('gust');
     o.air7 = [G.wand.m.air, G.wand.full.air, G.wand.armed];
     WZ.cast('gust');
     o.air8 = [G.wand.m.air, G.wand.full.air, G.wand.armed];
@@ -58,7 +58,7 @@ const OUT = process.env.SHOTS || '';
     WZ.cast('flamethrower');
     o.flame = [G.wand.m.air, G.wand.m.fire, G.wand.full.air];
     // earth fills at 5
-    for (let i = 0; i < 4; i++) WZ.cast('boulder');
+    for (let i = 0; i < need.earth - 1; i++) WZ.cast('boulder');
     o.earth4 = [G.wand.m.earth, G.wand.full.earth];
     WZ.cast('boulder');
     o.earth5 = [G.wand.m.earth, G.wand.full.earth, G.wand.armed];
@@ -70,8 +70,8 @@ const OUT = process.env.SHOTS || '';
     // a Triple ticks its three
     T.reset(); WZ.cast('thunder'); o.thunder = JSON.stringify(G.wand.m);
     // water fills at 7 and fire at 6
-    T.reset(); for (let i = 0; i < 6; i++) WZ.cast('spray'); o.w6 = G.wand.full.water; WZ.cast('spray'); o.w7 = [G.wand.full.water, G.wand.m.water];
-    T.reset(); for (let i = 0; i < 5; i++) WZ.cast('fireball'); o.f5 = G.wand.full.fire; WZ.cast('fireball'); o.f6 = G.wand.full.fire;
+    T.reset(); for (let i = 0; i < need.water - 1; i++) WZ.cast('spray'); o.w6 = G.wand.full.water; WZ.cast('spray'); o.w7 = [G.wand.full.water, G.wand.m.water];
+    T.reset(); for (let i = 0; i < need.fire - 1; i++) WZ.cast('fireball'); o.f5 = G.wand.full.fire; WZ.cast('fireball'); o.f6 = G.wand.full.fire;
     // casting resets that meter to 0
     T.reset(); T.fill('air'); T.step(1, { act: { cast: true } });
     o.afterCast = [G.wand.m.air, G.wand.full.air, G.wand.armed];
@@ -79,13 +79,13 @@ const OUT = process.env.SHOTS || '';
     T.reset(); WZ.incoming('gust'); T.step(30); o.viaDelivery = G.wand.m.air;
     return o;
   });
-  ok(r.air7[0] === 7 && !r.air7[1] && r.air8[0] === 8 && r.air8[1] && r.air8[2] === 'air', '8 Gusts fill Air exactly on the 8th', JSON.stringify([r.air7, r.air8]));
-  ok(r.flame[0] === 8 && r.flame[1] === 1 && r.flame[2], 'a Flamethrower ticks Air (slot full: lost) and Fire once each', JSON.stringify(r.flame));
-  ok(r.earth4[0] === 4 && !r.earth4[1] && r.earth5[0] === 5 && r.earth5[1] && r.earth5[2] === 'earth', 'Earth fills at 5 (and arms itself)', JSON.stringify([r.earth4, r.earth5]));
-  ok(r.earthLost[0] === 5 && r.earthLost[1], 'ticks landing on a full slot are lost', JSON.stringify(r.earthLost));
+  ok(r.air7[0] === r.nd.air - 1 && !r.air7[1] && r.air8[0] === r.nd.air && r.air8[1] && r.air8[2] === 'air', '10 Gusts fill Air exactly on the 10th', JSON.stringify([r.air7, r.air8]));
+  ok(r.flame[0] === r.nd.air && r.flame[1] === 1 && r.flame[2], 'a Flamethrower ticks Air (slot full: lost) and Fire once each', JSON.stringify(r.flame));
+  ok(r.earth4[0] === r.nd.earth - 1 && !r.earth4[1] && r.earth5[0] === r.nd.earth && r.earth5[1] && r.earth5[2] === 'earth', 'Earth fills at 7 (and arms itself)', JSON.stringify([r.earth4, r.earth5]));
+  ok(r.earthLost[0] === r.nd.earth && r.earthLost[1], 'ticks landing on a full slot are lost', JSON.stringify(r.earthLost));
   ok(r.nova === '{"air":1,"water":1,"fire":1,"earth":1}', 'the Nova ticks all four, once each', r.nova);
   ok(r.thunder === '{"air":1,"water":1,"fire":1,"earth":0}', 'a Thunderstorm ticks its three elements', r.thunder);
-  ok(!r.w6 && r.w7[0] && r.w7[1] === 7 && !r.f5 && r.f6, 'Water fills at 7, Fire at 6');
+  ok(!r.w6 && r.w7[0] && r.w7[1] === r.nd.water && !r.f5 && r.f6, 'Water fills at 9, Fire at 8');
   ok(r.afterCast[0] === 0 && !r.afterCast[1] && r.afterCast[2] === null, 'casting spends the slot and resets that meter to 0', JSON.stringify(r.afterCast));
   ok(r.viaDelivery === 1, 'a spell used on delivery (drop-in, then cast) adds its tick', r.viaDelivery);
 
@@ -163,7 +163,7 @@ const OUT = process.env.SHOTS || '';
     T.step(1, { act: { cast: true } });
     o.speedRatio = WZ.speed() / base; o.fireT0 = w.fireT;
     // run along +x for the rest of the 3 s (the stick (1, -1) is the world direction +x)
-    for (let i = 0; i < 59; i++) T.step(1, { ix: 1, iy: 1 });   // the stick (1, 1) is the world direction +x
+    for (let i = 0; i < 73; i++) T.step(1, { ix: 1, iy: 1 });   // the stick (1, 1) is the world direction +x
     const z = w.zones.find(q => q.kind === 'ftrail');
     o.zone = !!z; o.pts = z ? z.pts.length : 0; o.fireT1 = w.fireT; o.speedAfter = WZ.speed() / base;
     o.maxLife = z ? Math.max(...z.pts.map(p => p.a)) : 0;
@@ -175,9 +175,9 @@ const OUT = process.env.SHOTS || '';
     return o;
   });
   ok(r.laneOk, 'test lane found');
-  ok(Math.abs(r.speedRatio - 1.15) < 1e-6 && Math.abs(r.fireT0 - 2.95) < 0.06 && r.speedAfter === 1, 'Flame Trail: +15% speed for ~3 s', r.speedRatio.toFixed(3) + ' fireT after 1 step ' + r.fireT0.toFixed(2) + ', after 3 s ' + r.fireT1 + ', then x' + r.speedAfter);
+  ok(Math.abs(r.speedRatio - 1.2) < 1e-6 && Math.abs(r.fireT0 - 3.65) < 0.06 && r.speedAfter === 1, 'Flame Trail: +20% speed for ~3.7 s', r.speedRatio.toFixed(3) + ' fireT after 1 step ' + r.fireT0.toFixed(2) + ', after 3 s ' + r.fireT1 + ', then x' + r.speedAfter);
   ok(r.zone && r.pts > 10 && r.maxLife <= 5.01, 'trail segments are laid while he runs and each lives at most ~5 s', 'segments live ' + r.pts + ', oldest ' + r.maxLife.toFixed(2) + ' s');
-  ok(Math.abs(r.dealt - r.fireball / 2) / (r.fireball / 2) < 0.2, 'an enemy standing in a full trail takes about HALF a Fireball in total (a budget, not per second)', r.dealt.toFixed(2) + ' vs half of ' + r.fireball + ' = ' + (r.fireball / 2));
+  ok(Math.abs(r.dealt - r.fireball * 0.6) / (r.fireball * 0.6) < 0.2, 'an enemy standing in a full trail takes about HALF a Fireball +20% in total (a budget, not per second)', r.dealt.toFixed(2) + ' vs 0.6 x ' + r.fireball + ' = ' + (r.fireball * 0.6));
   ok(r.burnedOut && r.lifeSecs < 5.2, 'the trail is gone ~5 s after its last segment', 'trail left ' + r.lifeSecs.toFixed(1) + ' s after the run');
 
   // ================= 4. Vanishing Puff =================
@@ -226,26 +226,28 @@ const OUT = process.env.SHOTS || '';
   ok(r.afterDelivery[1], 'a delivery during invisibility does not break it');
   ok(r.area >= 9.9, 'area damage still hurts him', 'lost ' + r.area);
   ok(r.afterMash === 0, 'mashing ends it at once');
-  ok(Math.abs(r.secs - 4) < 0.15, 'it lasts 4 seconds on its own', r.secs.toFixed(2) + ' s');
+  ok(Math.abs(r.secs - 4.3) < 0.15, 'it lasts 4.3 seconds on its own', r.secs.toFixed(2) + ' s');
   ok(r.afterCast === 0, 'casting another wand attack ends it');
 
   // ================= 5. Riding Wave =================
   r = await run(() => {
     const W = __wands, G = W.G, WZ = W.WZ, w = G.w, o = {}; T.clear(); T.reset();
-    o.laneOk = T.lane(1, 0, 14);
-    const sp = W.CFG.spells.spray, tidal = sp.speed * sp.life;
+    o.laneOk = T.lane(1, 0, 24);
+    const sp = W.CFG.spells.spray, tidal = sp.speed * sp.life * 2.2;
     const x0 = w.x, y0 = w.y;
     const left = T.foe(3, 0.5), right = T.foe(5, -0.7), wide = T.foe(4, 3.2);
     T.fill('water'); T.step(1, { act: { cast: true }, rx: 0.7071, ry: 0.7071 });   // (the right stick pointing along +x: no auto-aim toward the nearest foe)
     o.rideOn = !!w.ride;
-    let t = 0; while (w.ride && t < 40) { T.step(1); t++; }
+    let t = 0, vmax = 0, vFirst = null, vLast = 0; while (w.ride && t < 80) { T.step(1); t++; const v = Math.hypot(w.vx, w.vy); if (vFirst === null) vFirst = v; vmax = Math.max(vmax, v); vLast = v || vLast; }
+    o.vmax = vmax; o.vFirst = vFirst; o.vLast = vLast;
     o.secs = (t + 1) * 0.05; o.dist = Math.hypot(w.x - x0, w.y - y0); o.tidal = tidal;
     o.left = [left.y - y0, left.maxHp - left.hp, left.x - x0]; o.right = [right.y - y0, right.maxHp - right.hp]; o.wide = [wide.y - y0, wide.maxHp - wide.hp];
     o.half = sp.dmg / 2;
     o.vx = w.vx;
     return o;
   });
-  ok(r.laneOk && Math.abs(r.dist - r.tidal) < 0.8 && Math.abs(r.secs - 1) < 0.15, 'the ride covers about a Tidal Wave\'s distance in ~1 s', r.dist.toFixed(2) + ' tiles in ' + r.secs.toFixed(2) + ' s (Tidal Wave: ' + r.tidal + ')');
+  ok(r.laneOk && Math.abs(r.dist - r.tidal) < 0.8 && Math.abs(r.secs - 1.8) < 0.15, 'the ride covers 2.2x a Tidal Wave\'s distance in ~1.8 s', r.dist.toFixed(2) + ' tiles in ' + r.secs.toFixed(2) + ' s (2.2x Tidal Wave: ' + r.tidal.toFixed(1) + ')');
+  ok(r.vFirst < r.vmax * 0.35 && r.vLast < r.vmax * 0.35 && r.vmax > 13, 'the ride ramps up and down (slow start, fast middle, slow stop)', 'first ' + r.vFirst.toFixed(1) + ', peak ' + r.vmax.toFixed(1) + ', last ' + r.vLast.toFixed(1) + ' tiles/s');
   ok(r.left[0] > 0.5 + 0.8 && r.right[0] < -0.7 - 0.8 && r.left[1] > 0 && r.left[1] <= r.half + 0.01 && r.right[1] <= r.half + 0.01 && r.wide[1] === 0, 'it parts foes to the SIDES (not carried along) for up to half of Tidal Wave\'s damage', 'sideways ' + r.left[0].toFixed(2) + ' / ' + r.right[0].toFixed(2) + ', dealt ' + r.left[1].toFixed(1) + ' / ' + r.right[1].toFixed(1) + ' (cap ' + r.half + '), the wide one untouched: ' + r.wide[1]);
   ok(r.left[2] < 4.5 && r.vx === 0, 'a foe is not carried forward with him; he stops when it ends', 'foe x ' + r.left[2].toFixed(2));
   r = await run(() => {   // a wall: stops dead
@@ -256,7 +258,7 @@ const OUT = process.env.SHOTS || '';
     for (let dy = -2; dy <= 2; dy++) { w.tmod[(Math.floor(y0) + dy) * WW + wx] = { k: 'wall', t: 1e9, dur: 1e9 }; w.tmodN++; }
     WZ.flowDirty();
     T.fill('water'); T.step(1, { act: { cast: true }, rx: 0.7071, ry: 0.7071 });
-    let t = 0; while (w.ride && t < 40) { T.step(1); t++; }
+    let t = 0; while (w.ride && t < 80) { T.step(1); t++; }
     o.stop = w.x - x0; o.wall = wx - x0; o.stopped = !w.ride; o.v = [w.vx, w.vy]; o.t = (t + 1) * 0.05;
     return o;
   });
@@ -274,7 +276,7 @@ const OUT = process.env.SHOTS || '';
     w.x = spot[0] - 7; w.y = spot[1] + 0.5; w.vx = w.vy = 0; w.fx = 1; w.fy = 0;
     const x0 = w.x;
     T.fill('water'); T.step(1, { act: { cast: true }, rx: 0.7071, ry: 0.7071 });
-    let t = 0; while (w.ride && t < 40) { T.step(1); t++; }
+    let t = 0; while (w.ride && t < 80) { T.step(1); t++; }
     o.stop = w.x - x0; o.edge = spot[0] - x0; o.stopped = !w.ride; o.wet = WZ.blocked(w.x, w.y, 0.3);
     return o;
   });
@@ -295,7 +297,7 @@ const OUT = process.env.SHOTS || '';
     // bursts: base (no more hits taken) vs after N hits
     return o;
   });
-  ok(Math.abs(r.speedRatio - 0.8) < 1e-6 && Math.abs(r.statT - 3.95) < 0.06, 'Statue: -20% movement speed for 4 s', 'x' + r.speedRatio + ', ' + r.statT.toFixed(2) + ' s left after a step');
+  ok(Math.abs(r.speedRatio - 0.5) < 1e-6 && Math.abs(r.statT - 5.95) < 0.06, 'Statue: -50% top speed for 6 s', 'x' + r.speedRatio + ', ' + r.statT.toFixed(2) + ' s left after a step');
   ok(Math.abs(r.taken - 0.3) < 1e-6 && r.hits1 === 1, 'Statue: takes 30% of incoming damage and counts the hit', r.taken + ', hits ' + r.hits1);
   ok(!r.rolls, 'a statue does not roll');
   const burst = async hits => run((hits) => {
@@ -313,9 +315,64 @@ const OUT = process.env.SHOTS || '';
     return o;
   }, hits);
   const b0 = await burst(0), b3 = await burst(3), b9 = await burst(9);
-  ok(Math.abs(b0.secs - 4) < 0.2 && Math.abs(b0.dealt[0] - b0.total / 2) / (b0.total / 2) < 0.05 && b0.dealt[2] === 0 && b0.push[0] > 1.6, 'the burst deals its base (~half a Bouncing Boulder) with a pushback, after 4 s', 'base ' + b0.dealt[0].toFixed(1) + ' (half of ' + b0.total + '), foe pushed to ' + b0.push[0].toFixed(2) + ', ' + b0.secs.toFixed(2) + ' s');
+  ok(Math.abs(b0.secs - 6) < 0.2 && Math.abs(b0.dealt[0] - b0.total / 2) / (b0.total / 2) < 0.05 && b0.dealt[2] === 0 && b0.push[0] > 1.6, 'the burst deals its base (~half a Bouncing Boulder) with a pushback, after 6 s', 'base ' + b0.dealt[0].toFixed(1) + ' (half of ' + b0.total + '), foe pushed to ' + b0.push[0].toFixed(2) + ', ' + b0.secs.toFixed(2) + ' s');
   ok(b3.dealt[0] > b0.dealt[0] * 1.5 && Math.abs(b3.dealt[0] - b0.dealt[0] * b3.k) < 0.5, 'hits taken visibly grow the burst', '0 hits ' + b0.dealt[0].toFixed(1) + ', 3 hits ' + b3.dealt[0].toFixed(1));
   ok(Math.abs(b9.dealt[0] - b0.dealt[0] * 2) < 0.5 && b9.hits === 9, 'the charge is capped at +100% (double)', '9 hits: ' + b9.dealt[0].toFixed(1) + ' = ' + (b9.dealt[0] / b0.dealt[0]).toFixed(2) + 'x');
+  r = await run(() => {   // heavy handling and ramming
+    const W = __wands, G = W.G, WZ = W.WZ, w = G.w, o = {}; T.clear(); T.reset();
+    T.lane(1, 0, 14);
+    const E = W.CFG.wand.earth, foe = T.foe(5, 0);
+    T.fill('earth'); T.step(1, { act: { cast: true } });
+    let top = 0, t = 0; while (t < 80) { T.step(1, { ix: 1, iy: 1 }); t++; top = Math.max(top, Math.hypot(w.vx, w.vy)); if (foe.hp < foe.maxHp) break; }
+    o.top = top; o.cap = WZ.speed(); o.dmg = foe.maxHp - foe.hp; o.pushed = foe.kx || foe.ky || foe.x > 5.01;
+    // let go: he keeps sliding (a normal Wizard stops in ~0.1 s)
+    for (let i = 0; i < 6; i++) T.step(1, {});
+    o.slide = Math.hypot(w.vx, w.vy);
+    // a fresh turn: from full speed along +x, push along +y: the velocity turns slowly
+    return o;
+  });
+  ok(r.top <= r.cap + 1e-6 && r.top > 1 && r.dmg > 0 && r.dmg < 48, 'Statue: rams a foe in its way for damage that grows with speed, top speed stays at 50%', 'top ' + r.top.toFixed(2) + ' of ' + r.cap.toFixed(2) + ', foe lost ' + r.dmg.toFixed(1));
+  ok(r.slide > 1, 'Statue: he keeps sliding after the stick is released (heavy)', 'speed 0.3 s after letting go: ' + r.slide.toFixed(2));
+  r = await run(() => {   // a statue at a standstill rams nothing
+    const W = __wands, G = W.G, WZ = W.WZ, w = G.w, o = {}; T.clear(); T.reset();
+    T.lane(1, 0, 10);
+    const foe = T.foe(0.6, 0);
+    T.fill('earth'); T.step(1, { act: { cast: true } });
+    for (let i = 0; i < 20; i++) T.step(1, {});
+    o.dmg = foe.maxHp - foe.hp;
+    return o;
+  });
+  ok(r.dmg === 0, 'Statue: standing still rams nothing', 'foe lost ' + r.dmg);
+  // ================= shake loose (the Wizard losing health shakes the factory) =================
+  r = await run(() => {
+    const W = __wands, G = W.G, WZ = W.WZ, FA = W.FA, w = G.w, o = {}; T.clear(); T.reset();
+    const C = W.CFG.shake, keep = JSON.stringify(C);
+    const belts = () => G.fac.grid.filter(c => c && c.type === 'belt');
+    const items = () => belts().filter(c => c.item).length;
+    const loose = () => G.fac.floor.length + G.fac.flying.filter(f => f.boing).length;
+    const stockN = () => Object.keys(G.stock).reduce((a, k) => a + (G.stock[k] || 0), 0);
+    const bs = belts(); o.belts = bs.length; bs.forEach((c, i) => { c.item = { kind: 'air', prog: 0, moved: true }; });
+    G.stock.wood = 20; FA.update(0.05);
+    // chance 0: nothing moves
+    C.belt.lo = C.belt.hi = 0; C.stock.lo = C.stock.hi = 0;
+    const i0 = items(), l0 = loose(), s0 = stockN();
+    for (let i = 0; i < 20; i++) { w.hurtT = 0; WZ.damage(1); }
+    o.zeroOk = items() === i0 && loose() === l0 && stockN() === s0;
+    // chance 1: one belt item and one stock item per hit, onto the floor
+    C.belt.lo = C.belt.hi = 1; C.stock.lo = C.stock.hi = 1;
+    w.hp = w.hpMax || WZ.maxHp(); w.hurtT = 0; WZ.damage(1);
+    o.beltLost = i0 - items(); o.stockLost = s0 - stockN(); o.looseNew = loose() - l0;
+    // armor soaks the hit: nothing shaken
+    const i1 = items(), s1 = stockN(); w.armor = 100; w.hurtT = 0; WZ.damage(5);
+    o.armorOk = items() === i1 && stockN() === s1;
+    bs.forEach(c => { c.item = null; }); G.stock.wood = 0; FA.update(0.05); G.fac.floor.length = 0; G.fac.flying.length = 0;   // (leave the factory as found)
+    Object.assign(C.belt, { lo: 0.04, hi: 0.3 });
+    o.cfg = [C.belt.lo, C.belt.hi, C.stock.lo, C.stock.hi];
+    return o;
+  });
+  ok(r.zeroOk, 'shake loose: with no chance, a hit shakes nothing');
+  ok(r.beltLost === 1 && r.stockLost === 1 && r.looseNew >= 2, 'shake loose: a hit can knock one belt item and one Stockpile item onto the floor', JSON.stringify([r.beltLost, r.stockLost, r.looseNew]));
+  ok(r.armorOk, 'shake loose: a hit the armor soaks shakes nothing');
   await shot('wand-statue');
 
   // ================= 7. shrines =================
@@ -408,7 +465,7 @@ const OUT = process.env.SHOTS || '';
     return o;
   });
   ok(r.load === 'loaded' && r.hold === undefined && r.stockMagma >= 1 && r.glow && JSON.parse(r.wand).armed === null, 'an old save holding a spell loads clean: the spell returns to the Stockpile, the glow-up stays', JSON.stringify([r.load, r.stockMagma, r.glow]));
-  ok(!/ERR/.test(r.garbage) && JSON.parse(r.garbage).m.air === 8 && JSON.parse(r.garbage).full.earth && JSON.parse(r.garbage).full[JSON.parse(r.garbage).armed] && JSON.parse(r.garbage).m.water === 0 && JSON.parse(r.garbage).m.fire === 0, 'a damaged wand in a save is repaired on load', r.garbage);
+  ok(!/ERR/.test(r.garbage) && JSON.parse(r.garbage).m.air === 10 && JSON.parse(r.garbage).full.earth && JSON.parse(r.garbage).full[JSON.parse(r.garbage).armed] && JSON.parse(r.garbage).m.water === 0 && JSON.parse(r.garbage).m.fire === 0, 'a damaged wand in a save is repaired on load', r.garbage);
   r = await run(() => {   // a wand in a save round-trips
     const W = __wands, G = W.G, o = {}; T.reset(); T.fill('fire'); G.wand.m.air = 3; W.Main.save(); const before = JSON.stringify(G.wand); W.G.wand = W.WZ.wandFresh(); W.Main.loadGame(1); o.same = JSON.stringify(W.G.wand) === before; o.wand = JSON.stringify(W.G.wand);
     return o;
@@ -448,7 +505,7 @@ const OUT = process.env.SHOTS || '';
           if (g.armed !== null && !g.full[g.armed]) o.bad.push(['armed', i, g.armed]);
           if (g.ord.some(e => !g.full[e]) || g.ord.length !== ['air', 'water', 'fire', 'earth'].filter(e => g.full[e]).length) o.bad.push(['ord', i, JSON.stringify(g)]);
           if (w.statT < 0 || w.invisT < 0 || w.fireT < 0 || !isFinite(w.x) || !isFinite(w.y) || !isFinite(w.hp)) o.bad.push(['clock', i]);
-          if (w.ride && !(w.ride.t >= 0 && w.ride.t <= 1.2)) o.bad.push(['ride', i, w.ride.t]);
+          if (w.ride && !(w.ride.t >= 0 && w.ride.t <= 2.0)) o.bad.push(['ride', i, w.ride.t]);
           if (w.sg && !(w.sg.n >= 0 && w.sg.n < 3)) o.bad.push(['sg', i]);
           if (i % 1000 === 0) W.Main.save();
         }

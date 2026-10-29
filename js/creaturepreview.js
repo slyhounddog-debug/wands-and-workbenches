@@ -308,13 +308,13 @@ const CPV = {};
       if (u > puff + A.t + 0.9 && u < puff + A.t + 1.7) g.pop(0, 0, 'MASH ends it', puff + A.t + 0.9, '#ffffff');
     } },
     wand_water: { len: 6, f(g, u) {   // he rides a V of water along a straight line, foes part to the sides, a wall stops him dead
-      const W = CFG.wand.water, t0 = 1, k = seg(u, t0, t0 + W.t), wx = lerp(-5, 3.6, k), wallX = 4.7;
+      const W = CFG.wand.water, t0 = 1, k = seg(u, t0, t0 + W.t), wx = lerp(-5, 3.6, (1 - Math.cos(Math.PI * k)) / 2), wallX = 4.7;   // (eased: slow, fast, slow)
       g.x.fillStyle = '#6a6a78'; g.x.fillRect(sx(wallX), sy(-2.4) - 16, 6, sy(2.6) - sy(-2.4) + 16); g.x.fillStyle = '#8a8a96'; g.x.fillRect(sx(wallX), sy(-2.4) - 16, 3, sy(2.6) - sy(-2.4) + 16);
       const foes = [[-1.2, 0.6], [-0.6, -0.5]];
       foes.forEach((f, i) => {
         const hit = wx > f[0] - 0.6, side = i ? -1 : 1, off = hit ? Math.min(1.9, (wx - f[0] + 0.6) * 1.6) : 0;
         g.crt('zephyr', f[0], f[1] + side * off, { z: 10, white: hit && wx < f[0] + 0.4 });
-        if (hit) g.pop(f[0], f[1] + side * off, '-' + W.dmg, t0 + W.t * (f[0] + 5) / 8.6);
+        if (hit) g.pop(f[0], f[1] + side * off, '-' + W.dmg, t0 + W.t * Math.acos(1 - 2 * Math.min(1, (f[0] + 5) / 8.6)) / Math.PI);
       });
       if (k > 0 && k < 1) {   // the V of the wave round and ahead of him
         for (let i = 0; i <= 9; i++) for (const sd of [-1, 1]) { const q = i / 9, px = wx + 1.2 - q * 1.6, py = 0 + sd * q * (W.w / 2 + 0.2); g.x.fillStyle = (i + Math.floor(u * 12)) % 3 ? '#4aa8ff' : '#ffffff'; g.x.fillRect(sx(px) - 2, sy(py) - 6 - (1 - q) * 6, 4, 4); }
@@ -322,9 +322,9 @@ const CPV = {};
       g.wiz(wx, 0, { flash: k >= 1 && u < t0 + W.t + 0.2 });
       if (u > t0 + W.t) g.pop(wx, 0, 'STOPS DEAD', t0 + W.t + 0.1, '#ffffff');
     } },
-    wand_earth: { len: 8.5, f(g, u) {   // four seconds of stone with foes chewing on him, then the burst, bigger for every hit
+    wand_earth: { len: 9, f(g, u) {   // six seconds of stone with foes chewing on him, then the burst, bigger for every hit
       const E = CFG.wand.earth, t0 = 0.8, tEnd = t0 + E.t, burst = u >= tEnd;
-      const hitsAt = [1.6, 2.2, 2.9, 3.5, 4.1], hits = hitsAt.filter(h => u >= h).length, k = 1 + Math.min(E.cap, hits * E.perHit);
+      const hitsAt = [1.8, 2.8, 3.9, 4.9, 5.8], hits = hitsAt.filter(h => u >= h).length, k = 1 + Math.min(E.cap, hits * E.perHit);
       const foes = [[3, 0.5], [-3, -0.6], [0.4, 3.2]];
       foes.forEach((f, i) => {
         let dx = f[0] * (u < 1.5 ? lerp(1.3, 0.55, seg(u, 0, 1.5)) : 0.55) , dy = f[1] * (u < 1.5 ? lerp(1.3, 0.55, seg(u, 0, 1.5)) : 0.55);

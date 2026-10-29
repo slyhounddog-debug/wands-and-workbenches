@@ -58,6 +58,9 @@ const CFG = {
   // throwing a combo spell (2 / 3 / 4 elements) or an Elixir into a Battery overcharges it: it fills by this share of a full
   // Battery (up to max x a full one) and gives +power for that many seconds
   overcharge: { fill: [0, 0, 0.35, 0.6, 1], time: [0, 0, 12, 20, 30], elixir: 0.45, elixirT: 15, max: 1.5, power: 5 },
+  // A hit that costs the Wizard HEALTH can shake things loose in the factory (items land on the floor, like thrown ones). Chance per hit grows as his HP falls: lo at full health, hi near
+  // zero. belt = one item riding a belt; stock = one item out of the Stockpile (super rare, it bounces onto the floor from its tile)
+  shake: { belt: { lo: 0.04, hi: 0.3 }, stock: { lo: 0.002, hi: 0.03 } },
   pressure: { hit: 0.18, speed: 10, life: 1.4, range: 11, amp: 6 },   // Spell Portal shockwaves: the Wizard losing this share of max HP in one hit (also events, Wardens, the Chimera), front speed (tiles/s), seconds, reach (tiles), most jitter (px)
   // layered soundtrack (audio/music/music_<element>.js, built by tools/musicbuild): one looping layer per element, volume follows
   // G.fac.weather[el]. gain = layer volume at full; fade = seconds a layer takes to swell (time constant); curve < 1 lifts quiet
@@ -79,18 +82,20 @@ const CFG = {
   // lost). Damage is about HALF of the matching basic spell wherever a verb damages (the Book's "most it can deal": Gust 13.2, Seeker Fireball 22.5, Tidal Wave 10, Boulder 96).
   wand: {
     half: 0.5,   // every wand attack that damages is about this fraction of the matching basic spell (the numbers below are worked out from CFG.spells after the overrides: see the end of this file)
-    need: { air: 8, water: 7, fire: 6, earth: 5 },   // spells it takes to fill each slot
+    need: { air: 10, water: 9, fire: 8, earth: 7 },   // spells it takes to fill each slot
     // Flame Trail: +speed for t s while he leaves a trail of fire (a segment every gap tiles, each lives life s, r wide). The damage is a BUDGET: an enemy that stands in the trail for
     // a segment's whole life takes `total` once (= half of a Seeker Fireball's 22.5), spread over that life (total / life per second), never stacked by overlapping segments
-    fire: { speed: 0.15, t: 3, life: 5, gap: 0.4, r: 0.95, total: 11.25 },
+    fire: { speed: 0.2, t: 3.7, life: 5, gap: 0.4, r: 0.95, total: 13.5, mul: 1.2 },   // (mul: +20% on the half-a-Fireball budget)
     // Vanishing Puff: a burst of air r tiles round him (dmg once, push shove: half of Cyclone Gust's 13.2) and he is unseen for t s (nothing hostile targets him; his own actions end it)
-    air: { r: 5, dmg: 6.6, push: 6.5, t: 4 },   // (the numbers here are the stock values; dmg / push are worked out from Cyclone Gust)
+    air: { r: 5, dmg: 6.6, push: 6.5, t: 4.3 },   // (the numbers here are the stock values; dmg / push are worked out from Cyclone Gust)
     // Riding Wave: he rides a wave in a straight line along his aim for dist tiles in t s (a Tidal Wave's speed 10 x life 0.85 = 8.5 tiles). w = its width (a V / U smaller than the
     // spell's 3.4), dmg = half of Tidal Wave's 10, once per foe; foes are parted to the SIDES (push), not carried. Stops dead at a wall or a water edge
-    water: { dist: 8.5, t: 1, w: 2.2, dmg: 5, push: 8 },
+    water: { dist: 18.7, t: 1.8, w: 2.2, dmg: 5, push: 8, distMul: 2.2 },   // (the ride eases in and out: slow start, fastest in the middle, slow stop; distMul x a Tidal Wave's reach)
     // Statue: stone for t s: speed x speedMul, damage taken x take; every hit taken charges the ending burst by perHit (of its base), capped at cap (+100%). The burst: dmg (half of a
     // Bouncing Boulder's 96) in r tiles, push shove (grows with the charge too)
-    earth: { t: 4, speedMul: 0.8, take: 0.3, perHit: 0.2, cap: 1, r: 3.4, dmg: 48, push: 9 },
+    // Heavy boulder handling: top speed x speedMul, but accel / friction are low (he slides on and turns lazily). While it lasts he rams every foe he touches: ram damage and ramPush
+    // are per tile/s of his speed (a foe at most once per ramGap s, only above ramMin tiles/s, within ramReach of his body).
+    earth: { t: 6, speedMul: 0.5, take: 0.3, perHit: 0.2, cap: 1, r: 3.4, dmg: 48, push: 9, accel: 5, friction: 2.2, ram: 2.6, ramPush: 1.8, ramGap: 0.6, ramMin: 1, ramReach: 0.45 },
   },
   world: {
     respawn: 120, vacuum: 2, minSpawnDist: 8,
@@ -475,9 +480,9 @@ if (window.OV) OV.tune(CFG, window.TUNING);
   const set = (path, o, k, v) => { if (T[path] === undefined) o[k] = r2(v); };
   set('wand.air.dmg', W.air, 'dmg', h * (S.gust.pulses * S.gust.dmg + S.gust.bonk));
   set('wand.air.push', W.air, 'push', h * S.gust.pulses * S.gust.push);   // half of the shove its three pulses give
-  set('wand.fire.total', W.fire, 'total', h * (S.fireball.dmg + S.fireball.splash));
+  set('wand.fire.total', W.fire, 'total', W.fire.mul * h * (S.fireball.dmg + S.fireball.splash));
   set('wand.water.dmg', W.water, 'dmg', h * S.spray.dmg);
-  set('wand.water.dist', W.water, 'dist', S.spray.speed * S.spray.life);   // as far as a Tidal Wave flies
+  set('wand.water.dist', W.water, 'dist', W.water.distMul * S.spray.speed * S.spray.life);   // as far as a Tidal Wave flies
   set('wand.earth.dmg', W.earth, 'dmg', h * S.boulder.hops * S.boulder.dmg);
 })();
 

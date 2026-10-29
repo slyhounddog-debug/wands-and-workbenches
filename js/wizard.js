@@ -448,6 +448,7 @@ WZ.damage = function (d, soft) {   // armor soaks damage first. soft = burning g
   w.armor -= soak; d -= soak;
   if (soak > 0) WZ.num(w.x, w.y, '-' + Math.round(soak), '#9fc4ff');
   if (d > 0) { w.hp -= d; WZ.num(w.x, w.y, '-' + Math.round(d), soft ? '#ff9a3a' : '#ff6a6a'); }
+  if (!soft && d > 0 && w.hp > 0) FA.shakeLoose(w.hp / WZ.maxHp());   // health lost: the factory may drop something (armor soaking the hit keeps it still)
   if (!soft) { w.hurtT = 0.35; w.shake = Math.max(w.shake, 0.35); AU.sfx(soak > 0 && d <= 0 ? 'clank' : 'hurt'); }
   if (w.hp <= 0) {
     if (WZ.phoenixSave()) return;   // the Phoenix Feather cancels death
@@ -1623,7 +1624,8 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     if (w.ghostT <= 0) { w.ghostT = 0.05; w.ghosts.push({ x: w.x, y: w.y, t: 0 }); }
   } else {
     const wx = dx * sp * slowK, wy = dy * sp * slowK, ex = wx - w.vx, ey = wy - w.vy, el = Math.hypot(ex, ey);
-    const rate = (m > 0 ? CFG.wizard.accel : CFG.wizard.friction) * dt;
+    const heavy = w.statT > 0;   // the Statue: a heavy boulder, slow to get going, slow to turn, slow to stop
+    const rate = (m > 0 ? (heavy ? CFG.wand.earth.accel : CFG.wizard.accel) : (heavy ? CFG.wand.earth.friction : CFG.wizard.friction)) * dt;
     if (el <= rate) { w.vx = wx; w.vy = wy; } else { w.vx += ex / el * rate; w.vy += ey / el * rate; }
   }
   if (w.kick) {   // a short shove (the Altar's shockwaves; spells no longer recoil) (it slides along water like any move)

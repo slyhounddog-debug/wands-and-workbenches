@@ -258,7 +258,7 @@ const slowOf = w => (1 - Math.min(0.8, w.zSlow || 0)) * (w.slowT > 0 ? 1 - w.slo
 // a new snapshot (G is already it): start the copy from the host's Wizard and replay the pad packets the host has not used yet
 Main.predSnap = function (s) {
   const pr = Main.pr, w = s.w;
-  pr.ok = Main.PREDICT && !!w && !s.menu && !w.dead && !w.jump && !w.blink && !w.kick && !w.ride && !(w.cine);   // (a Riding Wave is the host's: shown as it is)
+  pr.ok = Main.PREDICT && !!w && !s.menu && !w.dead && !w.jump && !w.blink && !w.kick && !w.ride && !(w.statT > 0) && !(w.cine);   // (a Riding Wave and the Statue's heavy sliding are the host's: shown as they are)
   if (!pr.ok) { pr.s = null; pr.ex = pr.ey = 0; return; }
   const o = {};
   for (const f of PFIELDS) o[f] = w[f];

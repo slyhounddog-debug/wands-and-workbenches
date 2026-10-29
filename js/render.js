@@ -2191,15 +2191,20 @@ R.drawProj = function (ctx, v, p) {
 const TALL_ZONES = { flame: 1, steamcloud: 1, storm: 1, tear: 1, mshield: 1, novapull: 1, ftrail: 1 };   // zones that stand up: drawn over the bodies
 R.drawZone = function (ctx, v, z) {
   const s = R.toScreen(v, z.x, z.y), fr = Math.min(1, z.t / z.dur), t = G.w.t, Y = n => Math.round(n / 3) * 3;
-  if (z.kind === 'ftrail') {   // Flame Trail: a flickering flame on every live segment, small and dim as it burns out
+  if (z.kind === 'ftrail') {   // Flame Trail: a string of small glowing fireballs, shrinking and dimming as each burns out
     const F = CFG.wand.fire;
     z.pts.forEach((pt, i) => {
-      const q = R.toScreen(v, pt.x, pt.y), k = Math.min(1, pt.a / F.life), sz = Y(18 - k * 9), fl = Math.floor(t * 9 + i * 1.7) % 3;
-      ctx.globalAlpha = Math.min(1, (1 - k) * 1.6) * 0.3; ctx.fillStyle = '#ff5a1a'; diamond(ctx, q[0], q[1], F.r * v.hw * 1.3, F.r * v.hh * 1.3); ctx.fill();
-      ctx.globalAlpha = Math.min(1, (1 - k) * 1.6);
-      ctx.fillStyle = '#9a2a1a'; ctx.fillRect(snap(q[0] - sz / 2), Y(q[1] - 6 - sz), sz, sz + 6);
-      ctx.fillStyle = '#ff6a1a'; ctx.fillRect(snap(q[0] - sz / 3), Y(q[1] - 9 - sz - fl * 3), Math.round(sz * 0.66 / 3) * 3, sz + 6);
-      ctx.fillStyle = '#ffd23a'; ctx.fillRect(snap(q[0] - 3), Y(q[1] - 6 - sz * 0.6), 6, Math.round(sz * 0.5 / 3) * 3 + 3);
+      const q = R.toScreen(v, pt.x, pt.y), k = Math.min(1, pt.a / F.life), sz = Y(9 - k * 3) || 3, fl = Math.floor(t * 9 + i * 1.7) % 3, al = Math.min(1, (1 - k) * 1.6);
+      const bx = snap(q[0] - sz / 2), by = Y(q[1] - 9 - sz - (fl === 1 ? 3 : 0));
+      ctx.globalCompositeOperation = 'lighter';   // the glow: additive, so it lights the grass round each fireball
+      ctx.globalAlpha = al * 0.22; ctx.fillStyle = '#ff5a1a'; diamond(ctx, q[0], q[1], F.r * v.hw * 1.15, F.r * v.hh * 1.15); ctx.fill();
+      ctx.globalAlpha = al * 0.28; ctx.fillStyle = '#ff8a2a'; ctx.fillRect(bx - 6, by - 6, sz + 12, sz + 12);
+      ctx.globalAlpha = al * 0.35; ctx.fillStyle = '#ffb030'; ctx.fillRect(bx - 3, by - 3, sz + 6, sz + 6);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = al;
+      ctx.fillStyle = '#d8441a'; ctx.fillRect(bx, by, sz, sz);
+      ctx.fillStyle = '#ff9a2a'; ctx.fillRect(bx + 3, by + 3, Math.max(3, sz - 6), Math.max(3, sz - 6));
+      ctx.fillStyle = '#fff0a0'; ctx.fillRect(bx + Math.floor(sz / 2 / 3) * 3, by + Math.floor(sz / 2 / 3) * 3, 3, 3);
     });
     ctx.globalAlpha = 1;
     return;

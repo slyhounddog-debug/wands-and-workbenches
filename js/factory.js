@@ -417,6 +417,28 @@ FA.dropAt = function (kind, x, y, spill) {
   const a = Math.random() * 6.283, r = Math.random() * 0.25, d = Math.hypot(s.x - x, s.y - y);
   f.flying.push({ kind, sx: x, sy: y, x, y, z: 0.6, tx: s.x + Math.cos(a) * r, ty: s.y + Math.sin(a) * r, t: 0, T: Math.min(0.9, 0.35 + d * 0.06), h: 1 + Math.min(2, d * 0.2), boing: true });
 };
+// The Wizard just lost health (hpFrac = his HP left, 0..1): the factory may shake something loose, more likely the lower he is. A belt item (uncommon) or one item of the Stockpile
+// (super rare) is knocked off and bounces onto the floor; nothing is lost (a full floor sends it on to the wilds like any overflow). CFG.shake.
+FA.shakeLoose = function (hpFrac) {
+  const S = CFG.shake, f = G.fac, k = 1 - Math.max(0, Math.min(1, hpFrac)), lerp = o => o.lo + (o.hi - o.lo) * k;
+  if (Math.random() < lerp(S.belt)) {
+    const belts = [];
+    for (let i = 0; i < f.grid.length; i++) { const c = f.grid[i]; if (c && c.type === 'belt' && c.item) belts.push(i); }
+    if (belts.length) {
+      const i = belts[Math.floor(Math.random() * belts.length)], c = f.grid[i], x = i % f.w + 0.5, y = Math.floor(i / f.w) + 0.5, kind = c.item.kind;
+      c.item = null;
+      FA.dropAt(kind, x, y, true); FA.ipop(x, y - 0.3, [[kind]]); AU.sfx('boing');
+    }
+  }
+  if (Math.random() < lerp(S.stock)) {
+    const piles = FA.pileList().filter(p => p.n > 0);
+    if (piles.length) {
+      const p = piles[Math.floor(Math.random() * piles.length)];
+      G.stock[p.kind]--;
+      FA.dropAt(p.kind, p.x, p.y, true); FA.ipop(p.x, p.y - 0.3, [[p.kind]]); AU.sfx('boing');
+    }
+  }
+};
 FA.dropHands = function () {   // never deletes: everything lands on the floor at the Builder's feet
   while (G.hands.length) { const it = FA.takeOne(); FA.dropAt(it.kind, G.bd.x, G.bd.y); }
 };

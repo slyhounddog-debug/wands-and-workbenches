@@ -129,7 +129,7 @@ WZ.wandWater = function (ctx) {
   const w = G.w, W = CFG.wand.water, st = WZ.stickAim(), a = st ? [st[0], st[1]] : WZ.aim();
   w.fx = a[0]; w.fy = a[1];
   w.ride = { dx: a[0], dy: a[1], t: 0, hit: [], ctx };
-  w.vx = a[0] * W.dist / W.t; w.vy = a[1] * W.dist / W.t; w.roll = 0; w.target = null;
+  w.vx = 0; w.vy = 0; w.roll = 0; w.target = null;   // (the ride eases in from a standstill: WZ.rideSet)
   WZ.ring(w.x, w.y, 1.5, '#4aa8ff', 0.35); WZ.epuff(w.x, w.y, 'water', 12);
   AU.sfx('zap_water');
 };
@@ -142,8 +142,10 @@ WZ.rideEnd = function (why) {
 };
 // before he moves: the ride's velocity (a harvestable in the way stops it dead); after he moved (WZ.wandTick): the wave parts what it passes, a wall or a water edge ends it
 WZ.rideSet = function (dt) {
-  const w = G.w, R0 = w.ride, W = CFG.wand.water, v = W.dist / W.t;
-  const nx = w.x + R0.dx * v * dt, ny = w.y + R0.dy * v * dt;
+  const w = G.w, R0 = w.ride, W = CFG.wand.water;
+  // speed follows a half sine (slow, fastest in the middle, slow): the distance covered this step is the exact integral of it, so the whole ride is W.dist
+  const a0 = Math.min(1, R0.t / W.t), a1 = Math.min(1, (R0.t + dt) / W.t), step = W.dist / 2 * (Math.cos(Math.PI * a0) - Math.cos(Math.PI * a1)), v = dt > 0 ? step / dt : 0;
+  const nx = w.x + R0.dx * step, ny = w.y + R0.dy * step;
   for (const h of WZ.harv) if (!h.broken && Math.hypot(nx - h.x, ny - h.y) < 0.85) { WZ.rideEnd('wall'); return false; }
   w.vx = R0.dx * v; w.vy = R0.dy * v; w.fx = R0.dx; w.fy = R0.dy;
   R0.ex = nx; R0.ey = ny; R0.ox = w.x; R0.oy = w.y;
@@ -202,6 +204,25 @@ WZ.statueBurst = function () {
   w.shake = Math.max(w.shake, 0.3 + 0.3 * (k - 1)); AU.sfx('slam');
 };
 
+// the Statue rams: while the stone lasts every foe he touches takes damage and a shove that grow with his speed (each foe at most once per ramGap s; e.ramT is the sim time it may be hit again)
+WZ.statueRam = function (dt) {
+  const w = G.w, E = CFG.wand.earth, spd = Math.hypot(w.vx, w.vy);
+  if (spd < E.ramMin) return;
+  const ux = w.vx / spd, uy = w.vy / spd;
+  WZ.ctx = WZ.wandCtx('earth');
+  for (const e of w.enemies) {
+    if (e.dead || e.fall > 0 || w.t < (e.ramT || 0)) continue;
+    const dx = e.x - w.x, dy = e.y - w.y;
+    if (Math.hypot(dx, dy) > e.rad + CFG.wizard.radius + E.ramReach) continue;
+    if (dx * ux + dy * uy < -0.2) continue;   // only what is in front of (or beside) the boulder, not what he has already passed
+    e.ramT = w.t + E.ramGap;
+    const m = Math.hypot(dx, dy) || 1, push = E.ramPush * spd;
+    WZ.hurtE(e, E.ram * spd, (dx / m * 0.5 + ux * 0.5) * push, (dy / m * 0.5 + uy * 0.5) * push);
+    WZ.puff(e.x, e.y, '#a98a5c', 4); AU.sfx('thud'); w.shake = Math.max(w.shake, 0.12);
+  }
+  WZ.ctx = null;
+};
+
 // ---------- every frame (WZ.update) ----------
 WZ.wandTick = function (dt) {
   const w = G.w;
@@ -209,6 +230,7 @@ WZ.wandTick = function (dt) {
   if (w.invisT > 0) { w.invisT -= dt; if (w.invisT < 1e-6) { w.invisT = 0; WZ.puff(w.x, w.y, '#e6f8ff', 6); } }
   if (w.statT > 0) {
     w.statT -= dt;
+    WZ.statueRam(dt);
     if (Math.random() < dt * 10) w.fx_.push({ type: 'spark', x: w.x + rand(-0.3, 0.3), y: w.y + rand(-0.3, 0.3), vx: 0, vy: 0, z: rand(0.2, 1.2), vz: 0.5, g: 6, col: '#9a9aa6', t: 0, dur: 0.4 });
     if (w.statT < 1e-6) { w.statT = 0; WZ.statueBurst(); }
   }

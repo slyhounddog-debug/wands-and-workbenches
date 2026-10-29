@@ -335,6 +335,16 @@ Main.sbPush = function (s, at) {
   const o = Main.sbOff;   // host clock minus guest clock at arrival: the largest = the least delayed picture, the spread = the jitter
   o.push(s.nft - at); if (o.length > 40) o.shift();
 };
+// the wilds' sounds the host made (G.snd, see Main.tapSfx in main.js): play the ones this picture brings that we have not played yet. The first picture only sets the count.
+Main.sndN = -1;
+Main.playSnd = function (s) {
+  const q = s && s.snd;
+  if (!q) return;
+  if (Main.sndN < 0 || q.n < Main.sndN) { Main.sndN = q.n; return; }
+  let played = 0;
+  for (const e of q.list) if (e.n > Main.sndN && played++ < 8) AU.sfx(e.s);
+  Main.sndN = q.n;
+};
 Main.interpFrame = function (now) {
   const sb = Main.sb, so = Main.sbOff.slice().sort((a, b) => a - b);
   if (!sb.length || !so.length) return;
@@ -352,6 +362,7 @@ Main.interpFrame = function (now) {
     Main.pairB = B;
     if (A) Main.tween(A.s, B.s); else Main.tw = [];
     G = B.s;
+    Main.playSnd(B.s);
     Main.guestSeen();
     if (bi > 1) sb.splice(0, bi - 1);   // nothing older than A is needed again
   }
@@ -372,7 +383,7 @@ Main.guestFrame = function (dt, ts) {
     Main.predSnap(s);   // (before the glide below moves his x / y: it needs the host's own numbers)
     if (old && old.w && s.w && !old.menu && !s.menu) Main.tween(old, s, Net.takenAt); else Main.tw = [];
     if (G.menu) Menu.lastEv = Menu.lastEv || G.menu.evN;   // (the lobby: do not replay the events that happened before we got here)
-    else if (!Net.on) Main.enterGuest(); else Main.guestSeen();
+    else if (!Net.on) Main.enterGuest(); else { Main.guestSeen(); if (s.w && !s.menu) Main.playSnd(s); }
   }
   if (G && G.menu && !Net.on) { AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); Menu.guestFrame(dt, ts); return; }   // the host is still in the menu world
   if (!G || !Net.on) { AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); drawBackdrop(ts); return; }
@@ -391,7 +402,7 @@ Main.guestFrame = function (dt, ts) {
   let near = 0;
   const w = G.w;
   if (!w.dead) for (const e of w.enemies) if (Math.abs(e.x - w.x) < 10 && Math.abs(e.y - w.y) < 10) near++;
-  AU.hum(0); AU.mix(0, Math.min(1, near / 8), !!w.boss); AU.layerMix(G.fac.weather);   // v1: music and UI sounds only, the world's sound effects stay on the host
+  AU.hum(0); AU.mix(0, Math.min(1, near / 8), !!w.boss); AU.layerMix(G.fac.weather);   // (the wilds' sound effects arrive in the snapshots: Main.playSnd)
   AU.muffle(!!(UI.treeOpen.R || Main.menuUp));
   UI.updateHud(dt);
 };

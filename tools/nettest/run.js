@@ -209,6 +209,13 @@ async function boot(browser, name) {
   ok(fan.n === 3 && fan.d.every(d => d <= 6.05), 'the guest sees three Tempest Tears, each within 6 tiles of him', fan.n + ' tears, ' + fan.d.map(d => d.toFixed(1)).join(','));
   await gp.evaluate(() => { delete navigator.getGamepads; });
   await hp.evaluate(() => { __wands.G.w.zones.length = 0; });
+  // ---- the wilds' sound effects reach the guest (G.snd rides in every snapshot): the host makes a zap, a kill and a belt click; the guest hears the first two, once each
+  await gp.evaluate(() => { window.__heard = []; const o = AU.sfx; AU.sfx = n => { window.__heard.push(n); return o(n); }; });
+  await sleep(300);
+  await hp.evaluate(() => { AU.sfx('zap_fire'); AU.sfx('kill'); AU.sfx('place'); });
+  await sleep(900);
+  const heard = await gp.evaluate(() => { const h = window.__heard; return { zap: h.filter(n => n === 'zap_fire').length, kill: h.filter(n => n === 'kill').length, place: h.filter(n => n === 'place').length }; });
+  ok(heard.zap === 1 && heard.kill === 1 && heard.place === 0, "the guest hears the wilds' sounds the host makes (once each) and not the factory's", JSON.stringify(heard));
   // ---- allies are host-sim state: the guest sees them through the snapshot (and they carry the heart marker)
   await hp.evaluate(() => { const W = __wands, a = W.WZ.spawnAlly('pebble'); a.fall = 0; });
   await sleep(700);
@@ -250,7 +257,7 @@ async function boot(browser, name) {
   await hp.keyboard.press('Escape'); await sleep(200);
   await hp.evaluate(() => __wands.Main.pause(true)); await sleep(800);
   const h3 = await hp.evaluate(() => __wands.G.stats.time);
-  ok(h3 - h2 > 0.9 && !(await hp.evaluate(() => __wands.G.paused)), 'host pause menu up: sim not frozen, G.paused stays false');
+  ok(h3 - h2 > 0.9 && !(await hp.evaluate(() => __wands.G.paused)), 'host pause menu up: sim not frozen, G.paused stays false', (h3 - h2).toFixed(2) + 's, paused=' + (await hp.evaluate(() => __wands.G.paused)));
   await hp.evaluate(() => __wands.Main.pause(false));
 
   // ---- PIP slider: default 28%, 0 hides it, 45 is the max, local per player

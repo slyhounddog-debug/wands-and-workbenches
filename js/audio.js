@@ -133,7 +133,9 @@ const AU = (() => {
   }
   const N = s => 261.63 * Math.pow(2, s / 12);
 
+  let tapFn = null;   // the online host listens to every sound (Main.tapSfx), so the guest can hear the wilds
   function sfx(name) {
+    if (tapFn) tapFn(name);
     if (!ctx) return;
     const now = ctx.currentTime;
     if (lastPlay[name] && now - lastPlay[name] < 0.05) return;
@@ -168,6 +170,7 @@ const AU = (() => {
       case 'zap_earth': tone(90, 0.35, 'square', 0.12, 0.6); noise(0.2, 0.08, 200); break;
       case 'zap_combo': tone(330, 0.3, 'sawtooth', 0.08, 2.5); tone(660, 0.3, 'sine', 0.08, 1.5, 0.05); break;
       case 'hit': tone(180, 0.06, 'square', 0.04, 0.6); break;
+      case 'hitw': tone(110, 0.16, 'square', 0.09, 0.45); tone(58, 0.2, 'sine', 0.15, 0.5); noise(0.08, 0.07, 450); tone(N(19), 0.08, 'triangle', 0.05, 0, 0.03); break;   // a weakness hit: low thump + crunch + a bright ping
       case 'kill': tone(400, 0.1, 'triangle', 0.07, 1.8); break;
       case 'hurt': tone(140, 0.25, 'sawtooth', 0.14, 0.5); break;
       case 'roll': {   // a quick whoosh, pitch-shifted a little each time so repeated rolls don't drone
@@ -387,7 +390,7 @@ const AU = (() => {
   // every sfx() name, read off play()'s switch so the dev tool's list can never miss one
   const SFX_NAMES = (play + '').match(/case '\w+'/g).map(s => s.slice(6, -1));
   return {
-    settings, init, sfx, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep, muffle,
+    settings, init, sfx, setTap(fn) { tapFn = fn; }, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep, muffle,
     layerMix(act) { layerAct = act; },   // { air, water, fire, earth } 0..1 (G.fac.weather), or null for the title-screen mix
     layerInfo() { return { ready: layersReady(), playing: !!layers, lowpassHz: ctx ? Math.round(musLP.frequency.value) : null, goal: Object.fromEntries(LAYER_EL.map(el => [el, +layerGoal(el, bossOn).toFixed(3)])) }; },
     names: { sfx: SFX_NAMES, loops: ['music', 'music_boss', 'hum'] },

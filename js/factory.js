@@ -464,8 +464,37 @@ FA.placeBelt = function (x, y, dir) {
   AU.sfx('place');
   return true;
 };
+// The click-drag belt line: from the tile the press started on to the tile under the cursor in one or two straight legs (the longer first; the other order when
+// that one is blocked), turning where the legs meet. If the end tile is taken (a machine, a portal, a belt) the line stops short and its last belt points into it.
+// Each step is { x, y, dir, st, corner }: st 'new' | 'turn' (an existing belt, re-aimed) | 'bad' (blocked: it and everything after is skipped) | 'wood' (the Stockpile is out of Wood).
+FA.beltPath = function (sx, sy, tx, ty, dir0) {
+  const dx = tx - sx, dy = ty - sy, ax = Math.abs(dx), ay = Math.abs(dy), mx = Math.sign(dx), my = Math.sign(dy);
+  const line = xFirst => {
+    const pts = [[sx, sy]]; let x = sx, y = sy;
+    for (const l of xFirst ? [[mx, 0, ax], [0, my, ay]] : [[0, my, ay], [mx, 0, ax]]) for (let i = 0; i < l[2]; i++) { x += l[0]; y += l[1]; pts.push([x, y]); }
+    return pts;
+  };
+  const free = p => { if (!FA.inb(p[0], p[1])) return false; const c = FA.cell(p[0], p[1]); return c ? c.type === 'belt' : FA.canPlace(p[0], p[1]); };
+  const fits = pts => pts.every((p, i) => free(p) || (i === pts.length - 1 && i > 0 && FA.inb(p[0], p[1]) && !!FA.cell(p[0], p[1])));
+  let pts = line(ax >= ay);
+  if (!fits(pts)) { const alt = line(!(ax >= ay)); if (fits(alt)) pts = alt; }
+  let into = null;
+  if (pts.length > 1) { const l = pts[pts.length - 1]; if (FA.inb(l[0], l[1]) && FA.cell(l[0], l[1])) into = pts.pop(); }
+  const dirOf = (a, b) => (b[0] > a[0] ? 0 : b[1] > a[1] ? 1 : b[0] < a[0] ? 2 : 3);
+  let wood = G.stock.wood || 0, blocked = false;
+  const out = [];
+  pts.forEach((p, i) => {
+    const nx = i < pts.length - 1 ? pts[i + 1] : into, dir = nx ? dirOf(p, nx) : i > 0 ? out[i - 1].dir : dir0;
+    const c = FA.inb(p[0], p[1]) ? FA.cell(p[0], p[1]) : null;
+    let st = c && c.type === 'belt' ? 'turn' : FA.inb(p[0], p[1]) && FA.canPlace(p[0], p[1]) ? 'new' : 'bad';
+    if (blocked) st = 'bad'; else if (st === 'bad') blocked = true;
+    if (st === 'new') { if (wood > 0) wood--; else st = 'wood'; }
+    out.push({ x: p[0], y: p[1], dir, st, corner: i > 0 && dir !== out[i - 1].dir });
+  });
+  return out;
+};
 // force: skip the "you can't place this again yet" question (the confirmation modal calls it back with true)
-FA.demolish = function (x, y, force) {
+FA.demolish =function (x, y, force) {
   const c = FA.cell(x, y);
   if (!c) return FA.liftTile(x, y);   // no building here: the Stockpile tile / floor tile itself goes
   if (c.type === 'portal') return false;
@@ -952,6 +981,7 @@ FA.update = function (dt) {
     f.lowT -= dt;
     if (f.lowT <= 0) { f.lowT = 16; UI.toast('Not enough power: machines are stalling! Feed a Battery, or build another.', 'L', 'ic_bolt'); }
   } else f.lowT = 0;
+  f.darkT = f.gen <= 0 && f.demand > 0 ? (f.darkT || 0) + dt : 0;   // how long the factory has been fully out of power with machines wanting it (the Wizard's HUD shows a bolt after a moment)
   for (const k in f.log) while (f.log[k].length && f.t - f.log[k][0] > 60) f.log[k].shift();
 
   f.working = 0;

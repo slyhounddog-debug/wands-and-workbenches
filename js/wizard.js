@@ -412,6 +412,7 @@ WZ.hurtE = function (e, d, kx, ky, quiet) {
   G.w.run.dmg += Math.min(d, Math.max(0, e.hp));
   e.hp -= d;
   if (c && e._c !== c) { e._c = c; c.hits++; if (m > 1) { c.weak++; G.w.run.weak++; } }
+  if (m > 1 && !quiet && G.w.t - (G.w.weakSfxT || -1) > 0.08) { G.w.weakSfxT = G.w.t; AU.sfx('hitw'); }   // a weakness hit lands heavier (a zone ticking on a crowd would otherwise chatter)
   if (!quiet) {
     e.flash = 0.12;
     const kb = e.kb !== undefined ? e.kb : e.boss ? 0.08 : e.elite ? 0.4 : 1;
@@ -528,6 +529,7 @@ WZ.kill = function (e) {
     if (n >= 4) G.stats.k4 = (G.stats.k4 || 0) + 1;
   }
   if (e.boss) { WZ.bossDown(e); return; }
+  if (e.elite && !Net.on) w.hitstop = Math.max(w.hitstop || 0, e.warden ? CFG.hitstop.warden : CFG.hitstop.elite);   // hit-stop: the Wizard's side holds still for a beat (offline only: a guest's prediction would rubber-band)
   WZ.dropGems(e.x, e.y, WZ.killGems(e));
   if (e.elite) {
     // the bonus shard is random, but never dry for more than CFG.elite.pity elites in a row

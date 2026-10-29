@@ -295,13 +295,26 @@ function throwAlongAim() {
   if (a) FA.throwOne(a.x, a.y);
 }
 
+// let go of a belt drag: lay the whole previewed line (a plain click is a line of one)
+function commitLine(d) {
+  if (!d || d.cancel || !d.path || G.selected !== 'belt' || G.demolish) return;
+  let n = 0;
+  for (const s of d.path) if ((s.st === 'new' || s.st === 'turn') && FA.placeBelt(s.x, s.y, s.dir)) n++;
+  if (d.path.length) G.placeDir = d.path[d.path.length - 1].dir;
+  if (d.path.some(s => s.st === 'wood')) { UI.toast('A belt costs 1 Wood from the Stockpile. You\'re out!', 'L', 'wood'); AU.sfx('error'); }
+  if (n) UI.changed();
+}
 function handleMouseFactory(dt) {
   const m = IN.mouse;
-  if (!Main.mouseB() || !mouseInFactory() || UI.treeOpen.L || UI.treeOpen.R) { if (!m.l) G.drag = null; return; }
+  if (!Main.mouseB() || !mouseInFactory() || UI.treeOpen.L || UI.treeOpen.R) {
+    if (!m.l) { if (G.drag && Main.mouseB() && !UI.treeOpen.L && !UI.treeOpen.R) commitLine(G.drag); G.drag = null; }
+    return;
+  }
   const [tx, ty] = hoverTile(R.fv), [px, py] = hoverPoint(R.fv);
   const sel = G.selected, bd = G.bd;
-  // right mouse: throw along the lead line (hold = rapid), or cancel the current tool
+  // right mouse: throw along the lead line (hold = rapid), or cancel the current tool (while dragging a belt line: just the line)
   if (m.r && G.hands.length && !IN.shift() && !(bd.burst > 0)) throwAlongAim();
+  else if (m.rp && G.drag && !G.drag.cancel) G.drag.cancel = true;
   else if (m.rp && !(IN.shift() && G.hands.length)) { if (G.demolish) G.demolish = false; else if (sel !== 'hand') UI.select('hand'); }
   if (m.lp) {
     if (G.demolish) FA.demolish(tx, ty);
@@ -311,9 +324,10 @@ function handleMouseFactory(dt) {
       if (thing) { bd.then = thing; bd.target = { x: thing.x, y: thing.y }; }
       else if (FA.owned(tx, ty)) { bd.then = null; bd.target = { x: px, y: py }; }
       bd.stuckT = 0;
-    } else if (sel === 'belt') {
-      FA.placeBelt(tx, ty, G.placeDir);
-      G.drag = { x: tx, y: ty };
+    } else if (sel === 'belt') {   // the press starts a line; it is laid when the button comes up
+      const c = FA.inb(tx, ty) && FA.cell(tx, ty);
+      if (FA.inb(tx, ty) && (c ? c.type === 'belt' : FA.canPlace(tx, ty))) G.drag = { x: tx, y: ty, path: FA.beltPath(tx, ty, tx, ty, G.placeDir) };
+      else FA.placeBelt(tx, ty, G.placeDir);
     } else if (!FA.place(sel, tx, ty, G.placeDir) && FA.inb(tx, ty) && FA.unlocked(sel)) {
       UI.toast(sel === 'expand' ? 'Floor Tiles go on empty ground right beside the floor.' : sel === 'stockpile' ? 'Stockpile Tiles go on an empty floor tile.' : FA.isPile(tx, ty) ? 'Nothing can be built on a Stockpile tile (demolish it first).' : !FA.owned(tx, ty) ? 'There is no floor there: add Floor Tiles first.' : 'That tile is taken.', 'L', 'ic_x'); AU.sfx('error');
     }
@@ -327,19 +341,9 @@ function handleMouseFactory(dt) {
       G.mRepeat = G.hands.length ? CFG.sweepRepeat : CFG.pickRepeat;
     }
   } else if (m.l && sel === 'belt' && G.drag && !G.demolish) {
-    if ((tx !== G.drag.x || ty !== G.drag.y) && FA.inb(tx, ty)) {
-      const dx = tx - G.drag.x, dy = ty - G.drag.y;
-      if (Math.abs(dx) + Math.abs(dy) === 1) {
-        const dir = dx === 1 ? 0 : dy === 1 ? 1 : dx === -1 ? 2 : 3;
-        const prev = FA.cell(G.drag.x, G.drag.y);
-        if (prev && prev.type === 'belt') prev.dir = dir;
-        G.placeDir = dir;
-      }
-      FA.placeBelt(tx, ty, G.placeDir);
-      G.drag = { x: tx, y: ty };
-    }
+    if (FA.inb(tx, ty)) G.drag.path = FA.beltPath(G.drag.x, G.drag.y, tx, ty, G.placeDir);   // the preview follows the cursor (R rotates a single belt)
   }
-  if (!m.l) G.drag = null;
+  if (!m.l) { if (G.drag) commitLine(G.drag); G.drag = null; }
 }
 
 
@@ -551,8 +555,24 @@ Main.controls = function (dt) {
   return { bix, biy, wix, wiy, wrx, wry, roll, act, broll: !!broll };
 };
 
+// ---------- the wilds' sound effects for the online guest ----------
+// The guest never runs the sim, so the sounds the host makes in the wilds ride along in the snapshots: G.snd = { n: how many so far, list: the last 24 { n, s: name, f: step } }.
+// The guest plays the new ones when it shows that picture (Main.playSnd, online.js). Builder-side sounds (belts, machines, pickups, the factory's thuds) are left out.
+const WORLD_SFX = new Set(['hit', 'hitw', 'kill', 'hurt', 'clank', 'die', 'roll', 'dodge', 'weak', 'warn', 'heart', 'evwarn', 'alert', 'roar', 'slam', 'volley', 'victory', 'shrine', 'chest', 'shard', 'gem', 'gemBig', 'dig', 'rustle',
+  'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'incoming', 'incoming_big', 'portalDrop', 'whoosh', 'pressure', 'wall', 'freeze', 'launch', 'powerup', 'step_w']);
+Main.stepN = 0;
+Main.tapSfx = function (name) {
+  if (!Net.on || Net.role === 'guest' || !G || G.menu || !G.w || !WORLD_SFX.has(name)) return;
+  const q = G.snd || (G.snd = { n: 0, list: [] });
+  for (let i = q.list.length - 1; i >= 0 && q.list[i].f === Main.stepN; i--) if (q.list[i].s === name) return;   // one of each per step: a crowd hit by one blast is one sound
+  q.n++; q.list.push({ n: q.n, s: name, f: Main.stepN });
+  if (q.list.length > 24) q.list.shift();
+};
+AU.setTap(Main.tapSfx);
+
 // ---------- per-frame simulation ----------
 Main.step = function (dt, ctl) {
+  Main.stepN++;
   ctl = ctl || (Main.modal() ? Main.wizardOnly() : Main.controls(dt));
   // the whole game (machines, belts, Builder, wilds) freezes while anyone has a skill tree open, then for the "And..." beat. Online nothing ever freezes it.
   const inTree = !Net.on && (UI.treeOpen.L || UI.treeOpen.R);
@@ -564,7 +584,16 @@ Main.step = function (dt, ctl) {
     FA.moveBuilder(dt, ctl.bix, ctl.biy);
     FA.update(dt);
   }
-  if (!frozen) {
+  // hit-stop (CFG.hitstop): the Wizard's side holds still for a beat after an elite / the Warden dies; presses made meanwhile are kept for the next frame
+  let still = false;
+  const hc = Main.hsCarry || (Main.hsCarry = { roll: false, act: {} });
+  if (!frozen && G.w.hitstop > 0) { still = G.w.hitstop >= dt * 0.5; G.w.hitstop = Math.max(0, G.w.hitstop - dt); }
+  if (still) { hc.roll = hc.roll || !!ctl.roll; for (const k of ['mash', 'cast', 'cycle']) hc.act[k] = hc.act[k] || !!(ctl.act && ctl.act[k]); }
+  else if (hc.roll || hc.act.mash || hc.act.cast || hc.act.cycle) {
+    ctl = Object.assign({}, ctl, { roll: ctl.roll || hc.roll, act: Object.assign({}, ctl.act, { mash: (ctl.act && ctl.act.mash) || hc.act.mash, cast: (ctl.act && ctl.act.cast) || hc.act.cast, cycle: (ctl.act && ctl.act.cycle) || hc.act.cycle }) });
+    hc.roll = false; hc.act = {};
+  }
+  if (!frozen && !still) {
     WZ.update(dt, ctl.wix, ctl.wiy, ctl.roll, ctl.wrx, ctl.wry, ctl.act);
   }
   if (!G) return;   // a victory screen button may have gone to the title mid-step
@@ -787,6 +816,7 @@ Main.updateFocus = function () {
     const ok = G.selected === 'belt' ? (FA.canPlace(gx, gy) || (c && c.type === 'belt')) : FA.isTile(G.selected) ? FA.canPut(G.selected, gx, gy) : FA.canPlace(gx, gy) && FA.unlocked(G.selected);
     R.ghost = { type: G.selected, x: gx, y: gy, ok: !!ok, dir: G.placeDir };
   }
+  if (G.drag && G.drag.path && !G.drag.cancel) R.ghost = null;   // a belt line being dragged shows its own preview
   // the belt / machine R would turn gets a pulsing rim (with the mouse, or while a belt is selected); a turn flashes it with a big arrow (R.drawRotFlash)
   if (!G.demolish && !G.carry && (G.lastInput === 'mouse' || G.selected === 'belt') && !UI.splitB) {
     const rt = rotateTile(), rc = rt && FA.cell(rt[0], rt[1]);

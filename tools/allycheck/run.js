@@ -267,7 +267,8 @@ const OUT = process.env.SHOTS || '';
   });
   ok(JSON.stringify(r.hostile) === JSON.stringify([true, true, false, false, false, false]), 'hostile inputs unchanged: packets and seed spells in; steam, sandstorm, blizzard, wood refused', JSON.stringify(r.hostile));
   ok(r.rec === 'egg_cinder' && r.hostileNo[0] === false && r.hostileNo[1] === false && r.seedRec === 'egg_phoenix', 'a hostile grow takes nothing more (no packet, no Core); a seed spell still makes the pair egg');
-  ok(r.hostileHatch >= 1 && r.hostileHp > 0 && r.hostileHp < 42 * 1.3, 'hostile eggs still hatch hostile crafted creatures with their normal health', JSON.stringify([r.hostileHatch, r.hostileHp]));
+  ok(r.hostileHatch >= 1 && r.hostileHp > 0 && r.hostileHp < 42 * 1.3 * 3.1,   // (x3.1: a crafted creature is an elite 5% of the time)
+     'hostile eggs still hatch hostile crafted creatures with their normal health', JSON.stringify([r.hostileHatch, r.hostileHp]));
   ok(r.load === 'loaded' && r.afterLoad.allies === 0 && r.afterLoad.aq === 0, 'a save with allies and a queue loads fine; allies are run state and start fresh', JSON.stringify(r.afterLoad));
   await page.evaluate(() => { __wands.G.paused = false; });
   await page.evaluate(() => { T.clear(); const a = T.ally('lavagolem', 3, 1), b = T.ally('zephyr', -2, 2); T.ally('cinder', 4, -2); T.foe('slime', 7, 0, 5000); T.foe('imp', 8, 3, 5000); __wands.G.w.aq.push({ k: 'aegg_titan', left: 1 }); T.step(40); });

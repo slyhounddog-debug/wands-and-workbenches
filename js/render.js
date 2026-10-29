@@ -273,6 +273,8 @@ R.drawFactory = function (main, dt, rect) {
   for (const o of f.flying) list.push({ d: o.x + o.y + 0.5, o, t: 'fly' });
   list.push({ d: bd.x + bd.y, o: bd, t: 'builder' });
   if (R.ghost) list.push({ d: R.ghost.x + R.ghost.y + (R.ghost.type === 'belt' ? 0.45 : 1.05), o: R.ghost, t: 'ghost' });   // the hovering piece sorts among the real ones
+  const line = G.drag && !G.drag.cancel && G.drag.path;   // a belt line being dragged out: one see-through belt per tile, sorted among the real ones
+  if (line) for (const s of line) list.push({ d: s.x + s.y + 0.45, o: s, t: 'line' });
   list.sort((a, b) => a.d - b.d);
 
   // reflections in the shiny grass
@@ -318,10 +320,15 @@ R.drawFactory = function (main, dt, rect) {
       case 'fly': R.drawFly(ctx, v, it.o, t); break;
       case 'builder': if (G.outro) R.drawBuilderOut(ctx, v, bd, t); else R.drawBuilder(ctx, v, bd, t); break;
       case 'ghost': R.drawGhost(ctx, v, it.o, t); break;
+      case 'line': R.drawLineTile(ctx, v, it.o, t); break;
     }
     if (fk < 1) ctx.restore();
   }
   R.drawShrineStreams(ctx, v, t);
+  if (line && line.length) {   // what the line will cost, over its last tile
+    const n = line.filter(s => s.st === 'new').length, e = line[line.length - 1], q = R.toScreen(v, e.x + 0.5, e.y + 0.5);
+    if (n) R.defer.push(c => R.iconRow(c, q[0], q[1] - 56, [['wood', n]]));
+  }
   if (R.ghost) R.drawGhostLinks(ctx, v, R.ghost, t);
   if (R.demo) R.drawDemo(ctx, v, R.demo, t);
   if (R.aim && G.hands.length && !bd.gather) R.drawAim(ctx, v, R.aim, t);
@@ -354,6 +361,7 @@ R.drawFactory = function (main, dt, rect) {
     dspr(ctx, itemSprite(g.el), p[0] - 76, y + 12, 4);
   }
   if (R.hint && !UI.treeOpen.L) R.drawHint(ctx, v, R.hint, t);
+  if (!UI.treeOpen.L && !G.intro && Net.role !== 'guest') R.drawFlags(ctx, v, t);
   if (R.focus && !UI.treeOpen.L) R.drawFocus(ctx, v, R.focus, t);
   for (const p of f.pops) {
     const s = R.toScreen(v, p.x, p.y), a = Math.max(0, 1 - Math.max(0, p.t - 0.6) / 0.5), y = s[1] - 70 - Math.floor(p.t * 10) * 4;
@@ -1033,6 +1041,40 @@ R.drawHint = function (ctx, v, h, t) {
     R.arrow(ctx, cx - dx / m * bob, cy - dy / m * bob, dx / m, dy / m);
   }
 };
+// trouble off screen: a machine that has sat jammed, starved or unpowered for CFG.edgeFlag.after s while out of view gets a bubble on the
+// edge of the factory (state icon + the state's outline colour, an arrow toward it). Same-state machines close together share one bubble with a count.
+R.flagList = function (v) {
+  const F = CFG.edgeFlag, RW = R.rect.w, out = [];
+  const cx = RW / 2, cy = (170 + CFG.H - 150) / 2, hx = RW / 2 - 96, hy = (CFG.H - 150 - 170) / 2;   // the bubbles' own window (clear of the top bar, the hotbar and the divider: the arrow needs room)
+  const found = [];
+  for (const b of G.fac.bld) {
+    if (!b.done || (b.st !== 'jam' && b.st !== 'starve' && b.st !== 'off') || !(b.stT >= F.after)) continue;
+    const p = R.toScreen(v, b.x + 0.5, b.y + 0.5);
+    if (p[0] > 30 && p[0] < RW - 30 && p[1] > 130 && p[1] < CFG.H - 110) continue;   // in view: its own outline and icon say it
+    found.push({ b, p, d: Math.hypot(G.bd.x - b.x - 0.5, G.bd.y - b.y - 0.5) });
+  }
+  found.sort((a, b) => a.d - b.d);
+  for (const f of found) {
+    const dx = f.p[0] - cx, dy = f.p[1] - cy, k = Math.min(1, hx / (Math.abs(dx) || 1), hy / (Math.abs(dy) || 1));
+    const x = cx + dx * k, y = cy + dy * k, m = Math.hypot(dx, dy) || 1;
+    const same = out.find(o => o.st === f.b.st && Math.hypot(o.x - x, o.y - y) < F.merge);
+    if (same) same.n++;
+    else if (out.length < F.max) out.push({ st: f.b.st, x, y, nx: dx / m, ny: dy / m, n: 1 });
+  }
+  return out;
+};
+R.drawFlags = function (ctx, v, t) {
+  for (const o of R.flagList(v)) {
+    const S = ST[o.st], ic = SP[o.st === 'off' ? 'ic_bolt' : o.st === 'jam' ? 'ic_jam' : 'ic_starve'];
+    const bob = Math.sin(t * 6) > 0 ? 0 : 6, blink = o.st !== 'off' || Math.sin(t * 9) > -0.3;
+    const ax = o.x + o.nx * (44 + bob), ay = o.y + o.ny * (44 + bob), px = -o.ny, py = o.nx;   // the arrow's tip, past the bubble, toward the machine
+    ctx.fillStyle = '#1a0f28'; ctx.beginPath(); ctx.moveTo(ax + o.nx * 6, ay + o.ny * 6); ctx.lineTo(ax - o.nx * 24 + px * 20, ay - o.ny * 24 + py * 20); ctx.lineTo(ax - o.nx * 24 - px * 20, ay - o.ny * 24 - py * 20); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = S.col; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax - o.nx * 20 + px * 14, ay - o.ny * 20 + py * 14); ctx.lineTo(ax - o.nx * 20 - px * 14, ay - o.ny * 20 - py * 14); ctx.closePath(); ctx.fill();
+    pbox(ctx, o.x - 36, o.y - 24, 72, 48, blink ? '#2b1d48' : '#4a2f78', S.col);
+    dspr(ctx, ic, o.x - (o.n > 1 ? 12 : 0), o.y + ic.c.height * 2, 4);
+    if (o.n > 1) txt(ctx, 'x' + o.n, o.x + 18, o.y + 6, 12, '#ffffff', 'center', 'd');
+  }
+};
 R.arrow = function (ctx, x, y, nx, ny) {   // chunky gold arrow whose tip sits at (x,y), pointing along (nx,ny)
   const px = -ny, py = nx, L = 25, W = 15;   // 70% of the old size
   const tri = (k, col) => {
@@ -1159,6 +1201,15 @@ R.drawGhostLinks = function (ctx, v, g, t) {
     }
     dspr(ctx, SP.ic_check, o[0], o[1] - 84 + (Math.sin(t * 6) > 0 ? 0 : 4), 4);
   }
+};
+// one tile of the belt line being dragged: a wash (blue = new, gold = an existing belt re-aimed, red = blocked, orange = out of Wood), the belt itself
+// see-through with its chevrons, and a white ring where the line turns a corner
+R.drawLineTile = function (ctx, v, s, t) {
+  const p = R.toScreen(v, s.x + 0.5, s.y + 0.5), bad = s.st === 'bad' || s.st === 'wood';
+  ctx.globalAlpha = 0.45 + 0.1 * Math.sin(t * 5); ctx.fillStyle = s.st === 'bad' ? '#ff6a6a' : s.st === 'wood' ? '#ffb34a' : s.st === 'turn' ? '#ffe36b' : '#5ab4ff';
+  diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill();
+  ctx.globalAlpha = bad ? 0.4 : 0.8; R.drawBelt(ctx, v, { x: s.x, y: s.y, dir: s.dir, item: null }, t); ctx.globalAlpha = 1;
+  if (s.corner) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8; diamond(ctx, p[0], p[1], v.hw - 4, v.hh - 2); ctx.stroke(); }
 };
 R.drawGhost = function (ctx, v, g, t) {
   const p = R.toScreen(v, g.x + 0.5, g.y + 0.5), hov = Math.sin(t * 4) > 0 ? 8 : 4;

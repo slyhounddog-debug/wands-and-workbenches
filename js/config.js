@@ -45,6 +45,8 @@ const CFG = {
   graceTime: 1,              // after the skill tree closes, the game waits this long ("And...") before resuming
   bankUndoMax: 200,          // how many Skill Portal deposits the tree's undo remembers
   stateSoundR: 7,            // machines within this many tiles of the Builder chirp when their state changes
+  hitstop: { elite: 0.02, warden: 0.06 },   // seconds the Wizard's side freezes when an elite / the Warden dies (offline only)
+  edgeFlag: { after: 4, max: 5, merge: 96 },   // off-screen machines that stay jammed / starved / unpowered for `after` s get a bubble on the factory's edge pointing at them (at most `max`; same-state ones closer than `merge` px share one bubble with a count)
   throwRange: 6.5, throwRepeat: 0.15,
   portalGap: 0.22,
   portalCatch: 1.35,         // a throw that lands within this many tiles of a portal that takes it is pulled in, so nothing piles up on the floor beside it

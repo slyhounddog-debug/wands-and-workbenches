@@ -175,6 +175,8 @@ UI.updateGear = function () {
   }
   setHtml('gearCard', s);
   UI.updateWand();
+  const np = $('noPow');
+  if (np) np.classList.toggle('hidden', !((G.fac.darkT || 0) >= 1.5));   // the Wizard sees when the factory has gone dark (it is in the snapshot, so the online guest sees it too)
 };
 // The wand: four slots (Air, Water, Fire, Earth) under his health bar, each an icon filling with the spells that charged it; a READY slot is lit, and the ARMED one (the one Cast fires)
 // has a bright frame and a marker. The key chips are the Cycle and Cast buttons of whoever plays him.

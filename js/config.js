@@ -59,8 +59,8 @@ const CFG = {
   // Battery (up to max x a full one) and gives +power for that many seconds
   overcharge: { fill: [0, 0, 0.35, 0.6, 1], time: [0, 0, 12, 20, 30], elixir: 0.45, elixirT: 15, max: 1.5, power: 5 },
   // A hit that costs the Wizard HEALTH can shake things loose in the factory (items land on the floor, like thrown ones). Chance per hit grows as his HP falls: lo at full health, hi near
-  // zero. belt = one item riding a belt; stock = one item out of the Stockpile (super rare, it bounces onto the floor from its tile)
-  shake: { belt: { lo: 0.04, hi: 0.3 }, stock: { lo: 0.002, hi: 0.03 } },
+  // zero. belt = one item riding a belt; stock = one item out of the Stockpile (super rare, it bounces onto the floor from its tile); the chosen belt / pile rattles for warn s first. rumble = the factory's camera shake on ANY hit: lo px for a scratch up to hi when the hit is `full` of his max HP
+  shake: { belt: { lo: 0.04, hi: 0.3 }, stock: { lo: 0.002, hi: 0.03 }, warn: 0.7, rumble: { lo: 4, hi: 20, full: 0.3 } },
   pressure: { hit: 0.18, speed: 10, life: 1.4, range: 11, amp: 6 },   // Spell Portal shockwaves: the Wizard losing this share of max HP in one hit (also events, Wardens, the Chimera), front speed (tiles/s), seconds, reach (tiles), most jitter (px)
   // layered soundtrack (audio/music/music_<element>.js, built by tools/musicbuild): one looping layer per element, volume follows
   // G.fac.weather[el]. gain = layer volume at full; fade = seconds a layer takes to swell (time constant); curve < 1 lifts quiet

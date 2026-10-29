@@ -361,6 +361,9 @@ const OUT = process.env.SHOTS || '';
     // chance 1: one belt item and one stock item per hit, onto the floor
     C.belt.lo = C.belt.hi = 1; C.stock.lo = C.stock.hi = 1;
     w.hp = w.hpMax || WZ.maxHp(); w.hurtT = 0; WZ.damage(1);
+    o.pending = (G.fac.shk || []).map(q => q.k).sort().join(); o.heldBack = items() === i0 && stockN() === s0;   // the belt / pile rattles first
+    o.off = (() => { const q = G.fac.shk[0]; q.t = 0.2; return FA.shakeOff(q.i % G.fac.w, Math.floor(q.i / G.fac.w)); })() ;
+    FA.shakeTick(1);
     o.beltLost = i0 - items(); o.stockLost = s0 - stockN(); o.looseNew = loose() - l0;
     // armor soaks the hit: nothing shaken
     const i1 = items(), s1 = stockN(); w.armor = 100; w.hurtT = 0; WZ.damage(5);
@@ -371,8 +374,17 @@ const OUT = process.env.SHOTS || '';
     return o;
   });
   ok(r.zeroOk, 'shake loose: with no chance, a hit shakes nothing');
+  ok(r.pending === 'belt,stock' && r.heldBack, 'shake loose: the chosen belt and pile rattle first, the items are still there', r.pending + ' ' + r.heldBack);
   ok(r.beltLost === 1 && r.stockLost === 1 && r.looseNew >= 2, 'shake loose: a hit can knock one belt item and one Stockpile item onto the floor', JSON.stringify([r.beltLost, r.stockLost, r.looseNew]));
   ok(r.armorOk, 'shake loose: a hit the armor soaks shakes nothing');
+  r = await run(() => {   // the factory camera shakes on any hit, harder for a bigger one
+    const W = __wands, G = W.G, WZ = W.WZ, w = G.w, f = G.fac; T.clear(); T.reset();
+    const amp = d => { f.bumpAmp = 0; f.bump = 0; w.hurtT = 0; WZ.damage(d); return f.bumpAmp; };
+    const o = { small: amp(2), mid: amp(15), big: amp(40) };
+    f.bumpAmp = 0; w.hurtT = 0; WZ.damage(5, true); o.soft = f.bumpAmp;
+    return o;
+  });
+  ok(r.small >= 4 && r.small < r.mid && r.mid < r.big && r.big <= 20 && r.soft === 0, 'the factory shakes on any hit, more for a bigger one (not for burning ground)', JSON.stringify(r));
   await shot('wand-statue');
 
   // ================= 7. shrines =================

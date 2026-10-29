@@ -479,7 +479,7 @@ R.splitArrow = function (ctx, v, b, t, dir, col, pct, filt) {
 
 R.drawBelt = function (ctx, v, b, t, noItem) {
   const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), hw = v.hw * 0.9, hh = v.hh * 0.9, lift = 8;
-  p[0] += FA.quake(b.x, b.y);   // a shockwave passing through
+  p[0] += FA.quake(b.x, b.y) + FA.shakeOff(b.x, b.y);   // a shockwave passing through; a shake about to throw its item loose
   ctx.fillStyle = 'rgba(30,70,30,0.3)';
   diamond(ctx, p[0] + 4, p[1] + 4, hw, hh); ctx.fill();
   ctx.fillStyle = '#4a4f5c';
@@ -537,7 +537,7 @@ R.drawRotFlash = function (ctx, v, p, b, t, lift) {
 // the item riding a belt (the menu world draws these in a pass of their own, above every belt)
 R.drawBeltItem = function (ctx, v, b, t) {
   const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), lift = 8, dd = DIRS[b.dir];
-  p[0] += FA.quake(b.x, b.y);
+  p[0] += FA.quake(b.x, b.y) + FA.shakeOff(b.x, b.y);
   const sdx = (dd[0] - dd[1]) * v.hw, sdy = (dd[0] + dd[1]) * v.hh, ph = Math.min(0.5, b.item.prog - 0.5);
   const pk = !!G.menu && R.pickOf(b);   // (in the game the focus ring round the belt tile, R.drawFocus, says it; the menu world has no prompt stack, so the item lights up like a loose one)
   if (pk) {
@@ -1018,6 +1018,7 @@ R.drawSuck = function (ctx, v, s, base) {
 R.drawPile = function (ctx, v, pl) {
   const p = R.toScreen(v, pl.x, pl.y), n = pl.n, k = pl.kind, cnt = Math.min(CFG.stockShow, n), t = G.fac.t;
   const pk = !!R.focus && R.focus.list.some(e => e.key === 'pick' && e.t.kind === 'pile' && e.t.o === k && e.t.x === pl.x && e.t.y === pl.y);
+  p[0] += FA.shakeOff(Math.floor(pl.x), Math.floor(pl.y));
   if (pk) R.pickFx(ctx, p[0], p[1], t, 1.3);
   ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(Math.round((p[0] - 24) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 48, 12);
   for (let i = 0; i < cnt; i++) {

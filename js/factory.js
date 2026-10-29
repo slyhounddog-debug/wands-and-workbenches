@@ -417,27 +417,52 @@ FA.dropAt = function (kind, x, y, spill) {
   const a = Math.random() * 6.283, r = Math.random() * 0.25, d = Math.hypot(s.x - x, s.y - y);
   f.flying.push({ kind, sx: x, sy: y, x, y, z: 0.6, tx: s.x + Math.cos(a) * r, ty: s.y + Math.sin(a) * r, t: 0, T: Math.min(0.9, 0.35 + d * 0.06), h: 1 + Math.min(2, d * 0.2), boing: true });
 };
+// Any hit on the Wizard rattles the factory: a small earthquake (the camera bump of a landing spell) that grows with the damage (CFG.shake.rumble: lo at a scratch, hi at `full` of his max HP)
+FA.rumble = function (d) {
+  const f = G.fac, R0 = CFG.shake.rumble;
+  if (!f || !(d > 0)) return;
+  const amp = R0.lo + (R0.hi - R0.lo) * Math.min(1, d / (R0.full * WZ.maxHp()));
+  if (amp >= f.bumpAmp * (1 - f.bump / 0.4)) { f.bump = 0; f.bumpAmp = amp; }
+};
 // The Wizard just lost health (hpFrac = his HP left, 0..1): the factory may shake something loose, more likely the lower he is. A belt item (uncommon) or one item of the Stockpile
-// (super rare) is knocked off and bounces onto the floor; nothing is lost (a full floor sends it on to the wilds like any overflow). CFG.shake.
+// (super rare) is picked, its belt / pile rattles for CFG.shake.warn s (G.fac.shk, plain data), and only then is the item knocked onto the floor; nothing is lost (a full floor sends it on to the
+// wilds like any overflow).
 FA.shakeLoose = function (hpFrac) {
-  const S = CFG.shake, f = G.fac, k = 1 - Math.max(0, Math.min(1, hpFrac)), lerp = o => o.lo + (o.hi - o.lo) * k;
+  const S = CFG.shake, f = G.fac, k = 1 - Math.max(0, Math.min(1, hpFrac)), lerp = o => o.lo + (o.hi - o.lo) * k, shk = f.shk || (f.shk = []);
+  const busy = i => shk.some(q => q.i === i);
   if (Math.random() < lerp(S.belt)) {
     const belts = [];
-    for (let i = 0; i < f.grid.length; i++) { const c = f.grid[i]; if (c && c.type === 'belt' && c.item) belts.push(i); }
-    if (belts.length) {
-      const i = belts[Math.floor(Math.random() * belts.length)], c = f.grid[i], x = i % f.w + 0.5, y = Math.floor(i / f.w) + 0.5, kind = c.item.kind;
-      c.item = null;
-      FA.dropAt(kind, x, y, true); FA.ipop(x, y - 0.3, [[kind]]); AU.sfx('boing');
-    }
+    for (let i = 0; i < f.grid.length; i++) { const c = f.grid[i]; if (c && c.type === 'belt' && c.item && !busy(i)) belts.push(i); }
+    if (belts.length) shk.push({ i: belts[Math.floor(Math.random() * belts.length)], k: 'belt', t: 0 });
   }
   if (Math.random() < lerp(S.stock)) {
-    const piles = FA.pileList().filter(p => p.n > 0);
-    if (piles.length) {
-      const p = piles[Math.floor(Math.random() * piles.length)];
-      G.stock[p.kind]--;
-      FA.dropAt(p.kind, p.x, p.y, true); FA.ipop(p.x, p.y - 0.3, [[p.kind]]); AU.sfx('boing');
-    }
+    const piles = FA.pileList().filter(p => p.n > 0 && !busy(Math.floor(p.y) * f.w + Math.floor(p.x)));
+    if (piles.length) { const p = piles[Math.floor(Math.random() * piles.length)]; shk.push({ i: Math.floor(p.y) * f.w + Math.floor(p.x), k: 'stock', kind: p.kind, t: 0 }); }
   }
+};
+// the pending shakes (every frame, FA.update): when one has rattled long enough its item comes loose
+FA.shakeTick = function (dt) {
+  const f = G.fac, shk = f.shk;
+  if (!shk || !shk.length) return;
+  for (let n = shk.length - 1; n >= 0; n--) {
+    const q = shk[n];
+    if ((q.t += dt) < CFG.shake.warn) continue;
+    shk.splice(n, 1);
+    const x = q.i % f.w + 0.5, y = Math.floor(q.i / f.w) + 0.5;
+    let kind = null;
+    if (q.k === 'belt') { const c = f.grid[q.i]; if (c && c.type === 'belt' && c.item) { kind = c.item.kind; c.item = null; } }
+    else if ((G.stock[q.kind] || 0) > 0) { kind = q.kind; G.stock[kind]--; }   // (taken by the Builder meanwhile: nothing falls)
+    if (!kind) continue;
+    FA.dropAt(kind, x, y, true); FA.ipop(x, y - 0.3, [[kind]]); AU.sfx('boing');
+  }
+};
+// sideways px a belt / pile tile (tile coordinates) rattles while a shake is about to throw its item out
+FA.shakeOff = function (tx, ty) {
+  const shk = G.fac && G.fac.shk;
+  if (!shk || !shk.length) return 0;
+  const i = ty * G.fac.w + tx;
+  for (const q of shk) if (q.i === i) return Math.round(Math.sin(q.t * 70) * 8 * (0.5 + 0.5 * q.t / CFG.shake.warn) / 4) * 4;
+  return 0;
 };
 FA.dropHands = function () {   // never deletes: everything lands on the floor at the Builder's feet
   while (G.hands.length) { const it = FA.takeOne(); FA.dropAt(it.kind, G.bd.x, G.bd.y); }
@@ -990,6 +1015,7 @@ FA.update = function (dt) {
   const f = G.fac;
   f.t += dt;
   FA.pileSync();
+  FA.shakeTick(dt);
   if (f.flash > 0) f.flash -= dt;
   if (f.skillFlash > 0) f.skillFlash -= dt;
   if (f.weakFlash > 0) f.weakFlash -= dt;

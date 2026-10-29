@@ -443,6 +443,7 @@ WZ.damage = function (d, soft) {   // armor soaks damage first. soft = burning g
   if (G.menu) return;   // the living menu world is a consequence-free preview: nothing can hurt the Wizard there
   if (w.jump) return;   // airborne on a geyser: nothing reaches him
   if (w.statT > 0) { d *= CFG.wand.earth.take; if (!soft) w.statHits++; }   // the Statue: stone takes 30% of it, and every hit charges the burst that ends it
+  if (!soft) FA.rumble(d);   // any hit rattles the factory, harder for a bigger one
   if (!soft && d >= CFG.pressure.hit * WZ.maxHp()) FA.pressure(Math.min(1.5, d / WZ.maxHp() * 3), '#ff5a5a');   // a heavy hit shakes the factory too
   const soak = Math.min(w.armor, d);
   w.armor -= soak; d -= soak;

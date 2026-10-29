@@ -105,7 +105,7 @@ WZ.trailTick = function (z, dt) {
   if (!z.pts.length) { z.t = 0; return true; }
   const hit = (x, y, rad) => { for (const p of z.pts) if (Math.hypot(p.x - x, p.y - y) < F.r + rad) return true; return false; };
   for (const e of w.enemies) if (!e.dead && !(e.fall > 0) && hit(e.x, e.y, e.rad)) { WZ.hurtE(e, rate * dt, 0, 0, true); e.flash = 0.05; }
-  for (const h of WZ.harv) if (!h.broken && hit(h.x, h.y, 0.4)) { h.hp -= rate * dt * WZ.harvMul(); h.flash = 0.05; if (h.hp <= 0) { h.hp = 0.0001; WZ.hurtH(h, 1); } }
+  for (const h of WZ.hitH()) if (!h.broken && hit(h.x, h.y, h.rad || 0.4)) WZ.hurtHc(h, rate * dt);
   if (Math.random() < dt * 14) { const p = z.pts[Math.floor(Math.random() * z.pts.length)]; w.fx_.push({ type: 'spark', x: p.x + rand(-0.5, 0.5), y: p.y + rand(-0.5, 0.5), vx: 0, vy: 0, z: 0.1, vz: rand(1, 2.5), g: -2, col: Math.random() < 0.3 ? '#ffe36b' : '#ff7a30', t: 0, dur: 0.5, el: 'fire' }); }
   return true;
 };
@@ -166,10 +166,10 @@ WZ.rideTick = function (dt) {
     const id = WZ.eid(e);
     if (R0.hit.indexOf(id) < 0) { R0.hit.push(id); WZ.hurtE(e, W.dmg, px * side * W.push, py * side * W.push); }
   }
-  for (const h of WZ.harv) {
+  for (const h of WZ.hitH()) {
     if (h.broken) continue;
     const ex = h.x - w.x, ey = h.y - w.y, along = ex * dx + ey * dy, lat = ex * px + ey * py;
-    if (along < -0.6 || along > 1.6 || Math.abs(lat) > W.w / 2 + 0.4) continue;
+    if (along < -0.6 || along > 1.6 || Math.abs(lat) > W.w / 2 + (h.rad || 0.4)) continue;
     const id = 'h' + h.x.toFixed(1) + h.y.toFixed(1);
     if (R0.hit.indexOf(id) < 0) { R0.hit.push(id); WZ.hurtH(h, W.dmg); }
   }

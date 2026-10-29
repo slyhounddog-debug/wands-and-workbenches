@@ -367,6 +367,7 @@ WZ.fresh = function () {
     enemies: [], allies: [], aq: [], proj: [], eproj: [], aproj: [], zones: [], fx_: [], drops: [], timers: [], pickups: [],
     time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, ready: { B: false, W: false }, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
     fireT: 0, invisT: 0, statT: 0, statHits: 0, ride: null, sg: null, shrines: {},   // the wand's clocks (js/wand.js): Flame Trail speed, Vanishing Puff, Statue (and the hits it took), Riding Wave; the shrine ring game and the shrine buffs running
+    bsw: [],   // the shockwaves of Battery Shrines arriving (js/bshrine.js)
     cine: null, rit: 0, quake: 0, altarFlash: 0,   // the Altar's landing cinematic, the Chimera ritual countdown, the world shake after the impact, the flash when a spell hits it
     hv: {}, fg: {},   // harvestable / forage node state (see WZ.nodeProps)
     arcs: [], decals: [], bend: {}, tmod, tmodN, kick: null, jump: null,   // deliveries in flight, ground marks, leaning grass, spell terrain, recoil, geyser jump
@@ -507,6 +508,7 @@ WZ.dropPickup = function (kind) {
   AU.sfx('portalDrop');
 };
 WZ.hurtH = function (h, d) {
+  if (h.bshr) { WZ.bshrHurt(h, d); return; }   // a Battery Shrine: the damage is charge for its Battery
   if (h.broken) return;
   h.hp -= d * WZ.harvMul(); h.flash = 0.1;
   if (h.hp <= 0) {
@@ -515,6 +517,12 @@ WZ.hurtH = function (h, d) {
     for (let i = 0; i < def.n; i++) WZ.drop(def.drop, h.x, h.y, 1);
     AU.sfx('kill');
   }
+};
+// continuous damage to a tree / rock / shrine (d is already dps x dt)
+WZ.hurtHc = function (h, d) {
+  if (h.bshr) { WZ.bshrHurt(h, d); return; }
+  h.hp -= d * WZ.harvMul(); h.flash = 0.05;
+  if (h.hp <= 0) { h.hp = 0.0001; WZ.hurtH(h, 1); }
 };
 WZ.kill = function (e) {
   if (e.dead || WZ.rebirth(e)) return;
@@ -556,6 +564,7 @@ WZ.each = function (x, y, r, fn) {
   if (G.menu) Menu.touch(x, y, r);   // ...and in the menu world a spell's reach can press the safe floor plates
   for (const e of w.enemies) { if (e.dead) continue; const d = Math.hypot(e.x - x, e.y - y); if (d <= r + e.rad) fn(e, d, true); }
   for (const h of WZ.harv) { if (h.broken) continue; const d = Math.hypot(h.x - x, h.y - y); if (d <= r + 0.4) fn(h, d, false); }
+  for (const s of G.bshr) { const d = Math.hypot(s.x - x, s.y - y); if (d <= r + s.rad) fn(s, d, false); }   // the Battery Shrines
 };
 WZ.hit = (t, isE, d, kx, ky) => { if (isE) WZ.hurtE(t, d, kx || 0, ky || 0); else WZ.hurtH(t, d); };
 WZ.slowE = (e, amt, t) => { if (e.boss) amt *= 0.35; if (amt >= e.slow || e.slowT <= 0) e.slow = amt; e.slowT = Math.max(e.slowT, t); };
@@ -931,7 +940,7 @@ WZ.boomHit = function (b, px, py, leg) {
     WZ.hurtE(e, b.dmg, ux * S.push, uy * S.push);
     WZ.mark(e.x, e.y, 0.6);
   }
-  for (const h of WZ.harv) if (!h.broken && h.surf !== tok && Math.hypot(h.x - b.x, h.y - b.y) < r + 0.4) { h.surf = tok; WZ.hurtH(h, b.dmg); }
+  for (const h of WZ.hitH()) if (!h.broken && h.surf !== tok && Math.hypot(h.x - b.x, h.y - b.y) < r + (h.rad || 0.4)) { h.surf = tok; WZ.hurtH(h, b.dmg); }
   WZ.altarTouch(b.x, b.y, r);
   WZ.ctx = null;
 };
@@ -1121,7 +1130,7 @@ WZ.projSpecial = function (p, dt) {
       }
       if (!e.boss) { const kb = e.kb !== undefined ? e.kb : e.elite ? 0.4 : 1, mk = p.mk || 1; e.kx = p.vx * 1.1 * kb * mk; e.ky = p.vy * 1.1 * kb * mk; }   // it surfs the wave
     }
-    for (const h of WZ.harv) if (!h.broken && h.surf !== p.sid && Math.hypot(h.x - p.x, h.y - p.y) < p.w / 2 + 0.4) { h.surf = p.sid; WZ.hurtH(h, p.dmg); }
+    for (const h of WZ.hitH()) if (!h.broken && h.surf !== p.sid && Math.hypot(h.x - p.x, h.y - p.y) < p.w / 2 + (h.rad || 0.4)) { h.surf = p.sid; WZ.hurtH(h, p.dmg); }
     if (Math.random() < dt * 40) { const s = (Math.random() - 0.5) * p.w; w.fx_.push({ type: 'spark', x: p.x - uy * s, y: p.y + ux * s, vx: ux * 3, vy: uy * 3, z: 0.4, vz: rand(2, 4), g: 16, col: Math.random() < 0.4 ? '#ffffff' : '#7ad0ff', t: 0, dur: 0.5, el: 'water' }); }
     if (p.life > 0) return false;
     WZ.puff(p.x, p.y, '#7ad0ff', 10);
@@ -1182,7 +1191,7 @@ WZ.zoneSpecial = function (z, dt) {
     const am = Math.hypot(z.ax, z.ay) || 1, ux = z.ax / am, uy = z.ay / am, cos = Math.cos(z.half);
     const inCone = (x, y, rad) => { const dx = x - z.x, dy = y - z.y, d = Math.hypot(dx, dy); return d < z.r + rad && (d < 0.6 || (dx * ux + dy * uy) / d > cos); };
     for (const e of w.enemies) if (!e.dead && !(e.fall > 0) && inCone(e.x, e.y, e.rad)) { WZ.hurtE(e, z.dps * dt, 0, 0, true); e.flash = 0.06; }
-    for (const h of WZ.harv) if (!h.broken && inCone(h.x, h.y, 0.4)) { h.hp -= z.dps * dt * WZ.harvMul(); h.flash = 0.05; if (h.hp <= 0) { h.hp = 0.0001; WZ.hurtH(h, 1); } }
+    for (const h of WZ.hitH()) if (!h.broken && inCone(h.x, h.y, h.rad || 0.4)) WZ.hurtHc(h, z.dps * dt);
     WZ.altarTouch(z.x + ux * z.r * 0.5, z.y + uy * z.r * 0.5, z.r * 0.4);
     if ((z.trT -= dt) <= 0) { z.trT = S.trailGap; const d = 1 + Math.random() * (z.r - 1), an = Math.atan2(uy, ux) + (Math.random() - 0.5) * z.half * 1.6; WZ.trail(z.x + Math.cos(an) * d, z.y + Math.sin(an) * d); }
     for (let i = 0; i < 3; i++) {   // the flames themselves
@@ -1205,7 +1214,7 @@ WZ.zoneSpecial = function (z, dt) {
       if (e.dead || e.fall > 0 || Math.hypot(e.x - z.x, e.y - z.y) > z.r + e.rad) continue;
       WZ.hurtE(e, S.dps * dt, 0, 0, true); WZ.slowE(e, S.slow, S.slowT); e.flash = 0.05;
     }
-    for (const h of WZ.harv) if (!h.broken && Math.hypot(h.x - z.x, h.y - z.y) < z.r + 0.4) { h.hp -= S.dps * dt * WZ.harvMul(); h.flash = 0.05; if (h.hp <= 0) { h.hp = 0.0001; WZ.hurtH(h, 1); } }
+    for (const h of WZ.hitH()) if (!h.broken && Math.hypot(h.x - z.x, h.y - z.y) < z.r + (h.rad || 0.4)) WZ.hurtHc(h, S.dps * dt);
     WZ.altarTouch(z.x, z.y, z.r);
     if ((z.trT -= dt) <= 0) { z.trT = S.trailGap; WZ.trail(z.x, z.y); }
     if (Math.random() < dt * 24) w.fx_.push({ type: 'spark', x: z.x, y: z.y, vx: rand(-1, 1), vy: rand(-1, 1), z: 0.5, vz: rand(0.5, 2), g: 6, col: Math.random() < 0.4 ? '#ffffff' : '#4fc3ff', t: 0, dur: 0.4, el: 'water' });
@@ -1645,6 +1654,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   WZ.wandTick(dt);   // the wand's clocks: Flame Trail speed, Vanishing Puff, Statue and its burst, the Riding Wave
   WZ.augTick(dt);   // augment cooldowns, washing ashore, the keeps' doors, boulders
   WZ.altarTick(dt);   // the Summoning Altar: placing it, its sockets, the Chimera ritual
+  WZ.bshrTick(dt);   // the Battery Shrines: one per Battery, their shockwaves
   // scorched ground burns (the Emberward Cloak walks it unharmed and throws embers up instead)
   if (tn === T_SCORCH && !w.jump && !w.blink) {
     if (WZ.has('ember')) { if (Math.random() < dt * 10) w.fx_.push({ type: 'spark', x: w.x + rand(-0.4, 0.4), y: w.y + rand(-0.4, 0.4), vx: 0, vy: 0, z: 0.1, vz: rand(1.5, 3), g: -2, col: Math.random() < 0.5 ? '#ffb030' : '#ff7a30', t: 0, dur: 0.5 }); }
@@ -1798,7 +1808,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     if (G.menu && p.ctx) Menu.touch(p.x, p.y, p.r || 0.4);   // (menu world: a bolt flying over a safe plate presses it)
     let hit = null, hitE = false;
     for (const e of w.enemies) { if (!e.dead && Math.hypot(e.x - p.x, e.y - p.y) < p.r + e.rad) { hit = e; hitE = true; break; } }
-    if (!hit) for (const h of WZ.harv) { if (!h.broken && Math.hypot(h.x - p.x, h.y - p.y) < p.r + 0.4) { hit = h; break; } }
+    if (!hit) for (const h of WZ.hitH()) { if (!h.broken && Math.hypot(h.x - p.x, h.y - p.y) < p.r + (h.rad || 0.4)) { hit = h; break; } }
     if (!hit && p.ctx && WZ.altarBlocks(p.x, p.y, p.r)) hit = 'altar';   // a bolt or boulder that reaches the Summoning Altar bursts on it
     WZ.ctx = p.ctx;
     if (hit === 'altar') {
@@ -1879,7 +1889,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     if (z.frost && (z.fk -= dt) <= 0) { z.fk = z.frost; WZ.freeze(z.x, z.y, z.r, CFG.spells.blizzard.frost.t); }   // the Blizzard freezes the ground it passes over
     WZ.ctx = z.ctx;
     if (!WZ.zoneSpecial(z, dt)) WZ.each(z.x, z.y, z.r, (t, d, isE) => {   // (a flame cone, the storm cloud, a droplet, the mud shield, the Nova's pull do their own thing)
-      if (z.dps) { if (isE) WZ.hurtE(t, z.dps * dt, 0, 0, true); else { t.hp -= z.dps * dt * WZ.harvMul(); t.flash = 0.05; if (t.hp <= 0) { t.hp = 0.0001; WZ.hurtH(t, 1); } } }
+      if (z.dps) { if (isE) WZ.hurtE(t, z.dps * dt, 0, 0, true); else WZ.hurtHc(t, z.dps * dt); }
       if (isE && z.slow) WZ.slowE(t, z.slow, 0.25);
     });
     WZ.ctx = null;

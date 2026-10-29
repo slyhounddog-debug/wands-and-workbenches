@@ -59,7 +59,7 @@ const OUT = process.env.SHOTS || '';
   ok(r.can && r.recipe === 'aegg_pebble' && r.inv.join() === 'core_earth', 'one Stone Core at an idle Spawner starts a Pebble Golem ally', r.recipe + ' from ' + r.inv);
   ok(r.seenEgg, 'the finished egg is the teal ally egg (aegg_pebble)', r.secs.toFixed(0) + 's of play to hatch');
   ok(r.spawnD !== null && r.spawnD >= 1.9 && r.spawnD <= 4.1, 'it hatches 2-4 tiles from the Wizard', r.spawnD && r.spawnD.toFixed(2));
-  ok(r.hp && r.hp[1] >= 2 * 42 * 0.85 - 0.1 && r.hp[1] <= 2 * 42 * 1.15 + 0.1, 'with double the hostile Pebble Golem\'s health (42 x2 +-15%)', r.hp && r.hp[1].toFixed(1));
+  ok(r.hp && r.hp[1] >= 4 * 42 * 0.85 - 0.1 && r.hp[1] <= 4 * 42 * 1.15 + 0.1, 'with four times the hostile Pebble Golem health (42 x4 +-15%)', r.hp && r.hp[1].toFixed(1));
   ok(r.hp && r.hp[2] >= 9 * 0.5 * 0.85 - 0.01 && r.hp[2] <= 9 * 0.5 * 1.15 + 0.01, 'and half its damage (9 x0.5 +-15%)', r.hp && r.hp[2].toFixed(2));
   ok(r.allies.length === 1 && r.allies[0][1] === true && r.allies[0][2] === false && r.allies[0][3] === false && r.allies[0][4] === false && r.hostileCrafted === 0, 'it is an ally, not elite, not mutated, and no hostile was made', JSON.stringify(r.allies));
 

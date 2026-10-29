@@ -376,7 +376,7 @@ const CFG = {
   // At most cap alive; queue = eggs the Spell Portal holds back behind them (then it boings the next one back). Their deaths pay nothing.
   // window: every absorbed Core leaves at least this many seconds of growth to go (it extends the timer), so a quick Builder can always feed it up to a triple
   ally: {
-    cap: 10, queue: 3, hpMul: 2, dmgMul: 0.5,
+    cap: 10, queue: 3, hpMul: 4, dmgMul: 0.5,
     aggro: 9, engage: 10, leash: 16, follow: 3.2, teleport: 30,
     spawnMin: 2, spawnMax: 4,
     window: 12,
@@ -442,6 +442,15 @@ const CFG = {
     sockets: ['Single', 'Pair', 'Triple', 'Nova'],   // one per spell tier (elements in the spell)
     cols: ['#e6f8ff', '#7be0ff', '#ffd23a', '#ff6ae0'],   // each socket's colour
     keys: ['air', 'steam', 'meteor', 'nova'],   // each socket's icon (an item sprite)
+  },
+  bshr: {   // Battery Shrines (js/bshrine.js): each finished Battery has a numbered shrine in the wilds; damage to it is charge for that Battery
+    perDmg: 1.2,                // charge (of batteryMax 90) per point of damage a spell or wand attack does to it (a Seeker Fireball, 22 damage, is about a third of a Battery)
+    r: 0.9,                     // its body: spells that reach this far hit it (it is not solid)
+    spotMin: 4, spotMax: 8,     // tiles from the Wizard where a new one appears (on screen, dry, clear of landmarks, trees and other shrines)
+    gap: 5, clear: 6,           // shrines keep this far from each other; landmarks keep this far from them
+    ring: 14, speed: 11,        // the shockwave a new shrine sends out: how far it runs (tiles) and how fast (tiles/s)
+    popGap: 0.35,               // seconds between the charge tallies that float up while it is being hit
+    col: '#ffe36b',             // its colour
   },
   unlockR: 9,                 // a Core or Ward Key the Builder sends only goes through the portal when the Wizard is within this many tiles of the shrine / keep it opens
   // ---- Wizard augments (js/augments.js; the table of augments is AUGS below): garments the Builder forges at the Armory. They change what he can DO, never his numbers ----

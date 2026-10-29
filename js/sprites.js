@@ -789,6 +789,17 @@ task(() => {
     x.fillStyle = '#2b1d3e'; for (let i = 0; i < 4; i++) x.fillRect(5 + i * 12, 44 - (i % 2 ? 2 : 0), 3, 1);   // socket studs on the lowest step
     x.fillStyle = '#6a8a56'; x.fillRect(6, 45, 3, 2); x.fillRect(38, 44, 2, 3);
   }), 23, 47);
+  // the Battery Shrine (js/bshrine.js): two stone steps and a squat blue battery pillar with a gold bolt and a pale cap; its glow and charge bar are drawn live (R.drawBshr)
+  reg('lm_bshr', mk(34, 46, x => {
+    isoBox(x, 17, 36, 14, 3, '#a8a8b8', '#7c7c92', '#62627a');
+    isoBox(x, 17, 33, 10, 2, '#bcbccc', '#8c8ca2', '#72728a');
+    isoBox(x, 17, 31, 6, 16, '#9be8ff', '#3a8ed0', '#2a68a8');
+    isoBox(x, 17, 15, 2, 3, '#f4f4fc', '#c4c4d4', '#9a9ab0');
+    poly(x, [[15, 18], [12, 24], [14, 24], [12, 30], [16, 22], [14, 22]], '#ffe36b');
+    x.fillStyle = '#1a4a80'; x.fillRect(19, 20, 3, 1); x.fillRect(19, 24, 3, 1); x.fillRect(19, 28, 3, 1);
+    x.fillStyle = '#ffe36b'; x.fillRect(4, 36, 2, 2); x.fillRect(28, 36, 2, 2);
+    x.fillStyle = '#6a8a56'; x.fillRect(5, 40, 3, 2); x.fillRect(27, 41, 2, 2);
+  }), 17, 36);
   // the Creature Spawner: a hatchery pedestal with a nest on top; the egg it is growing is drawn live out of the nest (R.drawBuilding), its element lamps on the front
   bsprite('b_spawner', (x, cx, cy) => {
     isoBox(x, cx, cy, 9, 5, '#d8c6a0', '#a8956a', '#867552');

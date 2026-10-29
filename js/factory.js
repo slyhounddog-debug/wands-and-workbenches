@@ -301,6 +301,7 @@ FA.onComplete = function (b, quiet) {
   if (FA.def(b).kind === 'harness' && !quiet) { b.grow = 0; b.shake = 0; }   // a new Harnesser grows its crystal first
   if (FA.def(b).kind === 'expand') { FA.finishTile(b); return; }
   if (FA.def(b).kind === 'crafter' && !b.recipe && b.type !== 'spawner') b.recipe = FA.recipesFor(b.type)[0] || null;
+  if (!quiet && FA.def(b).kind === 'cell') WZ.bshrAdd(b, true);   // a finished Battery: its shrine arrives in the wilds with a shockwave
   if (!quiet) {
     FA.burst(b.x + 0.5, b.y + 0.5, '#ffe36b', 22);
     AU.sfx('complete');

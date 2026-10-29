@@ -28,7 +28,7 @@ function blankState(slot) {
     credits: { battery: 0, heavybat: 0 },
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
     flags: {}, quest: { B: 0, W: 0 }, qbase: { B: null, W: null }, bankLog: [], pins: { L: null, R: null }, lock: null,
-    altar: WZ.altarFresh(), aug: WZ.augFresh(), wand: WZ.wandFresh(),   // the Summoning Altar (where it stands, which sockets are lit), what he wears and which keeps are open, the staff's four charge meters
+    bshr: [], altar: WZ.altarFresh(), aug: WZ.augFresh(), wand: WZ.wandFresh(),   // the Summoning Altar (where it stands, which sockets are lit), what he wears and which keeps are open, the staff's four charge meters
     hands: [], carry: null, carryHold: null, autoPick: !!AU.settings.autoPick, swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
@@ -67,6 +67,7 @@ Main.applySave = function (slot, s) {
   // the Wizard's gear: an old save has none (everything defaults to empty). A save that already captured a Stronghold gets the glow-up and the spell slot silently (no animation)
   G.aug = WZ.augFix(s.aug);
   G.altar = WZ.altarFix(s.altar);
+  G.bshr = WZ.bshrFix(s.bshr);   // the Battery Shrines (each finds its Battery by position once the factory is built)
   // there is one Stronghold and one Warden now: an older save that claimed any keep has killed the Warden. Warden Cores are gone (no longer a currency), and each
   // old per-element Ward Key comes back as what it was forged from
   if (ELEMS.some(el => G.flags['core_' + el])) G.flags.warden = true;
@@ -170,7 +171,7 @@ Main.save = function () {
     const data = JSON.stringify({
       v: SAVE_VERSION, qv: QUEST_VERSION, tv: TREE_VERSION, xp: G.xp, tree: G.tree, stock: stockSaved, ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
       flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: Main.facSaved(), at: Date.now(),
-      bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp, aug: G.aug, wand: G.wand, altar: G.altar,
+      bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp, aug: G.aug, wand: G.wand, altar: G.altar, bshr: WZ.bshrSave(),
     });
     if (!Main.saveOk(JSON.parse(data))) throw new Error('the new save failed its own check');
     // rolling backup: the save we're about to replace becomes the backup, if it was good

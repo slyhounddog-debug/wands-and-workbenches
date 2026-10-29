@@ -750,6 +750,7 @@ R.drawBuilding = function (ctx, v, b, t) {
     R.faceGauge(ctx, p[0], base, -1, gw, gh, Math.min(1, fr), fr > 1 ? '#fff07a' : fr >= 1 ? '#3ad06b' : '#ffd93a');
     { let fk = null; for (const k in b.fuel) if (b.fuel[k] > 0 && (!fk || b.fuel[k] > b.fuel[fk])) fk = k;
       R.faceGauge(ctx, p[0], base, 1, gw, gh, FA.fuelTotal(b) / CFG.fuelCap, fk ? (ELEM[fk] ? ELEM[fk].color : fk === 'wood' ? '#c88a52' : '#c4cad4') : '#8a8a8a'); }
+    { const sh = G.bshr.find(q => q.id === b.id); if (sh) R.defer.push(c => R.iconRow(c, p[0], base - (hv ? 98 : 84), [['ic_bolt', sh.n]], 0.95)); }   // its shrine's number
     if (b.bat > 0 && Math.sin(t * 8) > 0) {
       ctx.fillStyle = '#fff07a';
       for (let i = 0; i < 5; i++) ctx.fillRect(Math.round((p[0] - 20 + i * 10) / 4) * 4, Math.round((base - 60 + (i % 2 ? -8 : 8)) / 4) * 4, 8, 4);
@@ -1431,6 +1432,8 @@ R.drawWorld = function (main, dt, rect) {
   objs.push({ d: w.x + w.y, t: 'wiz', o: w });
   if (mv) Menu.collect(objs, v, mv);
   if (alt && !airborne) objs.push({ d: alt.x + alt.y, t: 'altar', o: alt });
+  const bsh = G.bshr;   // the Battery Shrines
+  for (const s of bsh) objs.push({ d: s.x + s.y, t: 'bshr', o: s });
   objs.sort((a, b) => a.d - b.d);
   // the menu world: the scenery, then the fog outside the patch + its rim, then the floor plates, then everything that stands or moves on them
   const order = mv ? objs.filter(i => !MENU_TOP[i.t]).concat([{ t: 'edge' }, { t: 'plates' }], objs.filter(i => MENU_TOP[i.t])) : objs;
@@ -1442,6 +1445,7 @@ R.drawWorld = function (main, dt, rect) {
       const p = R.toScreen(v, o.x, o.y);
       if (p[0] < left - 60 || p[0] > right + 60) continue;
       if (alt && Math.abs(o.x - alt.x) < 2.7 && Math.abs(o.y - alt.y) < 2.7) continue;   // nothing grows through the Altar
+      if (bsh.length && bsh.some(s => Math.abs(o.x - s.x) < 1.5 && Math.abs(o.y - s.y) < 1.5)) continue;   // ...nor through a Battery Shrine
       let sk = 0;
       if (BENDY.has(o.spr)) {
         const bn = w.bend[it.k], B = CFG.bend;
@@ -1471,6 +1475,7 @@ R.drawWorld = function (main, dt, rect) {
     else if (it.t === 'forage') R.drawForage(ctx, v, o);
     else if (it.t === 'lm') R.drawMark(ctx, v, o.lm);
     else if (it.t === 'altar') R.drawAltar(ctx, v, w);
+    else if (it.t === 'bshr') R.drawBshr(ctx, v, o);
     else if (it.t === 'enemy') R.drawEnemy(ctx, v, o);
     else if (it.t === 'wiz') { if (mv) Menu.drawWizard(ctx, v, o); else R.drawWizard(ctx, v, o); }
     else if (it.t === 'menu') it.fn(ctx, v);
@@ -1571,6 +1576,18 @@ R.drawPickup = function (ctx, v, o, t) {
   R.item(ctx, o.kind, p[0], y, 3, t);
   if (o.full && o.z <= 0) R.defer.push(c => R.iconRow(c, p[0], p[1] - 48, [[CFG.pickups[o.kind].heal ? 'ic_heart' : 'ic_shield'], ['ic_check']]));   // already full
 };
+// a sprite's silhouette in a flat colour (cached per sprite and colour: static art, so it can never differ between two frames)
+const SIL = new WeakMap();
+function silOf(spr, col) {
+  let m = SIL.get(spr.white);
+  if (!m) { m = {}; SIL.set(spr.white, m); }
+  if (!m[col]) {
+    const c = document.createElement('canvas'); c.width = spr.white.width; c.height = spr.white.height;
+    const x = c.getContext('2d'); x.drawImage(spr.white, 0, 0); x.globalCompositeOperation = 'source-in'; x.fillStyle = col; x.fillRect(0, 0, c.width, c.height);
+    m[col] = c;
+  }
+  return { c: m[col], ax: spr.ax, ay: spr.ay };
+}
 R.drawEnemy = function (ctx, v, e) {
   const p = R.toScreen(v, e.x, e.y), S = CFG.WT.S, t = G.w.t;
   const spr = (e.var && SP[e.type + '_' + e.var]) || SP[e.type], fly = e.type === 'sprite' || e.type === 'wisp' || e.fly;
@@ -1594,10 +1611,15 @@ R.drawEnemy = function (ctx, v, e) {
     }
     ctx.globalAlpha = 1;
   } else if (e.elite) { ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffd23a' : '#ffa62a'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 27 * (e.sz || 1), 13 * (e.sz || 1)); ctx.stroke(); }
-  if (e.crafted) { ctx.strokeStyle = '#46e0c8'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 21 * sc, 10 * sc); ctx.stroke(); }   // factory-made: a teal ring
-  if (e.ally) { ctx.strokeStyle = Math.sin(t * 4 + e.bob) > 0 ? '#7bff9a' : '#46e0c8'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 21 * sc, 10 * sc); ctx.stroke(); }   // a friendly one: a green ring
+  if (e.crafted) { ctx.strokeStyle = '#ff4a4a'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 21 * sc, 10 * sc); ctx.stroke(); }   // factory-made but HOSTILE: a red ring (an ally is lime: outline, filled ring, heart)
+  if (e.ally) {   // a friendly one: a lime pool of light under it, a bold ring, and (below) a lime outline round the body and a heart over its head
+    ctx.globalAlpha = 0.3 + 0.1 * Math.sin(t * 4 + e.bob); ctx.fillStyle = '#7bff9a'; diamond(ctx, p[0], p[1], 24 * sc, 12 * sc); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#0c3a24'; ctx.lineWidth = 9; diamond(ctx, p[0], p[1], 24 * sc, 12 * sc); ctx.stroke();
+    ctx.strokeStyle = '#7bff9a'; ctx.lineWidth = 6; diamond(ctx, p[0], p[1], 24 * sc, 12 * sc); ctx.stroke();
+  }
   if (e.slow > 0) { ctx.strokeStyle = '#78c8ff'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 18 * sc, 9 * sc); ctx.stroke(); }
   const y = p[1] - hop - lift;
+  if (e.ally) { const sil = silOf(spr, '#7bff9a'); for (const o of [[-S, 0], [S, 0], [0, -S], [0, S]]) dsprSq(ctx, sil, p[0] + o[0], y + o[1], S, qx, qy, 1, e.face < 0); }   // a one-pixel lime outline
   dsprSq(ctx, spr, p[0], y, S, qx, qy, 1, e.face < 0);
   const wht = { c: spr.white, ax: spr.ax, ay: spr.ay };
   if (e.flash > 0) dsprSq(ctx, wht, p[0], y, S, qx, qy, 0.85, e.face < 0);
@@ -1617,7 +1639,7 @@ R.drawEnemy = function (ctx, v, e) {
     if (e.frozen < 0.4) { ctx.fillStyle = '#5a8ab0'; ctx.fillRect(snap(p[0] - 3), Math.round((top + 6) / 3) * 3, 3, 21); ctx.fillRect(snap(p[0] + 3), Math.round((top + 24) / 3) * 3, 9, 3); }
   } else if (e.dazeT > 0) { ctx.fillStyle = '#ffe36b'; for (let i = 0; i < 3; i++) ctx.fillRect(snap(p[0] + Math.cos(t * 8 + i * 2.1) * 15 - 3), Math.round((top - 6 + Math.sin(t * 8 + i * 2.1) * 4) / 3) * 3, 6, 6); }
   if (e.tele) dspr(ctx, SP.ic_warn, p[0], top - 22, S);
-  if (e.hp < e.maxHp || e.ally) R.hpBar(ctx, p[0], top - 9, e.elite ? 42 : 30, e.hp / e.maxHp, e.ally ? '#7bff9a' : e.elite ? '#ffd23a' : e.crafted ? '#46e0c8' : '#ff6a6a');
+  if (e.hp < e.maxHp || e.ally) R.hpBar(ctx, p[0], top - 9, e.elite ? 42 : 30, e.hp / e.maxHp, e.ally ? '#7bff9a' : e.elite ? '#ffd23a' : '#ff6a6a');
   if (e.ally) dspr(ctx, SP.ic_heart, p[0], top - 18, S);
   if (e.elite) dspr(ctx, SP.ic_crown, p[0], top - 15, S);
   if (e.mut) dspr(ctx, SP[CFG.mutations[e.mut].ic], p[0] - 27, top - 6, S);   // its mutation
@@ -1790,11 +1812,28 @@ R.drawMinimap = function (c) {
   for (const m of WZ.marks) if (m.type === 'stronghold' && w.lm[m.id].seen && w.lm[m.id].state !== 'done') { const dd = Math.hypot(m.x - w.x, m.y - w.y); if (dd < kd) { kd = dd; kp = m; } }
   if (kp) { const g = CFG.strong.guards[kp.el]; R.iconRow(c, cx, cy - 72, Object.keys(g).map(k => ['egg_' + k, g[k]]).concat([['ic_crown'], ['wk_' + WZ.WARDEN_WEAK(kp.el)]])); }
   if (WZ.altarOn()) dot(G.altar.x, G.altar.y, 8, WZ.altarLitN() >= 4 ? (Math.sin(t * 6) > 0 ? '#ffe36b' : '#ff6ae0') : '#c890ff');   // the Summoning Altar
+  for (const s of G.bshr) dot(s.x, s.y, 6, CFG.bshr.col);   // the Battery Shrines
   if (w.boss && Math.sin(t * 10) > 0) dot(w.boss.x, w.boss.y, 10, '#ff4a8a');
   if (R.whint) dot(R.whint.x, R.whint.y, 6, Math.sin(t * 8) > 0 ? '#ffd23a' : '#ffffff');
   dot(w.x, w.y, 6, Math.sin(t * 6) > -0.5 ? '#ffffff' : '#7be0ff');
   c.font = '8px ' + FONT_D; c.textAlign = 'center'; c.fillStyle = '#c8b8e8'; c.fillText('MAP', cx, cy - 64);
   c.restore();
+};
+// ---------- Battery Shrines (G.bshr, js/bshrine.js) ----------
+// the pillar glows with its Battery's charge; the number over it is the number on the Battery in the factory, the bar its charge (a check mark when the Battery is full)
+R.drawBshr = function (ctx, v, s) {
+  const w = G.w, S = CFG.WT.S, t = w.t, p = R.toScreen(v, s.x, s.y), spr = SP.lm_bshr, col = CFG.bshr.col;
+  if (p[0] < R.rect.x0 - 80 || p[0] > R.rect.x0 + R.rect.w + 80) return;
+  const b = G.fac.bld.find(o => o.id === s.id), fr = b ? Math.max(0, Math.min(1, b.bat / CFG.batteryMax)) : 0, full = fr >= 0.995;
+  ctx.fillStyle = 'rgba(0,0,0,0.22)'; diamond(ctx, p[0], p[1], 27, 13); ctx.fill();
+  const shake = s.flash > 0 ? (Math.random() < 0.5 ? -3 : 3) : 0, top = p[1] - spr.c.height * S + 9 * S;
+  dspr(ctx, spr, p[0] + shake, p[1], S);
+  ctx.globalAlpha = 0.18 + 0.4 * fr + (s.flash > 0 ? 0.3 : 0); ctx.fillStyle = col;
+  diamond(ctx, p[0] + shake, p[1] - 21 * S, 7 * S, 3.5 * S); ctx.fill(); ctx.globalAlpha = 1;   // the glow of the pillar's cap
+  if (s.flash > 0) dspr(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, p[0] + shake, p[1], S, 0.5);
+  if (!full && fr > 0 && Math.sin(t * 7 + s.n * 2) > 0.55) { ctx.fillStyle = '#ffffff'; ctx.fillRect(snap(p[0] + 15), Math.round((p[1] - 26 * S) / 3) * 3, 6, 6); }   // a spark
+  R.hpBar(ctx, p[0], top - 9, 42, fr, full ? '#3ad06b' : col);
+  R.defer.push(c => R.iconRow(c, p[0], top - 18, full ? [['ic_bolt', s.n], ['ic_check']] : [['ic_bolt', s.n]]));
 };
 // ---------- the Summoning Altar (G.altar, js/altar.js) ----------
 // how high the Altar hangs while it lands (px above its spot): high while the particles gather it and it holds, then it falls

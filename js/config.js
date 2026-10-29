@@ -449,7 +449,7 @@ const CFG = {
     keys: ['air', 'steam', 'meteor', 'nova'],   // each socket's icon (an item sprite)
   },
   bshr: {   // Battery Shrines (js/bshrine.js): each finished Battery has a numbered shrine in the wilds; damage to it is charge for that Battery
-    perDmg: 1.2,                // charge (of batteryMax 90) per point of damage a spell or wand attack does to it (a Seeker Fireball, 22 damage, is about a third of a Battery)
+    perDmg: 0.6,                // charge (of batteryMax 90) per point of damage a spell or wand attack does to it (a Seeker Fireball, 22 damage, is about a seventh of a Battery)
     r: 0.9,                     // its body: spells that reach this far hit it (it is not solid)
     spotMin: 4, spotMax: 8,     // tiles from the Wizard where a new one appears (on screen, dry, clear of landmarks, trees and other shrines)
     gap: 5, clear: 6,           // shrines keep this far from each other; landmarks keep this far from them

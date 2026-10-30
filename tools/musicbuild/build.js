@@ -8,7 +8,9 @@ const { spawnSync } = require('child_process');
 const fs = require('fs'), path = require('path'), os = require('os');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const STEMS = path.join(ROOT, 'audio', 'Breath of the Waltz Stems');
+// The 10 source stems (37 MB) are not part of the game or the repo: they live in a folder beside it. MUSIC_STEMS (a folder) overrides.
+const SIDE_STEMS = path.join(ROOT, '..', 'Wands&Workbenches-music-stems', 'Breath of the Waltz Stems');
+const STEMS = [process.env.MUSIC_STEMS, SIDE_STEMS, path.join(ROOT, 'audio', 'Breath of the Waltz Stems')].find(d => d && fs.existsSync(d)) || SIDE_STEMS;
 const OUT = path.join(ROOT, 'audio', 'music');
 const SR = 48000;
 

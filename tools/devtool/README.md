@@ -49,7 +49,7 @@ The preview is not for playing seriously: it is muted, starts from a fixture, an
 | `PUT /api/audio/<name>` | raw audio bytes (Content-Type = the file's audio type) -> `overrides/audio/<name>.js` |
 | `GET` / `DELETE /api/audio/<name>` | the stored clip's bytes / remove it (back to the synth) |
 | `GET /api/music` | the layered soundtrack's loop span (defaults + saved), the stem -> layer map, the stem list |
-| `GET /api/music/stem/<n>` | stem n of `audio/Breath of the Waltz Stems` (what the tab previews from) |
+| `GET /api/music/stem/<n>` | stem n of the stems folder (beside the repo, see below) (what the tab previews from) |
 | `POST` / `DELETE /api/music` | save `{startSample, lengthSamples, xfade}` to `overrides/music.json` and rebuild the four layer files with `tools/musicbuild/build.js` (needs ffmpeg on the PATH; about 10 s) / go back to the original loop |
 
 ## What the game loads (`overrides/`)
@@ -128,7 +128,7 @@ boxes and +-bar / beat / 10 ms nudges; "snap drags to" keeps the end a whole num
 loop is 68 bars of a 118.4 BPM waltz). Nothing changes until **Save & rebuild game music**: it writes `overrides/music.json`
 (`startSample`, `lengthSamples`, `xfade`; build.js merges it over its defaults) and rewrites `audio/music/music_<element>.js`
 (all four, or none if ffmpeg fails). **Reset to original loop** deletes the file and rebuilds. Reload the game to hear it.
-The stems are the source of this: keep `audio/Breath of the Waltz Stems`.
+The stems are the source of this. They are not in the repo (37 MB): they live in `..\Wands&Workbenches-music-stems\Breath of the Waltz Stems` (beside the repo; or wherever the `MUSIC_STEMS` environment variable points). Without them the tab says so and the four built layer files keep working.
 
 ## Commit & push
 

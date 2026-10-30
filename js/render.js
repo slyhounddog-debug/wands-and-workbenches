@@ -259,6 +259,7 @@ R.drawFactory = function (main, dt, rect) {
   const list = [];
   for (const b of f.belts) list.push({ d: b.x + b.y + 0.4, o: b, t: 'belt' });
   for (const b of f.bld) list.push({ d: b.x + b.y + 1, o: b, t: 'bld' });
+  for (const b of f.bld) if (b.done && b.type === 'robot') list.push({ d: b.rx + b.ry + 0.9, o: b, t: 'bot' });   // a robot's body roams, so it sorts by where it is
   const ps = FA.portal('spell'), pk = FA.portal('skill');
   list.push({ d: ps.x + ps.y + 2, t: 'portal', o: 'spell' });
   list.push({ d: pk.x + pk.y + 2, t: 'portal', o: 'skill' });
@@ -290,13 +291,13 @@ R.drawFactory = function (main, dt, rect) {
   if (R.ghost) R.drawGhostGround(ctx, v, R.ghost, t);
   for (const b of f.bld) {
     const k = b.done && FA.def(b).kind;
-    if (!k || k === 'cell' || R.fallK(b) < 1) continue;
+    if (!k || k === 'cell' || k === 'bot' || R.fallK(b) < 1) continue;
     if (k === 'splitter') b.outs.forEach((d, i) => R.splitArrow(ctx, v, b, t, d, FA.splitCol[i], b.pct[d] || 0, b.filt[d]));
     else R.outArrow(ctx, v, b, t);
   }
 
   for (const it of list) {
-    const fk = it.t === 'builder' ? R.fallK(bd) : it.t === 'belt' || it.t === 'bld' ? R.fallK(it.o) : 1;   // (the start sequence: things still to drop in from their portals)
+    const fk = it.t === 'builder' ? R.fallK(bd) : it.t === 'belt' || it.t === 'bld' || it.t === 'bot' ? R.fallK(it.o) : 1;   // (the start sequence: things still to drop in from their portals)
     if (fk < 0) continue;
     if (fk < 1) R.fallIn(ctx, v, it, fk, t);
     switch (it.t) {
@@ -312,6 +313,7 @@ R.drawFactory = function (main, dt, rect) {
         else if (R.rot && R.rot.x === it.o.x && R.rot.y === it.o.y) R.drawRotSoft(ctx, v, bp, t, 0);
         break;
       }
+      case 'bot': R.drawBot(ctx, v, it.o, t); break;
       case 'portal': R.drawPortal(ctx, v, t, it.o); break;
       case 'pile': R.drawPile(ctx, v, it.o); break;
       case 'q': R.drawQ(ctx, v, t); break;
@@ -430,7 +432,32 @@ R.reflect = function (ctx, s, x, y, S, alpha) {
   ctx.restore();
 };
 R.bldSprite = function (b) {
-  return SP['b_' + b.type];
+  return SP['b_' + b.type + (b.type === 'robot' && b.done ? 'pad' : '')];   // a finished robot's body is drawn on its own (R.drawBot); the dock keeps the pad
+};
+// a Helper Robot's body, wherever it is (depth-sorted on its own): a small Battery on a wheel with a robot head and arms. Its charge and the fuel waiting to burn are gauges set
+// into the body's two faces (like a Battery's); flat, it naps (head down, eyes shut, little Zs). Carrying, it holds the load over its head.
+R.drawBot = function (ctx, v, b, t) {
+  const p = R.toScreen(v, b.rx, b.ry), S = 4, nap = !!b.nap;
+  const roll = !nap && b.moving ? (Math.floor(t * 9 + b.id) % 2) * 4 : 0;   // a chunky bounce while it rolls
+  const sink = nap && Math.sin(t * 1.6 + b.id) > 0.2 ? 4 : 0;           // breathing, asleep
+  const wk = b.wake > 0 ? Math.sin(b.wake * 18) * b.wake * 0.4 : 0;     // a stretch when it wakes
+  const pop = Math.max(0, b.pop), sq = 1 + Math.sin(pop * 18) * pop * 0.4 + wk;
+  const y = p[1] + 12 - roll + sink, spr = nap ? SP.botZ : b.carry ? SP.botC : SP.bot;
+  ctx.fillStyle = 'rgba(0,0,0,0.22)'; diamond(ctx, p[0], p[1] + 6, v.hw * 0.4, v.hh * 0.4); ctx.fill();
+  dsprSq(ctx, spr, p[0], y, S, 1 / sq, sq);
+  // the two gauges on the body's faces: charge (left, yellow / green when full), the fuel waiting to burn (right, in its colour)
+  const gb = y - 24, fr = b.bat / CFG.batteryMax;
+  R.faceGauge(ctx, p[0], gb, -1, 6, 9, Math.min(1, fr), fr >= 1 ? '#3ad06b' : '#ffd93a');
+  { let fk = null; for (const k in b.fuel) if (b.fuel[k] > 0 && (!fk || b.fuel[k] > b.fuel[fk])) fk = k;
+    R.faceGauge(ctx, p[0], gb, 1, 6, 9, FA.fuelTotal(b) / CFG.fuelCap, fk ? (ELEM[fk] ? ELEM[fk].color : fk === 'wood' ? '#c88a52' : '#c4cad4') : '#8a8a8a'); }
+  if (b.carry) R.item(ctx, b.carry, p[0], y - 124 - (Math.sin(t * 6 + b.id) > 0 ? 0 : 4), 3, t, false);   // what it holds, up in its claws
+  if (nap) for (let i = 0; i < 3; i++) {   // Z z z drifting up from its head
+    const k = (t * 0.45 + i / 3) % 1;
+    ctx.globalAlpha = Math.min(1, (1 - k) * 2);
+    txt(ctx, 'Z', p[0] + 28 + k * 28 + i * 4, y - 84 - k * 64, i === 0 ? 12 : 16, '#d6eeff', 'center', 'd');
+    ctx.globalAlpha = 1;
+  }
+  else if (b.wake > 0.3) { ctx.globalAlpha = Math.min(1, b.wake); dspr(ctx, SP.ic_bolt, p[0], y - 140, 4); ctx.globalAlpha = 1; }
 };
 R.outArrow = function (ctx, v, b, t, dir, col) {
   const dd = DIRS[dir === undefined ? b.dir : dir], p = R.toScreen(v, b.x + 0.5 + dd[0] * 0.62, b.y + 0.5 + dd[1] * 0.62);
@@ -612,9 +639,10 @@ R.drawBuilding = function (ctx, v, b, t) {
       R.drawTileSlab(ctx, v, p, 4 + Math.round(gt / need * 8) + (b.pop > 0 ? 4 : 0), 0.6 + 0.3 * gt / need, b.type === 'stockpile');
       ctx.strokeStyle = '#d6eeff'; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw - 3, v.hh - 1.5); ctx.stroke();
     } else {
-    dsprSq(ctx, spr, p[0], base, S, 1, sq, 0.45);
-    ctx.strokeStyle = '#78c8ff'; ctx.lineWidth = 4; ctx.setLineDash([12, 8]); ctx.lineDashOffset = -Math.floor(t * 6) * 4;
+    dsprSq(ctx, spr, p[0], base, S, 1, sq, b.ready ? 0.8 : 0.45);
+    ctx.strokeStyle = b.ready ? (Math.sin(t * 8) > 0 ? '#ffd23a' : '#fff0aa') : '#78c8ff'; ctx.lineWidth = b.ready ? 8 : 4; ctx.setLineDash(b.ready ? [] : [12, 8]); ctx.lineDashOffset = -Math.floor(t * 6) * 4;
     diamond(ctx, p[0], p[1], v.hw * 0.95, v.hh * 0.95); ctx.stroke(); ctx.setLineDash([]);
+    if (b.ready) dspr(ctx, SP.ic_check, p[0], base - 112 - (Math.sin(t * 6) > 0 ? 0 : 4), 4);   // a robot brought everything: waiting for the Builder's E
     }
     const cost = FA.costOf(b), tot = Object.values(cost).reduce((a, b2) => a + b2, 0), got = Object.values(b.got).reduce((a, b2) => a + b2, 0);
     // what it still needs: a small row of chips low on the tile, only near the Builder or under the mouse
@@ -758,7 +786,7 @@ R.drawBuilding = function (ctx, v, b, t) {
     txt(ctx, '' + b.cn, p[0] + 34, base - 40, 12, '#ffffff', 'center', 'd');
   }
   // throughput: a building stuck for a moment shows why (orange ! = output blocked, grey ? = waiting on inputs)
-  R.drawState(ctx, v, b, t, p, top);
+  if (d.kind !== 'bot') R.drawState(ctx, v, b, t, p, top);   // (a robot shows it on its body: Zs, the gauges)
 };
 // machine state language, shown the moment it changes: outline colour AND dash pattern (readable without colour),
 // an icon, plus the animation speed (FA.stateSpeed) and a chirp (FA.update)

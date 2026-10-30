@@ -261,6 +261,34 @@ task(() => {
     poly(x, [[cx + 3, cy - 5.3], [cx + 6, cy - 6.8], [cx + 6, cy - 8.5], [cx + 3, cy - 7]], '#ffd23a');
     isoBox(x, cx, cy - 11, 4, 3, '#f0f0f0', '#b0b0b0', '#909090');
   });
+  // a Helper Robot: a small Battery on a wheel with a robot head and two arms. The body is its own sprite (it rolls about the floor; the dock tile keeps the pad).
+  // mode 0 = idle (arms down), 1 = carrying (arms up, holding the load over its head), 2 = napping (head drooped, eyes shut, arms hanging)
+  const botBody = mode => mk(16, 30, x => {
+    circ(x, 8, 26.2, 3.4, '#2a2733'); circ(x, 8, 26.2, 1.4, '#9aa4b8');   // the wheel
+    isoBox(x, 8, 22, 6, 9, '#8ee0a6', '#3c9e5a', '#2e7a46');                // the Battery body (its two gauges are drawn over the faces)
+    const hy = mode === 2 ? 7 : 4;                                            // head top: it droops when napping
+    x.fillStyle = '#5a6074'; x.fillRect(7, hy + 5, 2, 3);                    // neck
+    x.fillStyle = '#d8dce6'; x.fillRect(4, hy, 8, 6);                        // head
+    x.fillStyle = '#a8afc0'; x.fillRect(4, hy + 5, 8, 1); x.fillRect(11, hy, 1, 6);
+    x.fillStyle = '#2a2733'; x.fillRect(5, hy + 1, 6, 3);                    // visor
+    if (mode === 2) { x.fillStyle = '#7a8094'; x.fillRect(6, hy + 2, 2, 1); x.fillRect(9, hy + 2, 2, 1); }   // eyes shut
+    else { x.fillStyle = '#6be8ff'; x.fillRect(6, hy + 1, 1, 2); x.fillRect(9, hy + 1, 1, 2); }
+    x.fillStyle = '#a8afc0';
+    if (mode === 2) { x.fillRect(10, hy - 2, 1, 2); x.fillRect(11, hy - 1, 1, 1); x.fillStyle = '#e8384a'; x.fillRect(11, hy, 1, 1); }   // a bent antenna
+    else { x.fillRect(8, hy - 3, 1, 3); x.fillStyle = mode === 1 ? '#ffd23a' : '#e8384a'; x.fillRect(8, hy - 4, 1, 1); }
+    x.fillStyle = '#a8afc0'; x.fillStyle = '#868ea4';
+    if (mode === 1) { x.fillRect(1, hy + 2, 2, 8); x.fillRect(13, hy + 2, 2, 8); x.fillStyle = '#5a6074'; x.fillRect(1, hy, 2, 2); x.fillRect(13, hy, 2, 2); }   // arms up, claws at the top
+    else { x.fillRect(1, 14, 2, 7); x.fillRect(13, 14, 2, 7); x.fillStyle = '#5a6074'; x.fillRect(1, 21, 2, 2); x.fillRect(13, 21, 2, 2); }
+  });
+  const botIdle = botBody(0);
+  reg('bot', botIdle, 8, 28); reg('botC', botBody(1), 8, 28); reg('botZ', botBody(2), 8, 28);
+  const botPad = (x, cx, cy) => {   // the dock: a low steel pad with a charging plate
+    isoBox(x, cx, cy, 9, 2, '#8a92a6', '#5a6074', '#454b5e');
+    poly(x, [[cx, cy - 4.2], [cx + 5, cy - 2], [cx, cy + 0.2], [cx - 5, cy - 2]], '#3a4052');
+    x.fillStyle = '#ffd23a'; x.fillRect(cx - 1, cy - 3, 2, 1); x.fillRect(cx, cy - 4, 1, 3);
+  };
+  bsprite('b_robotpad', botPad);
+  bsprite('b_robot', (x, cx, cy) => { botPad(x, cx, cy); x.drawImage(botIdle, cx - 8, cy - 28 + 1); });
   bsprite('b_splitter', (x, cx, cy) => {
     isoBox(x, cx, cy, 9, 4, '#8a8fb0', '#5e6280', '#4a4e68');
     isoBox(x, cx, cy - 4, 5, 3, '#b0b4d0', '#7a7ea0', '#5e6280');

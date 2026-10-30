@@ -182,6 +182,10 @@ const CFG = {
   },
   overdrive: 0.15,           // a charged Battery right beside a Forge or Cauldron: +15% crafting speed
   heavyBattery: 0.5,          // a Heavy Battery drains this much slower than a Battery, so it lasts 50% longer
+  // Helper robots: each carries Wood / Stone / Iron / Shards from the Stockpile to blueprints, one item at a time. Its charge is its own (it adds nothing to the factory's
+  // power): it burns fuel like a Battery and drains like one Harnesser pulling from it (power 2 = 300 s a charge) only while it has a job; flat, it naps where it stands.
+  // The Nth robot costs the base x costMul^N (Wood / Stone / Iron) and x shardMul^N Shards (N = robots already owned or planned); the Builder still finishes a robot-fed blueprint with E.
+  robot: { max: 3, cost: { wood: 12, stone: 8, iron: 4, shard: 1 }, costMul: 1.5, shardMul: 2, speed: 3.4, power: 2, look: 0.5, giveUp: 2.5 },   // look = s between job searches while idle; giveUp = s it waits after finding nothing/no path
   pickups: {
     potion: { heal: 35 }, elixir: { heal: 80 },
     armor: { armor: 35 }, plate: { armor: 70 },
@@ -200,6 +204,8 @@ const CFG = {
                 desc: 'Gives +10 power to the whole factory while it has charge, and drains while anything needs power. Feed it element spells, Wood or Stone (belt or throw) and it burns them to charge itself (16.5s each, 19.5s when thrown in by hand; more kinds at once = faster). Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed. Throw a combo spell or an Elixir in to overcharge it (extra charge, +5 power for a while).' },
     heavybat: { name: 'Heavy Battery', kind: 'cell', cost: { wood: 20, stone: 15, iron: 12 }, unlock: null,
                 desc: 'A Battery with a heavy core: the same power and the same charging, but it drains 33% slower, so a charge lasts 50% longer.' },
+    robot:    { name: 'Helper Robot', kind: 'bot', cost: { wood: 12, stone: 8, iron: 4, shard: 1 }, unlock: null,
+                desc: 'Fetches Wood, Stone, Iron and Shards from the Stockpile and carries them to blueprints, one at a time. It has its own charge: throw it element spells, Wood or Stone (it adds no power to the factory) and it works about 5 minutes a charge, then naps where it stands. You still finish a robot-fed blueprint with E (Floor Tiles finish themselves). Each robot costs 50% more Wood, Stone and Iron and double the Shards; 3 at most.' },
     expand:   { name: 'Floor Tile', kind: 'expand', cost: { wood: 1, stone: 1 }, unlock: null,
                 desc: 'Place it on the edge of the floor and throw its Wood and Stone at it (from the 29th tile on, 1 Iron too): when it is finished the tile becomes factory floor. A floor tile holds 3 loose items. Demolish an empty tile to take it back.' },
     stockpile: { name: 'Stockpile Tile', kind: 'expand', cost: { wood: 4, stone: 2, iron: 1 }, unlock: null,
@@ -220,9 +226,10 @@ const CFG = {
     logi:    { name: 'Logistics',  members: ['splitter', 'crate'] },
     spawn:   { name: 'Creature Spawner', members: ['spawner'] },
     tiles:   { name: 'Tiles',      members: ['expand', 'stockpile'] },
+    bots:    { name: 'Helper Robot', members: ['robot'] },
   },
-  hotbar: ['hand', 'belt', 'harness', 'craft', 'power', 'logi', 'spawn', 'tiles'],
-  hotkeys: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'],
+  hotbar: ['hand', 'belt', 'harness', 'craft', 'power', 'logi', 'spawn', 'tiles', 'bots'],
+  hotkeys: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9'],
   recipes: {
     // machine, inputs (any mix of belt / hand / thrown), output, craft time, power draw, skill-tree node(s) that unlock it
     potion:       { machine: 'cauldron', in: { water: 2, air: 1 },              out: 'potion',  time: 6,  power: 0, use: 'Heals the Wizard 35 HP' },

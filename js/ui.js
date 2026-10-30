@@ -376,7 +376,7 @@ UI.netHtml = function () {
 
 // ---------- hotbar: single slots plus families (Harnessers, Crafters, Power, Logistics, Spawners) whose member cycles ----------
 UI.tipT = 0; UI.tipHover = false;
-const KEYLBL = ['1', '2', '3', '4', '5', '6', '7', '8'];
+const KEYLBL = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 UI.isFam = id => !!CFG.families[id];
 UI.slotOf = id => { for (const f in CFG.families) if (CFG.families[f].members.indexOf(id) >= 0) return f; return id; };   // the slot a building lives in
 UI.famMember = function (f) {   // the member the slot currently shows: the last one picked, else the first unlocked
@@ -425,7 +425,7 @@ UI.showTip = function (slot) {
   else if (id === 'belt') h = '<b>Wooden Belt</b> <span class="cost">' + UI.img('wood', 16) + '1</span><p>Moves items one tile at a time. Click-drag to lay a line; R rotates. Belts can\'t pull from the Stockpile.</p>';
   else {
     const d = CFG.buildings[id];
-    const dc = id === 'expand' ? FA.tileCost() : d.cost;   // a Floor Tile adds Iron after the first CFG.factory.freeIron
+    const dc = id === 'expand' ? FA.tileCost() : id === 'robot' ? FA.robotCost() : d.cost;   // a Floor Tile adds Iron after the first CFG.factory.freeIron; each robot costs more than the last
     const cost = Object.keys(dc).map(k => UI.img(k, 16) + dc[k]).join(' ');
     const list = Object.keys(CFG.recipes).filter(r => CFG.recipes[r].machine === id && !CFG.recipes[r].ally);
     const rec = list.length ? '<div class="recs">' + list.slice(0, 6).map(UI.recipeHtml).join('') + (list.length > 6 ? '<span class="rec">+' + (list.length - 6) + ' more</span>' : '') + '</div>' : '';
@@ -768,7 +768,7 @@ UI.bpHtml = function () {
   }
   bps.slice(0, 6).forEach(b => {
     const need = FA.needOf(b);
-    h += '<div class="br">' + UI.img('b:' + b.type, 24) + Object.keys(need).map(k => '<span class="need">' + UI.img(k, 16) + '<b' + (G.stock[k] >= need[k] ? '' : ' class="short"') + '>' + need[k] + '</b></span>').join('') + '</div>';
+    h += '<div class="br">' + UI.img('b:' + b.type, 24) + (b.ready ? UI.img('ic_check', 16) : '') + Object.keys(need).map(k => '<span class="need">' + UI.img(k, 16) + '<b' + (G.stock[k] >= need[k] ? '' : ' class="short"') + '>' + need[k] + '</b></span>').join('') + '</div>';
   });
   if (bps.length > 6) h += '<div class="more">+' + (bps.length - 6) + '</div>';
   h += '<div class="tot">' + Object.keys(tot).map(k => '<span class="need">' + UI.img(k, 16) + '<b' + (G.stock[k] >= tot[k] ? '' : ' class="short"') + '>' + tot[k] + '</b></span>').join('') + '</div>';
@@ -965,7 +965,7 @@ const CONTROLS = [
     [K('F') + ' &nbsp;(' + K('SHIFT') + ' + ' + K('F') + ' = back)', 'Switch the element of the Harnesser in reach (the new crystal grows for 7.5 seconds)'],
     [K('SHIFT') + ' + ' + K('E') + ' (hold) &nbsp;/&nbsp; pad LT + RB (hold)', 'Move a finished building: it lifts after a moment, the ghost follows you, let go to set it down (R turns its output, right-click / B cancels)'],
     [K('G') + ' &nbsp;/&nbsp; pad LT + Y', 'Auto-pickup on / off (off by default): loose items that settle within a tile of you hop into your hands'],
-    [K('1') + ' - ' + K('8') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, the building families, then Floor Tiles)'],
+    [K('1') + ' - ' + K('9') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, the building families, Floor Tiles, then the Helper Robot)'],
     [K('[') + ' ' + K(']'), 'Previous / next hotbar slot'],
     [K('Q') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot)'],
     [K('R'), 'Turn the belt or building under the cursor (in front of you on a pad: X), or the one you are about to place. A Splitter never needs turning: it finds its input and outputs itself'],

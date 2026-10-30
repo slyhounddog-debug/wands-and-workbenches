@@ -447,7 +447,7 @@ Main.controls = function (dt) {
   if (IN.hit('KeyR') && !frozenNow()) {
     // R turns whatever is already placed under the cursor (or in front / in reach); only with nothing there does it turn the next placement
     const at = rotateTile(), cb = G.carry && FA.byId(G.carry.id);
-    if (cb) { if (FA.def(cb).kind !== 'splitter' && !FA.isCell(cb)) { cb.dir = (cb.dir + 1) % 4; cb.pop = 0.2; AU.sfx('blip'); } }   // carrying one: R turns its output
+    if (cb) { if (FA.def(cb).kind !== 'splitter' && FA.def(cb).kind !== 'bot' && !FA.isCell(cb)) { cb.dir = (cb.dir + 1) % 4; cb.pop = 0.2; AU.sfx('blip'); } }   // carrying one: R turns its output
     else if (UI.splitB) { /* a Splitter has no front to turn */ }
     else if (!(at && FA.rotateAt(at[0], at[1]))) { G.placeDir = (G.placeDir + 1) % 4; AU.sfx('blip'); }
   }
@@ -805,7 +805,7 @@ Main.updateFocus = function () {
   if (!b && ft && ft.kind === 'bld') b = ft.o;
   if (!b && G.selected === 'hand') {   // a Battery has nothing to press, so it never gets a prompt: its note shows whenever the Builder is in reach of it
     let bs = CFG.reach;
-    for (const c of G.fac.bld) { if (!c.done || FA.def(c).kind !== 'cell') continue; const d = Math.hypot(c.x + 0.5 - bd.x, c.y + 0.5 - bd.y); if (d <= bs) { bs = d; b = c; } }
+    for (const c of G.fac.bld) { if (!c.done || (FA.def(c).kind !== 'cell' && FA.def(c).kind !== 'bot')) continue; const d = Math.hypot(c.x + 0.5 - bd.x, c.y + 0.5 - bd.y); if (d <= bs) { bs = d; b = c; } }
   }
   UI.setInspect(b ? FA.status(b) : null);
   if (R.focus) R.focus.inspH = UI.inspectH;   // the prompts are drawn above the note
@@ -821,7 +821,7 @@ Main.updateFocus = function () {
   if (G.demolish) {
     const c = FA.cell(gx, gy);
     if (c && c.type !== 'portal') {
-      const cost = c.type === 'belt' ? { wood: 1 } : c.done ? FA.def(c).cost : c.got;
+      const cost = c.type === 'belt' ? { wood: 1 } : c.done ? FA.costOf(c) : c.got;
       R.demo = { x: gx, y: gy, refund: c.free && c.done ? [['ic_gift']] : Object.keys(cost).filter(k => cost[k] > 0).map(k => [k, cost[k]]) };
     } else if (!c && FA.canLift(gx, gy)) {   // no building: the tile itself would go (a Stockpile tile back to floor, a floor tile back to empty ground)
       const cost = FA.liftCost(gx, gy);

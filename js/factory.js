@@ -245,8 +245,16 @@ FA.canExpand = (x, y) => FA.inb(x, y) && !FA.owned(x, y) && !FA.isQ(x, y) && !G.
 // a Stockpile Tile goes on a plain, empty floor tile (it is a layer on the floor: demolishing it leaves the floor)
 FA.canPileTile = (x, y) => FA.owned(x, y) && !FA.isPile(x, y) && !G.fac.grid[y * G.fac.w + x];
 FA.isTile = type => type === 'expand' || type === 'stockpile';
-FA.canPut = (type, x, y) => (type === 'expand' ? FA.canExpand(x, y) : type === 'stockpile' ? FA.canPileTile(x, y) : FA.canPlace(x, y));
-FA.costOf = b => b.cost || FA.def(b).cost;   // a Floor Tile's cost depends on how many came before it
+FA.canPut = (type, x, y) => (type === 'expand' ? FA.canExpand(x, y) : type === 'stockpile' ? FA.canPileTile(x, y) : type === 'robot' ? FA.robotRoom() && FA.canPlace(x, y) : FA.canPlace(x, y));
+FA.costOf = b => b.cost || FA.def(b).cost;   // a Floor Tile's / robot's cost depends on how many came before it
+// ----- helper robots: the Nth costs more (50% more Wood / Stone / Iron, double the Shards), at most CFG.robot.max -----
+FA.robotCount = () => G.fac.bld.filter(b => b.type === 'robot').length;   // built or still a blueprint
+FA.robotRoom = () => FA.robotCount() < CFG.robot.max;
+FA.robotCost = function (n) {
+  const R = CFG.robot, k = n === undefined ? FA.robotCount() : n, c = {};
+  for (const r in R.cost) c[r] = Math.max(1, Math.round(R.cost[r] * Math.pow(r === 'shard' ? R.shardMul : R.costMul, k)));
+  return c;
+};
 FA.finishTile = function (b) {   // the blueprint is paid for: the tile becomes floor (or Stockpile) and the blueprint goes away
   const f = G.fac, pile = b.type === 'stockpile';
   f.land[b.y * f.w + b.x] = pile ? 2 : 1;
@@ -287,6 +295,10 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
     powered: true, draw: 0, pop: 0, anim: Math.random() * 6 };
   if (d.kind === 'crafter') { b.recipe = null; b.inv = {}; b.prog = 0; }
   if (d.kind === 'cell') { b.bat = 0; b.over = 0; b.top = false; b.fuel = { air: 0, water: 0, fire: 0, earth: 0, wood: 0, stone: 0 }; b.types = []; }   // bat = charge, fuel = what is waiting to burn, top = it was topped up lately (counts once per charge)
+  if (d.kind === 'bot') {   // a helper robot: its own charge and fuel like a Battery (it gives no power); rx / ry = where its body is, carry = the item in its arms, job = what it is doing
+    b.bat = 0; b.fuel = { air: 0, water: 0, fire: 0, earth: 0, wood: 0, stone: 0 }; b.types = [];
+    b.rx = x + 0.5; b.ry = y + 0.5; b.carry = null; b.job = null; b.path = []; b.look = 0; b.face = 1; b.nap = false; b.wake = 0;
+  }
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
   if (d.kind === 'crate') { b.ck = null; b.cn = 0; }   // what it holds: one kind, any number of them
   if (d.kind === 'harness') { b.hand = 0; b.el = 'air'; b.grow = CFG.harness.growT; b.shake = 0; }   // hand: how far the Builder has cranked the next packet (it stays when he walks away); el / grow: the element crystal and how far it has grown
@@ -302,6 +314,8 @@ FA.onComplete = function (b, quiet) {
   if (FA.def(b).kind === 'expand') { FA.finishTile(b); return; }
   if (FA.def(b).kind === 'crafter' && !b.recipe && b.type !== 'spawner') b.recipe = FA.recipesFor(b.type)[0] || null;
   if (!quiet && FA.def(b).kind === 'cell') WZ.bshrAdd(b, true);   // a finished Battery: its shrine arrives in the wilds with a shockwave
+  b.ready = false;
+  if (FA.def(b).kind === 'bot' && !quiet) { b.nap = true; UI.toast('Helper Robot built! Throw it element spells, Wood or Stone to wake it', 'L', 'ic_bolt'); }
   if (!quiet) {
     FA.burst(b.x + 0.5, b.y + 0.5, '#ffe36b', 22);
     AU.sfx('complete');
@@ -499,9 +513,11 @@ FA.needOf = function (b) {
 FA.needText = need => Object.keys(need).map(k => need[k] + ' ' + RES[k].name).join(', ');
 FA.place = function (type, x, y, dir) {
   if (!FA.unlocked(type)) { UI.toast('Unlock ' + CFG.buildings[type].name + ' in the Skill Tree first.', 'L', 'ic_lock'); AU.sfx('error'); return false; }
+  if (type === 'robot' && !FA.robotRoom()) { UI.toast('A factory runs ' + CFG.robot.max + ' Helper Robots at most.', 'L', 'ic_x'); AU.sfx('error'); return false; }
   if (!FA.canPut(type, x, y)) return false;
-  const credit = G.credits[type] > 0;
+  const credit = G.credits[type] > 0, rcost = type === 'robot' ? FA.robotCost() : null;
   const b = FA.makeBuilding(type, x, y, credit, credit, dir);
+  if (rcost) b.cost = rcost;
   if (type === 'stockpile') for (const o of G.fac.floor.slice()) if (Math.floor(o.x) === x && Math.floor(o.y) === y) { G.fac.floor.splice(G.fac.floor.indexOf(o), 1); FA.dropAt(o.kind, o.x, o.y, true); }   // loose items make way for the blueprint
   if (type === 'expand') { b.cost = FA.tileCost(); G.fac.added++; }
   if (credit) { G.credits[type]--; FA.burst(x + 0.5, y + 0.5, '#7be0ff', 20); FA.ipop(x + 0.5, y + 0.5, [['ic_gift']]); AU.sfx('complete'); }
@@ -595,8 +611,9 @@ FA.demolish =function (x, y, force) {
   } else {
     if (c.done) {
       if (c.free) G.credits[c.type] = (G.credits[c.type] || 0) + 1;
-      else { const cost = FA.def(c).cost; for (const k in cost) add(k, cost[k]); }
+      else { const cost = FA.costOf(c); for (const k in cost) add(k, cost[k]); }
     } else for (const k in c.got) add(k, c.got[k]);
+    if (c.carry) { if (FA.storable(c.carry)) add(c.carry, 1); else FA.dropAt(c.carry, cx, cy); c.carry = null; }   // a robot's load goes back into the Stockpile
     for (const o of c.out) FA.dropAt(o.kind, cx, cy);
     if (c.cn > 0) { if (FA.storable(c.ck)) add(c.ck, c.cn); else for (let i = 0; i < c.cn; i++) FA.dropAt(c.ck, cx, cy, i >= CFG.floorCap); }   // a crate's packets go back into the Stockpile, its Eggs onto the floor
     if (c.inv) for (const k in c.inv) { if (FA.storable(k)) add(k, c.inv[k]); else for (let i = 0; i < c.inv[k]; i++) FA.dropAt(k, cx, cy); }
@@ -605,7 +622,7 @@ FA.demolish =function (x, y, force) {
     if (c.type === 'expand') f.added = Math.max(0, f.added - 1);   // an unfinished Floor Tile never counted
   }
   FA.burst(cx, cy, '#ff9a8a');
-  FA.ipop(cx, cy, c.type === 'belt' ? [['wood']] : Object.keys(FA.def(c).cost).map(k => [k]));   // what came back
+  FA.ipop(cx, cy, c.type === 'belt' ? [['wood']] : Object.keys(FA.costOf(c)).map(k => [k]));   // what came back
   AU.sfx('drop');
   UI.changed();
   return true;
@@ -704,16 +721,19 @@ FA.canInsert = function (b, kind) {
     const need = CFG.recipes[b.recipe].in[kind];
     return !!need && (b.inv[kind] || 0) < Math.max(6, need * 3);
   }
-  if (d.kind === 'cell') return FA.isFuel(kind) && FA.fuelTotal(b) + CFG.fuelPerPacket <= CFG.fuelCap;
+  if (d.kind === 'cell' || d.kind === 'bot') return FA.isFuel(kind) && FA.fuelTotal(b) + CFG.fuelPerPacket <= CFG.fuelCap;   // (a robot's fuel is for itself only)
   if (d.kind === 'splitter') return FA.beltOk(kind) && b.out.length < 2;
   if (d.kind === 'crate') return FA.crateOk(kind) && (!(b.cn > 0) || b.ck === kind);
   return false;
 };
-FA.insert = function (b, kind, thrown) {
+FA.insert = function (b, kind, thrown, byBot) {
   b.pop = 0.22;
   if (!b.done) {
     b.got[kind] = (b.got[kind] || 0) + 1;
-    if (!Object.keys(FA.needOf(b)).length) FA.onComplete(b);
+    if (!Object.keys(FA.needOf(b)).length) {
+      if (byBot && !FA.isTile(b.type)) FA.paidByBot(b);   // a robot paid the last of it: the Builder still finishes the building with E (Floor / Stockpile Tiles finish themselves)
+      else FA.onComplete(b);
+    }
     return;
   }
   const d = FA.def(b);
@@ -728,12 +748,23 @@ FA.insert = function (b, kind, thrown) {
   }
   else if (d.kind === 'crate') { b.ck = kind; b.cn = (b.cn || 0) + 1; }
   else if (FA.isLogi(b)) b.out.push({ kind });
-  if (d.kind === 'cell') {   // fuel waits in the Battery and burns into charge (FA.updCell)
-    if (ELEM[kind]) FA.elTick(kind);   // the weather feels it, and the packet below still fuels the Battery
+  if (d.kind === 'cell' || d.kind === 'bot') {   // fuel waits in the Battery / robot and burns into charge (FA.updCell, FA.updBot)
+    if (ELEM[kind]) FA.elTick(kind);   // the weather feels it, and the packet below still fuels it
     b.fuel[kind] += CFG.fuelPerPacket * (1 + CFG.chargeBonus + (thrown ? CFG.chargeThrowBonus : 0));
     if (b.types.indexOf(kind) < 0) b.types.push(kind);
-    G.flags.fed = true;
+    if (d.kind === 'cell') G.flags.fed = true;
   }
+};
+// a blueprint a robot finished paying for waits, glowing, for the Builder's use button (b.ready); FA.buildNow completes it
+FA.paidByBot = function (b) {
+  b.ready = true; b.pop = 0.4;
+  FA.ipop(b.x + 0.5, b.y + 0.5, [['ic_check']]); FA.burst(b.x + 0.5, b.y + 0.5, '#ffe36b', 10); AU.sfx('blip');
+  UI.changed();
+};
+FA.buildNow = function (b) {
+  if (b.done || !b.ready || Object.keys(FA.needOf(b)).length) return false;
+  b.ready = false; FA.onComplete(b); UI.changed();
+  return true;
 };
 // Overclocking: a combo spell (tier = its element count) or an Elixir thrown into a Battery overcharges it:
 // extra charge past full (up to overcharge.max) and +power for a while (b.over seconds)
@@ -1011,6 +1042,7 @@ FA.state = function (b) {
     if (b.bat < CFG.batteryMax && FA.fuelTotal(b) > 0) return 'work';
     return b.bat <= 0 ? 'starve' : null;
   }
+  if (k === 'bot') return b.nap ? 'starve' : b.moving ? 'work' : null;   // napping = out of charge (the edge bubbles tell the Builder)
   return null;
 };
 // how fast a machine animates in each state (stopped machines freeze, starving ones crawl)
@@ -1116,6 +1148,7 @@ FA.update = function (dt) {
         }
       } else b.prog = 0;
     } else if (d.kind === 'cell') FA.updCell(b, dt);
+    else if (d.kind === 'bot') FA.updBot(b, dt);
     else if (FA.isLogi(b)) FA.updLogi(b, dt);
     const st = FA.state(b);
     if (st === b.st) {
@@ -1221,9 +1254,8 @@ FA.gatherFloor = function (dt) {
   }
 };
 // a Battery: it burns the fuel waiting inside it into charge, then gives power and drains with the factory's load, all by itself
-FA.updCell = function (b, dt) {
+FA.burnFuel = function (b, dt) {   // the fuel waiting inside burns into charge (a Battery and a helper robot charge the same way)
   const M = CFG.batteryMax;
-  if (b.over > 0) b.over = Math.max(0, b.over - dt);
   if (b.bat < M) {
     const act = Object.keys(b.fuel).filter(k => b.fuel[k] > 0);
     if (act.length) {
@@ -1233,6 +1265,11 @@ FA.updCell = function (b, dt) {
     }
   }
   if (!FA.fuelTotal(b) || FA.fuelTotal(b) < 0.01) b.types = [];
+};
+FA.updCell = function (b, dt) {
+  const M = CFG.batteryMax;
+  if (b.over > 0) b.over = Math.max(0, b.over - dt);
+  FA.burnFuel(b, dt);
   if (b.bat >= M && !b.top) {   // topped up (it counts once, and again only after it has run down a good way)
     b.top = true; G.stats.charged = (G.stats.charged || 0) + 1;
     FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_check']]); AU.sfx('charge'); b.pop = 0.4;
@@ -1248,6 +1285,121 @@ FA.updCell = function (b, dt) {
       FA.ipop(b.x + 0.5, b.y + 0.5, [['battery'], ['ic_bolt']]);
     }
   }
+};
+
+// ---------- helper robots ----------
+// A robot (building 'robot', kind 'bot') sits on its dock tile; its BODY (b.rx / b.ry) rolls over the floor. Its fuel burns into its own charge like a Battery's
+// (FA.burnFuel) but it gives the factory no power: while it has something to do it drains like one Harnesser pulling from a Battery (CFG.robot.power), and
+// flat it naps where it stands. It fetches ONE item at a time (b.carry) from the Stockpile (G.stock, the same count the Builder takes from) and puts it into a
+// blueprint (FA.insert with byBot: the Builder still finishes a robot-paid building with E, only Floor / Stockpile Tiles finish themselves).
+// b.job = { ph: 'pile' | 'bp' | 'stash' | 'home', kind, bp: blueprint id }; b.path = the tiles still to cross (null = work it out). Run state (a save keeps only the load and the body's spot).
+// 4-way walk over the floor from tile (sx, sy) to the nearest tile where goal(x, y) holds (its own dock is open ground); [] = already there, null = no way
+FA.botPath = function (b, sx, sy, goal) {
+  const W = G.fac.w, S = sy * W + sx, prev = new Int32Array(W * G.fac.h).fill(-2), q = [S];
+  if (goal(sx, sy)) return [];
+  prev[S] = -1;
+  const open = (x, y) => FA.inb(x, y) && (!FA.solid(x, y) || (x === b.x && y === b.y));
+  for (let h = 0; h < q.length; h++) {
+    const i = q[h], x = i % W, y = (i - x) / W;
+    for (const d of DIRS) {
+      const nx = x + d[0], ny = y + d[1], ni = ny * W + nx;
+      if (!open(nx, ny) || prev[ni] !== -2) continue;
+      prev[ni] = i;
+      if (goal(nx, ny)) { const out = []; for (let c = ni; c !== S; c = prev[c]) out.push({ x: c % W, y: (c - c % W) / W }); return out.reverse(); }
+      q.push(ni);
+    }
+  }
+  return null;
+};
+// the next thing worth doing: a blueprint still short of a material the Stockpile has (nearest first), not already covered by another robot. null = nothing to do
+FA.botPlan = function (b) {
+  const f = G.fac, pl = FA.pileList(), claimBp = {}, claimStock = {};
+  for (const o of f.bld) if (o !== b && o.type === 'robot' && o.job && (o.job.ph === 'pile' || o.job.ph === 'bp')) {
+    const k = o.job.bp + '|' + o.job.kind; claimBp[k] = (claimBp[k] || 0) + 1;
+    if (o.job.ph === 'pile') claimStock[o.job.kind] = (claimStock[o.job.kind] || 0) + 1;
+  }
+  const bad = b.bad || {}, d = o => Math.hypot(o.x + 0.5 - b.rx, o.y + 0.5 - b.ry);
+  const bps = f.bld.filter(o => !o.done && !o.ready && !(bad[o.id] > f.t)).sort((p, q) => d(p) - d(q));
+  for (const t of bps) {
+    const need = FA.needOf(t);
+    for (const k in need) {
+      if (need[k] - (claimBp[t.id + '|' + k] || 0) <= 0) continue;
+      if (b.carry) { if (b.carry === k) return { ph: 'bp', kind: k, bp: t.id }; continue; }
+      if ((G.stock[k] || 0) - (claimStock[k] || 0) > 0 && pl.some(p => p.kind === k && p.n > 0)) return { ph: 'pile', kind: k, bp: t.id };
+    }
+  }
+  return null;
+};
+// where the current job wants the robot: the tile test for FA.botPath
+FA.botGoal = function (b, J) {
+  if (J.ph === 'home') return (x, y) => x === b.x && y === b.y;
+  if (J.ph === 'bp') { const t = FA.byId(J.bp); return t && !t.done ? (x, y) => Math.abs(x - t.x) + Math.abs(y - t.y) === 1 && !FA.solid(x, y) : null; }
+  if (J.ph === 'stash') { const sp = FA.pileSpot(J.kind); return (x, y) => x === Math.floor(sp.x) && y === Math.floor(sp.y); }
+  const have = {}; for (const p of FA.pileList()) if (p.kind === J.kind && p.n > 0) have[p.i] = true;   // 'pile': any tile the kind lies on
+  return (x, y) => !!have[y * G.fac.w + x];
+};
+FA.botArrive = function (b) {
+  const J = b.job, f = G.fac;
+  b.job = null; b.path = null; b.look = 0;
+  if (J.ph === 'pile') {
+    if ((G.stock[J.kind] || 0) <= 0) return;   // someone got there first: look again
+    G.stock[J.kind]--; b.carry = J.kind; b.pop = 0.25; AU.sfx('pickup');
+    b.job = { ph: 'bp', kind: J.kind, bp: J.bp };
+  } else if (J.ph === 'bp') {
+    const t = FA.byId(J.bp);
+    if (t && !t.done && b.carry && FA.canInsert(t, b.carry)) {
+      const k = b.carry; b.carry = null; b.pop = 0.25;
+      FA.insert(t, k, false, true);
+      FA.impact({ x: t.x + 0.5, y: t.y + 0.5, sx: b.rx, sy: b.ry, kind: k }); AU.sfx('place');
+    }
+  } else if (J.ph === 'stash') {
+    G.stock[J.kind] = (G.stock[J.kind] || 0) + 1; b.carry = null; b.pop = 0.2;
+  }
+};
+FA.updBot = function (b, dt) {
+  const R = CFG.robot, f = G.fac;
+  FA.burnFuel(b, dt);
+  const nap = !(b.bat > 0);
+  if (nap !== b.nap) {
+    b.nap = nap; b.pop = 0.4;
+    if (nap) FA.ipop(b.rx, b.ry, [['ic_x']]); else { b.wake = 0.7; FA.ipop(b.rx, b.ry, [['ic_bolt']]); AU.sfx('charge'); }
+  }
+  if (b.wake > 0) b.wake -= dt;
+  b.moving = false;
+  if (nap) return;   // flat: it dozes where it stands, load and all, until it is charged again
+  const tx = Math.floor(b.rx), ty = Math.floor(b.ry);
+  if (!b.job) {
+    b.look -= dt;
+    if (b.look <= 0) {
+      let job = FA.botPlan(b);
+      if (!job && b.carry) job = { ph: 'stash', kind: b.carry };   // nothing wants what it holds: back into the Stockpile
+      if (!job && Math.hypot(b.rx - b.x - 0.5, b.ry - b.y - 0.5) > 0.05) job = { ph: 'home' };
+      if (job) { b.job = job; b.path = null; } else b.look = R.look;
+    }
+  }
+  const J = b.job;
+  if (!J) return;
+  if (!b.path) {
+    const goal = FA.botGoal(b, J), p = goal ? FA.botPath(b, tx, ty, goal) : null;
+    if (!p) {   // blueprint gone, or no way there: drop the job (a blueprint it cannot reach is left alone for a while)
+      const live = J.bp && FA.byId(J.bp);
+      if (live) (b.bad || (b.bad = {}))[J.bp] = f.t + R.giveUp * 4;
+      b.job = null; b.look = live || J.ph === 'home' ? R.giveUp : 0; return;
+    }
+    b.path = p;
+  }
+  b.moving = true;
+  b.bat = Math.max(0, b.bat - FA.drain(R.power, b) * dt);
+  let step = R.speed * dt;
+  while (b.path.length && step > 0) {
+    const n = b.path[0], gx = n.x + 0.5, gy = n.y + 0.5;
+    if (FA.solid(n.x, n.y) && !(n.x === b.x && n.y === b.y)) { b.path = null; return; }   // something was built in the way: find another route
+    const dx = gx - b.rx, dy = gy - b.ry, m = Math.hypot(dx, dy);
+    if (dx - dy > 0.01) b.face = 1; else if (dx - dy < -0.01) b.face = -1;   // which way it looks on screen
+    if (m <= step) { b.rx = gx; b.ry = gy; step -= m; b.path.shift(); }
+    else { b.rx += dx / m * step; b.ry += dy / m * step; step = 0; }
+  }
+  if (b.path && !b.path.length) FA.botArrive(b);
 };
 
 // ---------- throwing ----------
@@ -1619,6 +1771,7 @@ FA.actionFor = function (t, mode) {
 FA.bldAction = function (b, pick) {
   const h = FA.top(), k = h && h.kind, d = FA.def(b);
   if (!b.done) {
+    if (b.ready && !pick) return A('Finish building ' + d.name, () => FA.buildNow(b), false, ['ic_check']);   // a robot paid for it: the Builder puts it together
     if (!pick) return NONE;
     const need = FA.needOf(b);
     return A(h && need[k] ? 'Throw ' + itemName(k) + ' in to build' : 'Needs ' + FA.needText(need), null, false, Object.keys(need));
@@ -1678,7 +1831,7 @@ FA.harnessNear = function () {
 FA.rotateAt = function (tx, ty) {
   const c = FA.cell(tx, ty);
   if (!c || c.type === 'portal') return false;
-  if (c.type !== 'belt') { const k = FA.def(c).kind; if (k === 'cell' || k === 'splitter') return false; c.pop = 0.2; }   // a Splitter routes itself
+  if (c.type !== 'belt') { const k = FA.def(c).kind; if (k === 'cell' || k === 'splitter' || k === 'bot') return false; c.pop = 0.2; }   // a Splitter routes itself
   c.dir = (c.dir + 1) % 4; c.rot = CFG.rotFlash;   // the turned belt / machine flashes and shows a big arrow the way it now points (R.drawBelt, R.drawRotMark)
   AU.sfx('blip'); FA.ipop(tx + 0.5, ty + 0.5, [['ic_rotate']]); UI.changed();
   return true;
@@ -1739,7 +1892,7 @@ FA.powerNote = function (b) {
 FA.status = b => FA.statusText(b) + FA.powerNote(b);
 FA.statusText = function (b) {
   const d = FA.def(b), n = d.name;
-  if (!b.done) return n + ': blueprint, needs ' + (FA.needText(FA.needOf(b)) || 'nothing');
+  if (!b.done) return b.ready ? n + ': every material is in (a robot brought them). Press E to finish building it' : n + ': blueprint, needs ' + (FA.needText(FA.needOf(b)) || 'nothing');
   if (d.kind === 'harness') {
     let st = 'producing';
     if (FA.growing(b)) return n + ' (' + ELEM_WORD[b.el] + '): the crystal is growing, ' + Math.ceil(CFG.harness.growT - b.grow) + 's until it makes spells. F switches the element';
@@ -1783,6 +1936,13 @@ FA.statusText = function (b) {
     } else if (b.bat < CFG.batteryMax) s += ': throw it element spells, Wood or Stone';
     return s;
   }
+  if (d.kind === 'bot') {
+    const act = Object.keys(b.fuel).filter(k => b.fuel[k] > 0), J = b.job;
+    let s = n + ': charge ' + Math.round(b.bat) + '/' + CFG.batteryMax + (b.nap ? ' (flat: napping). Throw it element spells, Wood or Stone to wake it' : ', ' + Math.ceil(b.bat / FA.drain(CFG.robot.power, b)) + 's of work left');
+    s += '. ' + (b.nap ? '' : J ? (J.ph === 'pile' ? 'Fetching ' + itemName(J.kind) : J.ph === 'bp' ? 'Carrying ' + itemName(J.kind) + ' to a blueprint' : J.ph === 'home' ? 'Heading home' : 'Putting ' + itemName(J.kind) + ' back') : 'Waiting for a blueprint that needs something the Stockpile has');
+    if (act.length) s += '. Fuel ' + Math.round(FA.fuelTotal(b)) + 's (' + act.join(', ') + ')';
+    return s;
+  }
   return n;
 };
 
@@ -1802,6 +1962,8 @@ FA.toJSON = function () {
       if (b.pct) { o.pct = b.pct; o.filt = b.filt; o.sig = b.sig; }
       if (b.over > 0) o.over = b.over;
       if (b.cn > 0) { o.ck = b.ck; o.cn = b.cn; }
+      if (b.ready) o.ready = 1;
+      if (b.rx !== undefined) o.bot = { rx: Math.round(b.rx * 100) / 100, ry: Math.round(b.ry * 100) / 100, carry: b.carry };   // a robot: where its body is and what it holds (its job is worked out again)
       return o;
     }),
     belts: f.belts.map(b => ({ x: b.x, y: b.y, dir: b.dir, item: b.item ? b.item.kind : null })),
@@ -1873,6 +2035,13 @@ FA.fromJSON = function (j) {
       b.pct[A2] = s; b.pct[B2] = 100 - s; b.sig = [A2, B2].sort().join(',');   // kept if those are still its outputs (FA.splitConn)
     }
     if (b.over !== undefined && o.over > 0) b.over = +o.over;
+    if (!b.done && o.ready) b.ready = true;
+    if (b.rx !== undefined) {
+      const q = o.bot || {};
+      if (b.done) b.nap = !(b.bat > 0);
+      if (q.rx >= 0 && q.ry >= 0 && q.rx < G.fac.w && q.ry < G.fac.h) { b.rx = +q.rx; b.ry = +q.ry; }
+      if (q.carry && RES[q.carry]) b.carry = q.carry;   // whatever it was holding (it is not in the Stockpile count)
+    }
     if (b.cn !== undefined) {   // a crate holds one kind of packet or Egg (an older crate's mixed contents: the first kind it can hold stays, the rest are set down beside it)
       if (o.cn > 0 && FA.crateOk(o.ck)) { b.ck = o.ck; b.cn = o.cn | 0; }
       for (const x of b.out) { if (FA.crateOk(x.kind) && (!b.cn || b.ck === x.kind)) { b.ck = x.kind; b.cn++; } else FA.dropAt(x.kind, b.x + 0.5, b.y + 0.5, true); }

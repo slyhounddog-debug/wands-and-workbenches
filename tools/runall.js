@@ -1,6 +1,6 @@
 'use strict';
 // Every acceptance check in one command, so none gets forgotten:
-//   node tools/runall.js                 syntax gate, qolcheck, menucheck, snapcheck, allycheck, bshrcheck, wandcheck, nettest
+//   node tools/runall.js                 syntax gate, qolcheck, menucheck, snapcheck, allycheck, bshrcheck, robotcheck, wandcheck, nettest
 //   node tools/runall.js --offline       the same without nettest (it needs the internet); the summary says it was SKIPPED
 //   node tools/runall.js --only=snapcheck,wandcheck     just those        --list      what there is
 //   node tools/runall.js -v              stream every check's own output (otherwise only a failing check's last lines are shown)
@@ -21,6 +21,7 @@ const CHECKS = [
   { id: 'snapcheck', what: 'the snapshot photo test (no leaks, frames match)', file: 'tools/snapcheck/run.js', browser: true },
   { id: 'allycheck', what: 'Core-grown allies', file: 'tools/allycheck/run.js', browser: true },
   { id: 'bshrcheck', what: 'Battery Shrines: one per Battery, damage becomes charge, saves, the look and health of allies', file: 'tools/bshrcheck/run.js', browser: true },
+  { id: 'robotcheck', what: 'Helper Robots: price ladder, own charge, fetching to blueprints, E to finish, napping, saves', file: 'tools/robotcheck/run.js', browser: true },
   { id: 'wandcheck', what: 'the wand, shrines, the four buttons', file: 'tools/wandcheck/run.js', browser: true },
   { id: 'featcheck', what: 'shake cue, allies feel the wand, belt-line chip + link, drag to delete, guest hearing, Altar crater, emotes', file: 'tools/featcheck/run.js', browser: true },
   { id: 'nettest', what: 'online co-op through the real PeerJS cloud (needs the internet)', file: 'tools/nettest/run.js', browser: true, net: true },

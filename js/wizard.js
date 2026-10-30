@@ -368,6 +368,7 @@ WZ.fresh = function () {
     time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, ready: { B: false, W: false }, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
     fireT: 0, invisT: 0, statT: 0, statHits: 0, ride: null, sg: null, shrines: {},   // the wand's clocks (js/wand.js): Flame Trail speed, Vanishing Puff, Statue (and the hits it took), Riding Wave; the shrine ring game and the shrine buffs running
     bsw: [],   // the shockwaves of Battery Shrines arriving (js/bshrine.js)
+    wheel: null, emote: null, stk: null,   // the emote wheel while it is up, the dance he is doing, the sticker the Builder sees (js/emote.js)
     cine: null, rit: 0, quake: 0, altarFlash: 0,   // the Altar's landing cinematic, the Chimera ritual countdown, the world shake after the impact, the flash when a spell hits it
     hv: {}, fg: {},   // harvestable / forage node state (see WZ.nodeProps)
     arcs: [], decals: [], bend: {}, tmod, tmodN, kick: null, jump: null,   // deliveries in flight, ground marks, leaning grass, spell terrain, recoil, geyser jump
@@ -413,7 +414,7 @@ WZ.hurtE = function (e, d, kx, ky, quiet) {
   G.w.run.dmg += Math.min(d, Math.max(0, e.hp));
   e.hp -= d;
   if (c && e._c !== c) { e._c = c; c.hits++; if (m > 1) { c.weak++; G.w.run.weak++; } }
-  if (m > 1 && !quiet && G.w.t - (G.w.weakSfxT || -1) > 0.08) { G.w.weakSfxT = G.w.t; AU.sfx('hitw'); }   // a weakness hit lands heavier (a zone ticking on a crowd would otherwise chatter)
+  if (m > 1 && !quiet && G.w.t - (G.w.weakSfxT || -1) > 0.08) { G.w.weakSfxT = G.w.t; AU.sfx('hitw', e.x, e.y); }   // a weakness hit lands heavier (a zone ticking on a crowd would otherwise chatter)
   if (!quiet) {
     e.flash = 0.12;
     const kb = e.kb !== undefined ? e.kb : e.boss ? 0.08 : e.elite ? 0.4 : 1;
@@ -517,7 +518,7 @@ WZ.hurtH = function (h, d) {
     h.broken = true; h.respawn = CFG.world.respawn;
     const def = CFG.harvest[h.kind];
     for (let i = 0; i < def.n; i++) WZ.drop(def.drop, h.x, h.y, 1);
-    AU.sfx('kill');
+    AU.sfx('kill', h.x, h.y);
   }
 };
 // continuous damage to a tree / rock / shrine (d is already dps x dt)
@@ -551,7 +552,7 @@ WZ.kill = function (e) {
     WZ.ring(e.x, e.y, 2.2, '#ffd23a', 0.45);
   }
   WZ.onDeath(e);
-  AU.sfx('kill');
+  AU.sfx('kill', e.x, e.y);
   w.fx_.push({ type: 'boom', x: e.x, y: e.y, r: e.elite ? 1.4 : 0.9, t: 0, dur: 0.3, col: '#ffffff' });
   WZ.puff(e.x, e.y, def.col, e.elite ? 16 : 9);
 };
@@ -617,7 +618,13 @@ WZ.decal = function (x, y, r, dec) {
   const old = w.decals.find(o => o.k === dec.k && Math.hypot(o.x - x, o.y - y) < rr * 0.6);   // a fresh hit on the same spot renews it
   if (old) { old.t = Math.min(old.t, 0.1); old.r = Math.max(old.r, rr); return; }
   w.decals.push({ x, y, r: rr, k: dec.k, c: dec.c || null, t: 0, dur: dec.t, a: dec.a, s: hash2(Math.floor(x * 7), Math.floor(y * 7), w.decals.length + 3) });
-  if (w.decals.length > CFG.decalMax) w.decals.shift();
+  if (w.decals.length > CFG.decalMax) w.decals.splice(w.decals.findIndex(d => !d.perm), 1);   // (the oldest ordinary mark goes; a permanent one stays)
+};
+// a mark that never fades (dur is out of reach of the ageing loop): the Altar's crater
+WZ.decalPerm = function (x, y, r, k, a) {
+  const w = G.w;
+  if (w.decals.some(d => d.perm && d.k === k)) return;
+  w.decals.push({ x, y, r, k, c: null, t: 1, dur: 1e9, a, perm: true, s: hash2(Math.floor(x * 7), Math.floor(y * 7), 11) });
 };
 WZ.mark = (x, y, r) => { const c = WZ.ctx, S = c && CFG.spells[c.spell]; if (S && S.dec && !WZ.wet(x, y)) WZ.decal(x, y, r, S.dec); };   // the current spell's mark
 // Geyser Jump: shot into the air and over water / bog to the farthest dry spot ahead (up to J.dist tiles), untouchable while airborne
@@ -847,7 +854,7 @@ WZ.lobLand = function (p) {
     WZ.explode(x, y, S.sr, S.dmg, '#ff4a1a', null, 8);
     WZ.zone({ x, y, kind: 'lava', r: S.pool.r, t: S.pool.t, dps: S.pool.dps, col: '#ff6a1a' });
     splat('blob', S.blobs, S.blobDist, 0.45, 1.6, 5, '#ff7a30');
-    w.shake = Math.max(w.shake, 0.45); AU.sfx('slam'); WZ.epuff(x, y, 'fire', 14); WZ.epuff(x, y, 'earth', 8);
+    w.shake = Math.max(w.shake, 0.45); AU.sfx('slam', x, y); WZ.epuff(x, y, 'fire', 14); WZ.epuff(x, y, 'earth', 8);
   } else if (p.sub === 'blob') { WZ.explode(x, y, S.blobR, S.blobDmg, '#ff7a30'); AU.sfx('hit'); }
   else if (p.sub === 'meteor') {
     WZ.explode(x, y, S.r, S.dmg, '#ff7a30', null, S.push);
@@ -856,7 +863,7 @@ WZ.lobLand = function (p) {
       const an = (i + Math.random() * 0.6) / S.frags * 6.283;
       WZ.proj({ x, y, vx: Math.cos(an) * S.fragSpeed, vy: Math.sin(an) * S.fragSpeed, life: 30, dmg: S.fragDmg, sr: S.fragR, push: 6, col: '#ff7a30', kind: 'boulder', burn: true, size: 7, r: 0.5, hops: S.fragHops, h0: S.fragHops, hop: S.fragHop * (0.9 + Math.random() * 0.3), ht: 0, n: 0, seek: S.fragSeek, turn: S.fragTurn, tid: 0 });
     }
-    w.shake = Math.max(w.shake, 0.8); AU.sfx('slam'); AU.sfx('thud'); WZ.puff(x, y, '#d8c8a8', 24); WZ.epuff(x, y, 'fire', 16);
+    w.shake = Math.max(w.shake, 0.8); AU.sfx('slam', x, y); AU.sfx('thud', x, y); WZ.puff(x, y, '#d8c8a8', 24); WZ.epuff(x, y, 'fire', 16);
     WZ.bendRing(x, y, S.r * 2);
   }
 };
@@ -923,7 +930,7 @@ WZ.mineBurst = function (m) {
   WZ.zone({ kind: 'steamcloud', x, y, r: S.cloud.r, t: S.cloud.t, slow: S.cloud.slow, col: '#f4f4f8' });
   for (let i = 0; i < 16; i++) { const an = i / 16 * 6.283; w.fx_.push({ type: 'spark', x, y, vx: Math.cos(an) * 9, vy: Math.sin(an) * 9, z: 0.6, vz: 2, g: -2, col: i % 2 ? '#ffffff' : '#cfe8ff', t: 0, dur: 0.6 }); }
   WZ.bendRing(x, y, S.r);
-  w.shake = Math.max(w.shake, 0.35); AU.sfx('slam');
+  w.shake = Math.max(w.shake, 0.35); AU.sfx('slam', x, y);
   if (m.ctx) { const mc = m.ctx; WZ.later(0.3, () => FA.landed(mc)); }
   WZ.ctx = c;
 };
@@ -1046,7 +1053,7 @@ WZ.novaBurst = function (z) {
   }
   EL.forEach(el => WZ.epuff(x, y, el, 14));
   WZ.bendRing(x, y, S.r);
-  w.shake = Math.max(w.shake, 0.9); AU.sfx('slam');
+  w.shake = Math.max(w.shake, 0.9); AU.sfx('slam', x, y);
   WZ.ctx = null;
 };
 // Thunderstorm: one bolt comes down on (x, y) and forks on to the nearest foes
@@ -1427,7 +1434,7 @@ WZ.bossAI = function (e, dt, d, TG) {   // d and TG: the distance to, and the po
     w.fx_.push({ type: 'warn', x, y, r: B.slamR, t: 0, dur: B.slamDelay, col: '#ff4a8a' });
     AU.sfx('warn');
     WZ.later(B.slamDelay, () => {
-      WZ.boom(x, y, B.slamR, '#ff4a8a'); AU.sfx('slam'); G.w.shake = Math.max(G.w.shake, 0.3);
+      WZ.boom(x, y, B.slamR, '#ff4a8a'); AU.sfx('slam', x, y); G.w.shake = Math.max(G.w.shake, 0.3);
       WZ.strike(x, y, B.slamR, B.slamDmg);   // hurts every ally inside, and the Wizard if he is (the roll swallows it)
     });
   }
@@ -1437,7 +1444,7 @@ WZ.bossAI = function (e, dt, d, TG) {   // d and TG: the distance to, and the po
       const a = i / B.volleyN * 6.283 + Math.random() * 0.3;
       w.eproj.push({ x: e.x, y: e.y, vx: Math.cos(a) * B.volleySpeed, vy: Math.sin(a) * B.volleySpeed, life: 2.4, dmg: B.volleyDmg, col: ELEM[e.weak].color, size: 7 });
     }
-    AU.sfx('volley');
+    AU.sfx('volley', e.x, e.y);
   }
   if (e.sumT <= 0) { e.sumT = B.summonEvery; WZ.foesNear(e, B.summonN); WZ.ring(e.x, e.y, 3, '#ff4a8a', 0.4); }
 };
@@ -1547,7 +1554,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   WZ.tmodTick(dt);
   WZ.arcTick(dt);
   WZ.cineTick(dt);   // the Summoning Altar's landing (runs even if he dies meanwhile)
-  if (w.dead) { w.sg = null; w.dig = null; w.jump = null; w.blink = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
+  if (w.dead) { w.wheel = null; w.emote = null; w.stk = null; w.sg = null; w.dig = null; w.jump = null; w.blink = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
   w.time += dt;
   if (w.hurtT > 0) w.hurtT -= dt;
   if (w.mashT > 0) w.mashT -= dt;
@@ -1574,7 +1581,8 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   }
 
   // the wand's buttons: Cycle picks the armed slot, Cast fires it (a spell-delivery 'act' never comes from the menu world)
-  const A = act || {};
+  let A = act || {};
+  { const eo = WZ.emoteInput(ix, iy, rollPressed, A); ix = eo.ix; iy = eo.iy; rollPressed = eo.roll; A = eo.act; }   // the emote wheel / dance (js/emote.js)
   if (!G.menu && G.wand) { if (A.cycle && !WZ.wandCycle()) AU.sfx('error'); if (A.cast && !WZ.wandCast() && !w.ride && !(w.statT > 0)) AU.sfx('error'); }   // (nothing ready: a dull no)
   if (w.ride) { ix = 0; iy = 0; rollPressed = false; w.rollBuf = 0; w.target = null; }   // a Riding Wave has the controls
   if (w.statT > 0) { rollPressed = false; w.rollBuf = 0; }   // stone does not roll
@@ -1655,6 +1663,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     if (w.target && w.x === ox && w.y === oy) w.target = null;
   }
   WZ.wandTick(dt);   // the wand's clocks: Flame Trail speed, Vanishing Puff, Statue and its burst, the Riding Wave
+  WZ.emoteTick(dt);  // the dance beat and the Builder's sticker
   WZ.augTick(dt);   // augment cooldowns, washing ashore, the keeps' doors, boulders
   WZ.altarTick(dt);   // the Summoning Altar: placing it, its sockets, the Chimera ritual
   WZ.bshrTick(dt);   // the Battery Shrines: one per Battery, their shockwaves

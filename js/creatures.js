@@ -201,7 +201,7 @@ WZ.foeTarget = function (e) {
   const w = G.w;
   let best = null, bd = CFG.ally.aggro;
   for (const a of w.allies) {
-    if (a.dead || a.fall > 0) continue;
+    if (a.dead || a.fall > 0 || a.invT > 0) continue;   // (an ally under the Vanishing Puff cannot be targeted)
     const d = Math.hypot(a.x - e.x, a.y - e.y);
     if (d < bd) { bd = d; best = a; }
   }
@@ -212,6 +212,7 @@ WZ.foeTarget = function (e) {
 // damage to an ally, from any hostile attack: exactly what the Wizard would take, minus his armor and rolls
 WZ.hurtAlly = function (a, d, kx, ky) {
   if (a.dead || a.fall > 0) return;
+  if (a.stoneT > 0) d *= CFG.wand.ally.stoneTake;   // turned to stone by the Statue's burst: half damage
   a.hp -= d; a.flash = 0.12;
   if (kx || ky) { const kb = a.kb !== undefined ? a.kb : 1; a.kx += kx * kb; a.ky += ky * kb; }
   WZ.num(a.x, a.y, Math.round(d), '#ff8aa8');
@@ -224,7 +225,7 @@ WZ.allyDie = function (a) {
   const def = CFG.creatures[a.type], A = CFG.ally;
   if (def && def.ai === 'slime') { const S = def.splash; WZ.zone({ x: a.x, y: a.y, r: S.r, t: S.t, slow: S.slow, ally: true, col: '#4aa8ff' }); }
   if (def && def.ai === 'lava') { const x = a.x, y = a.y, B = def.blast; WZ.telegraph(x, y, B.r, B.delay, '#ff5a2a', () => WZ.strike(x, y, B.r, B.dmg * A.dmgMul, true), true); }
-  AU.sfx('hit');
+  AU.sfx('hit', a.x, a.y);
   G.w.fx_.push({ type: 'boom', x: a.x, y: a.y, r: 0.9, t: 0, dur: 0.3, col: '#46e0c8' });
   WZ.puff(a.x, a.y, def ? def.col : '#46e0c8', 9);
 };
@@ -240,6 +241,8 @@ WZ.allyTick = function (dt) {
     if (a.slowT > 0) { a.slowT -= dt; if (a.slowT <= 0) a.slow = 0; }
     if (a.regen && a.hp < a.maxHp) a.hp = Math.min(a.maxHp, a.hp + a.maxHp * a.regen * dt);
     if (a.land > 0) a.land -= dt;
+    for (const k of ['invT', 'healT', 'stoneT']) if (a[k] > 0) { a[k] -= dt; if (a[k] < 1e-6) a[k] = 0; }   // the wand's buffs (see CFG.wand.ally)
+    if (a.burnT > 0) { a.burnT -= dt; if (a.burnT < 1e-6) a.burnT = 0; else WZ.allyFireSeg(a); }
     if (a.fall > 0) { a.fall -= dt; if (a.fall <= 0) { a.fall = 0; a.land = 0.22; WZ.puff(a.x, a.y, '#d8c8a8', 8); AU.sfx('thud'); } continue; }   // dropping in from the Egg's portal
     if (a.dazeT > 0) { a.dazeT -= dt; continue; }
     const dw = Math.hypot(w.x - a.x, w.y - a.y) || 1;
@@ -251,7 +254,7 @@ WZ.allyTick = function (dt) {
       if (d < bd) { bd = d; foe = e; }
     }
     const tx = foe ? foe.x : w.x, ty = foe ? foe.y : w.y, ex = tx - a.x, ey = ty - a.y, d = Math.hypot(ex, ey) || 1;
-    const s = a.spd * (1 - a.slow) * (!a.fly && WZ.tile(a.x, a.y) === T_BOG ? cfg.slowTerrain : 1);
+    const s = a.spd * (1 - a.slow) * (a.stoneT > 0 ? CFG.wand.ally.stoneSpd : 1) * (!a.fly && WZ.tile(a.x, a.y) === T_BOG ? cfg.slowTerrain : 1);
     let ux = ex / d, uy = ey / d, mx = 0, my = 0;
     if (a.detour > 0) { a.detour -= dt; const px = -uy * a.side, py = ux * a.side; ux = px; uy = py; }   // last-resort sidestep
     if (foe) {
@@ -308,7 +311,7 @@ WZ.aiTick = function (e, dt, d, ux, uy, s, TG) {
       if (e.shotCd <= 0 && d < S.far + 2 && d > 1) {
         e.shotCd = S.every * rand(0.85, 1.2);
         WZ.shoot(e, { x: e.x, y: e.y, vx: ux * S.speed, vy: uy * S.speed, life: 2.4, dmg: dm(S.dmg), col: '#ff7a30', size: 5 });
-        AU.sfx('volley');
+        AU.sfx('volley', e.x, e.y);
       }
       const want = d < S.near ? -1 : d > S.far ? 1 : 0, side = e.side || (e.side = Math.random() < 0.5 ? 1 : -1);
       const mx = ux * want + px * side * 0.5, my = uy * want + py * side * 0.5, m = Math.hypot(mx, my) || 1;
@@ -371,7 +374,7 @@ WZ.aiTick = function (e, dt, d, ux, uy, s, TG) {
         if (!ally) AU.sfx('warn');
       }
       if (e.guCd <= 0 && d < Gu.r) {
-        e.guCd = Gu.every; WZ.ring(e.x, e.y, Gu.r, '#e6f8ff', 0.4); AU.sfx('slam');
+        e.guCd = Gu.every; WZ.ring(e.x, e.y, Gu.r, '#e6f8ff', 0.4); AU.sfx('slam', e.x, e.y);
         if (TG.a) WZ.hurtAlly(TG.a, Gu.dmg, ux * Gu.push, uy * Gu.push);   // a hostile dragon's gust on the ally it hunts
         else if (ally) { if (TG.e) WZ.hurtE(TG.e, dm(Gu.dmg), ux * Gu.push, uy * Gu.push); }   // an allied dragon's on its foe
         else if (!w.dead && w.roll <= 0) { w.vx += ux * Gu.push; w.vy += uy * Gu.push; WZ.damage(Gu.dmg); } else if (w.roll > 0) WZ.dodge();
@@ -401,7 +404,7 @@ WZ.aiTick = function (e, dt, d, ux, uy, s, TG) {
           e.vol.t = e.vol.every;
           const col = e.weakCol || '#ff4a8a';
           for (let i = 0; i < e.vol.n; i++) { const a = i / e.vol.n * 6.283 + Math.random() * 0.3; w.eproj.push({ x: e.x, y: e.y, vx: Math.cos(a) * 6, vy: Math.sin(a) * 6, life: 2.4, dmg: e.vol.dmg, col, size: 7 }); }
-          AU.sfx('volley');
+          AU.sfx('volley', e.x, e.y);
         }
       }
       return null;
@@ -428,7 +431,7 @@ WZ.zapTick = function (e, dt, Z, TG) {   // chain zaps: telegraphed strike point
 };
 WZ.steamBurst = function (e, B) {
   const w = G.w;
-  w.fx_.push({ type: 'boom', x: e.x, y: e.y, r: B.r, t: 0, dur: 0.35, col: '#f4f4f8' }); AU.sfx('hit');
+  w.fx_.push({ type: 'boom', x: e.x, y: e.y, r: B.r, t: 0, dur: 0.35, col: '#f4f4f8' }); AU.sfx('hit', e.x, e.y);
   if (e.ally) { for (const o of w.enemies) if (!o.dead && !(o.fall > 0) && Math.hypot(o.x - e.x, o.y - e.y) < B.r + o.rad) { WZ.hurtE(o, B.dmg * CFG.ally.dmgMul, 0, 0); WZ.slowE(o, B.slow, B.slowT); } return; }
   for (const a of w.allies) if (!a.dead && !(a.fall > 0) && Math.hypot(a.x - e.x, a.y - e.y) < B.r + a.rad) { WZ.hurtAlly(a, B.dmg, 0, 0); a.slow = Math.max(a.slow, B.slow); a.slowT = Math.max(a.slowT, B.slowT); }
   if (w.dead || Math.hypot(w.x - e.x, w.y - e.y) >= B.r) return;

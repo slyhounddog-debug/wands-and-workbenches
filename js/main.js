@@ -214,7 +214,7 @@ Main.helpFoot = function () {
 // Back to the title: the living menu world. From a running game the Builder is sucked up into a portal, the factory slides away, he drops back into the Wizard's world,
 // both are teleported to the start of the wilds and the main menu's plates pop up (Main.exitFrame / Menu.retTick). noSave / instant skip the show.
 Main.toTitle = function (noSave, instant) {
-  DevBot.set(null); Book.close(true);
+  DevBot.set(null); Book.close(true); AU.setEar(null);
   const g = G, show = !noSave && !instant && STATE === 'play' && g && g.fac && !g.menu && !g.intro && Net.role !== 'guest';
   if (!noSave && G && Net.role !== 'guest' && !G.menu) { WZ.bankLooseShards(); Main.save(); }
   if (Net.role) Net.close();   // an online session ends with the game (the host's save is already written, the guest has none)
@@ -269,9 +269,9 @@ Main.WKEYS = {
 // what the four buttons are called for whoever plays him (the HUD chips, the prompts over a shrine or a dig spot)
 Main.wizKeyNames = function () {
   const guest = Net.role === 'guest', pad = guest ? !!IN.pad[0] : !!Main.padW();
-  if (pad) return { cycle: 'Y', cast: 'B', dodge: 'A', mash: 'X' };
-  if (guest || !Main.kbShared()) return { cycle: 'Q', cast: 'RMB', dodge: 'SPACE', mash: 'LMB' };
-  return G.swapped ? { cycle: 'V', cast: 'Z', dodge: 'SPACE', mash: 'E' } : { cycle: 'M', cast: ',', dodge: '.', mash: '/' };
+  if (pad) return { cycle: 'Y', cast: 'B', dodge: 'A', mash: 'X', emote: 'RB' };
+  if (guest || !Main.kbShared()) return { cycle: 'Q', cast: 'RMB', dodge: 'SPACE', mash: 'LMB', emote: 'N' };
+  return G.swapped ? { cycle: 'V', cast: 'Z', dodge: 'SPACE', mash: 'E', emote: 'N' } : { cycle: 'M', cast: ',', dodge: '.', mash: '/', emote: 'N' };
 };
 Main.wizBtns = function (hit, p1, noMouse) {
   const c = G.ctl, sh = Main.kbShared(), K = c.kbW ? Main.WKEYS[sh ? (G.swapped ? 'swap' : 'duo') : 'solo'] : null, mouse = Main.mouseW() && !noMouse;
@@ -281,6 +281,7 @@ Main.wizBtns = function (hit, p1, noMouse) {
     cast: key(K ? K.cast : []) || (mouse && IN.mouse.rp) || !!(p1 && p1.b),
     roll: key(K ? K.dodge : []) || !!(p1 && p1.a),
     mash: key(K ? K.mash : []) || (mouse && IN.mouse.lp) || !!(p1 && p1.x),
+    emote: (!!K && hit('KeyN')) || !!(p1 && p1.rb),   // the emote wheel (js/emote.js): N on the keyboard, RB on his pad
   };
 };
 const useMouseAim = () => G.lastInput === 'mouse' && mouseInFactory() && Main.mouseB();
@@ -296,11 +297,23 @@ function throwAlongAim() {
   if (a) FA.throwOne(a.x, a.y);
 }
 
+// let go of a drag-to-delete line: everything on it goes (a single tile is the old click, which may also lift a tile or ask first); the refunds float up together at the cursor
+function commitDelete(d) {
+  if (d.cancel || !d.path || !G.demolish) return;
+  const hit = d.path.filter(s => s.st === 'del'), list = FA.refundSum(d.path);
+  let n = 0;
+  for (const s of hit) if (FA.demolish(s.x, s.y)) n++;
+  if (n > 1 && list.length) FA.ipop(d.px, d.py - 0.6, list);
+  if (n) UI.changed();
+}
 // let go of a belt drag: lay the whole previewed line (a plain click is a line of one)
 function commitLine(d) {
+  if (d && d.del) return commitDelete(d);
   if (!d || d.cancel || !d.path || G.selected !== 'belt' || G.demolish) return;
   let n = 0;
   for (const s of d.path) if ((s.st === 'new' || s.st === 'turn') && FA.placeBelt(s.x, s.y, s.dir)) n++;
+  const cost = d.path.filter(s => s.st === 'new').length;
+  if (n > 1 && cost) { const e = d.path[d.path.length - 1]; FA.ipop(e.x + 0.5, e.y + 0.5, [['wood', cost]]); }   // what the line cost, floating off its last tile
   if (d.path.length) G.placeDir = d.path[d.path.length - 1].dir;
   if (d.path.some(s => s.st === 'wood')) { UI.toast('A belt costs 1 Wood from the Stockpile. You\'re out!', 'L', 'wood'); AU.sfx('error'); }
   if (n) UI.changed();
@@ -318,7 +331,7 @@ function handleMouseFactory(dt) {
   else if (m.rp && G.drag && !G.drag.cancel) G.drag.cancel = true;
   else if (m.rp && !(IN.shift() && G.hands.length)) { if (G.demolish) G.demolish = false; else if (sel !== 'hand') UI.select('hand'); }
   if (m.lp) {
-    if (G.demolish) FA.demolish(tx, ty);
+    if (G.demolish) { if (FA.inb(tx, ty)) G.drag = { x: tx, y: ty, del: true, px, py, path: FA.delPath(tx, ty, tx, ty) }; }   // the press starts a delete line; it goes when the button comes up
     else if (sel === 'hand') {   // left click picks up: walk to the thing under the cursor and take one
       const thing = FA.thingAt(tx, ty, px, py);
       G.mRepeat = CFG.pickRepeat * 1.5;
@@ -327,11 +340,14 @@ function handleMouseFactory(dt) {
       bd.stuckT = 0;
     } else if (sel === 'belt') {   // the press starts a line; it is laid when the button comes up
       const c = FA.inb(tx, ty) && FA.cell(tx, ty);
-      if (FA.inb(tx, ty) && (c ? c.type === 'belt' : FA.canPlace(tx, ty))) G.drag = { x: tx, y: ty, path: FA.beltPath(tx, ty, tx, ty, G.placeDir) };
+      if (FA.inb(tx, ty) && (c ? c.type === 'belt' : FA.canPlace(tx, ty))) G.drag = { x: tx, y: ty, px, py, path: FA.beltPath(tx, ty, tx, ty, G.placeDir) };
       else FA.placeBelt(tx, ty, G.placeDir);
     } else if (!FA.place(sel, tx, ty, G.placeDir) && FA.inb(tx, ty) && FA.unlocked(sel)) {
       UI.toast(sel === 'expand' ? 'Floor Tiles go on empty ground right beside the floor.' : sel === 'stockpile' ? 'Stockpile Tiles go on an empty floor tile.' : FA.isPile(tx, ty) ? 'Nothing can be built on a Stockpile tile (demolish it first).' : !FA.owned(tx, ty) ? 'There is no floor there: add Floor Tiles first.' : 'That tile is taken.', 'L', 'ic_x'); AU.sfx('error');
     }
+  } else if (m.l && G.demolish && G.drag && G.drag.del) {
+    G.drag.px = px; G.drag.py = py;
+    if (FA.inb(tx, ty)) G.drag.path = FA.delPath(G.drag.x, G.drag.y, tx, ty);   // the delete line follows the cursor
   } else if (m.l && sel === 'hand' && !G.demolish && !bd.target) {   // hold to keep taking
     G.mRepeat -= dt;
     // with something in hand, holding sweeps up the same kind nearby; empty-handed it repeats on the hovered thing
@@ -342,6 +358,7 @@ function handleMouseFactory(dt) {
       G.mRepeat = G.hands.length ? CFG.sweepRepeat : CFG.pickRepeat;
     }
   } else if (m.l && sel === 'belt' && G.drag && !G.demolish) {
+    G.drag.px = px; G.drag.py = py;   // (the cost chip rides beside the cursor)
     if (FA.inb(tx, ty)) G.drag.path = FA.beltPath(G.drag.x, G.drag.y, tx, ty, G.placeDir);   // the preview follows the cursor (R rotates a single belt)
   }
   if (!m.l) { if (G.drag) commitLine(G.drag); G.drag = null; }
@@ -397,7 +414,7 @@ Main.controls = function (dt) {
   const throwHeld = (altB && IN.down('Comma')) || (p0 && p0.bHeld);
   // a Wizard keyboard: arrows + . when it is shared and not swapped, WASD + Space when swapped; alone on the keyboard it takes both
   const wb = Main.wizBtns(IN.hit, p1);
-  let roll = wb.roll, act = { mash: wb.mash, cast: wb.cast, cycle: wb.cycle };
+  let roll = wb.roll, act = { mash: wb.mash, cast: wb.cast, cycle: wb.cycle, emote: wb.emote };
   // throw the whole stack: Shift + right-click (Shift + , when swapped), or LT + B on a pad
   const stackThrow = (IN.shift() && ((IN.mouse.rp && mouseInFactory() && Main.mouseB()) || (altB && IN.hit('Comma')))) || (p0 && p0.b && p0.ltHeld);
   // pick a target on purpose: right stick / R3 on a pad, Tab / Shift+Tab on the keyboard
@@ -562,11 +579,13 @@ Main.controls = function (dt) {
 const WORLD_SFX = new Set(['hit', 'hitw', 'kill', 'hurt', 'clank', 'die', 'roll', 'dodge', 'weak', 'warn', 'heart', 'evwarn', 'alert', 'roar', 'slam', 'volley', 'victory', 'shrine', 'chest', 'shard', 'gem', 'gemBig', 'dig', 'rustle',
   'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'incoming', 'incoming_big', 'portalDrop', 'whoosh', 'pressure', 'wall', 'freeze', 'launch', 'powerup', 'step_w']);
 Main.stepN = 0;
-Main.tapSfx = function (name) {
+Main.tapSfx = function (name, x, y) {
   if (!Net.on || Net.role === 'guest' || !G || G.menu || !G.w || !WORLD_SFX.has(name)) return;
   const q = G.snd || (G.snd = { n: 0, list: [] });
   for (let i = q.list.length - 1; i >= 0 && q.list[i].f === Main.stepN; i--) if (q.list[i].s === name) return;   // one of each per step: a crowd hit by one blast is one sound
-  q.n++; q.list.push({ n: q.n, s: name, f: Main.stepN });
+  const e = { n: q.n + 1, s: name, f: Main.stepN };
+  if (x != null && y != null) { e.x = Math.round(x * 10) / 10; e.y = Math.round(y * 10) / 10; }   // where it was made (the guest turns it down with distance)
+  q.n++; q.list.push(e);
   if (q.list.length > 24) q.list.shift();
 };
 AU.setTap(Main.tapSfx);
@@ -817,7 +836,7 @@ Main.updateFocus = function () {
     const ok = G.selected === 'belt' ? (FA.canPlace(gx, gy) || (c && c.type === 'belt')) : FA.isTile(G.selected) ? FA.canPut(G.selected, gx, gy) : FA.canPlace(gx, gy) && FA.unlocked(G.selected);
     R.ghost = { type: G.selected, x: gx, y: gy, ok: !!ok, dir: G.placeDir };
   }
-  if (G.drag && G.drag.path && !G.drag.cancel) R.ghost = null;   // a belt line being dragged shows its own preview
+  if (G.drag && G.drag.path && !G.drag.cancel) { R.ghost = null; if (G.drag.del) R.demo = null; }   // a belt / delete line being dragged shows its own preview
   // the belt / machine R would turn gets a pulsing rim (with the mouse, or while a belt is selected); a turn flashes it with a big arrow (R.drawRotFlash)
   if (!G.demolish && !G.carry && (G.lastInput === 'mouse' || G.selected === 'belt') && !UI.splitB) {
     const rt = rotateTile(), rc = rt && FA.cell(rt[0], rt[1]);

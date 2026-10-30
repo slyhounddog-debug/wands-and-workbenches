@@ -84,7 +84,7 @@ WZ.bshrAnnounce = function (s) {
   WZ.boom(s.x, s.y, 3.2, '#ffffff'); WZ.ring(s.x, s.y, 4.5, col, 0.6); WZ.puff(s.x, s.y, col, 22); WZ.puff(s.x, s.y, '#ffffff', 10);
   w.fx_.push({ type: 'shock', x: s.x, y: s.y, r: B.ring, t: 0, dur: B.ring / B.speed, col });
   w.bsw.push({ x: s.x, y: s.y, t: 0, r: 0 });
-  AU.sfx('slam'); AU.sfx('shrine');
+  AU.sfx('slam', s.x, s.y); AU.sfx('shrine', s.x, s.y);
   FA.pressure(0.5, col);
   UI.toast('A Battery Shrine #' + s.n + ' has appeared! Hit it with spells to charge its Battery', 'R', 'b:battery');
   UI.toast('Battery #' + s.n + ' has a shrine in the wilds: the Wizard charges it by hitting it', 'L', 'b:battery');
@@ -92,7 +92,7 @@ WZ.bshrAnnounce = function (s) {
 };
 WZ.bshrCrumble = function (s) {
   WZ.boom(s.x, s.y, 1.8, '#ffffff'); WZ.puff(s.x, s.y, '#9a9aa8', 16); WZ.puff(s.x, s.y, CFG.bshr.col, 8);
-  AU.sfx('kill');
+  AU.sfx('kill', s.x, s.y);
   UI.toast('Battery Shrine #' + s.n + ' crumbled: its Battery is gone', 'R', 'b:battery');
 };
 

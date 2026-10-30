@@ -35,7 +35,7 @@ Main.modal = () => Net.role === 'host' && (Main.menuUp || Book.isOpen);
 Main.wizardOnly = function () {
   const p1 = Main.padW();
   if (IN.hit('Escape') && Main.menuUp && !Book.isOpen) Main.pause(false);
-  return { bix: 0, biy: 0, wix: p1 ? p1.ix : 0, wiy: p1 ? p1.iy : 0, wrx: p1 ? p1.rx || 0 : 0, wry: p1 ? p1.ry || 0 : 0, roll: !!(p1 && p1.a), act: p1 ? { mash: !!p1.x, cast: !!p1.b, cycle: !!p1.y } : {}, broll: false };
+  return { bix: 0, biy: 0, wix: p1 ? p1.ix : 0, wiy: p1 ? p1.iy : 0, wrx: p1 ? p1.rx || 0 : 0, wry: p1 ? p1.ry || 0 : 0, roll: !!(p1 && p1.a), act: p1 ? { mash: !!p1.x, cast: !!p1.b, cycle: !!p1.y, emote: !!p1.rb } : {}, broll: false };
 };
 
 // ---------- banners over the game ----------
@@ -342,7 +342,7 @@ Main.playSnd = function (s) {
   if (!q) return;
   if (Main.sndN < 0 || q.n < Main.sndN) { Main.sndN = q.n; return; }
   let played = 0;
-  for (const e of q.list) if (e.n > Main.sndN && played++ < 8) AU.sfx(e.s);
+  for (const e of q.list) if (e.n > Main.sndN && played++ < 8) AU.sfx(e.s, e.x, e.y);
   Main.sndN = q.n;
 };
 Main.interpFrame = function (now) {
@@ -402,6 +402,7 @@ Main.guestFrame = function (dt, ts) {
   let near = 0;
   const w = G.w;
   if (!w.dead) for (const e of w.enemies) if (Math.abs(e.x - w.x) < 10 && Math.abs(e.y - w.y) < 10) near++;
+  AU.setEar(w.x, w.y);   // the wilds' sounds are heard from his Wizard (CFG.hear)
   AU.hum(0); AU.mix(0, Math.min(1, near / 8), !!w.boss); AU.layerMix(G.fac.weather);   // (the wilds' sound effects arrive in the snapshots: Main.playSnd)
   AU.muffle(!!(UI.treeOpen.R || Main.menuUp));
   UI.updateHud(dt);

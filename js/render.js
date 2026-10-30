@@ -273,7 +273,7 @@ R.drawFactory = function (main, dt, rect) {
   for (const o of f.flying) list.push({ d: o.x + o.y + 0.5, o, t: 'fly' });
   list.push({ d: bd.x + bd.y, o: bd, t: 'builder' });
   if (R.ghost) list.push({ d: R.ghost.x + R.ghost.y + (R.ghost.type === 'belt' ? 0.45 : 1.05), o: R.ghost, t: 'ghost' });   // the hovering piece sorts among the real ones
-  const line = G.drag && !G.drag.cancel && G.drag.path;   // a belt line being dragged out: one see-through belt per tile, sorted among the real ones
+  const line = G.drag && !G.drag.cancel && G.drag.path && (!G.drag.del || G.demolish) && G.drag.path;   // a belt line being dragged out: one see-through belt per tile, sorted among the real ones
   if (line) for (const s of line) list.push({ d: s.x + s.y + 0.45, o: s, t: 'line' });
   list.sort((a, b) => a.d - b.d);
 
@@ -325,10 +325,7 @@ R.drawFactory = function (main, dt, rect) {
     if (fk < 1) ctx.restore();
   }
   R.drawShrineStreams(ctx, v, t);
-  if (line && line.length) {   // what the line will cost, over its last tile
-    const n = line.filter(s => s.st === 'new').length, e = line[line.length - 1], q = R.toScreen(v, e.x + 0.5, e.y + 0.5);
-    if (n) R.defer.push(c => R.iconRow(c, q[0], q[1] - 56, [['wood', n]]));
-  }
+  if (line && line.length) R.drawLineChip(ctx, v, G.drag, line, t);
   if (R.ghost) R.drawGhostLinks(ctx, v, R.ghost, t);
   if (R.demo) R.drawDemo(ctx, v, R.demo, t);
   if (R.aim && G.hands.length && !bd.gather) R.drawAim(ctx, v, R.aim, t);
@@ -361,7 +358,7 @@ R.drawFactory = function (main, dt, rect) {
     dspr(ctx, itemSprite(g.el), p[0] - 76, y + 12, 4);
   }
   if (R.hint && !UI.treeOpen.L) R.drawHint(ctx, v, R.hint, t);
-  if (!UI.treeOpen.L && !G.intro && Net.role !== 'guest') R.drawFlags(ctx, v, t);
+  if (!UI.treeOpen.L && !G.intro && Net.role !== 'guest') { R.drawFlags(ctx, v, t); R.drawSticker(ctx, t); }
   if (R.focus && !UI.treeOpen.L) R.drawFocus(ctx, v, R.focus, t);
   for (const p of f.pops) {
     const s = R.toScreen(v, p.x, p.y), a = Math.max(0, 1 - Math.max(0, p.t - 0.6) / 0.5), y = s[1] - 70 - Math.floor(p.t * 10) * 4;
@@ -1188,26 +1185,54 @@ R.ghostLinks = function (g) {
   return out;
 };
 // gold chevrons run along each link (neighbour -> piece for an input, piece -> neighbour for an output) and the neighbour is outlined
-R.drawGhostLinks = function (ctx, v, g, t) {
+// opts (the belt drag's auto-connect link): only = which links to draw, green = a steady green wash on the target's face and green chevrons
+R.drawGhostLinks = function (ctx, v, g, t, opts) {
   if (!g.ok) return;
+  const green = opts && opts.green;
   for (const l of R.ghostLinks(g)) {
+    if (opts && opts.only && !opts.only(l)) continue;
     const a = l.into ? [l.x + 0.5, l.y + 0.5] : [g.x + 0.5, g.y + 0.5], b = l.into ? [g.x + 0.5, g.y + 0.5] : [l.x + 0.5, l.y + 0.5];
     const o = R.toScreen(v, l.x + 0.5, l.y + 0.5);
-    ctx.strokeStyle = Math.sin(t * 8) > 0 ? '#9dff9d' : '#ffffff'; ctx.lineWidth = 8; diamond(ctx, o[0], o[1], v.hw, v.hh); ctx.stroke();
+    if (green) { ctx.globalAlpha = 0.3 + 0.12 * Math.sin(t * 6); ctx.fillStyle = '#3dff6a'; diamond(ctx, o[0], o[1], v.hw, v.hh); ctx.fill(); ctx.globalAlpha = 1; }
+    ctx.strokeStyle = green ? (Math.sin(t * 8) > 0 ? '#3dff6a' : '#d8ffe0') : Math.sin(t * 8) > 0 ? '#9dff9d' : '#ffffff'; ctx.lineWidth = 8; diamond(ctx, o[0], o[1], v.hw, v.hh); ctx.stroke();
     const s0 = R.toScreen(v, a[0], a[1]), s1 = R.toScreen(v, b[0], b[1]), dx = s1[0] - s0[0], dy = s1[1] - s0[1], m = Math.hypot(dx, dy) || 1, nx = dx / m, ny = dy / m;
     for (let i = 0; i < 3; i++) {
       const k = (t * 1.6 + i / 3) % 1, x = s0[0] + dx * k, y = s0[1] + dy * k - 20;
-      for (const [sz, col] of [[18, '#1a0f28'], [12, '#ffe36b']]) {
+      for (const [sz, col] of [[18, '#1a0f28'], [12, green ? '#3dff6a' : '#ffe36b']]) {
         ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x + nx * sz, y + ny * sz); ctx.lineTo(x - nx * sz * 0.6 - ny * sz * 0.8, y - ny * sz * 0.6 + nx * sz * 0.8); ctx.lineTo(x - nx * sz * 0.6 + ny * sz * 0.8, y - ny * sz * 0.6 - nx * sz * 0.8); ctx.closePath(); ctx.fill();
       }
     }
     dspr(ctx, SP.ic_check, o[0], o[1] - 84 + (Math.sin(t * 6) > 0 ? 0 : 4), 4);
   }
 };
+// The chip beside the cursor while a line is dragged (the cursor's world point is in G.drag, so the picture needs nothing but G): a belt line shows the Wood it will take
+// (have / need while the Stockpile runs short) and how many tiles are blocked; a delete line shows the refund it will give. A belt line that ends at a Splitter or a Storage Crate also
+// lights a green auto-connect link on that building's face.
+R.drawLineChip = function (ctx, v, d, line, t) {
+  const q = R.toScreen(v, d.px == null ? line[line.length - 1].x + 0.5 : d.px, d.py == null ? line[line.length - 1].y + 0.5 : d.py), at = (c, list) => R.iconRow(c, q[0] + 70, q[1] - 30, list);
+  if (d.del) {
+    const list = FA.refundSum(line);
+    if (list.length && line.length > 1) R.defer.push(c => at(c, list));
+    return;
+  }
+  const need = line.filter(s => s.st === 'new' || s.st === 'wood').length, short = line.filter(s => s.st === 'wood').length, bad = line.filter(s => s.st === 'bad').length;
+  const list = [];
+  if (need) list.push(['wood', short ? (need - short) + '/' + need : need]);
+  if (bad) list.push(['ic_x', bad]);
+  if (list.length) R.defer.push(c => at(c, list));
+  const e = line[line.length - 1], ic = e.into && (e.st === 'new' || e.st === 'turn') && FA.cell(e.into[0], e.into[1]);
+  if (ic && ic.type !== 'belt' && ic.type !== 'portal' && (FA.def(ic).kind === 'splitter' || FA.def(ic).kind === 'crate'))
+    R.drawGhostLinks(ctx, v, { type: 'belt', x: e.x, y: e.y, dir: e.dir, ok: true }, t, { green: true, only: l => l.x === e.into[0] && l.y === e.into[1] });
+};
 // one tile of the belt line being dragged: a wash (blue = new, gold = an existing belt re-aimed, red = blocked, orange = out of Wood), the belt itself
 // see-through with its chevrons, and a white ring where the line turns a corner
 R.drawLineTile = function (ctx, v, s, t) {
   const p = R.toScreen(v, s.x + 0.5, s.y + 0.5), bad = s.st === 'bad' || s.st === 'wood';
+  if (s.st === 'del' || s.st === 'skip' || s.st === 'none') {   // the drag-to-delete line: red where something goes, a faint grey ring where it will not
+    if (s.st === 'del') { ctx.globalAlpha = 0.45 + 0.1 * Math.sin(t * 8); ctx.fillStyle = '#ff3c3c'; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill(); ctx.globalAlpha = 1; dspr(ctx, SP.ic_x, p[0], p[1] - 24, 4); }
+    else { ctx.globalAlpha = 0.5; ctx.strokeStyle = '#d0d0d0'; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw - 6, v.hh - 3); ctx.stroke(); ctx.globalAlpha = 1; if (s.st === 'skip') dspr(ctx, SP.ic_lock, p[0], p[1] - 24, 4); }
+    return;
+  }
   ctx.globalAlpha = 0.45 + 0.1 * Math.sin(t * 5); ctx.fillStyle = s.st === 'bad' ? '#ff6a6a' : s.st === 'wood' ? '#ffb34a' : s.st === 'turn' ? '#ffe36b' : '#5ab4ff';
   diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill();
   ctx.globalAlpha = bad ? 0.4 : 0.8; R.drawBelt(ctx, v, { x: s.x, y: s.y, dir: s.dir, item: null }, t); ctx.globalAlpha = 1;
@@ -1493,6 +1518,7 @@ R.drawWorld = function (main, dt, rect) {
   if (airborne) R.drawAltarParts(ctx, v, w);
   R.drawKeepCount(ctx, v, wt);
   R.drawMaskHints(ctx, v, wt);
+  R.drawWheel(ctx, v, w, wt);
   R.drawWeather(ctx, wt);
   if (mv) { Menu.drawFx(ctx, mv, wt); Menu.hints(ctx, v, mv); }
 
@@ -1579,6 +1605,7 @@ R.drawPickup = function (ctx, v, o, t) {
 };
 // a sprite's silhouette in a flat colour (cached per sprite and colour: static art, so it can never differ between two frames)
 const SIL = new WeakMap();
+const wht0 = spr => ({ c: spr.white, ax: spr.ax, ay: spr.ay });
 function silOf(spr, col) {
   let m = SIL.get(spr.white);
   if (!m) { m = {}; SIL.set(spr.white, m); }
@@ -1620,8 +1647,34 @@ R.drawEnemy = function (ctx, v, e) {
   }
   if (e.slow > 0) { ctx.strokeStyle = '#78c8ff'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 18 * sc, 9 * sc); ctx.stroke(); }
   const y = p[1] - hop - lift;
-  if (e.ally) { const sil = silOf(spr, '#7bff9a'); for (const o of [[-S, 0], [S, 0], [0, -S], [0, S]]) dsprSq(ctx, sil, p[0] + o[0], y + o[1], S, qx, qy, 1, e.face < 0); }   // a one-pixel lime outline
-  dsprSq(ctx, spr, p[0], y, S, qx, qy, 1, e.face < 0);
+  // the wand's buffs on an ally (CFG.wand.ally): unseen = see-through and flickering with a white swirl, alight = an orange outline and rising flames, stone = grey with cracks and a shield,
+  // healed = a green flash with rising crosses and a green ring
+  const unseen = e.ally && e.invT > 0, ua = unseen ? (e.invT < 0.6 && Math.sin(t * 40) > 0 ? 0.7 : 0.3 + 0.08 * Math.sin(t * 9)) : 1;
+  if (e.ally) { const sil = silOf(spr, '#7bff9a'); for (const o of [[-S, 0], [S, 0], [0, -S], [0, S]]) dsprSq(ctx, sil, p[0] + o[0], y + o[1], S, qx, qy, ua, e.face < 0); }   // a one-pixel lime outline
+  if (e.ally && e.burnT > 0) { const sil = silOf(spr, Math.sin(t * 14) > 0 ? '#ff7a30' : '#ffd23a'); for (const o of [[-2 * S, 0], [2 * S, 0], [0, -2 * S], [0, S]]) dsprSq(ctx, sil, p[0] + o[0], y + o[1], S, qx, qy, 0.9, e.face < 0); }
+  dsprSq(ctx, spr, p[0], y, S, qx, qy, ua, e.face < 0);
+  if (unseen) {
+    ctx.strokeStyle = '#e6f8ff'; ctx.lineWidth = 3; ctx.setLineDash([9, 9]); ctx.lineDashOffset = -t * 40; diamond(ctx, p[0], p[1], 27 * sc, 13 * sc); ctx.stroke(); ctx.setLineDash([]);
+    for (let i = 0; i < 4; i++) { const a = t * 3 + i * 1.57; ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.8; ctx.fillRect(snap(p[0] + Math.cos(a) * 21 * sc - 3), Math.round((y - 18 * sc + Math.sin(a) * 9 * sc) / 3) * 3, 6, 6); }
+    ctx.globalAlpha = 1;
+  }
+  if (e.ally && e.stoneT > 0) {
+    dsprSq(ctx, silOf(spr, '#8a8a96'), p[0], y, S, qx, qy, 0.62, e.face < 0);
+    const ch = Math.round(spr.c.height * S * sc);
+    ctx.fillStyle = '#2c2c36'; for (let i = 0; i < 3; i++) { ctx.fillRect(snap(p[0] - 12 * sc + i * 12 * sc), Math.round((y - ch * (0.7 - i * 0.18)) / 3) * 3, 3, 12); ctx.fillRect(snap(p[0] - 12 * sc + i * 12 * sc), Math.round((y - ch * (0.7 - i * 0.18) + 12) / 3) * 3, 9, 3); }
+    ctx.strokeStyle = '#9a9aa6'; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], 27 * sc, 13 * sc); ctx.stroke();
+  }
+  if (e.ally && e.burnT > 0) for (let i = 0; i < 5; i++) {   // flames licking up off it
+    const k = (t * 1.8 + i * 0.37) % 1, fx = Math.sin(i * 2.3 + t * 3) * 15 * sc;
+    ctx.globalAlpha = 1 - k; ctx.fillStyle = k < 0.4 ? '#ffd23a' : '#ff7a30'; ctx.fillRect(snap(p[0] + fx - 3), Math.round((y - k * spr.c.height * S * sc * 0.9) / 3) * 3, 6, 9);
+  }
+  if (e.ally && e.healT > 0) {
+    const k = 1 - e.healT / 1.2;
+    dsprSq(ctx, wht0(spr), p[0], y, S, qx, qy, 0.55 * (1 - k), e.face < 0);
+    ctx.strokeStyle = '#7bff9a'; ctx.globalAlpha = 1 - k; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], (24 + k * 40) * sc, (12 + k * 20) * sc); ctx.stroke();
+    ctx.fillStyle = '#7bff9a'; for (let i = 0; i < 3; i++) { const cx = snap(p[0] + (i - 1) * 21 * sc), cy = Math.round((y - 12 - (k * 1.2 + i * 0.18) * 54) / 3) * 3; ctx.fillRect(cx - 3, cy - 9, 6, 18); ctx.fillRect(cx - 9, cy - 3, 18, 6); }
+    ctx.globalAlpha = 1;
+  }
   const wht = { c: spr.white, ax: spr.ax, ay: spr.ay };
   if (e.flash > 0) dsprSq(ctx, wht, p[0], y, S, qx, qy, 0.85, e.face < 0);
   if (e.tele && Math.sin(t * 30) > 0) dsprSq(ctx, wht, p[0], y, S, qx, qy, 0.7, e.face < 0);   // winding up an attack
@@ -1881,6 +1934,13 @@ R.drawAltar = function (ctx, v, w) {
       if (Math.sin(t * 8 + i * 2) > 0.2) { ctx.fillStyle = col; ctx.fillRect(ex - 15, ey - 3, 6, 6); ctx.fillRect(ex + 9, ey - 3, 6, 6); ctx.fillRect(ex - 3, ey - 15, 6, 6); }
     } else { ctx.fillStyle = '#3a2a52'; ctx.fillRect(ex - 9, ey - 9, 18, 18); ctx.fillStyle = col; ctx.globalAlpha *= 0.35; ctx.fillRect(ex - 3, ey - 3, 6, 6); }
     ctx.globalAlpha = 1;
+    // ambient wisps, idle or not (a pure function of the clock): a lit socket sheds bright curls of its colour, a dark one a few faint, slow ones
+    const nw = lit[i] ? 4 : 2, base = Math.max(alpha, 0) * (back ? 0.65 : 1);
+    for (let j = 0; j < nw; j++) {
+      const k = (t * (lit[i] ? 0.55 : 0.28) + j / nw + i * 0.23) % 1, wx = snap(ex + Math.sin(k * 7 + j * 2.4 + i) * (6 + k * 9) - 3), wy = Math.round((ey - 12 - k * (lit[i] ? 54 : 36)) / 3) * 3, sz = k < 0.6 ? 6 : 3;
+      ctx.globalAlpha = base * (1 - k) * (lit[i] ? 0.75 : 0.3); ctx.fillStyle = lit[i] && j % 2 ? '#ffffff' : col; ctx.fillRect(wx, wy, sz, sz);
+    }
+    ctx.globalAlpha = 1;
   }
   if (air) return;
   if (WZ.altarLitN() >= 4) {   // fully lit: a shaft of light and a ring of sparks; sealed (a red lock) until every Stronghold is claimed
@@ -2015,7 +2075,8 @@ R.drawWizard = function (ctx, v, w) {
     ctx.save(); ctx.translate(snap(p[0] + (sdx > 0 ? 1 : -1) * Math.round(6 * kk * heavy / 3) * 3), Math.round((p[1] - bob) / 3) * 3);
     ctx.rotate(Math.round(lean * 20) / 20); ctx.scale(sx * (flip ? -1 : 1), sy); ctx.globalAlpha = (blink ? 0.4 : 1) * ia;
     ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S, spr.c.width * S, spr.c.height * S); for (const l of layers) ctx.drawImage(l.s.c, -l.s.ax * S, -l.s.ay * S, l.s.c.width * S, l.s.c.height * S); ctx.restore(); ctx.globalAlpha = 1;
-  } else if (w.mashT > 0) { dsprSq(ctx, spr, p[0], p[1] - bob, S, 1.15, 0.85, (blink ? 0.4 : 1) * ia, flip); for (const l of layers) dsprSq(ctx, l.s, p[0], p[1] - bob, S, 1.15, 0.85, (blink ? 0.4 : 1) * l.a * ia, flip); }   // squashed while digging
+  } else if (w.emote) R.drawDance(ctx, v, w, p, spr, layers, flip, (blink ? 0.4 : 1) * ia, S);   // an emote: the dance of its element (js/emotedraw.js)
+  else if (w.mashT > 0) { dsprSq(ctx, spr, p[0], p[1] - bob, S, 1.15, 0.85, (blink ? 0.4 : 1) * ia, flip); for (const l of layers) dsprSq(ctx, l.s, p[0], p[1] - bob, S, 1.15, 0.85, (blink ? 0.4 : 1) * l.a * ia, flip); }   // squashed while digging
   else if (stone) {   // the Statue: grey stone, cracks for every hit he has taken, a bar for the time left
     const sc = stoneSpr(spr), E = CFG.wand.earth, hits = Math.min(10, w.statHits || 0), k = WZ.statueMul() - 1, pulse = 0.5 + 0.5 * Math.sin(tt * (6 + 10 * k));
     dspr(ctx, sc, p[0], p[1], S, blink ? 0.6 : 1, flip);
@@ -2026,7 +2087,7 @@ R.drawWizard = function (ctx, v, w) {
     R.hpBar(ctx, p[0], p[1] + 9, 27, w.statT / E.t, '#b58a4c');
   }
   else { dspr(ctx, spr, p[0], p[1] - bob, S, (blink ? 0.4 : 1) * ia, flip); wearAll((blink ? 0.4 : 1) * ia, flip, p[0], p[1] - bob); }
-  const arm = G.wand && G.wand.armed && G.wand.full[G.wand.armed] ? G.wand.armed : null;
+  const arm = G.wand && G.wand.armed && G.wand.full[G.wand.armed] && !w.emote ? G.wand.armed : null;
   if (arm) {   // the staff glows in the armed wand attack's element colour (dark when nothing is armed), switching the frame the armed element changes
     const gx = p[0] + (flip ? -24 : 24), gy = Math.round((p[1] - 45 - bob) / 3) * 3, pu = 0.5 + 0.5 * Math.sin(tt * 6);
     ctx.fillStyle = ELEM[arm].color;
@@ -2469,6 +2530,7 @@ R.drawDecal = function (ctx, v, dc) {
   switch (dc.k) {
     case 'burn': blot('#1a120c', 1, 0.6); blot('#3a2414', 0.55, 0.6); break;
     case 'crater': blot('#1a120c', 1, 0.65); rays('#120c08', 7, 1.15, 6); blot('#4a2a14', 0.45, 0.7); break;
+    case 'altar': blot('#120c10', 1, 0.7); rays('#0a060c', 9, 1.2, 6); blot('#2a1c34', 0.65, 0.7); rays('#6a3ad0', 4, 0.8, 3); blot('#0a060c', 0.3, 0.7); break;   // the Altar's permanent impact crater: a scorched ring, cracks, a violet glow in the cracks
     case 'crack': blot('#4a3420', 0.7, 0.35); rays('#1e140c', 5 + Math.floor(H(1) * 3), 1.05, a > 0.7 ? 6 : 3); break;
     case 'frost': blot('#eaf8ff', 1, 0.6); rays('#ffffff', 6, 0.9, 3); break;
     case 'wet': blot('#1e3c64', 1, 0.35); blot('#4a7ab0', 0.4, 0.3); break;
@@ -2502,7 +2564,7 @@ R.drawDecal = function (ctx, v, dc) {
     ctx.fillRect(snap(s[0] - 3), Y(s[1] - 3), 6, 3);
   }
   // fresh burns still glow: a few embers blinking in the black
-  if ((dc.k === 'burn' || dc.k === 'crater') && k < 0.45) {
+  if ((dc.k === 'burn' || dc.k === 'crater' || dc.k === 'altar') && k < 0.45) {
     ctx.fillStyle = '#ff9a3a';
     for (let i = 0; i < 5; i++) if (Math.sin(G.w.t * 9 + i * 2.1) > 0) { ctx.globalAlpha = a * (1 - k / 0.45); ctx.fillRect(snap(s[0] + (H(i + 60) - 0.5) * rx), Y(s[1] + (H(i + 70) - 0.5) * ry), 6, 3); }
   }

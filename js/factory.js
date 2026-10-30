@@ -443,6 +443,7 @@ FA.shakeLoose = function (hpFrac) {
 // the pending shakes (every frame, FA.update): when one has rattled long enough its item comes loose
 FA.shakeTick = function (dt) {
   const f = G.fac, shk = f.shk;
+  if (f.shkFlash > 0) f.shkFlash = Math.max(0, f.shkFlash - dt);
   if (!shk || !shk.length) return;
   for (let n = shk.length - 1; n >= 0; n--) {
     const q = shk[n];
@@ -454,7 +455,15 @@ FA.shakeTick = function (dt) {
     else if ((G.stock[q.kind] || 0) > 0) { kind = q.kind; G.stock[kind]--; }   // (taken by the Builder meanwhile: nothing falls)
     if (!kind) continue;
     FA.dropAt(kind, x, y, true); FA.ipop(x, y - 0.3, [[kind]]); AU.sfx('boing');
+    FA.shakeCue(x, y);
   }
+};
+// the Builder may be busy far away: the spot thumps (a dust ring + a white ring on the floor) and the POWER / HANDS cards flash for CFG.shake.flash s (G.fac.shkFlash, plain data; the HUD reads it)
+FA.shakeCue = function (x, y) {
+  const f = G.fac;
+  FA.landPuff(x, y);
+  f.rings.push({ x, y, dx: 0, dy: 1, t: 0, col: '#ffffff' });
+  f.shkFlash = CFG.shake.flash;
 };
 // sideways px a belt / pile tile (tile coordinates) rattles while a shake is about to throw its item out
 FA.shakeOff = function (tx, ty) {
@@ -515,13 +524,15 @@ FA.placeBelt = function (x, y, dir) {
 // The click-drag belt line: from the tile the press started on to the tile under the cursor in one or two straight legs (the longer first; the other order when
 // that one is blocked), turning where the legs meet. If the end tile is taken (a machine, a portal, a belt) the line stops short and its last belt points into it.
 // Each step is { x, y, dir, st, corner }: st 'new' | 'turn' (an existing belt, re-aimed) | 'bad' (blocked: it and everything after is skipped) | 'wood' (the Stockpile is out of Wood).
+// the tiles of a drag from (sx, sy) to (tx, ty) in two straight legs, the x leg first or not (shared by the belt line and the drag-to-delete line)
+FA.linePts = function (sx, sy, tx, ty, xFirst) {
+  const dx = tx - sx, dy = ty - sy, mx = Math.sign(dx), my = Math.sign(dy), pts = [[sx, sy]]; let x = sx, y = sy;
+  for (const l of xFirst ? [[mx, 0, Math.abs(dx)], [0, my, Math.abs(dy)]] : [[0, my, Math.abs(dy)], [mx, 0, Math.abs(dx)]]) for (let i = 0; i < l[2]; i++) { x += l[0]; y += l[1]; pts.push([x, y]); }
+  return pts;
+};
 FA.beltPath = function (sx, sy, tx, ty, dir0) {
-  const dx = tx - sx, dy = ty - sy, ax = Math.abs(dx), ay = Math.abs(dy), mx = Math.sign(dx), my = Math.sign(dy);
-  const line = xFirst => {
-    const pts = [[sx, sy]]; let x = sx, y = sy;
-    for (const l of xFirst ? [[mx, 0, ax], [0, my, ay]] : [[0, my, ay], [mx, 0, ax]]) for (let i = 0; i < l[2]; i++) { x += l[0]; y += l[1]; pts.push([x, y]); }
-    return pts;
-  };
+  const dx = tx - sx, dy = ty - sy, ax = Math.abs(dx), ay = Math.abs(dy);
+  const line = xFirst => FA.linePts(sx, sy, tx, ty, xFirst);
   const free = p => { if (!FA.inb(p[0], p[1])) return false; const c = FA.cell(p[0], p[1]); return c ? c.type === 'belt' : FA.canPlace(p[0], p[1]); };
   const fits = pts => pts.every((p, i) => free(p) || (i === pts.length - 1 && i > 0 && FA.inb(p[0], p[1]) && !!FA.cell(p[0], p[1])));
   let pts = line(ax >= ay);
@@ -539,7 +550,35 @@ FA.beltPath = function (sx, sy, tx, ty, dir0) {
     if (st === 'new') { if (wood > 0) wood--; else st = 'wood'; }
     out.push({ x: p[0], y: p[1], dir, st, corner: i > 0 && dir !== out[i - 1].dir });
   });
+  if (into && out.length) out[out.length - 1].into = into;   // the taken tile the last belt points into (a Splitter / Crate gets the green auto-connect link while dragging)
   return out;
+};
+// what a building / belt / blueprint gives back when demolished, as { kind: n }
+FA.refundOf = function (c) {
+  if (c.type === 'belt') return { wood: 1 };
+  const src = c.done ? FA.def(c).cost : c.got, out = {};
+  for (const k in src) if (src[k] > 0) out[k] = src[k];
+  return out;
+};
+// The drag-to-delete line: the same two-leg line as the belt drag. Each step is { x, y, st, r }: st 'del' (a building / belt / blueprint that will go, r = its refund; a free
+// placement comes back as { gift: 1 }), 'skip' (locked: it would ask first, so a drag leaves it) or 'none' (nothing there). A plain click (one tile) also lifts an empty floor / Stockpile tile.
+FA.delPath = function (sx, sy, tx, ty) {
+  const ax = Math.abs(tx - sx), ay = Math.abs(ty - sy), pts = FA.linePts(sx, sy, tx, ty, ax >= ay), one = pts.length === 1;
+  return pts.map(p => {
+    const c = FA.inb(p[0], p[1]) ? FA.cell(p[0], p[1]) : null;
+    if (c && c.type !== 'portal') {
+      if (c.type !== 'belt' && !FA.unlocked(c.type) && !one) return { x: p[0], y: p[1], st: 'skip' };
+      return { x: p[0], y: p[1], st: 'del', r: c.free && c.done ? { gift: 1 } : FA.refundOf(c) };
+    }
+    if (!c && one && FA.inb(p[0], p[1]) && FA.canLift(p[0], p[1])) return { x: p[0], y: p[1], st: 'del', tile: true, r: FA.liftCost(p[0], p[1]) };
+    return { x: p[0], y: p[1], st: 'none' };
+  });
+};
+// the total of a delete line's refunds as an icon row list
+FA.refundSum = function (path) {
+  const sum = {};
+  for (const s of path) if (s.st === 'del') for (const k in s.r) sum[k] = (sum[k] || 0) + s.r[k];
+  return Object.keys(sum).map(k => k === 'gift' ? ['ic_gift', sum[k]] : [k, sum[k]]);
 };
 // force: skip the "you can't place this again yet" question (the confirmation modal calls it back with true)
 FA.demolish =function (x, y, force) {

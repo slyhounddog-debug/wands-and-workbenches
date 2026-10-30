@@ -84,6 +84,22 @@ WZ.unseen = function () {
   WZ.puff(w.x, w.y, '#e6f8ff', 8); AU.sfx('blip');
 };
 
+// ---------- allies feel the wand ----------
+// every living ally within r tiles of (x, y): fn(ally)
+WZ.eachAlly = function (x, y, r, fn) {
+  for (const a of G.w.allies) if (!a.dead && a.fall <= 0 && Math.hypot(a.x - x, a.y - y) < r + a.rad) fn(a);
+};
+// a burning ally leaves a fire trail of its own: its segments go into one shared 'afire' Flame Trail zone (hurts hostiles only, laid where it walks, every F.gap tiles)
+WZ.allyFireSeg = function (a) {
+  const w = G.w, F = CFG.wand.fire;
+  if (a.lx != null && Math.hypot(a.x - a.lx, a.y - a.ly) < F.gap) return;
+  a.lx = a.x; a.ly = a.y;
+  let z = w.zones.find(q => q.kind === 'ftrail' && q.afire);
+  if (!z) { WZ.zone({ kind: 'ftrail', afire: true, x: a.x, y: a.y, r: F.r, t: F.life + 0.5, pts: [], col: '#ff7a30', ctx: WZ.wandCtx('fire') }); z = w.zones[w.zones.length - 1]; }
+  z.t = F.life + 0.5; z.dur = z.t;
+  z.pts.push({ x: a.x, y: a.y, a: 0, al: 1 });
+};
+
 // ---------- Fire: Flame Trail ----------
 WZ.wandFire = function (ctx) {
   const w = G.w, F = CFG.wand.fire;
@@ -96,7 +112,7 @@ WZ.wandFire = function (ctx) {
 // the trail zone (called from WZ.zoneSpecial with WZ.ctx = its own ctx): lay segments while he runs, age them, burn what stands in them
 WZ.trailTick = function (z, dt) {
   const w = G.w, F = CFG.wand.fire, rate = F.total / F.life;
-  if (z.t > F.life && !w.dead) {   // still laying (the first F.t seconds)
+  if (z.t > F.life && !w.dead && !z.afire) {   // still laying (the first F.t seconds)
     const l = z.pts[z.pts.length - 1];
     if (Math.hypot(w.x - l.x, w.y - l.y) >= F.gap) z.pts.push({ x: w.x, y: w.y, a: 0 });
   }
@@ -104,6 +120,10 @@ WZ.trailTick = function (z, dt) {
   z.pts = z.pts.filter(p => p.a < F.life);
   if (!z.pts.length) { z.t = 0; return true; }
   const hit = (x, y, rad) => { for (const p of z.pts) if (Math.hypot(p.x - x, p.y - y) < F.r + rad) return true; return false; };
+  for (const a of w.allies) {   // the Wizard's own trail lights an ally that walks through it (no harm to it): a few seconds of fire trail of its own
+    if (a.dead || a.fall > 0 || a.burnT > 0) continue;
+    for (const p of z.pts) if (!p.al && Math.hypot(p.x - a.x, p.y - a.y) < F.r + a.rad) { a.burnT = CFG.wand.ally.burn; a.lx = null; WZ.puff(a.x, a.y, '#ff7a30', 6); AU.sfx('zap_fire'); break; }
+  }
   for (const e of w.enemies) if (!e.dead && !(e.fall > 0) && hit(e.x, e.y, e.rad)) { WZ.hurtE(e, rate * dt, 0, 0, true); e.flash = 0.05; }
   for (const h of WZ.hitH()) if (!h.broken && hit(h.x, h.y, h.rad || 0.4)) WZ.hurtHc(h, rate * dt);
   if (Math.random() < dt * 14) { const p = z.pts[Math.floor(Math.random() * z.pts.length)]; w.fx_.push({ type: 'spark', x: p.x + rand(-0.5, 0.5), y: p.y + rand(-0.5, 0.5), vx: 0, vy: 0, z: 0.1, vz: rand(1, 2.5), g: -2, col: Math.random() < 0.3 ? '#ffe36b' : '#ff7a30', t: 0, dur: 0.5, el: 'fire' }); }
@@ -119,6 +139,7 @@ WZ.wandAir = function (ctx) {
   WZ.mark(x, y, A.r);
   WZ.each(x, y, A.r, (t, d, isE) => { const m = d || 1; WZ.hit(t, isE, A.dmg, isE ? (t.x - x) / m * A.push : 0, isE ? (t.y - y) / m * A.push : 0); });   // (WZ.hurtE scales the shove by the foe's own knockback)
   WZ.bendRing(x, y, A.r);
+  WZ.eachAlly(x, y, A.r, a => { a.invT = CFG.wand.ally.inv; WZ.puff(a.x, a.y, '#e6f8ff', 8); });   // allies in the burst vanish too
   w.invisT = A.t;
   WZ.epuff(x, y, 'air', 14);
   AU.sfx('zap_air');
@@ -175,6 +196,13 @@ WZ.rideTick = function (dt) {
     const id = 'h' + h.x.toFixed(1) + h.y.toFixed(1);
     if (R0.hit.indexOf(id) < 0) { R0.hit.push(id); WZ.hurtH(h, W.dmg); }
   }
+  WZ.eachAlly(w.x, w.y, 0, a => {   // riding past an ally heals it (once a ride)
+    const ex = a.x - w.x, ey = a.y - w.y, along = ex * dx + ey * dy, lat = ex * px + ey * py, id = 'a' + WZ.eid(a);
+    if (along < -0.6 || along > 1.6 || Math.abs(lat) > W.w / 2 + a.rad + CFG.wand.ally.healReach || R0.hit.indexOf(id) >= 0 || a.hp >= a.maxHp) return;
+    R0.hit.push(id);
+    const add = Math.min(a.maxHp - a.hp, a.maxHp * CFG.wand.ally.heal); a.hp += add; a.healT = 1.2;
+    WZ.num(a.x, a.y, '+' + Math.round(add), '#7bff9a'); AU.sfx('el_water');
+  });
   WZ.altarTouch(w.x + dx, w.y + dy, W.w / 2);   // (ignored: a wand attack is not a spell)
   WZ.ctx = null;
   if (Math.random() < dt * 40) w.fx_.push({ type: 'spark', x: w.x + dx * 0.8 + px * rand(-1, 1), y: w.y + dy * 0.8 + py * rand(-1, 1), vx: px * rand(-2, 2), vy: py * rand(-2, 2), z: 0.2, vz: rand(1, 3), g: 12, col: Math.random() < 0.4 ? '#ffffff' : '#4aa8ff', t: 0, dur: 0.4, el: 'water' });
@@ -195,6 +223,7 @@ WZ.statueBurst = function () {
   WZ.ctx = WZ.wandCtx('earth');
   WZ.explode(x, y, E.r, E.dmg * k, '#b58a4c', null, E.push * k);
   WZ.ctx = null;
+  WZ.eachAlly(x, y, E.r, a => { a.stoneT = CFG.wand.ally.stone; WZ.puff(a.x, a.y, '#a98a5c', 8); });   // allies caught in the burst turn to stone for a while
   w.fx_.push({ type: 'statue', x, y, t: 0, dur: 0.9, k });
   WZ.boom(x, y, E.r * 1.1, '#ffffff'); WZ.ring(x, y, E.r * 1.2, '#b58a4c', 0.5);
   for (let i = 0; i < 16; i++) {   // the stone flies apart

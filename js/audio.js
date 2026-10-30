@@ -134,8 +134,16 @@ const AU = (() => {
   const N = s => 261.63 * Math.pow(2, s / 12);
 
   let tapFn = null;   // the online host listens to every sound (Main.tapSfx), so the guest can hear the wilds
-  function sfx(name) {
-    if (tapFn) tapFn(name);
+  // The online guest hears the wilds from his Wizard (AU.ear = { x, y }, set each guest frame): a sound made at (x, y) tiles away from him gets quieter and duller with distance
+  // (CFG.hear: full volume within full tiles, falling to floor at far). No ear (offline, the host) or no origin = full volume.
+  let ear = null;
+  function farK(x, y) {
+    if (!ear || x == null || y == null) return 1;
+    const H = CFG.hear, d = Math.hypot(x - ear.x, y - ear.y);
+    return d <= H.full ? 1 : Math.max(H.floor, 1 - (d - H.full) / (H.far - H.full));
+  }
+  function sfx(name, x, y) {
+    if (tapFn) tapFn(name, x, y);
     if (!ctx) return;
     const now = ctx.currentTime;
     if (lastPlay[name] && now - lastPlay[name] < 0.05) return;
@@ -147,7 +155,12 @@ const AU = (() => {
       r.n = now - r.t < 0.35 ? Math.min(6, r.n + 1) : 0; r.t = now;
       if (r.n) { const g = ctx.createGain(); g.gain.value = Math.max(0.3, 1 - r.n * 0.13); g.connect(loG); bus = g; }
     }
-    if (HI.has(name)) duck(name === 'heart' || name === 'dodge' ? 0.6 : 0.35);
+    const fk = farK(x, y);
+    if (fk < 1) {   // far away: quieter and duller (a low-pass that closes with distance), and it no longer ducks the music
+      const g = ctx.createGain(), lp = ctx.createBiquadFilter();
+      g.gain.value = fk; lp.type = 'lowpass'; lp.frequency.value = CFG.hear.lp + (18000 - CFG.hear.lp) * fk * fk;
+      g.connect(lp); lp.connect(bus); bus = g;
+    } else if (HI.has(name)) duck(name === 'heart' || name === 'dodge' ? 0.6 : 0.35);
     const c = clip(name);
     if (c) { OV.playClip(ctx, c, c.p, bus); return; }
     cur = bus;
@@ -390,7 +403,7 @@ const AU = (() => {
   // every sfx() name, read off play()'s switch so the dev tool's list can never miss one
   const SFX_NAMES = (play + '').match(/case '\w+'/g).map(s => s.slice(6, -1));
   return {
-    settings, init, sfx, setTap(fn) { tapFn = fn; }, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep, muffle,
+    settings, init, sfx, setTap(fn) { tapFn = fn; }, setEar(x, y) { ear = x == null ? null : { x, y }; }, farK, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep, muffle,
     layerMix(act) { layerAct = act; },   // { air, water, fire, earth } 0..1 (G.fac.weather), or null for the title-screen mix
     layerInfo() { return { ready: layersReady(), playing: !!layers, lowpassHz: ctx ? Math.round(musLP.frequency.value) : null, goal: Object.fromEntries(LAYER_EL.map(el => [el, +layerGoal(el, bossOn).toFixed(3)])) }; },
     names: { sfx: SFX_NAMES, loops: ['music', 'music_boss', 'hum'] },

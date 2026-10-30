@@ -130,6 +130,8 @@ UI.updateHud = function (dt) {
   $('powCard').classList.toggle('low', low);
   $('vigL').classList.toggle('on', low);
   setHtml('handTxt', UI.handsHtml());
+  const sf = (G.fac.shkFlash || 0) > 0;   // something was just shaken loose somewhere: the POWER and HANDS cards flash
+  $('powCard').classList.toggle('shk', sf); $('handCard').classList.toggle('shk', sf);
   $('apChip').classList.toggle('on', !!G.autoPick); setHtml('apChip', 'AUTO <b>' + (G.autoPick ? 'ON' : 'OFF') + '</b>');
   $('handCard').classList.toggle('full', !FA.canHold());
   $('btnDemo').classList.toggle('on', G.demolish);
@@ -189,7 +191,7 @@ UI.updateWand = function () {
     const need = CFG.wand.need[el], full = W.full[el], m = W.m[el], on = W.armed === el;
     s += '<span class="ws' + (full ? ' full' : '') + (on ? ' armed' : '') + '" style="--ec:' + ELEM[el].color + '" title="' + CFG.wandNames[el] + ': ' + (full ? 'READY' + (on ? ' (armed: Cast fires it)' : ' (Cycle arms it)') : m + ' of ' + need + ' spells') + '">' + UI.img('wand_' + el, 24) + '<i style="height:' + Math.round(m / need * 100) + '%"></i>' + (full ? '' : '<b>' + m + '</b>') + (on ? '<u></u>' : '') + '</span>';
   }
-  s += '<span class="wk" title="Cycle the armed wand attack / Cast it"><kbd>' + kn.cycle + '</kbd><kbd>' + kn.cast + '</kbd></span>';
+  s += '<span class="wk" title="Cycle the armed wand attack / Cast it / Emote wheel"><kbd>' + kn.cycle + '</kbd><kbd>' + kn.cast + '</kbd><kbd>' + kn.emote + '</kbd></span>';
   setHtml('wandRow', s);
 };// The building note sits right above the hotbar and the button prompts (drawn by R.drawFocus) stack above it; UI.inspectH is how tall the note is, so they can clear it.
 UI.inspectH = 0;
@@ -993,6 +995,7 @@ const CONTROLS = [
     [K('SPACE'), 'Guest: dodge roll (invulnerable)'],
     [K('LEFT-CLICK'), 'Guest: mash (dig a mound, pile, bush or cache; wake a shrine)'],
     [K('RIGHT-CLICK') + ' ' + K('Q'), 'Guest: cast the armed wand attack / cycle the wand'],
+    [K('N'), 'Guest: emote wheel (WASD picks a dance, N or left-click does it)'],
     [K('T'), 'Guest: skill tree (a purchase is sent to the host, who checks it). Nothing pauses online: a tree or menu only holds its own player still'],
     ['Gamepad', 'A pad works as on the Wizard side (A dodge, X mash, B cast, Y cycle, Back / Select tree). Job swap is off online'],
     ['Settings > PARTNER VIEW', 'How big the other player\'s world is in your corner, 0% (off) to 45%. Only you see it'],
@@ -1002,6 +1005,7 @@ const CONTROLS = [
     [K('T') + ' &nbsp;/&nbsp; ' + K('Y'), 'Builder / Wizard Skill Tree (the whole game pauses while one is open)'],
     [K('H'), 'Show or hide the controls card'],
     [K('X') + ' &nbsp;hold 1.5s', 'Swap jobs. Then: Builder arrows, ' + K('.') + ' pick up, ' + K(',') + ' throw, ' + K('/') + ' use. Wizard WASD + mouse: ' + K('SPACE') + ' dodge, ' + K('E') + ' / left-click mash, ' + K('Z') + ' / right-click cast, ' + K('V') + ' cycle'],
+    [K('N'), 'Wizard: emote wheel. Move to pick Float (up), Blaze (right), Rain (down) or Stomp (left), then N or Mash. He dances until he moves'],
     [K('ESC'), 'Pause menu (Resume, Settings, Save &amp; Title). Losing window focus pauses too'],
   ]],
   ['SKILL TREE', [

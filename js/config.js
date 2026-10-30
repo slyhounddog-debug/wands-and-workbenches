@@ -60,7 +60,7 @@ const CFG = {
   overcharge: { fill: [0, 0, 0.35, 0.6, 1], time: [0, 0, 12, 20, 30], elixir: 0.45, elixirT: 15, max: 1.5, power: 5 },
   // A hit that costs the Wizard HEALTH can shake things loose in the factory (items land on the floor, like thrown ones). Chance per hit grows as his HP falls: lo at full health, hi near
   // zero. belt = one item riding a belt; stock = one item out of the Stockpile (super rare, it bounces onto the floor from its tile); the chosen belt / pile rattles for warn s first. rumble = the factory's camera shake on ANY hit: lo px for a scratch up to hi when the hit is `full` of his max HP
-  shake: { belt: { lo: 0.04, hi: 0.3 }, stock: { lo: 0.002, hi: 0.03 }, warn: 0.7, rumble: { lo: 4, hi: 20, full: 0.3 } },
+  shake: { belt: { lo: 0.04, hi: 0.3 }, stock: { lo: 0.002, hi: 0.03 }, warn: 0.7, flash: 1.4, rumble: { lo: 4, hi: 20, full: 0.3 } },
   pressure: { hit: 0.18, speed: 10, life: 1.4, range: 11, amp: 6 },   // Spell Portal shockwaves: the Wizard losing this share of max HP in one hit (also events, Wardens, the Chimera), front speed (tiles/s), seconds, reach (tiles), most jitter (px)
   // layered soundtrack (audio/music/music_<element>.js, built by tools/musicbuild): one looping layer per element, volume follows
   // G.fac.weather[el]. gain = layer volume at full; fade = seconds a layer takes to swell (time constant); curve < 1 lifts quiet
@@ -95,8 +95,15 @@ const CFG = {
     // Bouncing Boulder's 96) in r tiles, push shove (grows with the charge too)
     // Heavy boulder handling: top speed x speedMul, but accel / friction are low (he slides on and turns lazily). While it lasts he rams every foe he touches: ram damage and ramPush
     // are per tile/s of his speed (a foe at most once per ramGap s, only above ramMin tiles/s, within ramReach of his body).
+    // What a wand attack does to the Wizard's ALLIES it touches (CFG.ally creatures): Puff within air.r = unseen and untargetable for inv s; Riding Wave passing within healReach tiles
+    // of the wave = healed by heal x its max health (once per ride); the Flame Trail's fire sets an ally alight for burn s (no harm to it: it leaves a fire trail of its own);
+    // the Statue's burst within earth.r = stone for stone s (speed x stoneSpd, damage taken x stoneTake)
+    ally: { inv: 2.5, heal: 0.6, healReach: 1.6, burn: 2.5, stone: 4, stoneSpd: 0.5, stoneTake: 0.5 },
     earth: { t: 6, speedMul: 0.5, take: 0.3, perHit: 0.2, cap: 1, r: 3.4, dmg: 48, push: 9, accel: 5, friction: 2.2, ram: 2.6, ramPush: 1.8, ramGap: 0.6, ramMin: 1, ramReach: 0.45 },
   },
+  // the online guest's hearing: a wilds sound made within full tiles of his Wizard plays at full volume, then falls off linearly to floor (x volume) at far tiles and beyond; lp = the low-pass cutoff (Hz) it closes to
+  emote: { beat: 0.8, sticker: 3.2 },   // the Wizard's dances (js/emote.js): seconds a beat lasts (dust, ripples, a stomp); seconds the sticker stays on the Builder's side
+  hear: { full: 9, far: 34, floor: 0.12, lp: 700 },
   world: {
     respawn: 120, vacuum: 2, minSpawnDist: 8,
     spawnStart: 21, spawnMul: 0.96, spawnFloor: 5.5, cap: 160,   // wild spawns are a trickle: the factory's creatures are the real fight

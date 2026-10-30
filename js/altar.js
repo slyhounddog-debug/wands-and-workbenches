@@ -71,7 +71,7 @@ WZ.cineTick = function (dt) {
       c.landed = true; A_.placed = true; w.quake = A.quake;
       const col = '#ffe36b';
       WZ.boom(A_.x, A_.y, 4.5, '#ffffff'); WZ.ring(A_.x, A_.y, 5, col, 0.7); WZ.puff(A_.x, A_.y, '#d8c8a8', 30); WZ.puff(A_.x, A_.y, col, 20);
-      AU.sfx('slam'); AU.sfx('thud');
+      AU.sfx('slam', A_.x, A_.y); AU.sfx('thud', A_.x, A_.y);
       FA.thump(4, col);
       UI.changed();
     }
@@ -170,6 +170,7 @@ WZ.altarTick = function (dt) {
   // bought but not landed yet: it comes as soon as the Wizard is alive to see it
   if (G.tree.summon && !A.placed && !w.cine && !w.dead) WZ.cineStart();
   if (!A.placed) return;
+  WZ.decalPerm(A.x, A.y, K.r * 1.9, 'altar', 0.9);   // its crater in the ground, for good (the world is new every expedition, the mark is laid again)
   // solid to the Wizard, like a boulder (foes walk through: they are not what the Altar is about)
   if (!w.dead && !w.blink && !w.jump) {
     const dx = w.x - A.x, dy = w.y - A.y, d = Math.hypot(dx, dy), min = K.solid + CFG.wizard.radius;

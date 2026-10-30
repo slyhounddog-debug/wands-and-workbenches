@@ -126,7 +126,9 @@ async function boot(browser, name) {
   };
   const predOf = on => gp.evaluate(on => { if (typeof Main.PREDICT !== 'undefined') Main.PREDICT = on; return typeof Main.PREDICT !== 'undefined'; }, on);
   // (no wild monsters while these measure: walking back and forth for half a minute among them sometimes got him killed, and a dead Wizard is neither predicted nor rolls)
-  await hp.evaluate(() => { const W = __wands; W.CFG.world._cap = W.CFG.world.cap; W.CFG.world.cap = 0; W.G.w.enemies.length = 0; W.G.w.hp = W.WZ.maxHp(); });
+  await hp.evaluate(() => { const W = __wands; W.CFG.world._cap = W.CFG.world.cap; W.CFG.world.cap = 0; W.G.w.enemies.length = 0; W.G.w.hp = W.WZ.maxHp();
+    // (nor hatchlings: the starter Spawner's Eggs keep dropping hostile creatures beside him, which are not wild monsters and ignore world.cap; they killed him at random and everything after read a dead Wizard)
+    W.CFG.crafted._cap = W.CFG.crafted.cap; W.CFG.crafted.cap = 0; W.G.fac.eggQ.length = 0; });
   await predOf(false);
   const latOff0 = await latency(0), latOff75 = await latency(75);
   const hasPred = await predOf(true);
@@ -255,10 +257,14 @@ async function boot(browser, name) {
   const h2 = await hp.evaluate(() => __wands.G.stats.time);
   ok(h2 - h1 > 0.5, 'host tree open: the sim keeps running', (h2 - h1).toFixed(2) + 's');
   await hp.keyboard.press('Escape'); await sleep(200);
+  // (since Net v6 either player's pause menu stops the game for both: G.paused = G.pauseBy.host || G.pauseBy.guest, the other screen says who paused)
   await hp.evaluate(() => __wands.Main.pause(true)); await sleep(800);
-  const h3 = await hp.evaluate(() => __wands.G.stats.time);
-  ok(h3 - h2 > 0.9 && !(await hp.evaluate(() => __wands.G.paused)), 'host pause menu up: sim not frozen, G.paused stays false', (h3 - h2).toFixed(2) + 's, paused=' + (await hp.evaluate(() => __wands.G.paused)));
-  await hp.evaluate(() => __wands.Main.pause(false));
+  const h3 = await hp.evaluate(() => __wands.G.stats.time); await sleep(800);
+  const h3b = await hp.evaluate(() => __wands.G.stats.time);
+  ok(h3b - h3 < 0.05 && await hp.evaluate(() => __wands.G.paused === true && __wands.G.pauseBy.host === true), 'host pause menu up: the sim is frozen for both (shared pause)', (h3b - h3).toFixed(2) + 's, paused=' + (await hp.evaluate(() => __wands.G.paused)));
+  ok(await gp.evaluate(() => !!__wands.G.pauseBy && __wands.G.pauseBy.host === true), 'and the guest sees that the host paused');
+  await hp.evaluate(() => __wands.Main.pause(false)); await sleep(800);
+  ok(await hp.evaluate(t => __wands.G.stats.time - t > 0.4 && !__wands.G.paused, h3b), 'resuming starts the sim again for both');
 
   // ---- PIP slider: default 28%, 0 hides it, 45 is the max, local per player
   ok(await hp.evaluate(() => __wands.R.pipRect && Math.abs(__wands.R.pipRect.w - 12 - 1600 * 0.28) < 3), 'host PIP at the default 28% of the width');
@@ -271,11 +277,12 @@ async function boot(browser, name) {
   if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); await sleep(800); await hp.screenshot({ path: path.join(SHOTS, 'host.png') }); await gp.screenshot({ path: path.join(SHOTS, 'guest.png') }); }
 
   // ---- bandwidth in a mid-game factory
-  await hp.evaluate(() => { const W = __wands; W.G.stock.wood = 99; W.G.stock.stone = 99; W.step(0.05, 400); W.egg('egg_zephyr'); W.egg('egg_puddle'); W.egg('egg_cinder'); W.event(1); });
+  await hp.evaluate(() => { const W = __wands; W.CFG.crafted.cap = W.CFG.crafted._cap; W.G.stock.wood = 99; W.G.stock.stone = 99; W.step(0.05, 400); W.egg('egg_zephyr'); W.egg('egg_puddle'); W.egg('egg_cinder'); W.event(1); W.G.w.hp = 1e6; });   // (the stress is for the snapshot size, not a fight: he cannot die in it)
   await sleep(6000);
   const st = await hp.evaluate(() => { const s = __wands.Net.stats; return { raw: s.rawKB, zip: s.zipKB, max: s.maxZip, kbps: s.kbps, fps: s.fps, total: s.total, snaps: s.snapsOut }; });
   console.log('SNAPSHOT: ' + st.raw.toFixed(0) + ' KB raw JSON, ' + st.zip.toFixed(1) + ' KB deflated (max ' + st.max.toFixed(1) + '), ' + st.fps + ' snapshots/s, ' + st.kbps + ' KB/s out');
   ok(st.fps >= 15, 'snapshot stream near 20 Hz', st.fps + '/s');
+  await hp.evaluate(() => { const W = __wands, G = W.G; W.CFG.crafted.cap = 0; if (G.ev && G.ev.active) W.WZ.evFail(); G.w.enemies.length = 0; G.w.allies.length = 0; G.fac.eggQ.length = 0; G.w.hp = W.WZ.maxHp(); });   // (the stress is over: alone again for everything after)
   const ch = await Promise.all([hp, gp].map(p => p.evaluate(() => __wands.Net.stats.chan)));
   ok(process.env.LOSSY0 ? ch.every(c => c === 'reliable') : ch.every(c => c === 'lossy'), 'snapshots travel on the ' + (process.env.LOSSY0 ? 'reliable' : 'unreliable') + ' channel', ch.join(' / '));
 
@@ -354,9 +361,16 @@ async function boot(browser, name) {
 
   // ---- the architecture guardrails with a session live: the wire format is the audit serializer's clone, and the photo test passes on the host AND on the guest
   ok(await hp.evaluate(() => JSON.stringify(__wands.Snap.capture().G) === __wands.Snap.wire()), 'Snap.wire() equals Snap.capture().G (the same clone the photo test audits)');
-  for (const [name, pg] of [['host', hp], ['guest', gp]]) {
-    const r = await pg.evaluate(() => { __wands.snapshot(); const R = __wands.Snap.report; return { v: R.verdict, newLeaks: R.leaks.filter(l => !l.known).map(l => l.id), newIssues: R.issues.filter(i => !i.known).map(i => i.id), px: R.diff.px }; });
-    ok(r.v !== 'FAIL' && !r.newLeaks.length && !r.newIssues.length && r.px === 0, 'snapshot photo test on the ' + name + ' with the session live: ' + r.v, r.newLeaks.concat(r.newIssues).join(','));
+  for (const [name, pg] of [['host', hp], ['guest', gp]]) {   // (repeated: a pixel difference that only shows now and then is still a leak)
+    let worst = null;
+    for (let i = 0; i < (+process.env.SNAPS || 12); i++) {
+      const r = await pg.evaluate(() => { __wands.snapshot(); const R = __wands.Snap.report; return { v: R.verdict, newLeaks: R.leaks.filter(l => !l.known).map(l => l.id), newIssues: R.issues.filter(i => !i.known).map(i => i.id), px: R.diff.px, bbox: R.diff.bbox }; });
+      if (!worst || r.px > worst.px || r.newLeaks.length || r.newIssues.length) worst = r;
+      if (r.px > 0 && SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); for (const m of ['diff', 'snap', 'live']) { await pg.evaluate(m => __wands.snapView(m), m); await sleep(300); await pg.screenshot({ path: path.join(SHOTS, 'photo_' + name + '_' + m + '.png') }); } }
+      await sleep(120);
+    }
+    const r = worst;
+    ok(r.v !== 'FAIL' && !r.newLeaks.length && !r.newIssues.length && r.px === 0, 'snapshot photo test on the ' + name + ' with the session live: ' + r.v, r.newLeaks.concat(r.newIssues).join(',') + (r.px ? ' px=' + r.px + ' bbox=' + JSON.stringify(r.bbox) : ''));
   }
   await sleep(500);
 

@@ -181,6 +181,12 @@ const OUT = process.env.SHOTS || '';
   ok(r.near === 1 && r.mid < 1 && r.mid > 0.12 && r.far === 0.12 && r.none === 1 && r.off === 1, 'distance scales a sound: full near, quieter far, floored, no ear = full', JSON.stringify(r));
   ok(r.log, 'the host logs where a sound was made');
 
+  // ================= a pickable item at the Builder's feet: its focus ring must match in the photo (R.pickOf matches the copy by place and kind) =================
+  await run(() => { const W = __wands, G = W.G; T.clear(); G.hands.length = 0; G.demolish = false; W.UI.select('hand'); G.bd.target = null; G.lastInput = 'kb'; G.fac.floor.length = 0; W.FA.dropAt('wood', G.bd.x + 0.7, G.bd.y); });
+  await wait(700);
+  r = await run(() => { const W = __wands, o = {}; o.ring = !!(W.R.focus && W.R.focus.list.some(e => e.key === 'pick')); W.snapshot(); const S = W.Snap.report; o.px = S.diff.px; return o; });
+  ok(r.ring && r.px === 0, 'a focused floor item draws the same ring in the photo (no pixel difference)', JSON.stringify(r));
+
   // ================= 6. the Altar's crater and wisps =================
   r = await run(() => {
     const W = __wands, G = W.G, o = {};

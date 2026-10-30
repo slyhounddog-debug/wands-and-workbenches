@@ -1113,7 +1113,8 @@ R.arrow = function (ctx, x, y, nx, ny) {   // chunky gold arrow whose tip sits a
   ctx.fillStyle = '#ffd23a'; ctx.fillRect(Math.round((x - nx * 35 - 4) / 4) * 4, Math.round((y - ny * 35 - 4) / 4) * 4, 8, 8);
 };
 // the thing the pick button will take (the focus list's pick entry): it hops, a ring spreads from its feet and four sparks orbit it, so no tooltip is needed
-R.pickOf = o => !!R.focus && R.focus.list.some(e => e.key === 'pick' && e.t.o === o);
+// (matched by identity, or by place and kind: the photo test draws a copy of the item, which must light up exactly like the live one)
+R.pickOf = o => !!R.focus && R.focus.list.some(e => { const f = e.key === 'pick' && e.t.o; return !!f && (f === o || (f.kind === o.kind && f.x === o.x && f.y === o.y)); });
 R.pickFx = function (ctx, x, y, t, rad) {
   const k = (t * 2) % 1, rw = (16 + k * 20) * rad;
   ctx.globalAlpha = 1 - k; ctx.strokeStyle = '#ffec8c'; ctx.lineWidth = 4; diamond(ctx, x, y, rw, rw / 2); ctx.stroke(); ctx.globalAlpha = 1;

@@ -133,6 +133,7 @@ const AU = (() => {
   }
   const N = s => 261.63 * Math.pow(2, s / 12);
 
+  let attn = () => 0;   // how much attention a cue is holding (UI.cueLevel: 3 danger, 2 goal, 1 loss): while one is up the ambient LO sounds drop so the important one is the one heard
   let tapFn = null;   // the online host listens to every sound (Main.tapSfx), so the guest can hear the wilds
   // The online guest hears the wilds from his Wizard (AU.ear = { x, y }, set each guest frame): a sound made at (x, y) tiles away from him gets quieter and duller with distance
   // (CFG.hear: full volume within full tiles, falling to floor at far). No ear (offline, the host) or no origin = full volume.
@@ -154,6 +155,8 @@ const AU = (() => {
       const r = reps[name] || (reps[name] = { t: 0, n: 0 });
       r.n = now - r.t < 0.35 ? Math.min(6, r.n + 1) : 0; r.t = now;
       if (r.n) { const g = ctx.createGain(); g.gain.value = Math.max(0.3, 1 - r.n * 0.13); g.connect(loG); bus = g; }
+      const a = attn();
+      if (a >= 2) { const g = ctx.createGain(); g.gain.value = a >= 3 ? 0.3 : 0.55; g.connect(bus); bus = g; }
     }
     const fk = farK(x, y);
     if (fk < 1) {   // far away: quieter and duller (a low-pass that closes with distance), and it no longer ducks the music
@@ -403,7 +406,7 @@ const AU = (() => {
   // every sfx() name, read off play()'s switch so the dev tool's list can never miss one
   const SFX_NAMES = (play + '').match(/case '\w+'/g).map(s => s.slice(6, -1));
   return {
-    settings, init, sfx, setTap(fn) { tapFn = fn; }, setEar(x, y) { ear = x == null ? null : { x, y }; }, farK, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep, muffle,
+    settings, init, sfx, setTap(fn) { tapFn = fn; }, setAttn(fn) { attn = fn; }, setEar(x, y) { ear = x == null ? null : { x, y }; }, farK, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep, muffle,
     layerMix(act) { layerAct = act; },   // { air, water, fire, earth } 0..1 (G.fac.weather), or null for the title-screen mix
     layerInfo() { return { ready: layersReady(), playing: !!layers, lowpassHz: ctx ? Math.round(musLP.frequency.value) : null, goal: Object.fromEntries(LAYER_EL.map(el => [el, +layerGoal(el, bossOn).toFixed(3)])) }; },
     names: { sfx: SFX_NAMES, loops: ['music', 'music_boss', 'hum'] },

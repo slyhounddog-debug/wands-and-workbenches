@@ -108,13 +108,13 @@ WZ.bshrHurt = function (s, d) {
     return;
   }
   const add = Math.min(M - b.bat, d * B.perDmg);
-  b.bat += add; s.acc += add;
+  b.bat += add; s.acc += add; b.plusT = CFG.boost.plusT; FA.fb('boost');
   G.stats.bshrCharge = (G.stats.bshrCharge || 0) + add;
   if (w.t - s.popAt >= B.popGap) {   // a tally floats up now and then instead of a number for every tick of a flame
     s.popAt = w.t;
     WZ.num(s.x, s.y - 0.6, '+' + Math.max(1, Math.round(s.acc)), B.col); s.acc = 0;
     WZ.puff(s.x, s.y, B.col, 3);
-    FA.ipop(b.x + 0.5, b.y + 0.5, [['ic_bolt']]); b.pop = 0.3;
+    FA.ipop(b.x + 0.5, b.y + 0.5, [['ic_bolt']]); b.pop = 0.3; b.plusT = CFG.boost.plusT;   // (the Battery pulses with a bouncing "+": the shrine did this)
     AU.sfx('charge');
   }
 };

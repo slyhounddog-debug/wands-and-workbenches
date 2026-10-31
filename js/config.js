@@ -55,6 +55,15 @@ const CFG = {
   arc: { outT: 0.24, inT: 0.42, h: 90 },   // deliveries cross the split: seconds rising out of the factory's top-right corner, seconds sailing in from the wilds' top-left onto the Wizard, extra arc height (px)
   thump: 0.36,                // a Forge / Cauldron that finishes a craft thumps (squash and stretch) this long and puffs exhaust in its elements' colours
   boing: { T: 0.55, h: 2.6, back: 0.55, min: 1.2, max: 2.8 },   // a rejected throw springs back toward the Builder: flight time, arc height, share of the way back (clamped to min..max tiles)
+  // ---- the attention-and-causality layer (CLAUDE.md > "What / why / what next"; the events and where each cue shows are in FEEDBACK.md) ----
+  fullBounce: { dur: 0.7 },   // a pickup the full Stockpile can't take comes out of the Spell Portal, bounces off it for this long (red flash, the "full" icon), then goes back into the sky
+  threat: { dur: 9 },         // seconds the Spell Portal shows what a new danger (an event, a Warden, a mutation, an elite) is weak to
+  boost: { plusT: 1.2 },      // seconds a Battery keeps pulsing with its bouncing "+" after its Battery Shrine charged it (a shrine-boosted Harnesser pulses for as long as the boost lasts)
+  hurt: { dur: 1, edge: 0.55 },   // the "where did that hit come from" cue on the Wizard: seconds it stays up, strength of the red edge flash toward the attacker
+  cue: { danger: 3, goal: 2, loss: 1, ambient: 0, hold: { danger: 2.5, goal: 1.8, loss: 1.2 }, spread: 0.6 },   // cue priorities (danger > goal > resource loss > ambient): a higher one holds lower toasts back for `hold` s (they appear after it, `spread` s apart) and dims the edge bubbles
+  goalFocus: 2.4,             // seconds after a goal celebration that the new goal's pointer is the ONLY blinking thing (the hotbar slot / tree button blinks wait)
+  wandFill: { dur: 1.35, pulse: 1.0 },   // a wand slot filling: seconds the element particles swirl into the staff, seconds the slot under the health bar grows and pulses
+  tether: { dur: 1.6 },       // a rare drop (Core, Shard, recycled spell) keeps a thin line back to the kill that made it for this long
   // throwing a combo spell (2 / 3 / 4 elements) or an Elixir into a Battery overcharges it: it fills by this share of a full
   // Battery (up to max x a full one) and gives +power for that many seconds
   overcharge: { fill: [0, 0, 0.35, 0.6, 1], time: [0, 0, 12, 20, 30], elixir: 0.45, elixirT: 15, max: 1.5, power: 5 },

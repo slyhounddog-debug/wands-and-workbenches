@@ -676,7 +676,10 @@ task(() => {
   icon('x', ['w.....w', '.w...w.', '..w.w..', '...w...', '..w.w..', '.w...w.', 'w.....w']);
   icon('flag', ['nrrrr..', 'nrrrrrr', 'nrrrr..', 'n......', 'n......', 'n......', 'nn.....']);
   icon('crown', ['y..y..y', 'yy.y.yy', 'yyyyyyy', 'yryyyby', 'yyyyyyy']);
-  icon('jam', ['ooooooo', 'oOOOOOo', 'oOOwOOo', 'oOOwOOo', 'oOOOOOo', 'oOOwOOo', 'ooooooo']);         // output blocked
+  icon('jam', ['..oooooo..', '.oOOOOOOo.', 'oOOwwOwwOo', 'oOOwwOwwOo', 'oOOwwOwwOo', 'oOOwwOwwOo', '.oOOOOOOo.', '..oooooo..']);   // output blocked: a PAUSE badge (two bars) in orange
+  icon('plus', ['..www..', '..www..', 'wwwwwww', 'wwwwwww', 'wwwwwww', '..www..', '..www..']);   // a boost: the chunky "+" that pulses over a boosted machine (tinted by the draw call's colour)
+  icon('slow', ['o.....o', 'oo...oo', 'ooo.ooo', '.ooooo.', '..ooo..', '...o...', 'ooooooo']);   // slowed: a heavy down-chevron over a bar
+  icon('snare', ['.oooooo.', 'onnnnnno', 'onNnnNno', 'onnnnnno', 'oNnnnnNo', 'onnNnnno', '.oooooo.']);   // snared by mud: a sticky brown blob
   icon('starve', ['ooooooo', 'oqwwwqo', 'oqqqwqo', 'oqqwwqo', 'oqqwqqo', 'oqqqqqo', 'oqqwqqo', 'ooooooo']);  // waiting on inputs
   icon('pause', ['ooo.ooo', 'owo.owo', 'owo.owo', 'owo.owo', 'owo.owo', 'ooo.ooo']);
   icon('rotate', ['..www.w', '.w...ww', 'w...www', 'w......', 'w.....w', '.w...w.', '..www..']);

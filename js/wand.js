@@ -24,6 +24,14 @@ WZ.wandFix = function (o) {
   W.armed = o && W.full[o.armed] ? o.armed : W.ord.length ? W.ord[W.ord.length - 1] : null;
   return W;
 };
+// "something is ready", said ONCE and loudly: the element's particles are sucked into the staff and swirl in (R.drawWandFill) before it starts to blink, and a wand slot
+// under his health bar grows and pulses (UI.updateWand). G.wand.fx = { el, kind: 'wand' | 'shrine', t } is plain data, advanced by WZ.wandTick.
+WZ.readyCue = function (el, kind) {
+  const W = G.wand;
+  if (!W || G.menu || !ELEM[el]) return;
+  W.fx = { el, kind, t: 0 };
+  UI.cue(1); FA.fb(kind === 'wand' ? 'wand-ready' : 'shrine-ready');
+};
 WZ.wandFilled = () => ELEMS.filter(el => G.wand.full[el]);
 WZ.invisible = () => !!(G.w && G.w.invisT > 0 && !G.w.dead);
 WZ.wandCtx = el => ({ spell: 'wand_' + el, el: [el], hits: 0, kills: 0, weak: 0, wand: true });   // (a wand attack is not a spell: no Altar socket, no report at the Spell Portal)
@@ -40,6 +48,7 @@ WZ.wandCharge = function (spell) {
     if (w && !w.dead) {
       WZ.ring(w.x, w.y, 1.5, ELEM[el].color, 0.5); WZ.epuff(w.x, w.y, el, 10); WZ.icon(w.x, w.y - 0.6, 'wand_' + el); AU.sfx('powerup');
       UI.toast('The wand is charged: ' + WZ.wandName(el), 'R', 'wand_' + el);
+      WZ.readyCue(el, 'wand');
     }
   }
   UI.changed();
@@ -264,6 +273,8 @@ WZ.wandTick = function (dt) {
     if (w.statT < 1e-6) { w.statT = 0; WZ.statueBurst(); }
   }
   if (w.ride) WZ.rideTick(dt);
+  const fx = G.wand && G.wand.fx;
+  if (fx && (fx.t += dt) > Math.max(CFG.wandFill.dur, CFG.wandFill.pulse)) G.wand.fx = null;
 };
 
 // ---------- shrines: claimed once (the Builder's Cores), activated by a ring-timing mini-game, then a timed buff and a cooldown ----------
@@ -292,7 +303,7 @@ WZ.shrineTick = function (dt, press) {
       if (s.buff <= 0) { s.buff = 0; s.cd = M.cdT; UI.toast(ELEM_WORD[m.el] + ' Shrine buff ended: it recharges for ' + Math.round(M.cdT / 60) + ' minutes', 'R', 'cr_' + m.el); }
     } else if (s.cd > 0) {
       s.cd -= dt;
-      if (s.cd <= 0) { s.cd = 0; s.flash = 0.5; WZ.ring(m.x, m.y, 3, ELEM[m.el].color, 0.6); AU.sfx('el_' + m.el); if (G.w.t - (s.rdyAt || -99) > 5) { s.rdyAt = G.w.t; UI.toast('A ' + ELEM_WORD[m.el] + ' Shrine is ready again', 'R', 'cr_' + m.el); } }
+      if (s.cd <= 0) { s.cd = 0; s.flash = 0.5; WZ.ring(m.x, m.y, 3, ELEM[m.el].color, 0.6); AU.sfx('el_' + m.el); if (G.w.t - (s.rdyAt || -99) > 5) { s.rdyAt = G.w.t; UI.toast('A ' + ELEM_WORD[m.el] + ' Shrine is ready again: press Mash at it', 'R', 'cr_' + m.el); WZ.readyCue(m.el, 'shrine'); } }
     }
     if (s.buff > 0) w.shrines[m.el] = Math.max(w.shrines[m.el] || 0, s.buff);
   }

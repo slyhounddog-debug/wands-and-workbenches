@@ -201,7 +201,7 @@ FA.fresh = function (w, h) {
   const f = { w, h, grid: new Array(w * h).fill(null), land: new Array(w * h).fill(0), pp: { x: 0, y: 0 }, added: 0, bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
     portalQ: [], eggQ: [], portalT: 0, nextId: 1, gen: 0, demand: 0, lowT: 0, flash: 0, flashCol: '#fff', skillFlash: 0, t: 0,
     log: { spell: [], skill: [] }, working: 0, thumps: [], sucks: [], bump: 0, bumpAmp: 0, weakFlash: 0, stockNext: 0,
-    rings: [], waves: [], slots: {}, q: null, qp: null, outQ: [], outT: 0,   // throw impact rings, Spell Portal shockwaves; qp = the ? station's tile; outQ = items the full factory sends into the wilds
+    rings: [], waves: [], slots: {}, q: null, qp: null, outQ: [], outT: 0, rejs: [], threat: null,   // throw impact rings, Spell Portal shockwaves; qp = the ? station's tile; outQ = items the full factory sends into the wilds; rejs = items bouncing off the Spell Portal on their way back out; threat = what the Wizard just met, weakness first (FA.threat)
     elAct: { air: 0, water: 0, fire: 0, earth: 0 }, weather: { air: 0, water: 0, fire: 0, earth: 0 } };   // element packets handled lately -> the wilds' weather (0..1 each)
   return f;
 };
@@ -403,27 +403,93 @@ FA.toStockFrom = function (kind, n, px, py, port) {
 };
 // the factory is full (no Stockpile room, no floor left): the item goes through the Spell Portal and lands in the wilds beside the Wizard (FA.update sends
 // G.fac.outQ one at a time while he is alive). There he can only pick it up again once the Stockpile has room.
-FA.toWild = function (kind) { G.fac.outQ.push(kind); };
+// A Wizard pickup the Stockpile has no room for takes the SAME road: it goes up his portal, comes out of the Spell Portal, and BOUNCES off it where the Builder can
+// see it (FA.outTick: red flash, the item + a "full" icon), then goes back up into the sky and down beside the Wizard (WZ.rejectToWild).
+FA.toWild = function (kind, delay) { const f = G.fac; f.outQ.push(kind); if (delay) f.outT = Math.max(f.outT, delay); };
 FA.outTick = function (dt) {
-  const f = G.fac;
+  const f = G.fac, p = FA.portal('spell');
+  for (let i = f.rejs.length - 1; i >= 0; i--) {   // the bounce is over: it is slurped back in and sails out into the wilds
+    const r = f.rejs[i];
+    if ((r.t += dt) < r.dur) continue;
+    f.rejs.splice(i, 1);
+    if (!G.w || G.w.dead) { f.outQ.push(r.kind); continue; }   // (nobody to receive it: it waits for the next expedition)
+    FA.suck(r.kind, p.x + 0.5, p.y + 1);
+    WZ.send(r.kind, 'drop');
+  }
   if (!f.outQ.length || !G.w || G.w.dead) return;
   if ((f.outT -= dt) > 0) return;
   f.outT = 0.3;
-  const k = f.outQ.shift(), p = FA.portal('spell');
+  const k = f.outQ.shift();
   if (!ITEMS[k]) return;
-  FA.suck(k, p.x + 0.5, p.y + 1);
-  f.flash = Math.max(f.flash, 0.2); f.flashCol = '#ff9a8a';
-  WZ.send(k, 'drop');
-  if (!f.fullTipAt || f.t - f.fullTipAt > 20) { f.fullTipAt = f.t; UI.toast('The factory is full: overflow goes through the portal to the Wizard. Build Stockpile Tiles!', 'L', 'b:stockpile'); }
+  f.rejs.push({ kind: k, t: 0, dur: CFG.fullBounce.dur, seed: Math.random() * 6.283 });   // it shows up at the Builder's portal and is turned away
+  f.flash = Math.max(f.flash, 0.35); f.flashCol = '#ff5a5a';
+  f.rings.push({ x: p.x + 0.5, y: p.y + 1, dx: 0, dy: -1, t: 0, col: '#ff6a6a' });
+  FA.ipop(p.x + 0.5, p.y + 1.3, [[k], ['ic_full']]);
+  AU.sfx('boing'); FA.fb('factory-full');
+  if (!f.fullTipAt || f.t - f.fullTipAt > 20) { f.fullTipAt = f.t; UI.toast('The factory is full: ' + itemName(k) + ' bounced off the portal and goes back to the Wizard. Build Stockpile Tiles!', 'L', 'b:stockpile'); }
 };
+// 3 = a danger is on the Wizard right now (he was just hit / a new threat is up at the Spell Portal), 2 = a goal was just finished and its new pointer should be the only thing blinking, 0 = calm.
+// Derived from G alone, so the canvas (the edge bubbles) and the DOM (UI.updateHud) agree and the photo test sees the same.
+FA.attention = () => { const f = G.fac, w = G.w; return (w && !w.dead && w.hurt && !w.hurt.soft) || (f.threat && f.threat.t < 3) ? 3 : f.focusT > 0 ? 2 : 0; };
 FA.say = a => { if (a.ic) FA.ipop(G.bd.x, G.bd.y - 0.3, a.ic.map(k => [k])); else if (a.label) FA.pop(G.bd.x, G.bd.y - 0.3, a.label, '#ffd0a0'); };   // why an action can't happen
+
+// ---------- the attention-and-causality rule (see CLAUDE.md, FEEDBACK.md): every change to resources, goal, danger or power answers what / why / what next ----------
+// FA.fb(id): count that a ledger event's cue fired (G.fb, plain data; tools/featcheck reads it, FEEDBACK.md lists the ids)
+FA.fb = id => { if (!G.fb) G.fb = {}; G.fb[id] = (G.fb[id] || 0) + 1; };
+// why a throw bounced, as ONE icon row [[sprite, text?], ...] floating where it came down: the item + the reason (a full counter says which limit: 10/10 allies, queue 3/3)
+// c = the cell it hit (a portal, a building, a belt) or null; where = 'edge' (off the floor) | 'pile' (a Stockpile tile with no room)
+FA.why = function (c, kind, where) {
+  const it = ITEMS[kind] || {}, K = [kind];
+  if (where === 'pile') return [K, ['ic_full']];
+  if (where === 'edge' || !c) return where ? [K, ['ic_x']] : null;
+  if (c.type === 'portal') {
+    if (c.which === 'skill') return [K, ['ic_x']];   // the Skill Portal banks spells, packets and Shards only
+    if (!FA.isDeliverable(kind)) return [K, ['ic_x']];
+    if (it.aug && G.w.dead) return [['ic_skull'], ['ic_x']];   // nobody to wear it
+    if (it.egg) {
+      if (it.ally) return [['ic_heart', WZ.allyAlive() + '/' + CFG.ally.cap], ['ic_clock', G.w.aq.length + '/' + CFG.ally.queue]];
+      return [['ic_skull', WZ.craftedAlive() + '/' + CFG.crafted.cap], ['ic_clock', G.fac.eggQ.length + '/' + CFG.crafted.queue]];
+    }
+    if (FA.isUnlockKind(kind)) return [K, ['ic_lock']];   // a Core / key only goes while the Wizard stands near the shrine / keep it opens
+    return [K, ['ic_x']];
+  }
+  if (c.type === 'belt') return [K, [FA.beltOk(kind) ? 'ic_full' : 'ic_x']];
+  const d = FA.def(c);
+  if (!c.done) return [K, ['ic_x']];   // a blueprint that has all of that already
+  if (d.kind === 'crafter') {
+    if (c.type === 'spawner') {
+      if (c.out.length >= CFG.buffer) return [K, ['ic_full']];
+      const core = FA.coreEl(kind), have = FA.spawnerHave(c);
+      const locked = Object.keys(CFG.recipes).some(id => { const r = CFG.recipes[id]; return r.machine === 'spawner' && r.parents && !FA.recipeOk(id) && (core ? r.ally && r.in[kind] : !r.ally && r.in[kind]); });
+      if (locked) return [K, ['ic_lock']];   // its parent spells have not been made yet
+      if (have.length) return [K, ['ic_clock']];   // busy growing something else
+      return [K, ['ic_x']];
+    }
+    if (c.recipe && CFG.recipes[c.recipe].in[kind]) return [K, ['ic_full']];   // wants it, but its buffer holds all it can
+    return [K, ['ic_x']];
+  }
+  if (d.kind === 'cell' || d.kind === 'bot') return [K, [FA.isFuel(kind) ? 'ic_full' : 'ic_x']];
+  if (d.kind === 'splitter') return [K, [FA.beltOk(kind) ? 'ic_full' : 'ic_x']];
+  if (d.kind === 'crate') return [K, [FA.crateOk(kind) ? 'ic_lock' : 'ic_x']];   // one kind at a time
+  return [K, ['ic_x']];
+};
+// a danger the Wizard just met: what it is weak to goes up over the Spell Portal for a while (R.drawThreat), so the Builder reads "send WATER" without a toast
+// els = the weakness element(s); ic = a sprite key for what it is (a creature, a skull, a crown...); n = a short label or null
+FA.threat = function (els, ic, n) {
+  const f = G.fac;
+  if (!f || G.menu) return;
+  els = (els || []).filter(e => ELEM[e]);
+  if (!els.length) return;
+  f.threat = { els, ic: ic || 'ic_skull', n: n || null, t: 0, dur: CFG.threat.dur };
+  FA.fb('threat');
+};
 
 // has this garment been made and not yet lost track of? (worn, in the Stockpile, in the Builder's hands, on a belt, in a machine's output, in the air or in the wilds)
 FA.augMade = id => G.aug.worn[AUGS[id].slot] === id || FA.exists('aug_' + id);
 // is one of these anywhere? (the Stockpile, hands, floor, flights, belts, outputs, crates, the portal queues, the wilds)
 FA.exists = function (k) {
   const f = G.fac, is = o => o.kind === k;
-  if (G.stock[k] > 0 || f.outQ.indexOf(k) >= 0 || f.bld.some(b => b.ck === k && b.cn > 0)) return true;
+  if (G.stock[k] > 0 || f.outQ.indexOf(k) >= 0 || f.rejs.some(is) || f.bld.some(b => b.ck === k && b.cn > 0)) return true;
   if (G.hands.some(is) || f.floor.some(is) || f.flying.some(is) || f.portalQ.some(is) || f.belts.some(b => b.item && b.item.kind === k) || f.bld.some(b => b.out.some(is))) return true;
   return !!G.w && (G.w.arcs.some(is) || G.w.pickups.some(is) || G.w.drops.some(is));
 };
@@ -1121,6 +1187,8 @@ FA.update = function (dt) {
   if (f.flash > 0) f.flash -= dt;
   if (f.skillFlash > 0) f.skillFlash -= dt;
   if (f.weakFlash > 0) f.weakFlash -= dt;
+  if (f.threat && (f.threat.t += dt) > f.threat.dur) f.threat = null;
+  if (f.focusT > 0) f.focusT -= dt;   // after a goal celebration: the new goal's pointer is the only blinking thing (UI.updateHud, R.drawFlags)
   if (f.bumpAmp > 0) { f.bump += dt; if (f.bump > 0.4) f.bumpAmp = 0; }
   for (let i = f.sucks.length - 1; i >= 0; i--) { f.sucks[i].t += dt; if (f.sucks[i].t > f.sucks[i].dur) f.sucks.splice(i, 1); }
   for (let i = f.thumps.length - 1; i >= 0; i--) { f.thumps[i].t += dt; if (f.thumps[i].t > 0.5 + f.thumps[i].tier * 0.12) f.thumps.splice(i, 1); }
@@ -1138,6 +1206,7 @@ FA.update = function (dt) {
   f.working = 0;
   for (const b of f.bld) {
     if (b.pop > 0) b.pop -= dt;
+    if (b.plusT > 0) b.plusT -= dt;   // a Battery just charged by its Battery Shrine: a bouncing "+" over it (R.drawBoost)
     if (b.rot > 0) b.rot -= dt;
     if (b.thump > 0) b.thump -= dt;
     if (!b.done) continue;
@@ -1579,7 +1648,9 @@ FA.land = function (o) {
   // a throw that comes down close to a portal that takes it, or to a building or blueprint that wants it, is pulled in: nothing lies on the floor looking blocked
   const near = () => { const pc = FA.portalNear(o.x, o.y, o.kind); if (pc && toPortal(pc)) return true; const nb = FA.catchNear(o.x, o.y, o.kind); return !!nb && into(nb); };
   const fell = () => { if (near()) return true; FA.dropAt(o.kind, o.x, o.y); return false; };
-  const bounce = () => {   // couldn't go in: a cartoon boing back up and over toward the Builder (never into a building)
+  const bounce = where => {   // couldn't go in: a cartoon boing back up and over toward the Builder (never into a building), with ONE icon row saying why (FA.why)
+    const why = FA.why(c, o.kind, where);
+    if (why) { FA.ipop(o.x, o.y - 0.2, why); FA.fb('bounce'); }
     const B = CFG.boing, bd = G.bd, dx = bd.x - o.x, dy = bd.y - o.y, d = Math.hypot(dx, dy) || 1;
     let k = Math.max(B.min, Math.min(B.max, d * B.back)), x = o.x + dx / d * k, y = o.y + dy / d * k;
     while (k > 0.4 && FA.solid(Math.floor(x), Math.floor(y))) { k -= 0.3; x = o.x + dx / d * k; y = o.y + dy / d * k; }
@@ -1589,7 +1660,7 @@ FA.land = function (o) {
     AU.sfx('boing');
   };
   if (c && c.type === 'portal') {
-    if (!toPortal(c)) { bounce(); FA.ipop(o.x, o.y, [[o.kind], ['ic_x']]); }
+    if (!toPortal(c)) bounce();
     return;
   }
   if (c && c.type === 'belt') {
@@ -1603,10 +1674,10 @@ FA.land = function (o) {
     return bounce();
   }
   if (FA.isQ(tx, ty)) { FA.qHit(o, bounce); return; }
-  if (!FA.owned(tx, ty)) { bounce(); FA.ipop(o.x, o.y, [[o.kind], ['ic_x']]); return; }   // it came down off the edge of the floor
+  if (!FA.owned(tx, ty)) { bounce('edge'); return; }   // it came down off the edge of the floor
   if (FA.isPile(tx, ty)) {   // a Stockpile tile: it hops onto its kind's tile when there is room, otherwise it bounces back
     if (FA.room(o.kind) > 0) { FA.impact(o); FA.toStockFrom(o.kind, 1, o.x, o.y); AU.sfx('drop'); return; }
-    bounce(); FA.ipop(o.x, o.y, [[o.kind], ['ic_x']]); return;
+    bounce('pile'); return;
   }
   if (!fell()) AU.sfx('thud');
 };
@@ -2005,7 +2076,7 @@ FA.toJSON = function () {
     }),
     belts: f.belts.map(b => ({ x: b.x, y: b.y, dir: b.dir, item: b.item ? b.item.kind : null })),
     floor: f.floor.concat(f.flying.filter(o => !o.stock).map(o => ({ kind: o.kind, x: o.tx, y: o.ty }))).map(o => ({ kind: o.kind, x: o.x, y: o.y })),
-    portalQ: f.portalQ, eggQ: f.eggQ, outQ: f.outQ.concat(G.w ? G.w.arcs.filter(a => a.then === 'drop').map(a => a.kind) : []),   // overflow on its way to the wilds
+    portalQ: f.portalQ, eggQ: f.eggQ, outQ: f.outQ.concat(f.rejs.map(r => r.kind), G.w ? G.w.arcs.filter(a => a.then === 'drop').map(a => a.kind) : []),   // overflow on its way to the wilds
   };
 };
 const LEGACY_SORTER = { wood: 2, stone: 1, shard: 1 };

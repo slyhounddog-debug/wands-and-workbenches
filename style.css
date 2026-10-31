@@ -627,3 +627,21 @@ button.big.warn { background: #ff7a5a; color: #fff; box-shadow: 0 -4px 0 0 var(-
 /* something was shaken loose in the factory: the Builder's two cards flash gold for a moment */
 #powCard.shk, #handCard.shk { animation: shkBlink .24s steps(2) infinite; }
 @keyframes shkBlink { 50% { background: #ffd23a; box-shadow: inset 0 0 0 2px #fff; } }
+
+/* ---- the attention-and-causality layer (CLAUDE.md, FEEDBACK.md) ---- */
+/* what is slowing / burning the Wizard: chips on the right end of his health bar (the effect's icon + the picture of whatever does it) */
+#wStat { left: auto; right: 3px; top: 2px; bottom: 2px; width: auto; display: flex; align-items: center; gap: 3px; z-index: 3; transition: none; }
+#wStat .st { display: flex; align-items: center; gap: 1px; padding: 1px 3px; height: 18px; background: #cfe8ff; box-shadow: inset 0 0 0 2px var(--ink); }
+/* the results screen names who killed him and what to send next */
+.killer { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 6px 0 10px; padding: 8px 14px; background: var(--panel-lo); box-shadow: inset 0 0 0 3px #ff6a6a; }
+.killer b { display: block; font: 12px var(--display); color: #ff9a9a; margin-bottom: 6px; }
+.killer span { display: flex; align-items: center; gap: 6px; font-size: 18px; font-weight: 700; }
+.killer em { font-style: normal; }
+/* a wand slot that just filled grows and pulses while the staff takes the element in (it starts to blink after) */
+#wandRow .ws.grow { z-index: 5; animation: wsGrow 1s steps(8) both; }
+@keyframes wsGrow { 0% { transform: scale(1); } 20% { transform: scale(1.7); box-shadow: inset 0 0 0 3px var(--ec), 0 0 0 5px #fff; } 40% { transform: scale(1.3); } 60% { transform: scale(1.7); box-shadow: inset 0 0 0 3px var(--ec), 0 0 0 5px #fff; } 80% { transform: scale(1.35); } 100% { transform: scale(1.2); } }
+/* after a goal celebrates, only the goal's own pointer (the .hint slot / tree button) keeps blinking; the nudges and chips hold still for a moment */
+#game.goalFocus .iconbtns button.nudge:not(.hint), #game.goalFocus #wandRow .ws.armed, #game.goalFocus #noPow { animation: none; }
+/* ...but while a danger is on the Wizard the completed goal only pulses in place (same length, so the swap to the next goal is unchanged) */
+.quest.celebrate.quiet { animation-name: qcelq; }
+@keyframes qcelq { 0%, 100% { transform: none; filter: none; } 20%, 60% { transform: scale(1.05); filter: brightness(1.25); } 40%, 80% { transform: none; filter: brightness(1.1); } }

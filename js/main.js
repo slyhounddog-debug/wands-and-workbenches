@@ -593,6 +593,7 @@ Main.tapSfx = function (name, x, y) {
   if (q.list.length > 24) q.list.shift();
 };
 AU.setTap(Main.tapSfx);
+AU.setAttn(() => UI.cueLevel());   // a danger or a goal cue that is up drops the ambient sounds (audio.js)
 
 // ---------- per-frame simulation ----------
 Main.step = function (dt, ctl) {

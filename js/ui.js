@@ -34,8 +34,31 @@ UI.decorate = function (root) {   // <i data-ic="ic_heart" data-s="24"></i> plac
 };
 
 // ---------- toasts ----------
-UI.toast = function (text, side, icon, local) {
+// ---------- cue priority: danger > goal > resource loss > ambient (CLAUDE.md, FEEDBACK.md) ----------
+// A higher cue holds the lower ones back for a moment so the one thing that matters is the one thing seen: toasts of a lower priority wait in a queue and come out a beat apart
+// (UI.toast / UI.tickToasts), the ambient sounds drop (AU.setAttn) and the edge bubbles dim (FA.attention). A toast raises the level of its own priority for CFG.cue.hold seconds.
+const PRIO_KEY = ['ambient', 'loss', 'goal', 'danger'];
+UI.cueUntil = [0, 0, 0, 0]; UI.toastQ = [];
+UI.cue = function (prio) { if (prio > 0) UI.cueUntil[prio] = Math.max(UI.cueUntil[prio], performance.now() + CFG.cue.hold[PRIO_KEY[prio]] * 1000); };
+UI.cueLevel = function () { const now = performance.now(); for (let p = 3; p > 0; p--) if (UI.cueUntil[p] > now) return p; return 0; };
+UI.toastPrio = function (text, icon) {
+  if (/^Goal complete/.test(text)) return 2;
+  if (icon === 'ic_skull' || icon === 'ic_warn' || /Warden|Elite|Chimera|Stampede|Migration|Brood|Portal Storm|Mutation Bloom|The Wizard meets|ELITE/.test(text)) return 3;
+  if (/full|bounce|No room|Not enough power|out of power|dropped|lost|stalling/i.test(text)) return 1;
+  return 0;
+};
+UI.toast = function (text, side, icon, local, prio) {
   if (UI.toastCap) { UI.toastCap.push({ text, side, icon }); return; }   // the guest's purchase is being resolved: its messages go back to him (Net.hooks.buy)
+  if (prio === undefined) prio = UI.toastPrio(text, icon);
+  const lvl = UI.cueLevel();
+  if (!UI.flushing && prio < lvl) {   // something more important is up: wait for it, then come out a beat apart
+    if (!UI.toastQ.some(q => q.text === text && q.side === side)) {
+      UI.toastQ.push({ text, side, icon, local, prio, due: UI.cueUntil[lvl] + CFG.cue.spread * 1000 * UI.toastQ.length });
+      if (UI.toastQ.length > 6) UI.toastQ.shift();
+    }
+    return;
+  }
+  UI.cue(prio);
   if (!local && side === 'R') Net.sendToast(text, icon);   // the Wizard's messages also reach the Wizard's screen (online host)
   const box = $(side === 'R' ? 'toastR' : 'toastL');
   if (!box) return;
@@ -48,6 +71,10 @@ UI.toast = function (text, side, icon, local) {
   while (box.children.length > 4) box.removeChild(box.firstChild);
 };
 UI.tickToasts = function (dt) {
+  if (UI.toastQ.length) {   // held-back toasts: one at a time, once nothing more important is up
+    const q = UI.toastQ[0], now = performance.now();
+    if (q.due <= now && UI.cueLevel() <= q.prio) { UI.toastQ.shift(); UI.flushing = true; try { UI.toast(q.text, q.side, q.icon, q.local, q.prio); } finally { UI.flushing = false; } if (UI.toastQ[0]) UI.toastQ[0].due = Math.max(UI.toastQ[0].due, now + CFG.cue.spread * 1000); }
+  }
   for (const id of ['toastL', 'toastR']) {
     const box = $(id);
     for (const c of Array.from(box.children)) {
@@ -157,6 +184,7 @@ UI.updateHud = function (dt) {
   const tl = UI.treeOpen.L, tr = UI.treeOpen.R;
   $('wizPause').classList.toggle('hidden', Net.on || !tl || tr);
   $('facNote').classList.toggle('hidden', Net.on || !tr || tl);
+  $('game').classList.toggle('goalFocus', (f.focusT || 0) > 0);   // (CSS: only the goal's own pointer keeps blinking)
   UI.updateGear();
   UI.updateQuest(dt);
   UI.updateEvent();
@@ -176,9 +204,24 @@ UI.updateGear = function () {
     s += '<span class="gs ' + (id ? '' : 'em ') + (cool ? 'cool' : '') + '" title="' + (id ? AUGS[id].name : sl[1]) + '">' + UI.img(id ? 'aug_' + id : 'aug_' + AUG_ORDER.find(k => AUGS[k].slot === sl[0]), 32) + (id ? '' : '<small>' + sl[1].toUpperCase().slice(0, 4) + '</small>') + (cool ? '<i style="width:' + Math.round((1 - A.cd.phoenix / P.cd) * 38) + 'px"></i>' : '') + '</span>';
   }
   setHtml('gearCard', s);
+  UI.updateStatus();
   UI.updateWand();
   const np = $('noPow');
   if (np) np.classList.toggle('hidden', !((G.fac.darkT || 0) >= 1.5));   // the Wizard sees when the factory has gone dark (it is in the snapshot, so the online guest sees it too)
+};
+// what is slowing / burning the Wizard, as chips over his health bar: the effect's icon and the picture of whatever is doing it
+UI.statusList = function () {
+  const w = G.w, out = [];
+  if (!w || w.dead) return out;
+  if (w.zSlow > 0 && w.zSrc) out.push({ st: w.zSrc.st === 'snare' ? 'ic_snare' : 'ic_slow', src: w.zSrc.ic, n: (w.zSrc.st === 'snare' ? 'Snared by ' : 'Slowed by ') + w.zSrc.n });
+  else if (w.slowT > 0 && w.slowSrc) out.push({ st: 'ic_slow', src: w.slowSrc.ic, n: 'Slowed by ' + w.slowSrc.n });
+  if (w.statBurn > 0) out.push({ st: 'ic_flame', src: 'ic_flame', n: 'Burning: scorched ground' });
+  return out;
+};
+UI.updateStatus = function () {
+  if (!$('wStat')) return;
+  const list = UI.statusList();
+  setHtml('wStat', list.map(s => '<span class="st" title="' + s.n + '">' + UI.img(s.st, 14) + UI.img(s.src, 14) + '</span>').join(''));
 };
 // The wand: four slots (Air, Water, Fire, Earth) under his health bar, each an icon filling with the spells that charged it; a READY slot is lit, and the ARMED one (the one Cast fires)
 // has a bright frame and a marker. The key chips are the Cycle and Cast buttons of whoever plays him.
@@ -188,8 +231,9 @@ UI.updateWand = function () {
   const kn = Main.wizKeyNames();
   let s = '';
   for (const el of ELEMS) {
-    const need = CFG.wand.need[el], full = W.full[el], m = W.m[el], on = W.armed === el;
-    s += '<span class="ws' + (full ? ' full' : '') + (on ? ' armed' : '') + '" style="--ec:' + ELEM[el].color + '" title="' + CFG.wandNames[el] + ': ' + (full ? 'READY' + (on ? ' (armed: Cast fires it)' : ' (Cycle arms it)') : m + ' of ' + need + ' spells') + '">' + UI.img('wand_' + el, 24) + '<i style="height:' + Math.round(m / need * 100) + '%"></i>' + (full ? '' : '<b>' + m + '</b>') + (on ? '<u></u>' : '') + '</span>';
+    const need = CFG.wand.need[el], full = W.full[el], m = W.m[el], fx = W.fx && W.fx.el === el && W.fx.kind === 'wand' ? W.fx : null;
+    const on = W.armed === el && !(fx && fx.t < CFG.wandFill.dur);   // a slot that just filled grows and pulses while the staff takes the element in; it only starts to blink after
+    s += '<span class="ws' + (full ? ' full' : '') + (on ? ' armed' : '') + (fx ? ' grow' : '') + '" style="--ec:' + ELEM[el].color + '" title="' + CFG.wandNames[el] + ': ' + (full ? 'READY' + (on ? ' (armed: Cast fires it)' : ' (Cycle arms it)') : m + ' of ' + need + ' spells') + '">' + UI.img('wand_' + el, 24) + '<i style="height:' + Math.round(m / need * 100) + '%"></i>' + (full ? '' : '<b>' + m + '</b>') + (on ? '<u></u>' : '') + '</span>';
   }
   s += '<span class="wk" title="Cycle the armed wand attack / Cast it / Emote wheel"><kbd>' + kn.cycle + '</kbd><kbd>' + kn.cast + '</kbd><kbd>' + kn.emote + '</kbd></span>';
   setHtml('wandRow', s);
@@ -232,6 +276,7 @@ UI.giveGift = function (gift) {
 UI.questDone = function (side, q) {
   G.xp += q.xp; G.stats.xpEarned += q.xp;
   G.quest[side]++; G.qbase[side] = null;
+  G.fac.focusT = CFG.questCelebrate.swap + CFG.goalFocus; FA.fb('goal-focus');   // once the card has celebrated, the NEW goal's pointer is the only thing blinking for a moment
   UI.giveGift(q.gift);
   const big = q.xp >= 30, gl = UI.giftList(q.gift);
   UI.toast('Goal complete! +' + q.xp + ' XP' + (q.gift && q.gift.credit ? ' and a FREE ' + Object.keys(q.gift.credit).map(k => CFG.buildings[k].name).join(', ') : ''), side === 'W' ? 'R' : 'L', 'ic_target');
@@ -250,8 +295,10 @@ UI.questDone = function (side, q) {
 UI.qHold = {}; UI.qLast = {};
 UI.celebrate = function (side, q) {
   UI.qHold[side] = { q, t0: performance.now() };
-  const el = $('quest' + side); el.classList.remove('celebrate'); void el.offsetWidth; el.classList.add('celebrate');
-  if (!el._cel) { el._cel = true; el.addEventListener('animationend', e => { if (e.animationName === 'qcel') el.classList.remove('celebrate'); }); }
+  const el = $('quest' + side); el.classList.remove('celebrate'); void el.offsetWidth;
+  el.classList.toggle('quiet', UI.cueLevel() >= 3 || (G.fac && FA.attention() === 3));   // a danger on the Wizard comes first: the card only blinks a little instead of growing and drifting over the screen
+  el.classList.add('celebrate');
+  if (!el._cel) { el._cel = true; el.addEventListener('animationend', e => { if (/^qcel/.test(e.animationName)) el.classList.remove('celebrate'); }); }
 };
 UI.questHeld = function (side) {
   const h = UI.qHold[side];
@@ -854,9 +901,16 @@ UI.statsHtml = function () {
 // The game over screen (both players see it when the Wizard dies): each presses RESTART to ready up, and when both have the run starts again (Main.step).
 // G.w.ready = { B, W } is plain data, so the other screen shows it from the snapshots. The Builder's button is the host's (or the shared screen's), the Wizard's
 // the guest's online (his press is the roll button latched, the host reads it as the pad) or the shared screen's offline.
+// who killed the Wizard, and what the Builder could have sent: "KILLED BY EMBER IMP - weak to WATER: send Water spells" (G.w.killer, set by WZ.damage)
+UI.killerHtml = function () {
+  const k = G.w && G.w.killer;
+  if (!k) return '';
+  const el = k.el && ELEM[k.el] ? k.el : null;
+  return '<div class="killer">' + UI.img(k.ic, 40) + '<div><b>KILLED BY ' + k.n.toUpperCase() + '</b>' + (el ? '<span>weak to ' + UI.img(el, 18) + '<em style="color:' + ELEM[el].color + '">' + ELEM_WORD[el].toUpperCase() + '</em>: Builder, send ' + ELEM_WORD[el] + ' spells</span>' : '') + '</div></div>';
+};
 UI.showResults = function () {
   const el = $('results');
-  el.innerHTML = '<div class="rIcon">' + UI.img('ic_skull', 48) + '</div><h2>GAME OVER</h2>' + UI.statsHtml() + '<p>The factory, stockpile, XP, bank and skill tree are all safe. Both players press RESTART to go again.</p>' +
+  el.innerHTML = '<div class="rIcon">' + UI.img('ic_skull', 48) + '</div><h2>GAME OVER</h2>' + UI.killerHtml() + UI.statsHtml() + '<p>The factory, stockpile, XP, bank and skill tree are all safe. Both players press RESTART to go again.</p>' +
     '<button class="big" id="rReB">BUILDER</button><button class="big" id="rReW">WIZARD</button><button class="big ghost" id="rTitle">TITLE</button>';
   el.classList.remove('hidden');
   UI.resSig = '';

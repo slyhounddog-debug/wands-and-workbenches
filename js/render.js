@@ -697,6 +697,7 @@ R.drawBuilding = function (ctx, v, b, t) {
     else if (FA.shrineBoost(b) > 1 && Math.sin(t * 6) > -0.3) {   // shrine boost: a pulsing rim (the stream from the portal is drawn in R.drawShrineStreams)
       ctx.strokeStyle = ELEM[el].color; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw * 0.95, v.hh * 0.95); ctx.stroke();
     }
+    if (FA.shrineBoost(b) > 1 && b.powered) R.drawBoost(ctx, v, p, base, t, ELEM[el].color, b.x * 0.7 + b.y);   // boosted by a shrine / a Portal Storm: a gentle pulse and a bouncing "+"
   }
   if (d.kind === 'crafter') {
     if (b.type === 'forge' && b.prog > 0 && b.powered) R.flames(ctx, p[0] - 12, p[1] - 22, t);
@@ -787,6 +788,7 @@ R.drawBuilding = function (ctx, v, b, t) {
     R.faceGauge(ctx, p[0], base, -1, gw, gh, Math.min(1, fr), fr > 1 ? '#fff07a' : fr >= 1 ? '#3ad06b' : '#ffd93a');
     { let fk = null; for (const k in b.fuel) if (b.fuel[k] > 0 && (!fk || b.fuel[k] > b.fuel[fk])) fk = k;
       R.faceGauge(ctx, p[0], base, 1, gw, gh, FA.fuelTotal(b) / CFG.fuelCap, fk ? (ELEM[fk] ? ELEM[fk].color : fk === 'wood' ? '#c88a52' : '#c4cad4') : '#8a8a8a'); }
+    if (b.plusT > 0) R.drawBoost(ctx, v, p, base, t, '#ffd93a', b.x * 0.7 + b.y);   // its Battery Shrine just charged it
     { const sh = G.bshr.find(q => q.id === b.id); if (sh) R.defer.push(c => R.iconRow(c, p[0], base - (hv ? 98 : 84), [['ic_bolt', sh.n]], 0.95)); }   // its shrine's number
     if (b.bat > 0 && Math.sin(t * 8) > 0) {
       ctx.fillStyle = '#fff07a';
@@ -811,7 +813,7 @@ const ST = {
   off:     { col: '#9a5ad0', dash: [8, 4, 2, 4], w: 6 }, // dash-dot + the no-power bolt
 };
 R.drawState = function (ctx, v, b, t, p, top) {
-  const st = b.st, S = ST[st];
+  const st = b.st, S = ST[st], d0 = FA.def(b);
   if (!S) return;
   const blink = Math.sin(t * (st === 'full' || st === 'off' ? 9 : 5)) > -0.3;
   if (st !== 'work' || R.inTip(b)) {
@@ -822,7 +824,7 @@ R.drawState = function (ctx, v, b, t, p, top) {
   if (!blink) return;
   const ix = p[0] - 44, iy = top + 72;
   if (st === 'missing') { const k = FA.missingOf(b); dspr(ctx, k ? itemSprite(k) : SP.it_battery, ix, iy, 4, 0.75); }
-  else if (st === 'starve') dspr(ctx, SP.ic_starve, ix, iy, 4);
+  else if (st === 'starve') { const k = d0.kind === 'crafter' ? FA.missingOf(b) : null; if (k) { dspr(ctx, itemSprite(k), ix, iy, 4, 0.9); dspr(ctx, SP.ic_starve, ix + 28, iy + 4, 2); } else dspr(ctx, SP.ic_starve, ix, iy, 4); }   // starved of THIS: the first ingredient it is waiting for
   else if (st === 'jam') dspr(ctx, SP.ic_jam, ix, iy, 4);
   else if (st === 'full') dspr(ctx, SP.ic_full, ix, iy, 4);
 };
@@ -986,6 +988,8 @@ R.drawPortal = function (ctx, v, t, which) {
     }
   }
   if (!skill) for (const s of f.sucks) R.drawSuck(ctx, v, s, base);
+  if (!skill) for (const r of f.rejs) R.drawRej(ctx, v, r, base);   // a pickup the full Stockpile refused, bouncing off this portal
+  if (!skill) R.drawThreat(ctx, v, t, base);   // what the Wizard just met and what it is weak to
   const q = f.portalQ.filter(e => e.which === which).length + (which === 'spell' ? f.eggQ.length : 0);
   if (q) txt(ctx, q + ' queued', base[0], base[1] - 146, 12, '#ffe36b', 'center', 'd');
 };
@@ -1111,11 +1115,13 @@ R.flagList = function (v) {
     const x = cx + dx * k, y = cy + dy * k, m = Math.hypot(dx, dy) || 1;
     const same = out.find(o => o.st === f.b.st && Math.hypot(o.x - x, o.y - y) < F.merge);
     if (same) same.n++;
-    else if (out.length < F.max) out.push({ st: f.b.st, x, y, nx: dx / m, ny: dy / m, n: 1 });
+    else if (out.length < F.max) out.push({ st: f.b.st, x, y, nx: dx / m, ny: dy / m, n: 1, k: f.b.st === 'starve' && FA.def(f.b).kind === 'crafter' ? FA.missingOf(f.b) : null });
   }
   return out;
 };
 R.drawFlags = function (ctx, v, t) {
+  const dim = FA.attention() > 0 ? 0.3 : 1;   // a danger or a freshly finished goal comes first: the trouble bubbles step back until it has been seen
+  ctx.globalAlpha = dim;
   for (const o of R.flagList(v)) {
     const S = ST[o.st], ic = SP[o.st === 'off' ? 'ic_bolt' : o.st === 'jam' ? 'ic_jam' : 'ic_starve'];
     const bob = Math.sin(t * 6) > 0 ? 0 : 6, blink = o.st !== 'off' || Math.sin(t * 9) > -0.3;
@@ -1123,9 +1129,11 @@ R.drawFlags = function (ctx, v, t) {
     ctx.fillStyle = '#1a0f28'; ctx.beginPath(); ctx.moveTo(ax + o.nx * 6, ay + o.ny * 6); ctx.lineTo(ax - o.nx * 24 + px * 20, ay - o.ny * 24 + py * 20); ctx.lineTo(ax - o.nx * 24 - px * 20, ay - o.ny * 24 - py * 20); ctx.closePath(); ctx.fill();
     ctx.fillStyle = S.col; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax - o.nx * 20 + px * 14, ay - o.ny * 20 + py * 14); ctx.lineTo(ax - o.nx * 20 - px * 14, ay - o.ny * 20 - py * 14); ctx.closePath(); ctx.fill();
     pbox(ctx, o.x - 36, o.y - 24, 72, 48, blink ? '#2b1d48' : '#4a2f78', S.col);
-    dspr(ctx, ic, o.x - (o.n > 1 ? 12 : 0), o.y + ic.c.height * 2, 4);
+    if (o.k) { dspr(ctx, itemSprite(o.k), o.x - (o.n > 1 ? 18 : 10), o.y + 14, 3); dspr(ctx, ic, o.x + (o.n > 1 ? 4 : 14), o.y + 12, 2); }   // starved of this ingredient
+    else dspr(ctx, ic, o.x - (o.n > 1 ? 12 : 0), o.y + ic.c.height * 2, 4);
     if (o.n > 1) txt(ctx, 'x' + o.n, o.x + 18, o.y + 6, 12, '#ffffff', 'center', 'd');
   }
+  ctx.globalAlpha = 1;
 };
 R.arrow = function (ctx, x, y, nx, ny) {   // chunky gold arrow whose tip sits at (x,y), pointing along (nx,ny)
   const px = -ny, py = nx, L = 25, W = 15;   // 70% of the old size
@@ -1547,7 +1555,7 @@ R.drawWorld = function (main, dt, rect) {
       if (o.flash > 0) dspr(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, p[0] + shake, p[1], S, 0.5);
       if (o.hp < o.maxHp) R.hpBar(ctx, p[0], p[1] - spr.c.height * S - 9, 42, o.hp / o.maxHp, '#7be07b');
     } else if (it.t === 'drop') {
-      if (o.hide > 0) continue;   // the portal over his head is spitting it back out (the fx draws it meanwhile)
+      if (o.tet > 0) R.drawTether(ctx, v, o, wt);   // a rare drop: a dotted line back to the kill that made it
       const p = R.toScreen(v, o.x, o.y);
       const bob = (Math.sin(o.t * 6) > 0 ? 3 : 0) - (o.t < 0.45 ? Math.sin(o.t / 0.45 * 3.14) * 21 : 0);
       ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(snap(p[0] - 6), Math.round(p[1] / 3) * 3 - 3, 12, 6);
@@ -1593,6 +1601,7 @@ R.drawWorld = function (main, dt, rect) {
   if (w.hp > 0 && w.hp < WZ.maxHp() * 0.3 && Math.sin(wt * 6) > 0) {
     ctx.strokeStyle = 'rgba(200,0,30,0.5)'; ctx.lineWidth = 24; ctx.strokeRect(left + 12, 12, RW - 24, CFG.H - 24);
   }
+  R.drawHurt(ctx, v, w, left, right, wt);   // where the last hit came from and who did it
   if (R.whint && !w.dead) R.drawWHint(ctx, v, R.whint, wt);
   if (R.mapC && !rc.pip) R.defer.push(c => R.drawMinimap(c));
   // the wilds are frozen while anyone is in the skill tree (the DOM banner says so in words)
@@ -1750,6 +1759,7 @@ R.drawEnemy = function (ctx, v, e) {
     if (e.frozen < 0.4) { ctx.fillStyle = '#5a8ab0'; ctx.fillRect(snap(p[0] - 3), Math.round((top + 6) / 3) * 3, 3, 21); ctx.fillRect(snap(p[0] + 3), Math.round((top + 24) / 3) * 3, 9, 3); }
   } else if (e.dazeT > 0) { ctx.fillStyle = '#ffe36b'; for (let i = 0; i < 3; i++) ctx.fillRect(snap(p[0] + Math.cos(t * 8 + i * 2.1) * 15 - 3), Math.round((top - 6 + Math.sin(t * 8 + i * 2.1) * 4) / 3) * 3, 6, 6); }
   if (e.tele) dspr(ctx, SP.ic_warn, p[0], top - 22, S);
+  if (!e.ally) R.drawFoeStatus(ctx, e, p[0] + 36, top - 21);   // slowed / frozen / dazed, as an icon
   if (e.hp < e.maxHp || e.ally) R.hpBar(ctx, p[0], top - 9, e.elite ? 42 : 30, e.hp / e.maxHp, e.ally ? '#7bff9a' : e.elite ? '#ffd23a' : '#ff6a6a');
   if (e.ally) dspr(ctx, SP.ic_heart, p[0], top - 18, S);
   if (e.elite) dspr(ctx, SP.ic_crown, p[0], top - 15, S);
@@ -2159,7 +2169,9 @@ R.drawWizard = function (ctx, v, w) {
     R.hpBar(ctx, p[0], p[1] + 9, 27, w.statT / E.t, '#b58a4c');
   }
   else { dspr(ctx, spr, p[0], p[1] - bob, S, (blink ? 0.4 : 1) * ia, flip); wearAll((blink ? 0.4 : 1) * ia, flip, p[0], p[1] - bob); }
-  const arm = G.wand && G.wand.armed && G.wand.full[G.wand.armed] && !w.emote ? G.wand.armed : null;
+  const fillFx = G.wand && G.wand.fx && G.wand.fx.t < CFG.wandFill.dur ? G.wand.fx : null;   // a slot just filled: the staff is taking the element in (it blinks after)
+  const arm = G.wand && G.wand.armed && G.wand.full[G.wand.armed] && !w.emote && !(fillFx && fillFx.el === G.wand.armed) ? G.wand.armed : null;
+  if (G.wand && G.wand.fx && !w.emote) R.drawWandFill(ctx, p[0] + (flip ? -24 : 24), Math.round((p[1] - 45 - bob) / 3) * 3, tt);
   if (arm) {   // the staff glows in the armed wand attack's element colour (dark when nothing is armed), switching the frame the armed element changes
     const gx = p[0] + (flip ? -24 : 24), gy = Math.round((p[1] - 45 - bob) / 3) * 3, pu = 0.5 + 0.5 * Math.sin(tt * 6);
     ctx.fillStyle = ELEM[arm].color;

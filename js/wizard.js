@@ -439,10 +439,23 @@ WZ.epuff = function (x, y, el, n) {
     G.w.fx_.push(f);
   }
 };
-WZ.damage = function (d, soft) {   // armor soaks damage first. soft = burning ground: no hit-stun, shake or hurt sound
+// ---------- who hurt him: every hit carries a SOURCE (the attacker's sprite, name, place and the element it is weak to) so the Wizard sees where it came from and the
+// Builder sees what to send. WZ.src is set around a creature's turn (like WZ.ctx) and captured by everything it leaves behind: its orbs, zones and telegraphed strikes. ----------
+WZ.HAZ = { scorch: { ic: 'ic_flame', n: 'Scorched ground' }, steam: { ic: 'ic_slow', n: 'Steam burst' }, unknown: { ic: 'ic_warn', n: 'Danger' } };
+WZ.nameOf = e => e.boss ? 'Primal Chimera' : e.warden ? 'The Warden' : (CFG.enemies[e.type] && CFG.enemies[e.type].name) || (CFG.creatures[e.type] && CFG.creatures[e.type].name) || e.type;
+WZ.srcOf = e => ({ ic: e.var && SP[e.type + '_' + e.var] ? e.type + '_' + e.var : e.type, n: WZ.nameOf(e), x: e.x, y: e.y, el: e.weak || null });   // (a NEW object every time: it ends up in G and shared references would leak in the photo test)
+// WZ.cur = the hostile whose turn it is (set around its AI in the enemy loop); WZ.src is built from it only when something asks (a hit, a zone, a timer), not for every foe every frame
+WZ.cur = null; WZ.srcFix = null;
+Object.defineProperty(WZ, 'src', { get() { return WZ.cur ? WZ.srcOf(WZ.cur) : WZ.srcFix; }, set(v) { WZ.srcFix = v; WZ.cur = null; } });
+WZ.srcCopy = () => WZ.src;   // (srcOf makes a fresh object each time, so what is stored in G is never shared)
+WZ.damage = function (d, soft, src) {   // armor soaks damage first. soft = burning ground: no hit-stun, shake or hurt sound. src = who did it (else WZ.src, else "Danger")
   const w = G.w;
   if (G.menu) return;   // the living menu world is a consequence-free preview: nothing can hurt the Wizard there
   if (w.jump) return;   // airborne on a geyser: nothing reaches him
+  const sr = src || WZ.src || (FA.fb('hurt-untagged'), WZ.HAZ.unknown);   // (a hit with no source is a bug the featcheck counts)
+  w.hurt = { ic: sr.ic, n: sr.n, ax: sr.x === undefined ? null : sr.x, ay: sr.y === undefined ? null : sr.y, el: sr.el || null, t: 0, soft: !!soft, d: Math.round(d) };   // the cue: R.drawHurt
+  w.lastHit = { ic: sr.ic, n: sr.n, el: sr.el || null };   // what to blame if this kills him
+  FA.fb('hurt');
   if (w.statT > 0) { d *= CFG.wand.earth.take; if (!soft) w.statHits++; }   // the Statue: stone takes 30% of it, and every hit charges the burst that ends it
   if (!soft) FA.rumble(d);   // any hit rattles the factory, harder for a bigger one
   if (!soft && d >= CFG.pressure.hit * WZ.maxHp()) FA.pressure(Math.min(1.5, d / WZ.maxHp() * 3), '#ff5a5a');   // a heavy hit shakes the factory too
@@ -455,6 +468,8 @@ WZ.damage = function (d, soft) {   // armor soaks damage first. soft = burning g
   if (w.hp <= 0) {
     if (WZ.phoenixSave()) return;   // the Phoenix Feather cancels death
     w.hp = 0; w.dead = true; AU.sfx('die'); WZ.puff(w.x, w.y, '#b58cff', 20);
+    w.killer = Object.assign({}, w.lastHit);   // the results screen names it, and what would have hurt it
+    FA.fb('killer');
   }
 };
 // a hit the roll's i-frames just swallowed: say so, so dodging feels deliberate
@@ -541,6 +556,7 @@ WZ.kill = function (e) {
     if (n >= 4) G.stats.k4 = (G.stats.k4 || 0) + 1;
   }
   if (e.boss) { WZ.bossDown(e); return; }
+  WZ.dropFrom = { x: e.x, y: e.y };   // (every rare drop below is tied to this corpse)
   if (e.elite && !Net.on) w.hitstop = Math.max(w.hitstop || 0, e.warden ? CFG.hitstop.warden : CFG.hitstop.elite);   // hit-stop: the Wizard's side holds still for a beat (offline only: a guest's prediction would rubber-band)
   WZ.dropGems(e.x, e.y, WZ.killGems(e));
   if (e.elite) {
@@ -550,13 +566,22 @@ WZ.kill = function (e) {
     WZ.ring(e.x, e.y, 2.2, '#ffd23a', 0.45);
   }
   WZ.onDeath(e);
+  WZ.dropFrom = null;
   AU.sfx('kill', e.x, e.y);
   w.fx_.push({ type: 'boom', x: e.x, y: e.y, r: e.elite ? 1.4 : 0.9, t: 0, dur: 0.3, col: '#ffffff' });
   WZ.puff(e.x, e.y, def.col, e.elite ? 16 : 9);
 };
+// A rare drop that comes from a KILL (an Iron, a Shard, a Core, a recycled packet or spell) remembers which kill made it: the item floats up over the corpse and a thin dotted
+// tether runs from the corpse to it for a moment (R.drawTether), so "where did that come from" never needs a guess. WZ.dropFrom is set around WZ.kill.
+WZ.dropFrom = null;
+WZ.rareDrop = k => k !== 'xp' && k !== 'wood' && k !== 'stone';
 WZ.drop = function (kind, x, y, val) {
-  const a = Math.random() * 6.283, s = 2 + Math.random() * 2.5;
-  G.w.drops.push({ kind, x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0, val });
+  const a = Math.random() * 6.283, s = 2 + Math.random() * 2.5, d = { kind, x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0, val };
+  if (WZ.dropFrom && WZ.rareDrop(kind)) {
+    d.fx = WZ.dropFrom.x; d.fy = WZ.dropFrom.y; d.tet = CFG.tether.dur;
+    WZ.icon(d.fx, d.fy - 0.6, kind); FA.fb('tether');
+  }
+  G.w.drops.push(d);
 };
 // call fn(target, dist, isEnemy) for everything within r of (x,y)
 WZ.each = function (x, y, r, fn) {
@@ -605,11 +630,12 @@ WZ.proj = function (o) {
 WZ.zone = function (o) {
   const z = Object.assign({ x: G.w.x, y: G.w.y, r: 4, t: 3, dur: 3, dps: 0, slow: 0, follow: false, col: '#fff', ctx: WZ.ctx }, o);
   z.dur = z.t;
+  if (z.hostile && !z.src) z.src = WZ.srcCopy();   // a hostile zone remembers whose it is (its tick damage and slow say so on the Wizard)
   G.w.zones.push(z);
 };
 WZ.ring = (x, y, r, col, dur) => G.w.fx_.push({ type: 'ring', x, y, r, t: 0, dur: dur || 0.4, col });
 WZ.boom = (x, y, r, col) => G.w.fx_.push({ type: 'boom', x, y, r, t: 0, dur: 0.35, col });
-WZ.later = (t, fn) => { const c = WZ.ctx; G.w.timers.push({ t, fn: () => { const o = WZ.ctx; WZ.ctx = c; fn(); WZ.ctx = o; } }); };
+WZ.later = (t, fn) => { const c = WZ.ctx, s = WZ.src; G.w.timers.push({ t, fn: () => { const o = WZ.ctx, os = WZ.src; WZ.ctx = c; WZ.src = s; fn(); WZ.ctx = o; WZ.src = os; } }); };   // (a delayed strike still knows whose it is)
 // ---------- the marks spells leave on the ground (CFG.spells[s].dec): burns, cracks, frost... light spells faint and short, heavy ones deep ----------
 WZ.decal = function (x, y, r, dec) {
   const w = G.w, rr = Math.max(0.2, r * dec.r);
@@ -683,7 +709,7 @@ WZ.arcTick = function (dt) {
     w.arcs.splice(i, 1);
     if (a.then === 'spell') WZ.incoming(a.spell);
     else if (a.then === 'unlock') WZ.unlockLand(a);
-    else if (a.then === 'drop') { w.drops.push({ kind: a.kind, x: a.tx, y: a.ty, vx: 0, vy: 0, t: 0.3, val: 1, home: true, rejT: 1.5 }); WZ.ring(a.tx, a.ty, 0.9, a.col, 0.3); AU.sfx('portalDrop'); }   // the factory's overflow lies here until the Stockpile has room
+    else if (a.then === 'drop') { w.drops.push({ kind: a.kind, x: a.tx, y: a.ty, vx: 0, vy: 0, t: 0.3, val: 1, home: true, rejT: 1.5 + CFG.stockReject }); WZ.ring(a.tx, a.ty, 0.9, a.col, 0.3); AU.sfx('portalDrop'); }   // the factory's overflow lies here until the Stockpile has room
     else { w.pickups.push({ kind: a.kind, x: a.tx, y: a.ty, z: 0.5, t: 0 }); WZ.ring(a.tx, a.ty, 0.9, a.col, 0.3); AU.sfx('portalDrop'); }
   }
 };
@@ -1328,8 +1354,10 @@ WZ.announce = function (e, key) {
   const def = CFG.enemies[e.type], el = e.weak;
   if (key === 'elite') {
     UI.toast('Elite near the Wizard: send ' + ELEM_WORD[el] + '!', 'L', el);
+    FA.threat([el], e.type, 'ELITE');
   } else {
     UI.toast('The Wizard meets ' + def.name + 's: send ' + ELEM_WORD[el] + ' spells!', 'L', el);
+    FA.threat([el], e.type, null);
   }
   AU.sfx('alert');
 };
@@ -1442,7 +1470,7 @@ WZ.bossAI = function (e, dt, d, TG) {   // d and TG: the distance to, and the po
     e.volT = B.volleyEvery;
     for (let i = 0; i < B.volleyN; i++) {
       const a = i / B.volleyN * 6.283 + Math.random() * 0.3;
-      w.eproj.push({ x: e.x, y: e.y, vx: Math.cos(a) * B.volleySpeed, vy: Math.sin(a) * B.volleySpeed, life: 2.4, dmg: B.volleyDmg, col: ELEM[e.weak].color, size: 7 });
+      w.eproj.push({ x: e.x, y: e.y, vx: Math.cos(a) * B.volleySpeed, vy: Math.sin(a) * B.volleySpeed, life: 2.4, dmg: B.volleyDmg, col: ELEM[e.weak].color, size: 7, src: WZ.src });
     }
     AU.sfx('volley', e.x, e.y);
   }
@@ -1557,6 +1585,8 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   if (w.dead) { w.wheel = null; w.emote = null; w.stk = null; w.sg = null; w.dig = null; w.jump = null; w.blink = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
   w.time += dt;
   if (w.hurtT > 0) w.hurtT -= dt;
+  if (w.hurt) { w.hurt.t += dt; if (w.hurt.t > CFG.hurt.dur) w.hurt = null; }   // the "where did that come from" cue (R.drawHurt)
+  if (w.statBurn > 0) w.statBurn -= dt;
   if (w.mashT > 0) w.mashT -= dt;
   if (w.hp < WZ.maxHp() * 0.3) { w.heartT = (w.heartT || 0) - dt; if (w.heartT <= 0) { w.heartT = 0.4 + w.hp / WZ.maxHp() * 2.5; AU.sfx('heart'); } }
   if (w.rollCd > 0) w.rollCd -= dt;
@@ -1672,7 +1702,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     if (WZ.has('ember')) { if (Math.random() < dt * 10) w.fx_.push({ type: 'spark', x: w.x + rand(-0.4, 0.4), y: w.y + rand(-0.4, 0.4), vx: 0, vy: 0, z: 0.1, vz: rand(1.5, 3), g: -2, col: Math.random() < 0.5 ? '#ffb030' : '#ff7a30', t: 0, dur: 0.5 }); }
     else {
       w.scorchT = (w.scorchT || 0) + dt; w.burn = (w.burn || 0) + dt;   // burn = seconds in a row on scorched ground: the longer he stays, the worse it gets
-      if (w.scorchT >= 0.25) { w.scorchT = 0; WZ.damage(CFG.aug.scorch.dps * (1 + CFG.aug.scorch.ramp * w.burn) * 0.25, true); if (Math.random() < 0.5) AU.sfx('blip'); }
+      if (w.scorchT >= 0.25) { w.scorchT = 0; WZ.damage(CFG.aug.scorch.dps * (1 + CFG.aug.scorch.ramp * w.burn) * 0.25, true, WZ.HAZ.scorch); w.statBurn = 0.6; if (Math.random() < 0.5) AU.sfx('blip'); }
     }
   } else if (w.burn > 0) w.burn = Math.max(0, w.burn - dt * 2);   // off the ground: it cools quickly
   WZ.flowCd -= dt;
@@ -1748,6 +1778,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     if (dw > 45) { const sp2 = WZ.dryNear(w.x, w.y, 8, [cfg.ringMin, cfg.ringMax]); if (sp2) { e.x = sp2[0]; e.y = sp2[1]; } continue; }
     if (dw < 12) { const key = e.elite ? 'elite' : e.boss ? null : (e.weak ? e.type : null); if (key && !w.seen[key]) { w.seen[key] = true; WZ.announce(e, key); } }
     const TG = WZ.foeTarget(e), ex = TG.x - e.x, ey = TG.y - e.y, d = TG.a ? Math.hypot(ex, ey) || 1 : dw;   // an ally within aggro range comes first
+    WZ.cur = e;   // (whatever it hurts the Wizard with this turn is tagged with it: WZ.src)
     if (e.boss && !TG.mill) WZ.bossAI(e, dt, d, TG);
     const s = e.spd * (1 - e.slow) * (!e.fly && WZ.tile(e.x, e.y) === T_BOG ? cfg.slowTerrain : 1);
     let ux = ex / d, uy = ey / d, steered = false;
@@ -1805,7 +1836,9 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
       if (WZ.has('static') && !w.dead) WZ.staticBurst();   // the Static Cloak: whatever struck him is thrown back by a burst of static
       if (!e.boss) { e.kx -= ex / d * 6; e.ky -= ey / d * 6; }   // bump the attacker back a little
     } else if (d < reach && e.cd <= 0 && w.roll > 0) { e.cd = 0.3; WZ.dodge(); }
+    WZ.cur = null;
   }
+  WZ.cur = null;
   w.enemies = en.filter(e => !e.dead);
   WZ.allyTick(dt);   // the friendly creatures fight (after the hostiles have had their turn at them)
   WZ.bendTick(dt);
@@ -1856,7 +1889,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     if (ha) { WZ.hurtAlly(ha, p.dmg, p.vx * 0.15, p.vy * 0.15); w.eproj.splice(i, 1); continue; }   // it hit an ally in the way
     const pd = Math.hypot(p.x - w.x, p.y - w.y);
     if (w.roll > 0 && pd < 0.9 && !p.dodged) { p.dodged = true; WZ.dodge(); }   // rolled clean through it
-    else if (pd < 0.55 && w.roll <= 0 && w.hurtT <= 0) { WZ.damage(p.dmg); w.eproj.splice(i, 1); }
+    else if (pd < 0.55 && w.roll <= 0 && w.hurtT <= 0) { WZ.damage(p.dmg, false, p.src || undefined); w.eproj.splice(i, 1); }
   }
   // an ally's shots (an Imp's ember, a Dragon's breath): they hurt hostiles, never the Wizard or other allies
   for (let i = w.aproj.length - 1; i >= 0; i--) {
@@ -1869,15 +1902,15 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   }
 
   // zones
-  let zs = 0;
+  let zs = 0, zsrc = null;
   for (let i = w.zones.length - 1; i >= 0; i--) {
     const z = w.zones[i];
     z.t -= dt;
     if (z.follow) { z.x = w.x; z.y = w.y; }
     if (z.hostile) {
       if (!w.dead && Math.hypot(w.x - z.x, w.y - z.y) < z.r) {
-        if (z.slow) zs = Math.max(zs, z.slow);
-        if (z.dps && w.roll <= 0) { z.tk = (z.tk || 0) + dt; if (z.tk >= 0.5) { z.tk = 0; WZ.damage(z.dps * 0.5); } }
+        if (z.slow && z.slow >= zs) { zs = z.slow; zsrc = z.src ? Object.assign({ st: z.tag || 'slow' }, z.src) : { st: z.tag || 'slow', ic: 'ic_slow', n: 'Slowing ground' }; }
+        if (z.dps && w.roll <= 0) { z.tk = (z.tk || 0) + dt; if (z.tk >= 0.5) { z.tk = 0; WZ.damage(z.dps * 0.5, false, z.src || undefined); } }
       }
       z.tka = (z.tka || 0) + dt;
       const tickA = z.tka >= 0.5; if (tickA) z.tka = 0;
@@ -1907,7 +1940,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     WZ.ctx = null;
     if (z.t <= 0) { if (z.kind === 'novapull') WZ.novaBurst(z); w.zones.splice(i, 1); }   // the Nova bursts when its gathering is done
   }
-  w.zSlow = zs;
+  w.zSlow = zs; w.zSrc = zsrc;   // (what is slowing him, for the status chip on his card: UI.updateGear)
   WZ.mineTick(dt);
   WZ.boomTick(dt);
 
@@ -1924,6 +1957,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
       dr.vx *= 0.93; dr.vy *= 0.93;
     }
     if (dr.pulse > 0) dr.pulse -= dt;
+    if (dr.tet > 0) dr.tet -= dt;
     if (dr.hide > 0) dr.hide -= dt;
     if (dr.rejT > 0) { dr.rejT -= dt; continue; }   // it was just turned away by the portal over his head: it lies where it fell for a moment
     const loot = WZ.isLoot(dr.kind), keep = WZ.keepDrop(dr), vac = keep ? WZ.vacuum() * 2.5 : WZ.vacuum();   // shards, Cores, garments and the factory's overflow are precious: they come to you
@@ -1934,8 +1968,8 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     }
     if (d < 0.45 && dr.t > 0.3) {
       // everything he picks up is sucked into a little portal over his head. What goes to the Stockpile only goes when it has room for it:
-      // otherwise the portal spits it back out and it falls to the ground with a bounce (WZ.hsuck, rej)
-      if (dr.kind !== 'xp' && FA.room(dr.kind) < dr.val) { WZ.reject(dr); continue; }
+      // otherwise it still goes up his portal, but the Spell Portal turns it away and it comes back down beside him (WZ.rejectToWild)
+      if (dr.kind !== 'xp' && FA.room(dr.kind) < dr.val) { WZ.rejectToWild(dr); w.drops.splice(i, 1); continue; }
       WZ.hsuck(dr.kind, dr.x, dr.y, false, dr.val);
       if (dr.kind === 'xp') { G.xp += dr.val; G.stats.xpEarned += dr.val; w.run.xp += dr.val; AU.sfx(dr.val >= CFG.bigGem.tiers[1] ? 'gemBig' : 'gem'); if (dr.val >= CFG.bigGem.tiers[1]) WZ.num(w.x, w.y, '+' + dr.val, '#7be0ff'); }
       else if (loot) WZ.collect(dr);
@@ -1957,14 +1991,15 @@ WZ.hsuck = function (kind, x, y, rej, val) {
   const w = G.w;
   w.fx_.push({ type: 'hsuck', kind, val: val || 1, x, y, t: 0, dur: rej ? 1.05 : 0.42, rej: !!rej, seed: Math.random() * 6.283 });
 };
-WZ.reject = function (dr) {
+// The Stockpile has no room for what he picked up. It goes up his portal like any pickup, reaches the Builder's Spell Portal, BOUNCES off it where the Builder can see it
+// (FA.outTick: red flash, the item + a "full" icon) and sails back through the sky to land beside him again: the refusal happens in the factory, where the cause is.
+WZ.rejectToWild = function (dr) {
   const w = G.w;
-  dr.rejT = 1.05 + CFG.stockReject; dr.rej = true; dr.hide = 1.05; dr.vx = 0; dr.vy = 0;
-  WZ.hsuck(dr.kind, dr.x, dr.y, true);
-  AU.sfx('boing');
+  WZ.hsuck(dr.kind, dr.x, dr.y, false, dr.val);
+  for (let i = 0; i < (dr.val || 1); i++) FA.toWild(dr.kind, 0.45);   // (0.45 s: the time it takes to reach the Spell Portal)
+  FA.fb('reject-wild');
   if (w.t - (w.fullAt || -99) > 12) {
     w.fullAt = w.t;
-    UI.toast('The Stockpile is full: the portal spits it back out', 'R', 'ic_x');
-    UI.toast('No room in the Stockpile for ' + itemName(dr.kind) + ': build Stockpile Tiles (slot 8)', 'L', 'b:stockpile');
+    UI.toast('The factory is full: ' + itemName(dr.kind) + ' bounces off the Spell Portal. Tell the Builder: build Stockpile Tiles!', 'R', 'ic_full');
   }
 };

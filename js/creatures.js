@@ -53,7 +53,7 @@ WZ.telegraph = function (x, y, r, delay, col, fn, quiet) {   // a flashing ring,
   WZ.later(delay, () => { WZ.boom(x, y, r, col); AU.sfx(quiet ? 'hit' : 'slam'); if (fn) fn(); });
 };
 // a creature's shot: hostile orbs fly in w.eproj and hurt the Wizard or an ally, an ally's fly in w.aproj and hurt hostiles
-WZ.shoot = function (e, p) { p.ally = !!e.ally; (e.ally ? G.w.aproj : G.w.eproj).push(p); };
+WZ.shoot = function (e, p) { p.ally = !!e.ally; if (!e.ally) p.src = WZ.src; (e.ally ? G.w.aproj : G.w.eproj).push(p); };
 
 // ---------- mutations ----------
 WZ.mutate = function (e, kind) {
@@ -64,6 +64,7 @@ WZ.mutate = function (e, kind) {
   else if (kind === 'regen') e.regen = M.rate;
   // announced on both halves: an icon over the creature, and one at the Spell Portal (a toast the first time each kind shows)
   WZ.icon(e.x, e.y - 0.5, M.ic);
+  if (e.weak && w.t >= (w.mutThreatT || 0)) { w.mutThreatT = w.t + 6; FA.threat([e.weak], e.type, 'MUTANT'); }   // the Builder reads what it is weak to over the Spell Portal
   if (w.t >= (w.mutPopT || 0)) { w.mutPopT = w.t + 1.5; const p = FA.portal('spell'); FA.ipop(p.x + 0.5, p.y + 1.8, [[M.ic], [e.crafted ? 'egg_' + e.type : 'ic_skull']]); }
   if (!w.seenMut) w.seenMut = {};
   if (!w.seenMut[kind]) {
@@ -83,11 +84,15 @@ WZ.spawnMini = function (src) {
 };
 // everything that happens when something dies (called from WZ.kill)
 WZ.onDeath = function (e) {
-  const w = G.w;
+  const w = G.w, was = WZ.cur;
+  WZ.cur = e;   // (a death blast / splash it leaves behind is still ITS: WZ.src)
+  try { WZ.onDeath2(e, w); } finally { WZ.cur = was; }
+};
+WZ.onDeath2 = function (e, w) {
   if (e.mut === 'volatile') { const M = CFG.mutations.volatile, x = e.x, y = e.y; WZ.telegraph(x, y, M.r, M.delay, '#ff7a30', () => WZ.strike(x, y, M.r, M.dmg)); }
   if (e.mut === 'splitter') WZ.spawnMini(e);
   const def = CFG.creatures[e.type];
-  if (def && def.ai === 'slime' && !e.mini) { const S = def.splash; WZ.zone({ x: e.x, y: e.y, r: S.r, t: S.t, slow: S.slow, hostile: true, col: '#4aa8ff' }); }
+  if (def && def.ai === 'slime' && !e.mini) { const S = def.splash; WZ.zone({ x: e.x, y: e.y, r: S.r, t: S.t, slow: S.slow, hostile: true, col: '#4aa8ff', src: WZ.srcOf(e) }); }
   if (def && def.ai === 'lava' && !e.mini) { const x = e.x, y = e.y, B = def.blast; WZ.telegraph(x, y, B.r, B.delay, '#ff5a2a', () => WZ.strike(x, y, B.r, B.dmg)); }
   if (e.crafted) {
     G.stats.craftedKills = (G.stats.craftedKills || 0) + 1;
@@ -109,7 +114,7 @@ WZ.rebirth = function (e) {
   const def = CFG.creatures[e.type];
   e.reborn = true; e.hp = e.maxHp * def.reborn; e.dv = 0; e.dvCd = 2; e.flash = 0.4; e.slow = 0;
   WZ.ring(e.x, e.y, 2.4, '#ff9a3a', 0.5); WZ.puff(e.x, e.y, '#ffd23a', 18); WZ.epuff(e.x, e.y, 'fire', 10);
-  WZ.strike(e.x, e.y, 2.2, e.ally ? 8 * CFG.ally.dmgMul : 8, e.ally);
+  const was = WZ.cur; WZ.cur = e; WZ.strike(e.x, e.y, 2.2, e.ally ? 8 * CFG.ally.dmgMul : 8, e.ally); WZ.cur = was;
   AU.sfx('el_fire'); WZ.num(e.x, e.y, 'REBORN', '#ffd23a');
   return true;
 };
@@ -355,7 +360,7 @@ WZ.aiTick = function (e, dt, d, ux, uy, s, TG) {
     case 'shambler': {   // mud-snare zones across the Wizard's path; heals while standing in bog or at the water's edge
       const S = def.snare;
       e.snCd = (e.snCd === undefined ? rand(1, S.every) : e.snCd) - dt;
-      if (e.snCd <= 0 && d < 11) { e.snCd = S.every; WZ.zone({ x: e.x + (TG.x - e.x) * 0.6, y: e.y + (TG.y - e.y) * 0.6, r: S.r, t: S.t, slow: S.slow, hostile: !ally, ally, col: '#6e4a2a' }); }
+      if (e.snCd <= 0 && d < 11) { e.snCd = S.every; WZ.zone({ x: e.x + (TG.x - e.x) * 0.6, y: e.y + (TG.y - e.y) * 0.6, r: S.r, t: S.t, slow: S.slow, hostile: !ally, ally, tag: 'snare', col: '#6e4a2a' }); }
       const wet = WZ.tile(e.x, e.y) === T_BOG || WZ.wet(e.x + 1, e.y) || WZ.wet(e.x - 1, e.y) || WZ.wet(e.x, e.y + 1) || WZ.wet(e.x, e.y - 1);
       if (wet && e.hp < e.maxHp) { e.hp = Math.min(e.maxHp, e.hp + e.maxHp * def.regen * dt); if (Math.random() < dt * 3) WZ.puff(e.x, e.y, '#6aff8a', 1); }
       return null;
@@ -408,7 +413,7 @@ WZ.aiTick = function (e, dt, d, ux, uy, s, TG) {
         if (e.vol.t <= 0 && d < 14) {
           e.vol.t = e.vol.every;
           const col = e.weakCol || '#ff4a8a';
-          for (let i = 0; i < e.vol.n; i++) { const a = i / e.vol.n * 6.283 + Math.random() * 0.3; w.eproj.push({ x: e.x, y: e.y, vx: Math.cos(a) * 6, vy: Math.sin(a) * 6, life: 2.4, dmg: e.vol.dmg, col, size: 7 }); }
+          for (let i = 0; i < e.vol.n; i++) { const a = i / e.vol.n * 6.283 + Math.random() * 0.3; w.eproj.push({ x: e.x, y: e.y, vx: Math.cos(a) * 6, vy: Math.sin(a) * 6, life: 2.4, dmg: e.vol.dmg, col, size: 7, src: WZ.src }); }
           AU.sfx('volley', e.x, e.y);
         }
       }
@@ -441,7 +446,7 @@ WZ.steamBurst = function (e, B) {
   for (const a of w.allies) if (!a.dead && !(a.fall > 0) && Math.hypot(a.x - e.x, a.y - e.y) < B.r + a.rad) { WZ.hurtAlly(a, B.dmg, 0, 0); a.slow = Math.max(a.slow, B.slow); a.slowT = Math.max(a.slowT, B.slowT); }
   if (w.dead || Math.hypot(w.x - e.x, w.y - e.y) >= B.r) return;
   if (w.roll > 0) { WZ.dodge(); return; }
-  WZ.damage(B.dmg); w.slowT = B.slowT; w.slowAmt = B.slow;
+  WZ.damage(B.dmg); w.slowT = B.slowT; w.slowAmt = B.slow; w.slowSrc = Object.assign({ st: 'slow' }, WZ.src || WZ.HAZ.steam);
 };
 
 // ---------- scheduled events ----------
@@ -497,6 +502,7 @@ WZ.evStart = function () {
   if (p.id === 'bloom') w.bloom = CFG.events.bloom.mut + CFG.events.mutAdd * (p.cycle - 1);
   if (p.id === 'storm') w.surge = p.surge;
   UI.toast(msg, 'L', p.el[0] || 'ic_skull'); UI.toast(msg, 'R', p.el[0] || 'ic_skull');
+  FA.threat(p.el, p.types[0] || 'ic_skull', WZ.evName(p).toUpperCase());   // what is coming and what it is weak to, over the Builder's Spell Portal
   AU.sfx('roar'); w.shake = Math.max(w.shake, 0.5);
   FA.pressure(1, '#ffd23a');   // the factory feels it too
   w.fx_.push({ type: 'title', x: w.x, y: w.y, text: WZ.evName(p).toUpperCase() + '!', col: '#ffd23a', t: 0, dur: 1.8 });
@@ -669,7 +675,7 @@ WZ.updKeep = function (m, s, d, dt) {
     e.slam = { every: W.slamEvery, r: W.slamR, dmg: W.slamDmg }; e.slamT = 3; e.vol = { t: 5, every: W.volleyEvery, n: W.volleyN, dmg: W.volleyDmg };
     WZ.ring(m.x, m.y, 6, ELEM[m.el].color, 0.7); w.shake = 0.5; AU.sfx('roar');
     FA.pressure(1.2, ELEM[m.el].color);
-    UI.toast('The Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'L', e.weak); UI.toast('The Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'R', e.weak);
+    FA.threat([e.weak], e.type, 'THE WARDEN'); UI.toast('The Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'L', e.weak); UI.toast('The Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'R', e.weak);
   } else if (s.state === 'active' && !w.enemies.some(e => e.mark === m.id && !e.dead)) WZ.claimKeep(m);
 };
 WZ.claimKeep = function (m) {

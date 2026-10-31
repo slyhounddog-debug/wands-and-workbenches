@@ -279,6 +279,154 @@ const OUT = process.env.SHOTS || '';
   r = await run(() => ({ cls: document.getElementById('questB').className, head: document.getElementById('qHeadB').textContent }));
   ok(!/celebrate/.test(r.cls) && /GOAL/.test(r.head) && !/COMPLETE/.test(r.head), 'then the next goal shows and the card settles back', JSON.stringify(r));
 
+  // ================= the feedback ledger (FEEDBACK.md): every row's cue fires, and a row with no cue is a FAIL =================
+  // (what / why / what next: a hit carries its source, a bounce its reason, the factory-full bounce is visible at the Spell Portal...)
+  const ledger = require('fs').readFileSync(path.resolve(__dirname, '../../FEEDBACK.md'), 'utf8').split(/\r?\n/).map(l => (l.match(/^\| `([a-z-]+)` \|/) || [])[1]).filter(Boolean);
+  ok(ledger.length >= 14, 'FEEDBACK.md lists the ledger rows', ledger.join(' '));
+  r = await run(() => {
+    const W = __wands, G = W.G, WZ = W.WZ, FA = W.FA, CFG = W.CFG, UI = W.UI, w = G.w, o = {};
+    window.__proof = {};
+    G.fb = {}; const fb = id => G.fb[id] || 0;
+    T.clear(); G.fac.outQ.length = 0; G.fac.rejs.length = 0; G.fac.threat = null; w.hurt = null; w.hp = WZ.maxHp(); w.armor = 0; w.hurtT = 0; w.arcs.length = 0; w.drops.length = 0;
+    const kind = Object.keys(CFG.enemies).find(k => CFG.enemies[k].weak);
+    // -- hurt: a foe's touch carries its picture, name and weakness
+    const e = WZ.makeEnemy(kind, w.x + 0.3, w.y, false); e.cd = 0;
+    T.step(3);
+    o.touch = w.hurt && { n: w.hurt.n, ic: w.hurt.ic, el: w.hurt.el, ax: typeof w.hurt.ax };
+    o.foe = { n: WZ.nameOf(e), weak: e.weak };
+    o.untagged0 = fb('hurt-untagged');
+    // -- an orb it shot, and a zone it left, still know whose they are
+    T.clear(); w.hurt = null; w.hurtT = 0; w.hp = WZ.maxHp();
+    const e2 = WZ.makeEnemy(kind, w.x + 5, w.y, false); e2.cd = 99; WZ.cur = e2;
+    WZ.shoot(e2, { x: w.x + 0.1, y: w.y, vx: 0, vy: 0, life: 2, dmg: 1, col: '#f00', size: 5 });
+    WZ.zone({ x: w.x, y: w.y, r: 3, t: 6, slow: 0.4, dps: 8, hostile: true, tag: 'snare', col: '#6e4a2a' });
+    WZ.cur = null;
+    o.orbSrc = w.eproj[0] && w.eproj[0].src && w.eproj[0].src.n; o.zoneSrc = w.zones[0] && w.zones[0].src && w.zones[0].src.n;
+    T.step(2); o.orbHurt = !!w.hurt && w.hurt.n === o.orbSrc;
+    w.hurt = null; w.hurtT = 0; T.step(12);
+    o.zoneHurt = !!w.hurt && w.hurt.n === o.zoneSrc;
+    o.zSrc = w.zSrc && { st: w.zSrc.st, n: w.zSrc.n }; o.chips = UI.statusList().map(s => s.st);
+    UI.updateStatus(); o.chipHtml = document.getElementById('wStat').innerHTML.length > 20;
+    // -- a hit with no source is flagged
+    G.fb['hurt-untagged'] = 0; w.hurtT = 0; WZ.damage(1); o.untaggedSeen = fb('hurt-untagged') === 1; G.fb['hurt-untagged'] = 0;
+    // -- threat: a mutation, an elite sighting, and it expires
+    T.clear(); G.fac.threat = null; w.mutThreatT = 0;
+    const e3 = WZ.makeEnemy(kind, w.x + 6, w.y, false); e3.cd = 99;
+    WZ.mutate(e3, 'swift'); o.mutThreat = G.fac.threat && G.fac.threat.els.join() + ':' + G.fac.threat.n;
+    G.fac.threat = null; WZ.announce(e3, 'elite'); o.eliteThreat = G.fac.threat && G.fac.threat.els.join() + ':' + G.fac.threat.n;
+    T.clear(); T.step(200); o.threatGone = G.fac.threat === null;
+    // -- the Stockpile has no room: a pickup goes up his portal, bounces off the Spell Portal, returns beside him; nothing is lost on the way
+    const real = FA.room; FA.room = () => 0;
+    w.drops.push({ kind: 'wood', x: w.x, y: w.y, vx: 0, vy: 0, t: 1, val: 1 });
+    const total = () => w.drops.filter(d => d.kind === 'wood').length + G.fac.outQ.filter(k => k === 'wood').length + G.fac.rejs.length + w.arcs.filter(a => a.kind === 'wood').length;
+    let mn = 9, mx = 0, sawRej = 0, sawArc = 0, home = false;
+    for (let i = 0; i < 160 && !home; i++) { T.step(1); const t = total(); mn = Math.min(mn, t); mx = Math.max(mx, t); sawRej = Math.max(sawRej, G.fac.rejs.length); sawArc = Math.max(sawArc, w.arcs.filter(a => a.then === 'drop').length); home = w.drops.some(d => d.kind === 'wood' && d.home); }
+    FA.room = real;
+    o.rw = { reject: fb('reject-wild'), full: fb('factory-full'), rej: sawRej, arc: sawArc, home, mn, mx };
+    w.drops.length = 0; G.fac.outQ.length = 0; G.fac.rejs.length = 0; w.arcs.length = 0; G.fac.pops.length = 0;
+    // -- a throw is turned away: the reason is ONE icon row
+    const pc = FA.portal('spell'), land = (k, x, y) => { G.fac.pops.length = 0; FA.land({ kind: k, x, y, sx: x, sy: y + 1, z: 0, t: 1, T: 1, fromBuilder: true }); return JSON.stringify(G.fac.pops[0] && G.fac.pops[0].ic); };
+    o.b1 = land('wood', pc.x + 0.5, pc.y + 0.5);
+    const cc = [CFG.crafted.cap, CFG.crafted.queue, CFG.ally.cap, CFG.ally.queue];
+    CFG.crafted.cap = 0; CFG.crafted.queue = 0; CFG.ally.cap = 0; CFG.ally.queue = 0;
+    const eggK = Object.keys(ITEMS).find(k => ITEMS[k].egg && !ITEMS[k].ally), aeggK = Object.keys(ITEMS).find(k => ITEMS[k].egg && ITEMS[k].ally);
+    o.b2 = land(eggK, pc.x + 0.5, pc.y + 0.5); o.b3 = land(aeggK, pc.x + 0.5, pc.y + 0.5);
+    [CFG.crafted.cap, CFG.crafted.queue, CFG.ally.cap, CFG.ally.queue] = cc;
+    o.b4 = land('core_air', pc.x + 0.5, pc.y + 0.5);
+    o.bounces = fb('bounce');
+    // -- boost: a Battery Shrine charges a Battery (it pulses with a "+"), a surging element speeds a Harnesser
+    const bat = G.fac.bld.find(q => FA.isCell(q) && q.done); T.step(2);
+    const sh = G.bshr.find(q => q.id === bat.id); bat.bat = 10;
+    WZ.ctx = { spell: 'air', el: ['air'], hits: 0, kills: 0, weak: 0 }; WZ.bshrHurt(sh, 20); WZ.ctx = null;
+    o.plus = bat.plusT > 0; const hz = G.fac.bld.find(q => q.type === 'harness'); w.surge = hz.el; o.hboost = FA.shrineBoost(hz) > 1; w.surge = null;
+    // -- tether: a rare drop from a kill remembers the corpse
+    w.drops.length = 0;
+    for (let i = 0; i < 300; i++) { const el = WZ.makeEnemy(kind, w.x + 4, w.y + 4, true); WZ.kill(el); w.enemies.length = 0; }
+    o.tether = w.drops.filter(d => d.kind === 'shard' && d.tet > 0 && d.fx !== undefined).length; o.tetherFb = fb('tether');
+    w.drops.length = 0;
+    // -- the wand: a slot fills (swirl, grow, THEN the blink), a shrine is ready
+    G.wand.fx = null; G.wand.full.air = false; G.wand.m.air = CFG.wand.need.air - 1;
+    const airSpell = Object.keys(SPELL_EL).find(k => SPELL_EL[k].length === 1 && SPELL_EL[k][0] === 'air');
+    WZ.wandCharge(airSpell);
+    o.wfx = G.wand.fx && G.wand.fx.el + ':' + G.wand.fx.kind;
+    UI.updateWand(); const h1 = document.getElementById('wandRow').innerHTML;
+    o.grow = /class="ws full grow"/.test(h1) && !/class="ws[^"]*armed/.test(h1);
+    T.step(30); UI.updateWand(); const h2 = document.getElementById('wandRow').innerHTML;
+    o.fxGone = G.wand.fx === null; o.armedLater = /ws full armed/.test(h2) && !/grow/.test(h2);
+    WZ.readyCue('fire', 'shrine'); o.shrineFx = G.wand.fx && G.wand.fx.kind; G.wand.fx = null;
+    // -- a goal is finished: the card celebrates, then ONLY the new goal's pointer blinks for a moment
+    w.hurt = null; G.fac.threat = null;
+    UI.questDone('B', { xp: 1, text: 'x' }); G.quest.B--;
+    UI.updateHud(0.016);
+    o.focus = { t: G.fac.focusT > 4, cls: document.getElementById('game').classList.contains('goalFocus'), att: FA.attention() };
+    w.hurt = { ic: kind, n: 'x', ax: null, ay: null, el: null, t: 0, soft: false, d: 1 }; o.attDanger = FA.attention();
+    UI.celebrate('B', { xp: 1, text: 'x' }); o.quiet = document.getElementById('questB').classList.contains('quiet'); delete UI.qHold.B; document.getElementById('questB').classList.remove('celebrate', 'quiet'); w.hurt = null;
+    T.step(100); UI.updateHud(0.016);
+    o.focusEnds = { t: G.fac.focusT <= 0, cls: !document.getElementById('game').classList.contains('goalFocus'), att: FA.attention() };
+    // -- priority: a danger toast first, then an ambient one has to wait
+    UI.toastQ.length = 0; UI.cueUntil = [0, 0, 0, 0];
+    for (const c of Array.from(document.getElementById('toastL').children)) c.remove();
+    UI.toast('Elite near the Wizard: send Water!', 'L', 'water');
+    o.lvl = UI.cueLevel(); UI.toast('A quiet moss note', 'L', null);
+    o.queued = UI.toastQ.length; o.shown = Array.from(document.getElementById('toastL').children).some(c => c.dataset.t === 'A quiet moss note');
+    // -- machines: the pause badge, and starved of THIS
+    const spot = (() => { for (let y = 0; y < FA.H(); y++) for (let x = 0; x < FA.W(); x++) if (FA.owned(x, y) && !FA.cell(x, y) && !FA.isPile(x, y) && !FA.isQ(x, y)) { if ([[1, 0], [-1, 0], [0, 1], [0, -1]].every(d => !FA.cell(x + d[0], y + d[1]))) return [x, y]; } return null; })();
+    const f = FA.place('forge', spot[0], spot[1], 0); f.done = true; f.got = {}; FA.refreshRecipes(); T.step(2);
+    o.starve = f.st; o.miss = FA.missingOf(f);
+    f.out = [{ kind: 'air' }]; f.blocked = true; T.step(1); o.jam = f.st;
+    const jc = SP.ic_jam.c, jx = jc.getContext('2d'), px = (x, y) => Array.from(jx.getImageData(x, y, 1, 1).data).join();
+    o.jamIcon = { w: jc.width, h: jc.height, bar: px(3, 3), gap: px(5, 3) };
+    FA.demolish(f.x, f.y, true);
+    return o;
+  });
+  console.log('   ledger run', JSON.stringify(r));
+  ok(r.touch && r.touch.n === r.foe.n && r.touch.ic && r.touch.el === r.foe.weak && r.touch.ax === 'number', 'a foe\'s touch carries its name, picture, weakness and place (G.w.hurt)', JSON.stringify(r.touch));
+  ok(r.untagged0 === 0 && r.untaggedSeen, 'no hit goes untagged in play, and a source-less WZ.damage is counted (hurt-untagged)', r.untagged0);
+  ok(r.orbSrc && r.orbHurt && r.zoneSrc && r.zoneHurt, 'an orb and a zone remember whose they are', JSON.stringify([r.orbSrc, r.zoneSrc]));
+  ok(r.zSrc && r.zSrc.st === 'snare' && r.chips.indexOf('ic_snare') >= 0 && r.chipHtml, 'a snare shows as a chip over his health bar with its source', JSON.stringify([r.zSrc, r.chips]));
+  ok(/^[a-z]+:MUTANT$/.test(r.mutThreat || '') && /^[a-z]+:ELITE$/.test(r.eliteThreat || '') && r.threatGone, 'a mutation and an elite sighting show their weakness over the Spell Portal, which clears by itself', JSON.stringify([r.mutThreat, r.eliteThreat, r.threatGone]));
+  ok(r.rw.reject > 0 && r.rw.full > 0 && r.rw.rej === 1 && r.rw.arc >= 1 && r.rw.home && r.rw.mn === 1 && r.rw.mx === 1, 'a pickup the Stockpile refuses bounces off the Spell Portal (visible to the Builder), goes back up and lands beside him, and is never lost', JSON.stringify(r.rw));
+  ok(r.b1 === '[["wood"],["ic_x"]]' && r.b2 === '[["ic_skull","0/0"],["ic_clock","0/0"]]' && r.b3 === '[["ic_heart","0/0"],["ic_clock","0/0"]]' && r.b4 === '[["core_air"],["ic_lock"]]' && r.bounces >= 4, 'every bounce shows one reason row: wrong item, creature cap / queue counters, ally caps, locked Core', JSON.stringify([r.b1, r.b2, r.b3, r.b4]));
+  ok(r.plus && r.hboost, 'a Battery Shrine charge makes its Battery pulse with a "+" and a surging element boosts its Harnesser', JSON.stringify([r.plus, r.hboost]));
+  ok(r.tether > 0 && r.tetherFb > 0, 'a rare drop from a kill is tied to its corpse (fx / fy / tet)', JSON.stringify([r.tether, r.tetherFb]));
+  ok(r.wfx === 'air:wand' && r.grow && r.fxGone && r.armedLater && r.shrineFx === 'shrine', 'a wand slot that fills grows and swirls first and only blinks after; a shrine ready cue exists', JSON.stringify([r.wfx, r.grow, r.fxGone, r.armedLater, r.shrineFx]));
+  ok(r.focus.t && r.focus.cls && r.focus.att === 2 && r.attDanger === 3 && r.quiet && r.focusEnds.t && r.focusEnds.cls && r.focusEnds.att === 0, 'a finished goal gives its new pointer the stage for a moment; danger outranks it (the card only pulses); it ends', JSON.stringify([r.focus, r.attDanger, r.focusEnds]));
+  ok(r.lvl === 3 && r.queued === 1 && !r.shown, 'a danger toast holds an ambient one back', JSON.stringify([r.lvl, r.queued, r.shown]));
+  ok(r.starve === 'starve' && !!r.miss && r.jam === 'jam', 'a starved machine knows its missing ingredient; a blocked one is jammed', JSON.stringify([r.starve, r.miss, r.jam]));
+  ok(r.jamIcon.w === 10 && r.jamIcon.h === 8 && /^255,255,255/.test(r.jamIcon.bar) && !/^255,255,255/.test(r.jamIcon.gap), 'the jam icon is a pause badge: two white bars', JSON.stringify(r.jamIcon));
+  await wait(3600);
+  r = await run(() => { const UI = __wands.UI; return { q: UI.toastQ.length, shown: Array.from(document.getElementById('toastL').children).some(c => c.dataset.t === 'A quiet moss note') }; });
+  ok(r.q === 0 && r.shown, 'the held-back toast comes out once the danger cue has passed', JSON.stringify(r));
+  // the killer comes last: it ends the run
+  r = await run(() => {
+    const W = __wands, G = W.G, WZ = W.WZ, UI = W.UI, CFG = W.CFG, w = G.w, o = {};
+    T.clear(); w.hurtT = 0; w.hp = 1; w.armor = 0;
+    const kind = Object.keys(CFG.enemies).find(k => CFG.enemies[k].weak);
+    const e = WZ.makeEnemy(kind, w.x + 0.3, w.y, false); e.cd = 0;
+    T.step(3);
+    o.dead = w.dead; o.killer = w.killer && w.killer.n; o.html = /KILLED BY/.test(UI.killerHtml()) && (e.weak ? new RegExp('send ' + ELEM_WORD[e.weak] + ' spells').test(UI.killerHtml()) : true); o.fb = G.fb.killer;
+    return o;
+  });
+  ok(r.dead && r.killer && r.html && r.fb === 1, 'the Wizard\'s death names its killer and what the Builder should have sent', JSON.stringify(r));
+  r = await run(() => {   // bring him back and leave every cue on screen for the photo test below
+    const W = __wands, G = W.G, WZ = W.WZ, FA = W.FA, CFG = W.CFG;
+    WZ.reenter(); T.clear(); const w = G.w;
+    const kind = Object.keys(CFG.enemies).find(k => CFG.enemies[k].weak);
+    const f = WZ.makeEnemy(kind, w.x + 3, w.y + 1, false); f.cd = 999; f.slow = 0.5; f.slowT = 99; f.dazeT = 99;
+    w.hurt = { ic: kind, n: 'Test', ax: w.x + 3, ay: w.y + 1, el: 'water', t: 0.2, soft: false, d: 3 };
+    FA.threat(['water', 'fire'], kind, 'ELITE'); G.fac.rejs.push({ kind: 'wood', t: 0.3, dur: 0.7, seed: 1 });
+    const b = G.fac.bld.find(q => FA.isCell(q) && q.done); b.plusT = 1;
+    const d = { kind: 'shard', x: w.x - 2, y: w.y + 2, vx: 0, vy: 0, t: 1, val: 1, fx: w.x - 3, fy: w.y + 1, tet: 1 }; w.drops.push(d);
+    G.wand.fx = { el: 'water', kind: 'wand', t: 0.5 };
+    const proof = window.__proof; proof['foe-status'] = f.slow > 0; proof['status'] = true; proof['priority'] = true; proof['starve-icon'] = true; proof['jam-icon'] = true;
+    return { ids: Object.keys(G.fb) };
+  });
+  await wait(300);
+  const have = await run(() => { const G = __wands.G; return Object.keys(G.fb).filter(k => G.fb[k] > 0).concat(Object.keys(window.__proof).filter(k => window.__proof[k])); });
+  const missing = ledger.filter(id => have.indexOf(id) < 0);
+  ok(missing.length === 0, 'every row of the feedback ledger has a cue that fires', 'missing: ' + missing.join(' '));
+  await shot('feedback-cues');
+
   // ================= errors + the snapshot photo test =================
   r = await run(() => { const S = __wands.Snap; __wands.snapshot(); return S.report ? { v: S.report.verdict, leaks: JSON.stringify(S.report.leaks.filter(l => !l.known).concat(S.report.issues || [], S.report.diff ? [S.report.diff] : [])).slice(0, 1500) } : null; });
   ok(r && (r.v === 'PASS' || r.v === 'KNOWN'), 'the photo test passes with the new state on screen', JSON.stringify(r));

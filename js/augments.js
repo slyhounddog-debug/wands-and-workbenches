@@ -117,12 +117,12 @@ WZ.shrineFed = m => ELEMS.filter(e => e !== m.el && G.w.lm[m.id].fed && G.w.lm[m
 // the shrine / keep a Core or Ward Key of this kind would open, if the Wizard is close enough to it (else null: the portal bounces it back)
 WZ.unlockTarget = function (k) {
   const w = G && G.w;
-  if (!w || w.dead || !(isCoreKind(k) || isKeyKind(k))) return null;
+  if (!w || WZ.over() || !(isCoreKind(k) || isKeyKind(k))) return null;
   const el = k.slice(k.indexOf('_') + 1);
   if (isCoreKind(k)) return WZ.marks.find(m => m.type === 'shrine' && w.lm[m.id].state !== 'done' && WZ.shrineNeeds(m).indexOf(el) >= 0 && !w.arcs.some(a => a.mark === m.id && a.kind === k) &&
-    Math.hypot(w.x - m.x, w.y - m.y) < CFG.unlockR) || null;
+    WZ.dmin(m.x, m.y) < CFG.unlockR) || null;
   return WZ.marks.find(m => m.type === 'stronghold' && w.lm[m.id].state !== 'done' && !G.aug.door && !w.arcs.some(a => a.mark === m.id) &&
-    Math.hypot(w.x - m.x, w.y - m.y) < CFG.unlockR) || null;
+    WZ.dmin(m.x, m.y) < CFG.unlockR) || null;
 };
 WZ.unlockLand = function (a) {   // the Core / key has come down on its shrine / keep
   const w = G.w, m = WZ.marks.find(q => q.id === a.mark);
@@ -157,7 +157,7 @@ WZ.doorTick = function (dt) {   // an invisible wall round a locked arena: until
   for (const m of WZ.marks) {
     if (m.type !== 'stronghold') continue;
     const s = w.lm[m.id];
-    if (s.lockT > 0) s.lockT -= dt;
+    if (s.lockT > 0 && !WZ.p2) s.lockT -= dt;
     if (!WZ.doorLocked(m) || w.dead) continue;
     const dx = w.x - m.x, dy = w.y - m.y, d = Math.hypot(dx, dy);
     if (d >= K.arenaR) continue;
@@ -341,9 +341,9 @@ WZ.boulderTick = function (dt) {
         }
       }
     }
-    if (!w.dead && !w.blink && !w.jump) {
-      const dx = w.x - b.x, dy = w.y - b.y, d = Math.hypot(dx, dy), min = B.r + CFG.wizard.radius;
-      if (d < min) { const k = d || 0.01; w.x = b.x + dx / k * min; w.y = b.y + dy / k * min; }
+    for (const q of WZ.allW()) if (!q.dead && !q.blink && !q.jump) {   // (a boulder is solid to each Wizard)
+      const dx = q.x - b.x, dy = q.y - b.y, d = Math.hypot(dx, dy), min = B.r + CFG.wizard.radius;
+      if (d < min) { const k = d || 0.01; q.x = b.x + dx / k * min; q.y = b.y + dy / k * min; }
     }
   }
 };
@@ -357,7 +357,7 @@ WZ.glowUp = function (m) {
   WZ.ring(w.x, w.y, 6, '#fff6c0', 0.9); w.shake = Math.max(w.shake, 0.6);
   FA.pressure(1, '#fff6c0');
   AU.sfx('victory');
-  UI.toast('The Wizard glows! The Warden is down: the Summoning Altar takes spells now', 'R', 'ic_crown'); UI.toast('The Wizard glows: the Warden is down, the Altar is open to spells', 'L', 'ic_crown');
+  UI.toast((G.m4 ? 'The Wizards glow' : 'The Wizard glows') + '! The Warden is down: the Summoning Altar takes spells now', 'R', 'ic_crown'); UI.toast((G.m4 ? 'The Wizards glow' : 'The Wizard glows') + ': the Warden is down, the Altar is open to spells', 'L', 'ic_crown');
 };
 
 // ---------- the Kilnsight Mask ----------
@@ -370,5 +370,5 @@ WZ.augTick = function (dt) {
   if (G.w.glowT > 0) G.w.glowT -= dt;
   WZ.washAshore();
   WZ.doorTick(dt);
-  WZ.boulderTick(dt);
+  if (!WZ.p2) WZ.boulderTick(dt);
 };

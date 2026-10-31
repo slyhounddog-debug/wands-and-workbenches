@@ -18,6 +18,7 @@
     <div id="splitLine"></div>
 
     <!-- shared: resources, XP, skill bank (top centre, spanning the split); each player has their own goal card under it -->
+    <div id="seatTag" class="px hidden"></div>
     <div id="topbar" class="px">
       <div class="res" id="tWood"></div>
       <div class="res" id="tStone"></div>
@@ -75,7 +76,7 @@
     <!-- wizard side -->
     <div id="hudR" class="hud">
       <div class="card px" id="wizCard">
-        <div class="clabel"><i data-ic="ic_hat" data-s="16"></i>WIZARD<span id="noPow" class="hidden" title="The factory is out of power: the Builder has to charge a Battery"><i data-ic="ic_bolt" data-s="14"></i></span><span class="stat"><i data-ic="ic_skull" data-s="14"></i><span id="runKills"></span></span><span class="stat"><i data-ic="ic_clock" data-s="14"></i><span id="runTime"></span></span></div>
+        <div class="clabel"><i data-ic="ic_hat" data-s="16"></i><b id="wizName">WIZARD</b><span id="noPow" class="hidden" title="The factory is out of power: the Builder has to charge a Battery"><i data-ic="ic_bolt" data-s="14"></i></span><span class="stat"><i data-ic="ic_skull" data-s="14"></i><span id="runKills"></span></span><span class="stat"><i data-ic="ic_clock" data-s="14"></i><span id="runTime"></span></span></div>
         <div class="bar hp"><i data-ic="ic_heart" data-s="14"></i><div id="hpFill"></div><span id="hpTxt"></span><div id="wStat" title="What is slowing or burning the Wizard, and what is doing it"></div></div>
         <div class="bar arm"><i data-ic="ic_shield" data-s="14"></i><div id="armFill"></div><span id="armTxt"></span></div>
         <div id="wandRow"></div>   <!-- the wand: four slots charged by the spells the Builder sends (UI.updateWand) -->
@@ -198,10 +199,12 @@
 <script src="js/wand.js"></script>
 <script src="js/bshrine.js"></script>
 <script src="js/emote.js"></script>
+<script src="js/mode4.js"></script>
 <script src="js/net.js"></script>
 <script src="js/render.js"></script>
 <script src="js/emotedraw.js"></script>
 <script src="js/feedbackdraw.js"></script>
+<script src="js/mode4draw.js"></script>
 <script src="js/spellpreview.js"></script>
 <script src="js/creaturepreview.js"></script>
 <script src="js/ui.js"></script>
@@ -212,8 +215,11 @@
 <script src="js/snapshot.js"></script>
 <script src="js/intro.js"></script>
 <script src="js/main.js"></script>
+<script src="js/mode4run.js"></script>
+<script src="js/elements4.js"></script>
 <script src="js/menu.js"></script>
 <script src="js/menudraw.js"></script>
 <script src="js/online.js"></script>
+<script src="js/online4.js"></script>
 </body>
 </html>

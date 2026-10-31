@@ -50,8 +50,8 @@ WZ.strike = function (x, y, r, dmg, ally) {
   const w = G.w;
   if (ally) { for (const e of w.enemies) if (!e.dead && !(e.fall > 0) && Math.hypot(e.x - x, e.y - y) < r + e.rad) WZ.hurtE(e, dmg, 0, 0); return; }
   for (const a of w.allies) if (!a.dead && !(a.fall > 0) && Math.hypot(a.x - x, a.y - y) < r + a.rad) WZ.hurtAlly(a, dmg, 0, 0);
-  if (w.dead || Math.hypot(w.x - x, w.y - y) >= r) return;
-  if (w.roll > 0) WZ.dodge(); else WZ.damage(dmg);
+  let hit = false;
+  WZ.each2(() => { if (w.dead || Math.hypot(w.x - x, w.y - y) >= r) return; hit = true; if (w.roll > 0) WZ.dodge(); else WZ.damage(dmg); });
 };
 WZ.telegraph = function (x, y, r, delay, col, fn, quiet) {   // a flashing ring, then the burst (quiet: an ally's, no danger cue)
   G.w.fx_.push({ type: 'warn', x, y, r, t: 0, dur: delay, col });
@@ -186,11 +186,11 @@ WZ.hatch = function (kind) {
 };
 WZ.eggTick = function (dt) {
   const w = G.w, q = G.fac.eggQ;
-  if (!w.dead && w.aq.length && w.t >= (w.aeggT || 0) && WZ.allyAlive() < CFG.ally.cap) {   // allies: the first queued egg hatches what fits, one at a time
+  if (WZ.anyAlive() && w.aq.length && w.t >= (w.aeggT || 0) && WZ.allyAlive() < CFG.ally.cap) {   // allies: the first queued egg hatches what fits, one at a time
     const eg = w.aq[0];
     if (WZ.spawnAlly(ITEMS[eg.k].creature)) { w.aeggT = w.t + CFG.crafted.dropGap; if (--eg.left <= 0) w.aq.shift(); }
   }
-  if (!q.length || w.dead || w.t < (w.eggT || 0) || WZ.craftedAlive() >= CFG.crafted.cap) return;
+  if (!q.length || !WZ.anyAlive() || w.t < (w.eggT || 0) || WZ.craftedAlive() >= CFG.crafted.cap) return;
   if (WZ.spawnCreature(ITEMS[q[0]].creature)) { q.shift(); w.eggT = w.t + CFG.crafted.dropGap; }
 };
 // ---------- allies: the friendly versions (grown from Cores at the Spawner). They live in G.w.allies, NOT w.enemies, so the Wizard's spells, events, keeps and kill goals never see them ----------
@@ -259,6 +259,7 @@ WZ.allyTick = function (dt) {
   for (let i = 0; i < al.length; i++) {
     const a = al[i];
     if (a.dead) continue;
+    if (G.w2) WZ.sel(Math.max(0, WZ.nearestW(a.x, a.y)));   // 4P: it follows and fights beside the nearest Wizard
     if (a.flash > 0) a.flash -= dt;
     if (a.cd > 0) a.cd -= dt;
     if (a.slowT > 0) { a.slowT -= dt; if (a.slowT <= 0) a.slow = 0; }
@@ -306,6 +307,7 @@ WZ.allyTick = function (dt) {
       if (!foe.dead) { a.kx -= ux * 5; a.ky -= uy * 5; }
     }
   }
+  WZ.sel(0);
   w.allies = al.filter(a => !a.dead);
 };
 
@@ -458,9 +460,11 @@ WZ.steamBurst = function (e, B) {
   w.fx_.push({ type: 'boom', x: e.x, y: e.y, r: B.r, t: 0, dur: 0.35, col: '#f4f4f8' }); AU.sfx('hit', e.x, e.y);
   if (e.ally) { for (const o of w.enemies) if (!o.dead && !(o.fall > 0) && Math.hypot(o.x - e.x, o.y - e.y) < B.r + o.rad) { WZ.hurtE(o, B.dmg * CFG.ally.dmgMul, 0, 0); WZ.slowE(o, B.slow, B.slowT); } return; }
   for (const a of w.allies) if (!a.dead && !(a.fall > 0) && Math.hypot(a.x - e.x, a.y - e.y) < B.r + a.rad) { WZ.hurtAlly(a, B.dmg, 0, 0); a.slow = Math.max(a.slow, B.slow); a.slowT = Math.max(a.slowT, B.slowT); }
-  if (w.dead || Math.hypot(w.x - e.x, w.y - e.y) >= B.r) return;
-  if (w.roll > 0) { WZ.dodge(); return; }
-  WZ.damage(B.dmg); w.slowT = B.slowT; w.slowAmt = B.slow; w.slowSrc = Object.assign({ st: 'slow' }, WZ.src || WZ.HAZ.steam);
+  WZ.each2(() => {
+    if (w.dead || Math.hypot(w.x - e.x, w.y - e.y) >= B.r) return;
+    if (w.roll > 0) { WZ.dodge(); return; }
+    WZ.damage(B.dmg); w.slowT = B.slowT; w.slowAmt = B.slow; w.slowSrc = Object.assign({ st: 'slow' }, WZ.src || WZ.HAZ.steam);
+  });
 };
 
 // ---------- scheduled events ----------
@@ -667,7 +671,7 @@ WZ.updKeep = function (m, s, d, dt) {
   if (s.state === 'idle') {
     // standing inside the wake radius runs a countdown (warnT); the guards only spawn when it reaches warnT, and leaving (or dying) resets it.
     // The arena only wakes for a Wizard who is allowed in: without the Warden Key the door (WZ.doorTick) keeps him out, so no countdown starts
-    if (d >= K.wake || w.dead || !G.aug.door) { s.warnT = 0; return; }
+    if (d >= K.wake || WZ.over() || !G.aug.door) { s.warnT = 0; return; }
     if (!(s.warnT > 0)) {
       s.warnT = 0;
       if (!(w.t - (s.toastAt || -99) < 8)) { s.toastAt = w.t; UI.toast('Stronghold area! The guards wake in ' + K.warnT + 's: leave to reset it', 'R', 'ic_warn'); UI.toast('The Wizard is in a Stronghold area', 'L', 'ic_warn'); }

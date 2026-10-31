@@ -482,6 +482,34 @@ const CFG = {
     cols: ['#e6f8ff', '#7be0ff', '#ffd23a', '#ff6ae0'],   // each socket's colour
     keys: ['air', 'steam', 'meteor', 'nova'],   // each socket's icon (an item sprite)
   },
+  mode4: {   // 4-PLAYER MODE (online only, js/mode4.js). Applied only when G.m4 is set; the 2-player game never reads any of this. EVERY number here is a first guess, expected to move after playtests.
+    hp: 1.6,        // foe health x
+    spawn: 1.5,     // foe counts x (the world cap and the wild spawn rate)
+    dmg: 1.0,       // spell damage x
+    drops: 1.25,    // every drop chance x (gems, resources, packets, Cores, shards)
+    outputs: 1.25,  // factory outputs x (Harnesser and crafter speed)
+    // (allies are ONE shared team stable: CFG.ally.cap alive and CFG.ally.queue eggs waiting for the whole team, unchanged)
+    dupGarments: 2, // the Armory can forge this many copies of each garment (2P: 1)
+    respawnT: 30,   // a fallen Wizard gets up beside his partner after this many seconds (the run only ends when BOTH are down)
+    respawnHp: 0.5, // ... with this share of his health
+    spellHold: 40,  // a delivered spell nobody walked onto casts for the nearest Wizard after this many seconds
+    elem: {         // the element effects (js/elements4.js; every number a first guess)
+      leadK: 1.5, trueK: 1.8, trueDmg: 1.25,   // an attuned element's trait x leadK; a pair that is exactly the caster's two elements: both traits x trueK and damage x trueDmg
+      burn: { dps: 5, t: 2.5 },                // Fire: damage a second for t seconds (x its strength)
+      slow: { amt: 0.3, t: 1.8 },              // Water: a slowed foe
+      heal: { pct: 0.012, max: 5 },            // Water: the caster heals this share of his max health per landing (at most max times per cast)
+      push: 2.6,                               // Air: the shove
+      haste: { t: 2.2, mul: 1.18 },            // Air: he runs this much faster for t seconds after the cast
+      daze: 0.3, scar: 1.0, persist: 1.4,      // Earth: a short daze, the size of the scar on the ground, how much longer a ground effect lasts
+      seek: { range: 9, turn: 2.4 },           // Fire: a steerable shot hunts a foe within range at this turn rate
+      gap: 0.25,                               // the one-shot parts of a trait (push, daze, heal, scar) at most this often per foe
+    },
+    bumpT: 2.2,     // seconds the lobby shows a bumped player's role swap
+    seats: [   // identity: a name and a colour per seat (B1, B2, W1, W2); the name is what every cue says
+      { role: 'B', n: 1, name: 'COPPER', col: '#ff9a3a' }, { role: 'B', n: 2, name: 'TEAL', col: '#3ad0c0' },
+      { role: 'W', n: 1, name: 'VIOLET', col: '#b080ff' }, { role: 'W', n: 2, name: 'ROSE', col: '#ff6aa8' },
+    ],
+  },
   bshr: {   // Battery Shrines (js/bshrine.js): each finished Battery has a numbered shrine in the wilds; damage to it is charge for that Battery
     perDmg: 0.6,                // charge (of batteryMax 90) per point of damage a spell or wand attack does to it (a Seeker Fireball, 22 damage, is about a seventh of a Battery)
     r: 0.9,                     // its body: spells that reach this far hit it (it is not solid)

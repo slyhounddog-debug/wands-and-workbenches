@@ -132,7 +132,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await stepOn('W', 'ach:1', 1200);
   ok(await ev(() => __wands.G.menu.modals.some(m => m.kind === 'ach' && m.page === 1 && !m.out)), 'and the second plate shows the second page');
   await stepOn('W', 'back', 1300);
-  await stepOn('W', 'go:online', 1300); ok((await plates()).includes('go:create') && (await plates()).includes('go:join'), 'Online: Create and Join plates');
+  await stepOn('W', 'go:online', 1300); ok((await plates()).includes('mode:2') && (await plates()).includes('mode:4'), 'Online: the 2 PLAYER / 4 PLAYER plates come first (the mode is chosen right after the Online plate)', await plates());
+  await stepOn('B', 'mode:2', 1300); ok((await plates()).includes('go:create') && (await plates()).includes('go:join'), 'then 2 PLAYER: Create and Join plates (exactly the 2P front door as before)');
   await stepOn('B', 'go:join', 1500); await shot('08_join');
   ok(await ev(() => !!__wands.G.menu.kb), 'Join Game: a keyboard building pops up in the world');
   await ev(() => { const G = __wands.G, k = G.menu.kb; G.bd.x = k.x - 80 + 1.2; G.bd.y = k.y - 80 + 0.2; });
@@ -146,7 +147,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await key('KeyE'); await sleep(300);
   ok(await ev(() => !__wands.G.menu.typing), 'E cancels cleanly mid-typing');
   ok(await ev(() => { const N = __wands.Net; for (let i = 0; i < 200; i++) if (/[E0O1IL]/.test(N.makeCode())) return false; return true; }), '200 generated room codes never contain E (nor 0 O 1 I L)');
-  await stepOn('B', 'back', 1500); await stepOn('B', 'back', 1500);
+  await stepOn('B', 'back', 1500); await stepOn('B', 'back', 1500); await stepOn('B', 'back', 1500);   // (join -> online -> the mode choice -> main)
 
   // ---- 3. settings: the volume staircases
   await stepOn('W', 'go:settings', 1500); await shot('09_settings');

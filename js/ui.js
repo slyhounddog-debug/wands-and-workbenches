@@ -48,6 +48,7 @@ UI.toastPrio = function (text, icon) {
   return 0;
 };
 UI.toast = function (text, side, icon, local, prio) {
+  if (G && G.m4 && G.seats) text = M4.words(text);   // (4P: no toast says "the Wizard": it says which one)
   if (UI.toastCap) { UI.toastCap.push({ text, side, icon }); return; }   // the guest's purchase is being resolved: its messages go back to him (Net.hooks.buy)
   if (prio === undefined) prio = UI.toastPrio(text, icon);
   const lvl = UI.cueLevel();
@@ -59,7 +60,7 @@ UI.toast = function (text, side, icon, local, prio) {
     return;
   }
   UI.cue(prio);
-  if (!local && side === 'R') Net.sendToast(text, icon);   // the Wizard's messages also reach the Wizard's screen (online host)
+  if (!local && (side === 'R' || (G && G.m4))) Net.sendToast(text, icon, side);   // the Wizard's messages also reach the Wizard's screen (online host)
   const box = $(side === 'R' ? 'toastR' : 'toastL');
   if (!box) return;
   for (const c of box.children) if (c.dataset.t === text) { c.classList.remove('out'); c._ttl = 2.6; c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); return; }
@@ -122,8 +123,18 @@ UI.handsHtml = function () {
   for (let i = 0; i < cap; i++) s += l[i] ? '<span class="hs' + (i === l.length - 1 ? ' fr' : '') + '">' + UI.img(l[i].kind, 16) + '</span>' : '<span class="hs em"></span>';
   return s;
 };
+UI.seatHud = function () {   // 4P: whose screen this is (a coloured name chip), and the Wizard card's own name
+  const el = $('seatTag');
+  if (!G.m4) { if (!el.classList.contains('hidden')) { el.classList.add('hidden'); $('wizName').textContent = 'WIZARD'; } return; }
+  const s = M4.me(), q = G.seats[s], A = q.att && q.att.length ? q.att.map(e => UI.img(e, 16)).join('') : '';
+  setHtml('seatTag', '<b style="color:' + q.col + '">' + q.name + '</b> <i>' + (q.role === 'B' ? 'BUILDER ' : 'WIZARD ') + q.n + '</i> ' + A);
+  el.style.borderColor = q.col; el.classList.remove('hidden');
+  const wn = M4.name(M4.ROLE[s] === 'W' ? s : M4.seatW(M4.pairW(s)));
+  if ($('wizName').textContent !== wn) $('wizName').textContent = wn;
+};
 UI.updateHud = function (dt) {
   const f = G.fac, w = G.w;
+  UI.seatHud();
   const pulse = (id, v) => { if (cache['v' + id] !== undefined && v > cache['v' + id]) { const el = $(id); el.classList.remove('gain'); void el.offsetWidth; el.classList.add('gain'); } cache['v' + id] = v; };
   for (const k of ['wood', 'stone', 'iron', 'shard']) {
     const id = 't' + k[0].toUpperCase() + k.slice(1);
@@ -189,7 +200,7 @@ UI.updateHud = function (dt) {
   UI.updateQuest(dt);
   UI.updateEvent();
   UI.updateEggQ();
-  if (Net.role !== 'guest') { UI.updatePins(dt); UI.updateHotbar(); }
+  if (Net.role !== 'guest' || (G.m4 && M4.ROLE[M4.me()] === 'B')) { UI.updatePins(dt); UI.updateHotbar(); }
   if (Net.on) UI.syncTrees();
   UI.updateDebug(dt);
   if (UI.tipT > 0) { UI.tipT -= dt; if (UI.tipT <= 0 && !UI.tipHover) $('hotTip').classList.add('hidden'); }
@@ -308,7 +319,7 @@ UI.questHeld = function (side) {
   if (performance.now() - h.t0 >= CFG.questCelebrate.swap * 1000) { delete UI.qHold[side]; return false; }
   const q = h.q;
   setHtml('qIcon' + side, UI.img('ic_check', 32));
-  setHtml('qHead' + side, '<span>GOAL COMPLETE!</span><span class="qr">+' + q.xp + ' XP' + UI.giftHtml(q.gift, 16) + '</span>');
+  setHtml('qHead' + side, '<span>' + (G.m4 ? 'TEAM GOAL COMPLETE!' : 'GOAL COMPLETE!') + '</span><span class="qr">+' + q.xp + ' XP' + UI.giftHtml(q.gift, 16) + '</span>');
   setTxt('qText' + side, q.text);
   $('qBar' + side).style.display = '';
   $('qFill' + side).style.width = '100%';
@@ -493,6 +504,7 @@ UI.updateHotbar = function (force) {
 };
 UI.recipeHtml = r => { const R = CFG.recipes[r]; return '<span class="rec' + (FA.recipeOk(r) ? '' : ' off') + '">' + Object.keys(R.in).map(k => UI.img(k, 16) + (R.in[k] > 1 ? 'x' + R.in[k] : '')).join(' ') + ' > ' + UI.img(R.out, 16) + '</span>'; };
 UI.showTip = function (slot) {
+  if (UI.remote) return;   // (4P: a Builder played from the network does not pop tips on this screen)
   const fam = UI.isFam(slot), id = fam ? UI.famMember(slot) : slot;
   let h;
   if (id === 'hand') h = '<b>Hand</b><p>Click to walk. Click a machine, pile or item to walk over and use it.</p>';
@@ -912,6 +924,7 @@ UI.killerHtml = function () {
   return '<div class="killer">' + UI.img(k.ic, 40) + '<div><b>KILLED BY ' + k.n.toUpperCase() + '</b>' + (el ? '<span>weak to ' + UI.img(el, 18) + '<em style="color:' + ELEM[el].color + '">' + ELEM_WORD[el].toUpperCase() + '</em>: Builder, send ' + ELEM_WORD[el] + ' spells</span>' : '') + '</div></div>';
 };
 UI.showResults = function () {
+  if (G && G.m4) return UI.showResults4();
   const el = $('results');
   el.innerHTML = '<div class="rIcon">' + UI.img('ic_skull', 48) + '</div><h2>GAME OVER</h2>' + UI.killerHtml() + UI.statsHtml() + '<p>The factory, stockpile, XP, bank and skill tree are all safe. Both players press RESTART to go again.</p>' +
     '<button class="big" id="rReB">BUILDER</button><button class="big" id="rReW">WIZARD</button><button class="big ghost" id="rTitle">TITLE</button>';
@@ -933,6 +946,7 @@ UI.showResults = function () {
 UI.resultsSync = function () {
   const el = $('results');
   if (!el || el.classList.contains('hidden') || !G) return;
+  if (G.m4) return UI.resultsSync4();
   if (!G.w.dead) { el.classList.add('hidden'); return; }
   const r = G.w.ready || {}, sig = (r.B ? 1 : 0) + '' + (r.W ? 1 : 0) + Net.role;
   if (sig === UI.resSig) return;

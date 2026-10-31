@@ -136,5 +136,5 @@ R.drawSticker = function (ctx, t) {
   ctx.save(); ctx.translate(snap(x), Math.round(y / P) * P); ctx.rotate(Math.round((Math.sin(s.t * 5) * 0.09 - 0.05) * 24) / 24);
   ctx.drawImage(c, -W / 2, -H / 2, W, H);
   ctx.restore();
-  txt(ctx, WZ.emoteName[s.el], x, y + H / 2 + 20, 12, '#ffffff', 'center', 'd');
+  txt(ctx, (G.m4 ? M4.wname(G.wi || 0) + ': ' : '') + WZ.emoteName[s.el], x, y + H / 2 + 20, 12, G.m4 ? M4.col(M4.seatW(G.wi || 0)) : '#ffffff', 'center', 'd');
 };

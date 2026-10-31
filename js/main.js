@@ -45,7 +45,7 @@ Main.newGame = function (slot) {
 };
 Main.loadGame = function (slot, useBak) {
   const s = UI.slotInfo(slot, useBak);
-  if (!s || s.old) return;
+  if (!s || s.old || s.m4) return;   // (a 4-player save is opened by a 4-player room: Main.loadGame4)
   try { Main.applySave(slot, s); }
   catch (e) {
     if (!useBak && UI.slotInfo(slot, true)) { UI.err('Save in slot ' + slot + ' would not load (' + e.message + '): loaded the backup instead'); Main.loadGame(slot, true); return; }
@@ -186,6 +186,7 @@ Main.save = function () {
       v: SAVE_VERSION, qv: QUEST_VERSION, tv: TREE_VERSION, xp: G.xp + FA.gemsPending(), tree: G.tree, stock: stockSaved, ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
       flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: Main.facSaved(), at: Date.now(),
       bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp, aug: G.aug, wand: G.wand, altar: G.altar, bshr: WZ.bshrSave(),
+      m4: G.m4 ? M4.saveData() : undefined,   // (4P: the save is tagged with its mode; the second Builder and Wizard and the attunements ride in it)
     });
     if (!Main.saveOk(JSON.parse(data))) throw new Error('the new save failed its own check');
     // rolling backup: the save we're about to replace becomes the backup, if it was good
@@ -445,7 +446,7 @@ Main.controls = function (dt) {
     else Main.pause(true);
   }
   if (IN.hit('KeyT') || (p0 && p0.y && !p0.ltHeld && !UI.splitB)) UI.openTree('L');
-  if (!Net.on && (IN.hit('KeyY') || (p1 && p1.back))) UI.openTree('R');   // (online the Wizard's tree is on the guest's screen) Back / Select on his pad: Y is the wand's Cycle now
+  if ((!Net.on || G.m4) && (IN.hit('KeyY') || (p1 && p1.back))) UI.openTree('R');   // (online the Wizard's tree is on the guest's screen) Back / Select on his pad: Y is the wand's Cycle now
   if (IN.hit('KeyH')) { UI.help(); G.helpT = 0; }
   if (IN.hit('KeyC') && !frozenNow() && !UI.splitB && !UI.askB) Book.open();   // the Collection Book: every spell and creature
   if ((IN.hit('KeyP') || (p0 && p0.l3)) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
@@ -590,6 +591,59 @@ Main.controls = function (dt) {
   return { bix, biy, wix, wiy, wrx, wry, roll, act, broll: !!broll };
 };
 
+// ---------- 4P: a Builder played from a pad that came over the network ----------
+// Runs with that Builder selected (FA.asB). The same presses as the pad half of Main.controls (pick A, throw B, use X, hotbar LB / RB, family RT, demolish Back, Shift+throw = LT+B,
+// roll = LT+A, switch element = LT+X), none of the mouse and none of the local screen (UI.remote keeps the hotbar tips and clicks quiet).
+Main.remoteB = function (dt, p) {
+  const out = { bix: 0, biy: 0, broll: false };
+  if (!p) return out;
+  out.bix = clampv(p.ix || 0); out.biy = clampv(p.iy || 0);
+  UI.remote = true;
+  try {
+    const lt = !!p.ltHeld, use = !!p.x && !lt, pick = !!p.a && !lt, pickHeld = !!p.aHeld && !lt, throwHeld = !!p.bHeld, stackThrow = !!p.b && lt;
+    out.broll = !!(p.a && lt);
+    if (p.lb) UI.cycle(-1);
+    if (p.rb && !lt) UI.cycle(1);
+    if (p.rt) UI.cycleFam(1);
+    if (p.back) { G.demolish = !G.demolish; }
+    if (p.bi) for (const k of p.bi) {   // a Builder's extra presses: hotbar slot, rotate, switch element
+      if (/^sel[1-9]$/.test(k)) UI.select(CFG.hotbar[+k.slice(3) - 1]);
+      else if (k === 'rot') { if (!FA.rotateAt(Math.floor(G.bd.x + G.bd.fx), Math.floor(G.bd.y + G.bd.fy))) G.placeDir = (G.placeDir + 1) % 4; }
+      else if (k === 'el') { const hb = FA.harnessNear(); if (hb) FA.cycleElem(hb, 1); else AU.sfx('error'); }
+    }
+    if (!throwHeld) G.noThrow = false;
+    if (p.cyc) FA.cycleLock(p.cyc);
+    if (stackThrow && G.hands.length && !G.noThrow) { const a = R.aim || aimNow(); if (a) { G.bd.burst = G.hands.length; G.bd.burstAim = { x: a.x, y: a.y }; } }
+    if (G.bd.burst > 0) { if (!G.hands.length) G.bd.burst = 0; else if (FA.throwOne(G.bd.burstAim.x, G.bd.burstAim.y, CFG.throwStackGap)) G.bd.burst--; }
+    const press = mode => { const a = FA.interact(mode, true); G.ibuf = a && a.fn ? null : { mode, t: CFG.inputBuffer }; return a; };
+    const building = G.selected !== 'hand' || G.demolish;
+    if (G.ibuf && G.ibuf.mode === 'place') { G.ibuf.t -= dt; if (placeInFront(G.ibuf.t > 0) || G.ibuf.t <= 0) G.ibuf = null; }
+    else if (G.ibuf && !use && !pick) {
+      const b = G.ibuf; b.t -= dt;
+      if (b.mode === 'pick' && building) G.ibuf = null;
+      else { const a = FA.interact(b.mode, b.t > 0); if ((a && a.fn) || b.t <= 0) { G.ibuf = null; if (b.mode === 'pick' && a && a.fn) G.pRepeat = a.rep ? CFG.pickRepeat * 1.5 : 0; } }
+    }
+    if (use) press('use');
+    if (p.x && lt) { const hb = FA.harnessNear(); if (hb) FA.cycleElem(hb, 1); else AU.sfx('error'); }
+    if (pick) {
+      if (building) { if (!placeInFront(true)) G.ibuf = { mode: 'place', t: CFG.inputBuffer }; }
+      else { const a = press('pick'); G.pRepeat = a && a.fn && a.rep ? CFG.pickRepeat * 1.5 : 0; }
+    } else if (pickHeld && !building && G.pRepeat > 0) {
+      G.pRepeat -= dt;
+      if (G.pRepeat <= 0) {
+        const t = G.hands.length ? FA.sweepTarget(FA.topKind()) : FA.findTarget('pick'), a = t && FA.actionFor(t, 'pick');
+        if (a && a.rep && a.fn) { a.fn(); G.pRepeat = G.hands.length ? CFG.sweepRepeat : CFG.pickRepeat; }
+      }
+    } else if (!pickHeld) G.pRepeat = 0;
+    if (throwHeld && !(G.bd.burst > 0) && !lt) throwAlongAim();
+    if (p.aHeld && G.selected === 'belt' && !G.demolish) {   // hold A with the Belt tool: lay belts as he walks
+      const tx = Math.floor(G.bd.x), ty = Math.floor(G.bd.y), key = tx + ',' + ty;
+      if (G.lastFeet !== key) { G.lastFeet = key; const ax = Math.abs(G.bd.fx) >= Math.abs(G.bd.fy); G.placeDir = ax ? (G.bd.fx >= 0 ? 0 : 2) : (G.bd.fy >= 0 ? 1 : 3); FA.placeBelt(tx, ty, G.placeDir); }
+    } else G.lastFeet = null;
+  } finally { UI.remote = false; }
+  return out;
+};
+
 // ---------- the wilds' sound effects for the online guest ----------
 // The guest never runs the sim, so the sounds the host makes in the wilds ride along in the snapshots: G.snd = { n: how many so far, list: the last 24 { n, s: name, f: step } }.
 // The guest plays the new ones when it shows that picture (Main.playSnd, online.js). Builder-side sounds (belts, machines, pickups, the factory's thuds) are left out.
@@ -611,15 +665,18 @@ AU.setAttn(() => UI.cueLevel());   // a danger or a goal cue that is up drops th
 // ---------- per-frame simulation ----------
 Main.step = function (dt, ctl) {
   Main.stepN++;
-  ctl = ctl || (Main.modal() ? Main.wizardOnly() : Main.controls(dt));
+  ctl = ctl || (G.m4 ? M4.controls(dt) : Main.modal() ? Main.wizardOnly() : Main.controls(dt));
   // the whole game (machines, belts, Builder, wilds) freezes while anyone has a skill tree open, then for the "And..." beat. Online nothing ever freezes it.
   const inTree = !Net.on && (UI.treeOpen.L || UI.treeOpen.R);
   if (!inTree && Main.graceT > 0) { Main.graceT -= dt; if (Main.graceT <= 0) UI.and(false); }
   const frozen = inTree || Main.graceT > 0;
-  const facHalt = frozen || G.w.dead;   // the factory waits while the Wizard is down (the wilds keep running for the death effects)
+  const facHalt = frozen || WZ.over();   // the factory waits while the Wizard is down (the wilds keep running for the death effects)
   if (!facHalt) {
-    if (ctl.broll) FA.builderRoll(ctl.bix, ctl.biy);
-    FA.moveBuilder(dt, ctl.bix, ctl.biy);
+    if (G.m4) M4.moveBuilders(dt, ctl);   // 4P: both Builders
+    else {
+      if (ctl.broll) FA.builderRoll(ctl.bix, ctl.biy);
+      FA.moveBuilder(dt, ctl.bix, ctl.biy);
+    }
     FA.update(dt);
   }
   // hit-stop (CFG.hitstop): the Wizard's side holds still for a beat after an elite / the Warden dies; presses made meanwhile are kept for the next frame
@@ -633,6 +690,7 @@ Main.step = function (dt, ctl) {
   }
   if (!frozen && !still) {
     WZ.update(dt, ctl.wix, ctl.wiy, ctl.roll, ctl.wrx, ctl.wry, ctl.act);
+    if (G.w2) M4.wizard2(dt, ctl);   // 4P: the second Wizard's own pass
   }
   if (!G) return;   // a victory screen button may have gone to the title mid-step
   // soft footsteps, one stride timer each
@@ -641,11 +699,12 @@ Main.step = function (dt, ctl) {
     if (!facHalt && bd.moving) { st.b -= dt; if (st.b <= 0) { st.b = 0.3; AU.sfx('step_b'); } } else st.b = 0.08;
     if (wz.moving && !wz.dead && !(wz.roll > 0)) { st.w -= dt; if (st.w <= 0) { st.w = 0.27; AU.sfx('step_w'); } } else st.w = 0.08;
   }
-  if (G.w.dead && !G.w.deadHandled) {
+  if (G.m4) M4.deadFlow(dt);
+  else if (G.w.dead && !G.w.deadHandled) {
     G.w.deadHandled = true;
     setTimeout(() => { if (G && G.w.dead) UI.showResults(); }, 900);   // (online the guest's screen opens it from the snapshots: Main.guestSeen)
   }
-  if (G.w.dead) {   // the game over screen: both players ready up with RESTART (the Wizard's roll button also readies him), then the run starts again
+  if (!G.m4 && G.w.dead) {   // the game over screen: both players ready up with RESTART (the Wizard's roll button also readies him), then the run starts again
     G.w.deadT = (G.w.deadT || 0) + dt;
     const p1 = Main.padW(), rd = G.w.ready || (G.w.ready = { B: false, W: false });
     if (G.w.deadT > 1 && p1 && p1.a) rd.W = true;
@@ -661,10 +720,10 @@ Main.step = function (dt, ctl) {
   AU.layerMix(G.fac.weather);   // each element's layer swells with the same signal that tints the wilds
   AU.muffle(!!(UI.treeOpen.L || UI.treeOpen.R));   // a skill tree is open: the music plays on, muffled
   AU.hum(facHalt ? 0 : Math.min(1, G.fac.working / 10));
-  UI.updateHud(dt);
+  if (G.m4) M4.asSeat(M4.me(), () => UI.updateHud(dt)); else UI.updateHud(dt);
   if ((Players.checkT -= dt) <= 0) { Players.checkT = 1; Players.check(); }   // achievements (they unlock cosmetics)
   UI.splitTick(dt);
-  Main.updateFocus();
+  if (G.m4) { if (M4.ROLE[M4.me()] === 'B') M4.asSeat(M4.me(), Main.updateFocus); else R.focus = null; } else Main.updateFocus();   // (4P: only a Builder seat has prompts)
   G.saveT += dt;
   if (G.saveT > CFG.autosave || (UI.dirty && G.saveT > 1.5)) { G.saveT = 0; UI.dirty = false; Main.save(); }
 };
@@ -944,8 +1003,11 @@ function frame(ts) {
       if (G && Net.on) {   // online the Builder's world fills the stage with the Wizard's in a corner; nothing is ever frozen, so nothing is skipped
         ctx.clearRect(0, 0, CFG.W, CFG.H);
         const pd = G.paused ? 0 : dt;   // (a pause menu on either machine holds the picture too)
-        R.drawFactory(ctx, pd, { x0: 0, w: CFG.W });
-        R.drawPip(ctx, pd);
+        if (G.m4) M4.draw(ctx, pd);   // 4P: this seat's world fills the stage, the buddy's is the picture-in-picture
+        else {
+          R.drawFactory(ctx, pd, { x0: 0, w: CFG.W });
+          R.drawPip(ctx, pd);
+        }
       } else if (G) {
         // A frozen game (pause menu, a skill tree, the "And..." beat) is the same picture every frame: once it has settled for a few frames the canvas is left alone,
         // and a half hidden under its own opaque tree panel is not drawn at all. Main.still counts the frames since anything changed (UI.changed resets it).
@@ -1152,6 +1214,9 @@ window.__wands = {
   get G() { return G; },
   Main, FA, WZ, UI, R, CFG, DevBot, Snap, Net,
   start(slot) { Main.newGame(slot || 1); },
+  start4(slot, opts) { Main.newGame4(slot || 1, opts); },   // a 4-player game on this machine (tests); step4 plays all four seats
+  step4(dt, n, seats) { for (let i = 0; i < (n || 1); i++) if (G && !G.paused) Main.step(dt, M4.ctlOf(seats)); },
+  M4,
   get menu() { return Menu; },
   deliver(kind) { FA.deliver(kind); },
   bank(kind, n) { for (let i = 0; i < (n || 1); i++) FA.bank(kind); },

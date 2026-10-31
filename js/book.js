@@ -53,8 +53,20 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     nova: s => { const zaps = Math.floor(s.pullT / s.zapEvery); return { total: zaps * s.zapDmg + s.dmg + s.bits * 4 * s.bitDmg, text: 'Foes within ' + s.pullR + ' tiles are hauled in for ' + s.pullT + 's while everyone within ' + s.r + ' tiles is zapped for ' + s.zapDmg + ' every ' + s.zapEvery + 's (' + zaps + ' zaps). Then ' + s.bits * 4 + ' bits of magma, water, air and rock burst out for ' + s.bitDmg + ' each, with a ' + s.dmg + ' damage burst that shoves everything away.' }; },
   };
   const spellBook = id => { const b = SPELL_BOOK[id](CFG.spells[id]), t = Math.round(b.total); return { total: t, text: b.text + ' Most it can deal: ' + t + '.' }; };
+  // 4P: what this spell does in each Wizard's hands (his attunement shapes it: M4.bookRows) and what each element in it adds
+  const TRAIT = { fire: 'burn + seeking', water: 'slow + sustain', air: 'push + speed', earth: 'crush + lasting ground' };
+  function m4Rows(id) {
+    const els = spellEls(id), R = M4.bookRows(id), out = ['<div class="bkM4"><b>IN EACH WIZARD\'S HANDS</b>'];
+    if (els.length < 2) out.push('<div>A single casts the same in every hand: it already shows its own element.</div>');
+    else {
+      for (const r of R) out.push('<div style="color:' + r.col + '"><b>' + r.name + '</b> ' + (r.att || []).map(e => UI.img(e, 14)).join('') + ' <span>' + r.form + '</span></div>');
+      out.push('<div class="bkTr">' + els.map(e => UI.img(e, 14) + ' ' + TRAIT[e]).join(' &nbsp; ') + '</div>');
+    }
+    return out.join('') + '</div>';
+  }
   function spellRows(id) {
     const r = CFG.recipes[id], rows = [elStrip(spellEls(id))];
+    if (G.m4 && G.seats) rows.push(m4Rows(id));
     if (r && r.parents) rows.push('<div class="bkNeed">' + r.parents.map(p => { const ok = ((G.stats.made || {})[p] || 0) > 0; return '<span class="bkp ' + (ok ? 'ok' : '') + '" title="Make this first">' + UI.img(p, 24) + UI.img(ok ? 'ic_check' : 'ic_lock', 12) + '</span>'; }).join('') + '</div>');
     rows.push(main([badge('ic_flame', spellBook(id).total, 'Most damage it can deal', 96, '', 'dmg')]));
     if (r) rows.push(sub([badge('ic_clock', r.time + 's', 'Craft time at the Forge', 48), badge('ic_bolt', r.power, 'Power the Forge draws', 48)]));

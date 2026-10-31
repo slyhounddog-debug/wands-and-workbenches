@@ -22,7 +22,7 @@
 // toasts) and a second UNRELIABLE, UNORDERED one for the 20 Hz snapshots (a late or lost picture is simply skipped: nothing waits behind it, so one bad packet on a phone
 // hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
-  VERSION: 12,   // 12: the 2026-10-31 pass puts new plain data in the snapshot (G.fac.xpg / shardPrev, G.w boulder motion, drop.up, w.heat, G.stats.fl / built); 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
+  VERSION: 13,   // 13: 4-player rooms (G.m4 / seats / w2 / bd2 / bs2 / wand2 / aug2 / vi / wi / bi / rdy / over, owner tags pi on timers, projectiles, zones, mines, booms; the pad carries bi; toasts carry their side); 12: the 2026-10-31 pass puts new plain data in the snapshot (G.fac.xpg / shardPrev, G.w boulder motion, drop.up, w.heat, G.stats.fl / built); 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
   BUILD: 11,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
@@ -30,6 +30,8 @@ const Net = {
   ALPHA: 'ABCDFGHJKMNPQRSTUVWXYZ23456789',   // no 0 O 1 I L, and no E: E is the cancel key at the menu world's keyboard, so a room code never needs it
   PREFIX: 'ww-',
   role: null,                    // 'host' | 'guest' | null
+  mode: 2, gs: [], me: null, sealed: false,   // 4-player rooms (see HOST4 below): mode 4, the guests' slots, which slot this guest is, whether the lobby has closed
+
   on: false,                     // an online game is running (host: the game started; guest: the first snapshot arrived)
   state: 'idle',                 // idle | opening | waiting (host: room open, nobody yet) | live | lost | ended
   code: null, error: '',
@@ -145,9 +147,9 @@ const Net = {
       // never resent); a packet with a press stays on the reliable one, where it cannot be lost. Host side: a packet older than one already used only brings its presses (hostPad).
       const pad = pc0.createDataChannel('pad', { negotiated: true, id: PAD_ID, ordered: false, maxRetransmits: 0 });
       pad.onmessage = e => {
-        if (conn !== Net.conn || Net.role !== 'host' || typeof e.data !== 'string') return;
+        if (!isHostConn(conn) || typeof e.data !== 'string') return;
         let m; try { m = JSON.parse(e.data); } catch (x) { return; }
-        if (m && m.t === 'pad') { Net.lastRx = now(); hostMsg(conn, m); }
+        if (m && m.t === 'pad') { Net.lastRx = now(); (Net.mode === 4 ? host4Msg : hostMsg)(conn, m); }
       };
       conn._padCh = pad;
     } catch (e) { conn._snapCh = null; Net.log('snapshot channel failed: ' + (e && e.message)); }
@@ -177,9 +179,10 @@ const Net = {
 
   Net.reset = function () {
     try { if (Net.conn) Net.conn.close(); } catch (e) { /* ignore */ }
+    for (const s of Net.gs || []) { try { if (s.conn) s.conn.close(); } catch (e) { /* ignore */ } }   // (4P: every guest's connection)
     try { if (Net.peer) Net.peer.destroy(); } catch (e) { /* ignore */ }
     Net.errs = []; Net.diag = null; Net.hdiag = null;
-    Net.role = null; Net.on = false; Net.state = 'idle'; Net.code = null; Net.error = '';
+    Net.role = null; Net.on = false; Net.state = 'idle'; Net.code = null; Net.error = ''; Net.mode = 2; Net.gs = []; Net.me = null; Net.sealed = false;
     Net.peer = null; Net.conn = null; Net.tok = null; Net.lastRx = 0; Net.lostAt = 0;
     Net.snapN = 0; Net.snapAcc = 0; Net.busy = false; Net.gpad = null; Net.gedge = null;
     Net.lastN = 0; Net.next = null; Net.latch = null; Net.padAcc = 0; Net.pingAcc = 0;
@@ -190,16 +193,18 @@ const Net = {
   // leave the session for good (title screen, quitting, the host's timeout)
   Net.close = function (tell) {
     if (tell !== false && Net.conn) send(Net.conn, { t: 'bye' });
+    const conns = (Net.gs || []).map(s => s.conn).filter(Boolean);   // (4P: tell every guest)
+    if (tell !== false) for (const c of conns) send(c, { t: 'bye' });
     const peer = Net.peer, conn = Net.conn;
     Net.reset();
-    setTimeout(() => { try { if (conn) conn.close(); } catch (e) { /* ignore */ } try { if (peer) peer.destroy(); } catch (e) { /* ignore */ } }, 150);   // let the bye leave first
+    setTimeout(() => { try { if (conn) conn.close(); } catch (e) { /* ignore */ } for (const c of conns) { try { c.close(); } catch (e) { /* ignore */ } } try { if (peer) peer.destroy(); } catch (e) { /* ignore */ } }, 150);   // let the bye leave first
   };
   Net.rejoinLeft = () => Math.max(0, Net.REJOIN_MS - (now() - Net.lostAt));
 
   // ================= HOST =================
   // open a room: resolves with the code. The game itself starts when the guest has joined (hooks.guestJoined).
-  Net.createRoom = function () {
-    Net.reset(); Net.role = 'host'; Net.state = 'opening';
+  Net.createRoom = function (mode) {
+    Net.reset(); Net.role = 'host'; Net.state = 'opening'; Net.mode = mode === 4 ? 4 : 2;
     return Promise.all([loadLib(), getRelay()]).then(() => new Promise((res, rej) => {
       let tries = 0;
       const attempt = () => {
@@ -207,7 +212,7 @@ const Net = {
         let opened = false;
         peer.on('open', () => {
           opened = true; Net.peer = peer; Net.code = code; Net.state = 'waiting';
-          peer.on('connection', hostConn);
+          peer.on('connection', c => (Net.mode === 4 ? host4Conn(c) : hostConn(c)));
           peer.on('close', () => Net.log('host peer CLOSED (destroyed)'));
           peer.on('disconnected', () => Net.log('host peer lost the matchmaking server'));
           peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) { /* ignore */ } });   // the signaling server dropped us: stay reachable for a rejoin
@@ -274,6 +279,7 @@ const Net = {
   }
   // called every host frame, right after IN.pollPads: the guest's pad becomes the Wizard's pad (the dev bot's seam)
   Net.drive = function (ts) {
+    if (Net.role === 'host' && Net.mode === 4) { drive4(); return; }
     if (Net.role !== 'host' || !G || G.ctl.pw < 0) return;
     const g = Net.gpad || {}, e = Net.gedge || {};
     const pad = { ix: Math.max(-1, Math.min(1, g.ix || 0)), iy: Math.max(-1, Math.min(1, g.iy || 0)), rx: Math.max(-1, Math.min(1, g.rx || 0)), ry: Math.max(-1, Math.min(1, g.ry || 0)), cyc: e.cyc || 0, any: !!(g.any || Object.keys(e).length) };
@@ -298,6 +304,7 @@ const Net = {
   }
   Net.hostTick = function (dt) {
     if (Net.role !== 'host') return;
+    if (Net.mode === 4) { hostTick4(dt); return; }
     const st = Net.stats;
     st._t += dt;
     if (st._t >= 1) { st.kbps = Math.round(st._b / 1024 / st._t); st.fps = +(st._n / st._t).toFixed(1); st._t = 0; st._b = 0; st._n = 0; }
@@ -389,8 +396,128 @@ const Net = {
       }
     }).catch(e => { Net.busy = false; UI.err(e); });
   }
-  Net.sendToast = (text, icon) => { if (Net.role === 'host' && Net.state === 'live') send(Net.conn, { t: 'toast', text, icon }); };
+  Net.sendToast = (text, icon, side) => { if (Net.role === 'host' && Net.mode === 4) { Net.sendToast4(text, icon, side || 'R'); return; } if (Net.role === 'host' && Net.state === 'live') send(Net.conn, { t: 'toast', text, icon }); };
   Net.sendBuyRes = (id, ok, toasts) => { if (Net.role === 'host' && Net.state === 'live') send(Net.conn, { t: 'buyres', id, ok, toasts }); };
+
+  // ================= 4-PLAYER HOST: three guests (Net.mode 4) =================
+  // A 4P room is the same room-code system with up to THREE guests. Each guest has a slot (Net.gs: id g1..g3, his connection, his pad, his state); the seat he plays is the lobby's
+  // business (js/online4.js). One snapshot is built per tick and sent to every live guest (the same picture for all: nothing in it is per guest). A guest's pad becomes
+  // IN.pad[slot.pad] (2..4), the same seam as in 2P. A guest who drops leaves his character standing; the same token inside REJOIN_MS gets the slot back.
+  const SLOT_PAD = { g1: 2, g2: 3, g3: 4 };
+  Net.slot = id => Net.gs.find(s => s.id === id) || null;
+  Net.slotOf = conn => Net.gs.find(s => s.conn === conn) || null;
+  Net.liveSlots = () => Net.gs.filter(s => s.state === 'live');
+  Net.hooks4 = Net.hooks4 || {};
+  function isHostConn(conn) { return Net.role === 'host' && (Net.mode === 4 ? !!Net.slotOf(conn) : conn === Net.conn); }
+  function host4Conn(conn) {
+    const dropT = setTimeout(() => { if (!Net.slotOf(conn)) { try { conn.close(); } catch (e) { /* ignore */ } } }, 50000);   // never said hello
+    conn.on('data', m => host4Msg(conn, m));
+    conn.on('close', () => { clearTimeout(dropT); const s = Net.slotOf(conn); if (s && s.conn === conn) slotGone(s, 'closed'); });
+    conn.on('error', () => { const s = Net.slotOf(conn); if (s && s.conn === conn) slotGone(s, 'error'); });
+  }
+  function host4Msg(conn, m) {
+    if (!m || typeof m !== 'object') return;
+    if (m.t === 'hello') {
+      if (m.v !== Net.VERSION) { refuse(conn, 'version'); return; }
+      if (typeof m.tok !== 'string' || m.tok.length < 8) { refuse(conn, 'full'); return; }
+      let s = Net.gs.find(q => q.tok === m.tok), fresh = false;
+      if (!s) {   // a new player: a free slot, or one whose player stayed away past the rejoin window
+        const rel = Net.gs.find(q => q.released);
+        if (Net.gs.length < 3 && !Net.sealed) { const id = 'g' + (Net.gs.length + 1); s = { id, tok: m.tok, pad: SLOT_PAD[id], state: 'lost', lastRx: 0, lostAt: 0, gpad: null, gedge: null, gseq: 0, gsig: '', conn: null, released: false }; Net.gs.push(s); fresh = true; }
+        else if (rel) { s = rel; s.tok = m.tok; s.released = false; fresh = true; }
+        else { refuse(conn, 'full'); return; }
+      }
+      if (s.conn && s.conn !== conn) { const old = s.conn; s.conn = null; try { old.close(); } catch (e) { /* ignore */ } }   // the same guest on a fresh connection
+      s.conn = conn; s.state = 'live'; s.lastRx = now(); s.lostAt = 0; s.gseq = 0;
+      snapChannel(conn);
+      send(conn, { t: 'welcome', v: Net.VERSION, seed: Net.SEED, sig: Net.sig(), mode: 4, you: s.id, runMeta: { slot: G ? G.slot : 0, time: G && G.stats ? G.stats.time : 0 } });
+      Net.slowStr = {}; Net.snapAcc = 1; Net.busy = false; Net.state = 'live';
+      if (fresh) { if (Net.hooks4.joined) Net.hooks4.joined(s); } else if (Net.hooks4.back) Net.hooks4.back(s);
+      return;
+    }
+    const s = Net.slotOf(conn);
+    if (!s) return;
+    s.lastRx = now();
+    if (m.t === 'pad') { hostPad4(s, m.s, m.q < s.gseq); if (m.q > s.gseq) s.gseq = m.q; }
+    else if (m.t === 'buy') { if (Net.hooks4.buy) Net.hooks4.buy(s, String(m.id)); }
+    else if (m.t === 'pause') { if (Net.hooks4.pause) Net.hooks4.pause(s, !!m.on); }
+    else if (m.t === 'ping') send(conn, { t: 'pong', at: m.at });
+    else if (m.t === 'bye') slotGone(s, 'left');
+  }
+  function hostPad4(s, p, stale) {
+    if (!p || typeof p !== 'object') return;
+    const g = s.gpad || (s.gpad = {}), e = s.gedge || (s.gedge = {});
+    if (!stale) {
+      g.ix = +p.ix || 0; g.iy = +p.iy || 0; g.rx = +p.rx || 0; g.ry = +p.ry || 0;
+      for (const k of HELD) g[k] = !!p[k];
+    }
+    for (const k of EDGES) if (p[k]) e[k] = true;
+    if (p.cyc) e.cyc = p.cyc;
+    if (Array.isArray(p.bi) && p.bi.length) e.bi = (e.bi || []).concat(p.bi.filter(x => typeof x === 'string').slice(0, 6));   // a Builder's extra presses (hotbar slot, rotate, switch element)
+    g.any = !!p.any;
+    const sig = g.ix.toFixed(1) + g.iy.toFixed(1) + HELD.map(k => (g[k] ? 1 : 0)).join('');
+    if (sig !== s.gsig || EDGES.some(k => p[k])) { s.gsig = sig; Net.padDirty = true; }
+  }
+  // every host frame (after IN.pollPads): each live guest's pad becomes IN.pad[slot.pad]
+  function drive4() {
+    if (!G) return;
+    for (const s of Net.gs) {
+      if (s.state !== 'live') { IN.pad[s.pad] = null; continue; }
+      const g = s.gpad || {}, e = s.gedge || {};
+      const pad = { ix: Math.max(-1, Math.min(1, g.ix || 0)), iy: Math.max(-1, Math.min(1, g.iy || 0)), rx: Math.max(-1, Math.min(1, g.rx || 0)), ry: Math.max(-1, Math.min(1, g.ry || 0)), cyc: e.cyc || 0, bi: e.bi || null, any: !!(g.any || Object.keys(e).length) };
+      for (const k of EDGES) pad[k] = !!e[k];
+      for (const k of HELD) pad[k] = !!g[k];
+      pad.back = !!(e.back && Net.hooks4.padBack ? Net.hooks4.padBack(s) : false);   // (a Wizard's Back opens his own tree on his screen; a Builder's Back is demolish: the hook says which)
+      pad.startHeld = false;
+      IN.pad[s.pad] = pad;
+      s.gedge = null;
+    }
+    if (Net.padDirty) { Net.padDirty = false; Net.snapNow = true; }
+  }
+  function slotGone(s, why) {
+    if (s.state !== 'live') return;
+    s.state = 'lost'; s.lostAt = now(); s.gpad = null; s.gedge = null; IN.pad[s.pad] = null;
+    if (!Net.liveSlots().length) { Net.state = 'lost'; Net.lostAt = now(); }
+    if (Net.hooks4.lost) Net.hooks4.lost(s, why);
+  }
+  function hostTick4(dt) {
+    const st = Net.stats;
+    st._t += dt;
+    if (st._t >= 1) { st.kbps = Math.round(st._b / 1024 / st._t); st.fps = +(st._n / st._t).toFixed(1); st._t = 0; st._b = 0; st._n = 0; }
+    for (const s of Net.gs) {
+      if (s.state === 'live' && now() - s.lastRx > 8000) slotGone(s, 'silent');
+      if (s.state === 'lost' && !s.released && s.lostAt && now() - s.lostAt > Net.REJOIN_MS) { s.released = true; if (Net.hooks4.released) Net.hooks4.released(s); }   // (his seat is free for anyone with the code)
+    }
+    if (Net.liveSlots().length) {
+      Net.snapAcc += dt;
+      if (Net.snapAcc >= 1 / Net.SNAP_HZ || (Net.snapNow && Net.snapAcc >= 0.025)) { Net.snapNow = false; Net.snapAcc = Math.max(0, Math.min(Net.snapAcc - 1 / Net.SNAP_HZ, 1 / Net.SNAP_HZ)); sendSnap4(); }
+    }
+  }
+  function sendSnap4() {
+    const live = Net.liveSlots().filter(s => s.conn && s.conn.open);
+    if (Net.busy || !live.length || !G) return;
+    const ready = live.filter(s => backlog(s.conn) <= Net.BACKLOG);
+    if (!ready.length) { Net.stats.skipped++; return; }
+    let str;
+    try { Net.stamp(); str = wirePacket().replace(SHORT, '$1'); } catch (e) { UI.err(e); return; }
+    const n = ++Net.snapN;
+    Net.busy = true;
+    encode(str).then(z => {
+      Net.busy = false;
+      const zk = typeof z === 'string' ? z.length : z.byteLength, st = Net.stats;
+      st.rawKB = str.length / 1024; st.zipKB = zk / 1024; if (st.zipKB > st.maxZip) st.maxZip = st.zipKB;
+      for (const s of ready) {
+        if (s.state !== 'live' || !s.conn || !s.conn.open || backlog(s.conn) > Net.BACKLOG) { st.skipped++; continue; }
+        if (snapOut(s.conn, n, z)) { st.snapsOut++; st.bytesOut += zk; st._b += zk; st.total += zk; }
+      }
+      st._n++;
+    }).catch(e => { Net.busy = false; UI.err(e); });
+  }
+  // the host's own words to the guests: toasts (every guest gets them with their side and shows its own) and a purchase's answer to the guest who asked
+  Net.sendToast4 = (text, icon, side) => { for (const s of Net.liveSlots()) send(s.conn, { t: 'toast', text, icon, side }); };
+  Net.sendBuyRes4 = (s, id, ok, toasts) => { if (s && s.state === 'live') send(s.conn, { t: 'buyres', id, ok, toasts }); };
+  // this machine (a guest) names its seat's role for the keyboard mapping: 'B' (Builder keys) or 'W' (Wizard keys); js/online4.js sets the hook
+  Net.seatRole = () => (Net.mode === 4 && Net.hooks.seatRole ? Net.hooks.seatRole() : 'W');
 
   // ================= GUEST =================
   // join a room; resolves once the host has said welcome
@@ -529,7 +656,7 @@ const Net = {
     switch (m.t) {
       case 'welcome':
         if (m.v !== Net.VERSION || m.seed !== Net.SEED || m.sig !== Net.sig()) { fail('Game version differs from the host. Reload the page (Ctrl+F5) so both of you run the same build.'); return; }
-        Net.runMeta = m.runMeta; Net.state = 'live';
+        Net.runMeta = m.runMeta; Net.state = 'live'; Net.mode = m.mode === 4 ? 4 : 2; Net.me = m.you || null;
         if (again && Net.hooks.resumed) Net.hooks.resumed();
         res(m);
         break;
@@ -585,6 +712,7 @@ const Net = {
     if (Net.role !== 'guest') return;
     if (Net.mute) { Net.latch = {}; return; }   // the guest's own tree / menu / book is up: his presses belong to it, not to the Wizard
     const L = Net.latch || (Net.latch = {}), gp = IN.pad[0] || null;
+    if (Net.seatRole() === 'B') { collectB(L, gp); return; }   // (4P: a Builder seat has the Builder's keys)
     // the Wizard's four buttons (see Main.wizBtns): Space / . dodge = a, left click / / mash = x, right click / , cast = b, Q / M cycle = y; T (the tree) goes as Back
     if (IN.hit('Space') || IN.hit('Period') || (gp && gp.a)) L.a = true;
     if (IN.mouse.lp || IN.hit('Slash') || (gp && gp.x)) L.x = true;
@@ -607,9 +735,26 @@ const Net = {
       xHeld: IN.mouse.l || IN.down('Slash') || !!(gp && gp.xHeld), aHeld: IN.down('Space') || IN.down('Period') || !!(gp && gp.aHeld), bHeld: !!(gp && gp.bHeld), ltHeld: !!(gp && gp.ltHeld), startHeld: false,
     };
     for (const k of EDGES) out[k] = !!L[k];
+    if (Net.seatRole() === 'B') { out.aHeld = IN.down('Space') || IN.down('Period') || IN.mouse.l || !!(gp && gp.aHeld); out.xHeld = false; out.bHeld = IN.mouse.r || IN.down('Comma') || !!(gp && gp.bHeld); out.ltHeld = IN.shift() || !!(gp && gp.ltHeld); out.bi = L.bi || null; }
     out.any = ix !== 0 || iy !== 0 || out.aHeld || out.xHeld || EDGES.some(k => out[k]);
     return out;
   };
+  // a Builder seat's keys (4P): Space / left click pick (A), E use (X), right click / comma throw (B), [ ] hotbar (LB RB), Q family (RT), B / Delete demolish (Back), Tab target lock,
+  // 1-9 pick a hotbar slot, R rotate, F switch a Harnesser's element (these three ride in the pad's bi list), Shift + throw = the whole pile, Shift + Space = tumble
+  function collectB(L, gp) {
+    if (IN.hit('Space') || IN.hit('Period') || IN.mouse.lp || (gp && gp.a)) L.a = true;
+    if (IN.hit('KeyE') || IN.hit('Slash') || (gp && gp.x)) L.x = true;
+    if (IN.mouse.rp || IN.hit('Comma') || (gp && gp.b)) L.b = true;
+    if (IN.hit('BracketLeft') || (gp && gp.lb)) L.lb = true;
+    if (IN.hit('BracketRight') || (gp && gp.rb)) L.rb = true;
+    if (IN.hit('KeyQ') || (gp && gp.rt)) L.rt = true;
+    if (IN.hit('KeyB') || IN.hit('Delete') || (gp && gp.back)) L.back = true;
+    if (IN.hit('Tab')) L.cyc = IN.shift() ? -1 : 1; else if (gp && gp.cyc) L.cyc = gp.cyc;
+    const bi = L.bi || (L.bi = []);
+    for (let i = 1; i <= 9; i++) if (IN.hit('Digit' + i)) bi.push('sel' + i);
+    if (IN.hit('KeyR')) bi.push('rot');
+    if (IN.hit('KeyF')) bi.push('el');
+  }
   // the input of this very frame (the same sources padNow reads): what the prediction steps with
   Net.liveInput = function () {
     if (Net.mute) return { ix: 0, iy: 0, a: false };

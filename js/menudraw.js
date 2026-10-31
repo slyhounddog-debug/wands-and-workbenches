@@ -219,6 +219,7 @@ Menu.collect = function (objs, v, mv) {
   }
   for (const o of f.floor) push(wx(o.x) + wy(o.y) + 1.2, c => R.drawFloor(c, mv, o, t));
   for (const o of f.flying) push(wx(o.x) + wy(o.y) + 1.8, c => R.drawFly(c, mv, o, t));
+  if (m.l4) Lobby4.collect(objs, v, mv);   // the 4P lobby's four characters
   if (!m.hideB && !(m.dropB && m.t < m.dropB.t0)) push(wx(G.bd.x) + wy(G.bd.y), c => drawBuilderMenu(c, v, mv, m, t));
   if (m.sx && !m.hideBPortalDone) push(1e5, c => drawSuckPortal(c, v, m, t));
   if (m.kb) push(m.kb.x + m.kb.y, c => drawKeyboard(c, v, m, t));
@@ -641,6 +642,7 @@ function drawModal(c, md, w, h, k, v) {
 Menu.drawText = function (c, v, mv) {
   const m = G.menu;
   TIPS = [];
+  if (m.l4) Lobby4.drawText(c, v);
   // the short word written on a plate, and a tooltip with its full name when a character is beside it
   for (const p of m.plates) {
     if (p.kind === 'cos' || !p.word || plateScale(p) < 0.95) continue;

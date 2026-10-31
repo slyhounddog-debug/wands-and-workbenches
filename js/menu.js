@@ -24,7 +24,7 @@ const START = { B: { x: 97.4, y: 95.2 }, W: { x: 100.6, y: 99.0 } };   // where 
 const FW = 34, OX = 80, OY = 80;           // the scratch factory grid is FW x FW; factory tile (fx, fy) is world tile (fx + OX, fy + OY)
 const BELT = { x: 15, y0: 10, n: 8 }, PORTAL = { x: 15, y: 20 };   // the spell belt line runs down the patch's left edge (factory coordinates) into the Spell Portal's top cell
 Menu.OX = OX; Menu.OY = OY; Menu.FW = FW; Menu.BELT = BELT; Menu.PORTAL = PORTAL;
-Menu.camOf = () => G.menu.cam;
+Menu.camOf = () => (G.menu.l4 ? Lobby4.camTarget() || G.menu.cam : G.menu.cam);   // (the 4P lobby's camera follows your own character)
 Menu.cleared = o => o.x > RECT_CS.x0 - 1.5 && o.x < RECT_CS.x1 + 1.5 && o.y > RECT_CS.y0 - 1.5 && o.y < RECT_CS.y1 + 1.5;   // (in the menu's patch, character select size)
 // a screen offset in px from the page's centre -> world coordinates (the wilds' tiles are 60 x 30 px)
 const at = (sx, sy, c) => { c = c || (G.menu && G.menu.tc) || CEN_MAIN; return { x: c.x + (sx / 30 + sy / 15) / 2, y: c.y + (sy / 15 - sx / 30) / 2 }; };
@@ -105,7 +105,7 @@ Menu.react = function () {
   for (const e of m.ev) {
     if (e.n <= Menu.lastEv) continue;
     if (e.k === 'sfx' && Net.role === 'guest') AU.sfx(e.s);
-    else if (e.k === 'eq' && localRoles().indexOf(e.role) >= 0) {
+    else if (e.k === 'eq' && (e.seat != null ? Lobby4.mySeat() === e.seat : localRoles().indexOf(e.role) >= 0)) {
       const role = e.role === 'B' ? 'builder' : 'wizard';
       if (Players.equipLocal(role, e.cat, e.opt)) AU.sfx('pickup'); else AU.sfx('error');
     }
@@ -139,7 +139,7 @@ const sp = (act, label, sx, sy, o) => Object.assign({ act, label, sx, sy, r: 0.8
 function newPlate(s, delay) {
   const m = G.menu, p = s.sx !== undefined ? at(s.sx, s.sy) : { x: s.x, y: s.y };
   return { id: m.nextId++, key: s.key || null, act: s.act, label: s.label || '', word: s.word || '', flip: !!s.flip, ic: s.ic || null, x: p.x, y: p.y, r: s.r || 0.8, kind: s.kind || 'act', safe: !!s.safe,
-    role: s.role || null, data: s.data === undefined ? null : s.data, st: 'wait', t: 0, delay, arm: { B: false, W: false }, on: { B: false, W: false }, cd: 0, flash: 0, col: s.col || null, row: s.row || null };
+    role: s.role || null, seat: s.seat === undefined ? null : s.seat, data: s.data === undefined ? null : s.data, st: 'wait', t: 0, delay, arm: { B: false, W: false }, on: { B: false, W: false }, cd: 0, flash: 0, col: s.col || null, row: s.row || null };
 }
 // swap the current plate set for another: the old plates pop out, the new ones pop in (a plate that keeps its key stays put and only changes what it does)
 Menu.show = function (page, o) {
@@ -147,8 +147,9 @@ Menu.show = function (page, o) {
   o = o || {};
   m.page = page;
   if (page !== 'none') {   // the patch and the camera follow the page: the character select needs more floor than the main menu
-    m.tr = Object.assign({}, page === 'cs' ? RECT_CS : RECT_MAIN); m.tc = Object.assign({}, page === 'cs' ? CEN_CS : CEN_MAIN); m.sh = page === 'cs' ? [0, 0] : SHIFT_MAIN;
-    if (page === 'cs') Menu.setLand(RECT_CS); else m.shrinkLand = true;   // (the floor is there before the patch has grown over it, and goes when it has shrunk back)
+    const l4 = page === 'cs4';
+    m.tr = Object.assign({}, l4 ? Menu.L4.rect : page === 'cs' ? RECT_CS : RECT_MAIN); m.tc = Object.assign({}, l4 ? Menu.L4.tc : page === 'cs' ? CEN_CS : CEN_MAIN); m.sh = page === 'cs' || l4 ? [0, 0] : SHIFT_MAIN;
+    if (l4) { m.rect = Object.assign({}, m.tr); m.free = false; } else if (page === 'cs') Menu.setLand(RECT_CS); else m.shrinkLand = true;   // (the floor is there before the patch has grown over it, and goes when it has shrunk back)
   }
   const specs = Menu.specs(page, o);
   const keep = {};
@@ -169,7 +170,7 @@ Menu.show = function (page, o) {
 Menu.go = function (page, o) { const m = G.menu; m.stack.push(m.page); Menu.show(page, o); };
 Menu.back = function () {
   const m = G.menu;
-  if (m.online && (m.page === 'host' || m.page === 'cs')) { Menu.hostCancel(); if (m.stack[m.stack.length - 1] === 'host') m.stack.pop(); }   // leaving the lobby closes the room
+  if (m.online && (m.page === 'host' || m.page === 'cs' || m.page === 'cs4')) { Menu.hostCancel(); if (m.stack[m.stack.length - 1] === 'host') m.stack.pop(); }   // leaving the lobby closes the room
   if (m.page === 'join') Menu.joinCancel();
   const prev = m.stack.pop() || 'main';
   Menu.show(prev, { back: true });
@@ -192,7 +193,7 @@ Menu.slotLines = function (i) {
   if (!s) return { empty: true, lines: ['SLOT ' + i, 'Empty'] };
   if (s.old) return { empty: false, old: true, lines: ['SLOT ' + i, 'Save from an older version'] };
   const nb = s.fac && s.fac.bld ? s.fac.bld.length : 0, q = Main.questOf(s);
-  return { empty: false, lines: ['SLOT ' + i, Math.floor(s.xp || 0) + ' XP, ' + nb + ' buildings', 'goals ' + (q.B + q.W) + '/' + (QUESTS.B.length + QUESTS.W.length), s.at ? new Date(s.at).toLocaleDateString() : ''] };
+  return { empty: false, lines: ['SLOT ' + i + (s.m4 ? '  4 PLAYER' : ''), Math.floor(s.xp || 0) + ' XP, ' + nb + ' buildings', 'goals ' + (q.B + q.W) + '/' + (QUESTS.B.length + QUESTS.W.length), s.at ? new Date(s.at).toLocaleDateString() : ''] };
 };
 // a plate spec: wp = at a world position. label is the full name (a tooltip near it), word the short text written on the plate, ic the symbol on it
 const wp = (act, label, x, y, o) => Object.assign({ act, label, x, y, r: 1.1 }, o);
@@ -236,6 +237,8 @@ Menu.specs = function (page, o) {
     case 'host': return [back(), wp('none', 'CREATE GAME', 98.6, NE, { ic: 'ic_factory', word: 'HOST', key: 'create', kind: 'anchor' })];
     case 'join': return [back(), wp('none', 'JOIN GAME', 101.8, NE, { ic: 'ic_hat', word: 'JOIN', key: 'join', kind: 'anchor' })];
     case 'cs': return Menu.csSpecs();
+    case 'cs4': return Lobby4.specs();
+    case 'mode': return [back(), wp('mode:2', '2 PLAYER: one Builder, one Wizard', 98.6, NE, { ic: 'ic_hat', word: '2P', key: 'mode2' }), wp('mode:4', '4 PLAYER: two Builders, two Wizards (online)', 101.8, NE, { ic: 'ic_globe', word: '4P', key: 'mode4' })];
   }
   return [];
 };
@@ -268,6 +271,7 @@ const ACT = {
     const m = G.menu;
     if (page === 'new' || page === 'load') { m.flow = page; Menu.go('slots'); }
     else if (page === 'create') { m.flow = 'create'; Menu.go('slots'); }
+    else if (page === 'online') Menu.go('mode');   // the 2 PLAYER / 4 PLAYER choice sits right after the Online plate
     else if (page === 'join') Menu.go('join');
     else Menu.go(page);
   },
@@ -289,9 +293,15 @@ const ACT = {
       else Menu.startFlow('new', i);
     } else if (m.flow === 'load') {
       if (!s || s.old) { sfx('thud'); return; }
+      if (s.m4) { sfx('thud'); Menu.say('That save is a 4-player game: open it from Online > 4 PLAYER'); return; }   // (saves are tagged with their mode)
       Menu.startFlow('load', i);
     } else if (m.flow === 'create') {
       if (s && s.old) { sfx('thud'); return; }
+      if (m.mode === 4) {   // a 4P room: an empty slot starts a new 4P game, a 4P save continues, a 2P save cannot be opened here
+        if (s && !s.m4) { sfx('thud'); Menu.say('That slot holds a 2-player game'); return; }
+        Menu.hostStart(i, !s); return;
+      }
+      if (s && s.m4) { sfx('thud'); Menu.say('That slot holds a 4-player game: choose 4 PLAYER'); return; }
       if (s) Menu.go('confirm', { slot: i }), (m.pend = { kind: 'create', slot: i, online: true });
       else Menu.hostStart(i, true);
     }
@@ -303,6 +313,7 @@ const ACT = {
     if (q.kind === 'create') Menu.hostStart(q.slot, true); else Menu.startFlow('new', q.slot);
   },
   eq(p, who) { ev('eq', { role: p.role, cat: p.data.cat, opt: p.data.opt }); },
+  mode(p, who, n) { G.menu.mode = +n === 4 ? 4 : 2; Menu.go('online'); },
   net(p, who, what) {
     if (what !== 'test') return;
     const md = modal('text', { anchor: 'test', title: 'THIS COMPUTER', lines: ['Checking...'], t: -0.1 });
@@ -423,6 +434,7 @@ Menu.step = function (dt) {
   G.ctl = Menu.ctlFor(m);
   G.swapped = m.swap && G.ctl.kbB && G.ctl.kbW;
   if (m.ret) { R.focus = null; retTick(dt); for (const md of m.modals) md.t = clamp(md.t + dt * 3.2, -2, 1); Menu.react(); return; }
+  if (m.l4) { if (Net.role === 'host') Net.hostTick(dt); Lobby4.step(dt); return; }   // (the 4P lobby runs its own four characters)
   updateConn();
   const inp = readInput(dt);
   let B = inp.B, W = inp.W;   // (a character nobody plays gets no input at all; it rocks back and forth on the spot: Menu.idleBob, drawn by menudraw.js)
@@ -582,13 +594,13 @@ Menu.hostStart = function (slot, isNew) {
   m.online = { role: 'host', state: 'opening', code: '', status: '', slot, isNew, err: '' };
   Net.hooks = Main.hostHooks; Net.pending = { slot, isNew };
   Menu.go('host');
-  Net.createRoom().then(code => { if (G && G.menu && G.menu.online) { G.menu.online.state = 'waiting'; G.menu.online.code = code; } })
+  Net.createRoom(m.mode === 4 ? 4 : 2).then(code => { if (G && G.menu && G.menu.online) { G.menu.online.state = 'waiting'; G.menu.online.code = code; } })
     .catch(e => { Net.reset(); if (G && G.menu && G.menu.online) { G.menu.online.state = 'error'; G.menu.online.err = e.message; } });
 };
 Menu.hostCancel = function () {
   const m = G.menu;
   if (Net.role) Net.close(false);
-  m.online = null;
+  m.online = null; m.l4 = null; m.hideB = false;
 };
 // the guest said hello: both go on to the character select
 Menu.guestJoined = function () {
@@ -691,6 +703,7 @@ Menu.frame = function (dt, ts) {
 // the guest's frame while the host is still in the menu world: draw the newest snapshot, send the pad
 Menu.guestFrame = function (dt, ts) {
   Net.guestTick(dt);
+  if (G.menu && G.menu.l4) G.menu.l4.me = Net.me;   // (4P lobby: whose character the camera follows)
   Menu.react();
   ctx.clearRect(0, 0, CFG.W, CFG.H);
   R.drawWorld(ctx, dt, { x0: 0, w: CFG.W, pip: true });

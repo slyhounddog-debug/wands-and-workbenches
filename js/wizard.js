@@ -280,7 +280,7 @@ WZ.spellS = function (spell) {
   return o;
 };
 // his walking speed: the tree's Zoomies, the wand's Flame Trail (+15% while it lasts) and Statue (-20% while he is stone)
-WZ.speed = () => { const w = G && G.w; return CFG.wizard.speed * (1 + CFG.upgrade.zoomies * lvl('zoomies')) * (w && w.fireT > 0 ? 1 + CFG.wand.fire.speed : 1) * (w && w.statT > 0 ? CFG.wand.earth.speedMul : 1); };
+WZ.speed = () => { const w = G && G.w; return CFG.wizard.speed * (1 + CFG.upgrade.zoomies * lvl('zoomies')) * (w && w.fireT > 0 ? 1 + CFG.wand.fire.speed : 1) * (w && w.statT > 0 ? CFG.wand.earth.speedMul : 1) * (w && w.hasteT > 0 ? CFG.mode4.elem.haste.mul : 1); };
 WZ.tile = (x, y) => {
   if (x < 0 || y < 0 || x >= CFG.WW || y >= CFG.WH) return T_POND;
   const i = Math.floor(y) * CFG.WW + Math.floor(x), w = G && G.w;
@@ -470,7 +470,7 @@ WZ.srcCopy = () => WZ.src;   // (srcOf makes a fresh object each time, so what i
 WZ.damage = function (d, soft, src) {   // armor soaks damage first. soft = burning ground: no hit-stun, shake or hurt sound. src = who did it (else WZ.src, else "Danger")
   const w = G.w;
   if (G.menu) return;   // the living menu world is a consequence-free preview: nothing can hurt the Wizard there
-  if (w.jump) return;   // airborne on a geyser: nothing reaches him
+  if (w.jump || (w.dead && G.w2)) return;   // airborne on a geyser: nothing reaches him (and nothing hurts a fallen one)
   const sr = src || WZ.src || (FA.fb('hurt-untagged'), WZ.HAZ.unknown);   // (a hit with no source is a bug the featcheck counts)
   w.hurt = { ic: sr.ic, n: sr.n, ax: sr.x === undefined ? null : sr.x, ay: sr.y === undefined ? null : sr.y, el: sr.el || null, t: 0, soft: !!soft, d: Math.round(d) };   // the cue: R.drawHurt
   w.lastHit = { ic: sr.ic, n: sr.n, el: sr.el || null };   // what to blame if this kills him
@@ -651,19 +651,20 @@ WZ.aim = function () {
   return best || [dx, dy];
 };
 WZ.proj = function (o) {
-  const p = Object.assign({ x: G.w.x, y: G.w.y, vx: 0, vy: 0, life: 1, r: 0.6, dmg: 0, splash: 0, sr: 0, slow: 0, slowT: 0, col: '#fff', kind: 'ball', size: 5, ctx: WZ.ctx }, o);
+  const p = Object.assign({ x: G.w.x, y: G.w.y, vx: 0, vy: 0, life: 1, r: 0.6, dmg: 0, splash: 0, sr: 0, slow: 0, slowT: 0, col: '#fff', kind: 'ball', size: 5, ctx: WZ.ctx, ...WZ.pT() }, o);
   G.w.proj.push(p);
   return p;
 };
 WZ.zone = function (o) {
-  const z = Object.assign({ x: G.w.x, y: G.w.y, r: 4, t: 3, dur: 3, dps: 0, slow: 0, follow: false, col: '#fff', ctx: WZ.ctx }, o);
+  const z = Object.assign({ x: G.w.x, y: G.w.y, r: 4, t: 3, dur: 3, dps: 0, slow: 0, follow: false, col: '#fff', ctx: WZ.ctx, ...WZ.pT() }, o);
   z.dur = z.t;
   if (z.hostile && !z.src) z.src = WZ.srcCopy();   // a hostile zone remembers whose it is (its tick damage and slow say so on the Wizard)
   G.w.zones.push(z);
 };
 WZ.ring = (x, y, r, col, dur) => G.w.fx_.push({ type: 'ring', x, y, r, t: 0, dur: dur || 0.4, col });
 WZ.boom = (x, y, r, col) => G.w.fx_.push({ type: 'boom', x, y, r, t: 0, dur: 0.35, col });
-WZ.later = (t, fn) => { const c = WZ.ctx, s = WZ.src; G.w.timers.push({ t, fn: () => { const o = WZ.ctx, os = WZ.src; WZ.ctx = c; WZ.src = s; fn(); WZ.ctx = o; WZ.src = os; } }); };   // (a delayed strike still knows whose it is)
+WZ.pT = () => (G.w2 ? { pi: WZ.sIdx } : null);   // who owns it (4P only; nothing is added in 2P)
+WZ.later = (t, fn) => { const c = WZ.ctx, s = WZ.src; G.w.timers.push({ ...WZ.pT(), t, fn: () => { const o = WZ.ctx, os = WZ.src; WZ.ctx = c; WZ.src = s; fn(); WZ.ctx = o; WZ.src = os; } }); };   // (a delayed strike still knows whose it is)
 // ---------- the marks spells leave on the ground (CFG.spells[s].dec): burns, cracks, frost... light spells faint and short, heavy ones deep ----------
 WZ.decal = function (x, y, r, dec) {
   const w = G.w, rr = Math.max(0.2, r * dec.r);
@@ -802,7 +803,7 @@ WZ.cast = function (spell) {
   const w = G.w;
   if (!w || w.dead) return;
   const px = w.x, py = w.y, combo = BASICS.indexOf(spell) < 0;
-  const ctx = { spell, el: SPELL_EL[spell] || [], hits: 0, kills: 0, weak: 0 };
+  const ctx = { spell, el: SPELL_EL[spell] || [], hits: 0, kills: 0, weak: 0, ...(M4.cur ? { x: M4.cur } : null) };   // (x: 4P, how this Wizard's hands shape the spell: js/elements4.js)
   if (G.menu) Menu.spellName(spell);   // the menu world toasts the name of every spell that fires
   WZ.wandCharge(spell);   // the staff trickle-charges: one tick for each element in the spell (js/wand.js)
   // it bursts at his feet, and the Spell Portal back in the factory feels it (harder for higher tiers)
@@ -963,7 +964,7 @@ WZ.layMine = function (x, y, a, S) {
   const w = G.w;
   let d = S.throw, tx = x + a[0] * d, ty = y + a[1] * d;
   while (d > 1 && (WZ.wet(tx, ty) || WZ.blocked(tx, ty, 0.3))) { d -= 0.5; tx = x + a[0] * d; ty = y + a[1] * d; }
-  w.mines.push({ x, y, sx: x, sy: y, tx, ty, z: 0, st: 'lob', t: 0, age: 0, tid: 0, gx: tx, gy: ty, ctx: WZ.ctx });
+  w.mines.push({ x, y, sx: x, sy: y, tx, ty, z: 0, st: 'lob', t: 0, age: 0, tid: 0, gx: tx, gy: ty, ctx: WZ.ctx, ...WZ.pT() });
   while (w.mines.length > S.max) { const o = w.mines.shift(); WZ.puff(o.x, o.y, '#f4f4f8', 8); }   // the oldest pops harmlessly
 };
 // every mine: lob -> dormant (pulsing; a foe within wake tiles wakes it) -> wake (a fast pulse and a hop) -> fly at that foe -> burst
@@ -971,6 +972,7 @@ WZ.mineTick = function (dt) {
   const w = G.w, S = CFG.spells.steam;
   for (let i = w.mines.length - 1; i >= 0; i--) {
     const m = w.mines[i];
+    WZ.sel(m.pi || 0);
     m.age += dt; m.t += dt;
     if (m.st === 'lob') {
       const k = Math.min(1, m.t / S.flight);
@@ -1009,7 +1011,7 @@ WZ.mineBurst = function (m) {
 };
 // Gale Boomerang: thrown along the aim from where he stands; ph 'out' (an arc), 'back' (to the catch spot tx, ty), or a one-way throw (b.one)
 WZ.throwBoom = function (x, y, a, S, ctx) {
-  G.w.booms.push({ x, y, ox: x, oy: y, ax: a[0], ay: a[1], ph: 'out', t: 0, k: 0, fx: x, fy: y, tx: x, ty: y, sc: 1, dmg: S.dmg, one: false, spin: 0, sid: Math.floor(Math.random() * 1e9), ctx });
+  G.w.booms.push({ x, y, ox: x, oy: y, ax: a[0], ay: a[1], ph: 'out', t: 0, k: 0, fx: x, fy: y, tx: x, ty: y, sc: 1, dmg: S.dmg, one: false, spin: 0, sid: Math.floor(Math.random() * 1e9), ctx, ...WZ.pT() });
 };
 // a boomerang's hits this frame: every foe / node it overlaps takes its damage once per leg (the token is the throw + the leg)
 WZ.boomHit = function (b, px, py, leg) {
@@ -1030,6 +1032,7 @@ WZ.boomTick = function (dt) {
   const w = G.w, S = CFG.spells.sandstorm, T = S.second;
   for (let i = w.booms.length - 1; i >= 0; i--) {
     const b = w.booms[i], px = b.x, py = b.y;
+    WZ.sel(b.pi || 0);
     b.spin += dt; b.t += dt;
     let leg = 0, end = false;
     if (b.one) {   // the second, smaller one: straight along the aim it was thrown on, one way, then gone
@@ -1435,10 +1438,10 @@ WZ.updMarks = function (dt) {
   for (const m of WZ.marks) {
     const s = w.lm[m.id];
     if (s.state === 'done' && m.type !== 'shrine') continue;   // (claimed shrines are still looked at: their flash)
-    const d = Math.hypot(w.x - m.x, w.y - m.y);
+    const d = WZ.dmin(m.x, m.y);   // (4P: the nearer Wizard counts)
     if (m.type === 'camp') {
       // stand inside its ring for campHold seconds to stir it up; the timer drains at double speed while he is outside
-      if (s.state === 'idle') { if (d < M.campR && !w.dead) s.t += dt; else s.t = Math.max(0, s.t - dt * 2); }
+      if (s.state === 'idle') { if (d < M.campR && !WZ.over()) s.t += dt; else s.t = Math.max(0, s.t - dt * 2); }
       if (s.state === 'idle' && s.t >= M.campHold) {
         s.state = 'active'; s.t = 0;
         const sp = WZ.dryNear(m.x, m.y, 12, [1, 2.5]) || [m.x, m.y];
@@ -1449,7 +1452,7 @@ WZ.updMarks = function (dt) {
       } else if (s.state === 'active' && !w.enemies.some(e => e.mark === m.id && !e.dead)) WZ.claim(m);
     } else if (m.type === 'crypt') {
       if (s.state === 'idle') {
-        if (d < M.cryptR && !w.dead) {
+        if (d < M.cryptR && !WZ.over()) {
           s.t += dt;
           if (s.t >= M.cryptHold) {
             s.state = 'active'; s.sp = M.cryptMinions;
@@ -1604,10 +1607,11 @@ WZ.flowDir = function (e, d) {   // unit step toward the Wizard around water, or
 
 // ---------- main update ----------
 WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash, cast, cycle }: the Wizard's other three buttons (his roll is rollPressed)
-  const w = G.w, cfg = CFG.world;
-  w.t += dt;
+  const w = G.w, cfg = CFG.world, P2 = !!WZ.p2;   // P2: the second Wizard's own pass (js/mode4.js): only what is HIS, none of the wilds
+  if (!P2) w.t += dt;
   w.sx = ((rx || 0) + (ry || 0)) / 1.414; w.sy = ((ry || 0) - (rx || 0)) / 1.414;   // the right stick, in world directions (iso, like the movement stick)
   // broken nodes respawn
+  if (!P2) {
   for (const h of WZ.harv) {
     if (h.flash > 0) h.flash -= dt;
     if (h.broken) { h.respawn -= dt; if (h.respawn <= 0) { h.broken = false; h.hp = h.maxHp; } }
@@ -1635,19 +1639,20 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   WZ.tmodTick(dt);
   WZ.arcTick(dt);
   WZ.cineTick(dt);   // the Summoning Altar's landing (runs even if he dies meanwhile)
-  if (w.dead) { w.wheel = null; w.emote = null; w.stk = null; w.sg = null; w.dig = null; w.jump = null; w.blink = null; if (G.ev && G.ev.active) WZ.evFail(); return; }
-  w.time += dt;
+  }
+  if (w.dead) { w.wheel = null; w.emote = null; w.stk = null; w.sg = null; w.dig = null; w.jump = null; w.blink = null; if (!P2 && WZ.over() && G.ev && G.ev.active) WZ.evFail(); if (P2 || !G.w2 || WZ.over()) return; }   // (4P: one of them down does not stop the wilds)
+  if (!P2) w.time += dt;
   if (w.hurtT > 0) w.hurtT -= dt;
   if (w.hurt) { w.hurt.t += dt; if (w.hurt.t > CFG.hurt.dur) w.hurt = null; }   // the "where did that come from" cue (R.drawHurt)
   if (w.statBurn > 0) w.statBurn -= dt;
   if (w.mashT > 0) w.mashT -= dt;
-  if (w.hp < WZ.maxHp() * 0.3) { w.heartT = (w.heartT || 0) - dt; if (w.heartT <= 0) { w.heartT = 0.4 + w.hp / WZ.maxHp() * 2.5; AU.sfx('heart'); } }
+  if (!w.dead && w.hp < WZ.maxHp() * 0.3) { w.heartT = (w.heartT || 0) - dt; if (w.heartT <= 0) { w.heartT = 0.4 + w.hp / WZ.maxHp() * 2.5; AU.sfx('heart'); } }
   if (w.rollCd > 0) w.rollCd -= dt;
 
-  // timers
-  for (let i = w.timers.length - 1; i >= 0; i--) {
+  // timers (a delayed cast runs as the wizard who made it)
+  if (!P2) for (let i = w.timers.length - 1; i >= 0; i--) {
     const t = w.timers[i]; t.t -= dt;
-    if (t.t <= 0) { w.timers.splice(i, 1); t.fn(); }
+    if (t.t <= 0) { w.timers.splice(i, 1); if (t.pi) WZ.as(t.pi, t.fn); else t.fn(); }
   }
   if (!G.w || G.w !== w) return;   // a timer may have ended the run (victory screen re-enter)
 
@@ -1748,11 +1753,13 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   WZ.wandTick(dt);   // the wand's clocks: Flame Trail speed, Vanishing Puff, Statue and its burst, the Riding Wave
   WZ.emoteTick(dt);  // the dance beat and the Builder's sticker
   WZ.augTick(dt);   // augment cooldowns, washing ashore, the keeps' doors, boulders
-  WZ.altarTick(dt);   // the Summoning Altar: placing it, its sockets, the Chimera ritual
-  WZ.bshrTick(dt);   // the Battery Shrines: one per Battery, their shockwaves
+  if (!P2) {
+    WZ.altarTick(dt);   // the Summoning Altar: placing it, its sockets, the Chimera ritual
+    WZ.bshrTick(dt);   // the Battery Shrines: one per Battery, their shockwaves
+  }
   // scorched ground burns (the Emberward Cloak walks it unharmed and throws embers up instead)
   WZ.heatTick(dt);   // a thermometer blinks over his head when ash or lava is within 4 tiles
-  if ((tn === T_SCORCH || tn === T_LAVA) && !w.jump && !w.blink) {
+  if ((tn === T_SCORCH || tn === T_LAVA) && !w.jump && !w.blink && !w.dead) {
     if (WZ.has('ember')) { if (Math.random() < dt * 10) w.fx_.push({ type: 'spark', x: w.x + rand(-0.4, 0.4), y: w.y + rand(-0.4, 0.4), vx: 0, vy: 0, z: 0.1, vz: rand(1.5, 3), g: -2, col: Math.random() < 0.5 ? '#ffb030' : '#ff7a30', t: 0, dur: 0.5 }); }
     else {
       w.scorchT = (w.scorchT || 0) + dt; w.burn = (w.burn || 0) + dt;   // burn = seconds in a row on scorched ground: the longer he stays, the worse it gets
@@ -1765,9 +1772,10 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   // pickups crafted in the factory: fall from the sky, then walk over to use
   for (let i = w.pickups.length - 1; i >= 0; i--) {
     const p = w.pickups[i];
-    p.t += dt;
-    if (p.z > 0) { p.z = Math.max(0, p.z - dt * 14); if (p.z === 0) { WZ.puff(p.x, p.y, ITEMS[p.kind].color, 8); AU.sfx('thud'); } continue; }
-    if (Math.hypot(p.x - w.x, p.y - w.y) > 0.8) continue;
+    if (!P2) p.t += dt;
+    if (p.z > 0) { if (!P2) { p.z = Math.max(0, p.z - dt * 14); if (p.z === 0) { WZ.puff(p.x, p.y, ITEMS[p.kind].color, 8); AU.sfx('thud'); } } continue; }
+    if (w.dead || Math.hypot(p.x - w.x, p.y - w.y) > 0.8) continue;
+    if (p.spell) { w.pickups.splice(i, 1); WZ.spellPickup(p); continue; }   // 4P: a delivered spell lies in the wilds; whoever walks onto it casts it
     if (ITEMS[p.kind].aug) { WZ.wearGarment(ITEMS[p.kind].id); w.pickups.splice(i, 1); continue; }
     const def = CFG.pickups[p.kind];
     if (def.heal) {
@@ -1794,12 +1802,13 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     if (d < 0.75) { const k = d || 0.01; w.x = h.x + ex / k * 0.75; w.y = h.y + ey / k * 0.75; }
   }
 
+  if (P2) return;   // ---- from here on it is the wilds, once a frame (the first Wizard's pass) ----
   // spawning (slower while the Chimera is out: it brings its own brood)
   w.spawnT -= dt;
   if (w.spawnT <= 0 && !G.menu) {   // (the menu world has no wild monsters)
     const iv = Math.max(cfg.spawnFloor, cfg.spawnStart * Math.pow(cfg.spawnMul, w.time / 60));
-    w.spawnT = iv * (w.boss ? 2 : 1);
-    if (w.enemies.length < cfg.cap) WZ.spawn();
+    w.spawnT = iv * (w.boss ? 2 : 1) / M4.k('spawn');
+    if (w.enemies.length < Math.round(cfg.cap * M4.k('spawn'))) WZ.spawn();
   }
   WZ.updMarks(dt);
   WZ.eggTick(dt);
@@ -1829,6 +1838,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     }
     if (e.frozen > 0) e.frozen -= dt;
     if (e.dazeT > 0) { e.dazeT -= dt; continue; }   // dazed on landing (or frozen solid, or staggered)
+    if (G.w2) WZ.sel(Math.max(0, WZ.nearestW(e.x, e.y)));   // 4P: the foe's turn is played against the nearest living Wizard
     const dw = Math.hypot(w.x - e.x, w.y - e.y) || 1;   // to the Wizard (the despawn teleport and the first-sighting toast always use him)
     if (dw > 45) { const sp2 = WZ.dryNear(w.x, w.y, 8, [cfg.ringMin, cfg.ringMax]); if (sp2) { e.x = sp2[0]; e.y = sp2[1]; } continue; }
     if (dw < 12) { const key = e.elite ? 'elite' : e.boss ? null : (e.weak ? e.type : null); if (key && !w.seen[key]) { w.seen[key] = true; WZ.announce(e, key); } }
@@ -1894,7 +1904,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     } else if (d < reach && e.cd <= 0 && w.roll > 0) { e.cd = 0.3; WZ.dodge(); }
     WZ.cur = null;
   }
-  WZ.cur = null;
+  WZ.cur = null; WZ.sel(0);
   w.enemies = en.filter(e => !e.dead);
   WZ.allyTick(dt);   // the friendly creatures fight (after the hostiles have had their turn at them)
   WZ.bendTick(dt);
@@ -1902,6 +1912,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   // projectiles
   for (let i = w.proj.length - 1; i >= 0; i--) {
     const p = w.proj[i];
+    WZ.sel(p.pi || 0);
     WZ.ctx = p.ctx;
     const sp = WZ.projSpecial(p, dt);   // lobs, bouncing boulders, waves, mudslides, icicles, bolts from the sky (null = a plain bolt)
     if (sp !== null) { if (sp) w.proj.splice(i, 1); WZ.ctx = null; continue; }
@@ -1935,6 +1946,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     }
     WZ.ctx = null;
   }
+  WZ.sel(0);
   // the Chimera's orbs: roll through them or step aside
   for (let i = w.eproj.length - 1; i >= 0; i--) {
     const p = w.eproj[i];
@@ -1943,10 +1955,12 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     let ha = null;
     for (const a of w.allies) if (!a.dead && !(a.fall > 0) && Math.hypot(a.x - p.x, a.y - p.y) < a.rad + 0.35) { ha = a; break; }
     if (ha) { WZ.hurtAlly(ha, p.dmg, p.vx * 0.15, p.vy * 0.15); w.eproj.splice(i, 1); continue; }   // it hit an ally in the way
+    if (G.w2) WZ.sel(Math.max(0, WZ.nearestW(p.x, p.y)));
     const pd = Math.hypot(p.x - w.x, p.y - w.y);
     if (w.roll > 0 && pd < 0.9 && !p.dodged) { p.dodged = true; WZ.dodge(); }   // rolled clean through it
     else if (pd < 0.55 && w.roll <= 0 && w.hurtT <= 0) { WZ.damage(p.dmg, false, p.src || undefined); w.eproj.splice(i, 1); }
   }
+  WZ.sel(0);
   // an ally's shots (an Imp's ember, a Dragon's breath): they hurt hostiles, never the Wizard or other allies
   for (let i = w.aproj.length - 1; i >= 0; i--) {
     const p = w.aproj[i];
@@ -1958,16 +1972,22 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   }
 
   // zones
-  let zs = 0, zsrc = null;
+  const zsA = [0, 0], zsrcA = [null, null];
   for (let i = w.zones.length - 1; i >= 0; i--) {
     const z = w.zones[i];
     z.t -= dt;
+    WZ.sel(z.pi || 0);
     if (z.follow) { z.x = w.x; z.y = w.y; }
     if (z.hostile) {
-      if (!w.dead && Math.hypot(w.x - z.x, w.y - z.y) < z.r) {
-        if (z.slow && z.slow >= zs) { zs = z.slow; zsrc = z.src ? Object.assign({ st: z.tag || 'slow' }, z.src) : { st: z.tag || 'slow', ic: 'ic_slow', n: 'Slowing ground' }; }
-        if (z.dps && w.roll <= 0) { z.tk = (z.tk || 0) + dt; if (z.tk >= 0.5) { z.tk = 0; WZ.damage(z.dps * 0.5, false, z.src || undefined); } }
+      for (let wi = 0, wn = G.w2 ? 2 : 1; wi < wn; wi++) {   // (4P: it slows and burns each Wizard standing in it, each on his own tick)
+        WZ.sel(wi);
+        if (!w.dead && Math.hypot(w.x - z.x, w.y - z.y) < z.r) {
+          if (z.slow && z.slow >= zsA[wi]) { zsA[wi] = z.slow; zsrcA[wi] = z.src ? Object.assign({ st: z.tag || 'slow' }, z.src) : { st: z.tag || 'slow', ic: 'ic_slow', n: 'Slowing ground' }; }
+          const tk = wi ? 'tk1' : 'tk';
+          if (z.dps && w.roll <= 0) { z[tk] = (z[tk] || 0) + dt; if (z[tk] >= 0.5) { z[tk] = 0; WZ.damage(z.dps * 0.5, false, z.src || undefined); } }
+        }
       }
+      WZ.sel(0);
       z.tka = (z.tka || 0) + dt;
       const tickA = z.tka >= 0.5; if (tickA) z.tka = 0;
       for (const a of w.allies) {   // allies are caught in it like the Wizard
@@ -1996,9 +2016,11 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     WZ.ctx = null;
     if (z.t <= 0) { if (z.kind === 'novapull') WZ.novaBurst(z); w.zones.splice(i, 1); }   // the Nova bursts when its gathering is done
   }
-  w.zSlow = zs; w.zSrc = zsrc;   // (what is slowing him, for the status chip on his card: UI.updateGear)
+  WZ.sel(0);
+  w.zSlow = zsA[0]; w.zSrc = zsrcA[0]; if (G.w2) { G.w2.zSlow = zsA[1]; G.w2.zSrc = zsrcA[1]; }   // (what is slowing him, for the status chip on his card: UI.updateGear)
   WZ.mineTick(dt);
   WZ.boomTick(dt);
+  WZ.sel(0);
 
   // drops: fly out, then vacuum into the wizard
   w.mergeT -= dt;
@@ -2006,6 +2028,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   for (let i = w.drops.length - 1; i >= 0; i--) {
     const dr = w.drops[i];
     dr.t += dt;
+    if (G.w2) WZ.sel(Math.max(0, WZ.nearestW(dr.x, dr.y)));
     const ex = w.x - dr.x, ey = w.y - dr.y, d = Math.hypot(ex, ey);
     if (dr.t < 0.45) {   // fly out, but never into water
       const nx = dr.x + dr.vx * dt, ny = dr.y + dr.vy * dt;
@@ -2048,6 +2071,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
       w.drops.splice(i, 1);
     } else if (dr.t > 120 && !keep) w.drops.splice(i, 1);
   }
+  WZ.sel(0);
 };
 // drops that never fade and are banked when a run ends: shards, Cores, the Warden Key, garments, the factory's overflow and anything the portal turned away once
 WZ.keepDrop = dr => dr.kind === 'shard' || WZ.isLoot(dr.kind) || !!(ITEMS[dr.kind] && ITEMS[dr.kind].aug) || !!dr.home || !!dr.rej;

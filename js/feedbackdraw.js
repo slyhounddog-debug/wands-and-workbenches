@@ -157,6 +157,7 @@ R.drawFoeStatus = function (ctx, e, x, y) {
   if (e.frozen > 0) list.push(['#bfe9ff', 'ic_slow']);
   else if (e.slow > 0 && e.slowT > 0) list.push(['#78c8ff', 'ic_slow']);
   if (e.dazeT > 0 && !(e.frozen > 0)) list.push(['#ffe36b', 'ic_warn']);
+  if (e.burnT > 0) list.push(['#ff8a3a', 'ic_flame']);   // (4P: Fire's trait)
   list.forEach((s, i) => {
     const bx = Math.round(x + i * 24), by = Math.round(y);
     pbox(ctx, bx - 9, by - 9, 18, 18, s[0], '#1a0f28');

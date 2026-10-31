@@ -519,12 +519,12 @@ FA.threat = function (els, ic, n) {
 };
 
 // has this garment been made and not yet lost track of? (worn, in the Stockpile, in the Builder's hands, on a belt, in a machine's output, in the air or in the wilds)
-FA.augMade = id => G.aug.worn[AUGS[id].slot] === id || FA.exists('aug_' + id);
+FA.augMade = id => G.aug.worn[AUGS[id].slot] === id || (G.aug2 && G.aug2.worn[AUGS[id].slot] === id) || FA.exists('aug_' + id);
 // is one of these anywhere? (the Stockpile, hands, floor, flights, belts, outputs, crates, the portal queues, the wilds)
 FA.exists = function (k) {
   const f = G.fac, is = o => o.kind === k;
   if (G.stock[k] > 0 || f.outQ.indexOf(k) >= 0 || f.rejs.some(is) || f.bld.some(b => b.ck === k && b.cn > 0)) return true;
-  if (G.hands.some(is) || f.floor.some(is) || f.flying.some(is) || f.portalQ.some(is) || f.belts.some(b => b.item && b.item.kind === k) || f.bld.some(b => b.out.some(is))) return true;
+  if (G.hands.some(is) || (G.bs2 && G.bs2.hands.some(is)) || f.floor.some(is) || f.flying.some(is) || f.portalQ.some(is) || f.belts.some(b => b.item && b.item.kind === k) || f.bld.some(b => b.out.some(is))) return true;
   return !!G.w && (G.w.arcs.some(is) || G.w.pickups.some(is) || G.w.drops.some(is));
 };
 FA.isUnlockKind = k => isCoreKind(k) || isKeyKind(k);   // Cores open shrines, Ward Keys open keeps (the Spell Portal only takes them when the Wizard is near the right one)
@@ -762,7 +762,7 @@ FA.demolish =function (x, y, force) {
 // ---------- recipes ----------
 // Production is the only gate for spells and creatures: a recipe needs its tree node only when it has a tier (potions, armor, garments, keys),
 // and a Triple / the Nova needs its parent spells to have been MADE at least once (G.stats.made, counted from crafter output)
-FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (!r.aug || !FA.augMade(r.aug)) && (!r.key || (!G.aug.door && !FA.exists('wardkey'))) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
+FA.recipeOk = id => { const r = CFG.recipes[id]; return (!r.tier || !!G.tree[r.tier]) && (!r.req || !!G.tree[r.req]) && (!r.aug || (G.m4 ? FA.augCopies(r.aug) < CFG.mode4.dupGarments : !FA.augMade(r.aug))) && (!r.key || (!G.aug.door && !FA.exists('wardkey'))) && (!r.parents || r.parents.every(p => ((G.stats.made || {})[p] || 0) > 0)); };
 FA.recipesFor = type => Object.keys(CFG.recipes).filter(id => CFG.recipes[id].machine === type && FA.recipeOk(id));
 // The Creature Spawner has no recipe to choose and holds no spare packets: a packet is absorbed the moment it arrives and starts growing an egg, and the SET of elements
 // absorbed so far (b.inv, one of each) names the creature (Air = Zephyr Wisp, Fire + Air = Cinder Phoenix ...). Another element before the egg is grown changes it into
@@ -1076,6 +1076,7 @@ FA.landed = function (c) {
   if (c.weak) list.push(['ic_bolt', c.weak]);
   const p = FA.portal('spell');
   FA.ipop(p.x + 0.5, p.y + 1.8, list);
+  if (c.x && G.seats && G.seats[c.x.seat]) FA.pop(p.x + 0.5, p.y + 2.9, G.seats[c.x.seat].name, G.seats[c.x.seat].col);   // (4P: whose cast it was)
 };
 // the moment a spell bursts in the wilds, the Spell Portal answers: rings, sparks and a screen bump that grow with
 // the spell's tier (1 = basic, 2 = pair, 3 = triple, 4 = Nova)

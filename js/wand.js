@@ -293,9 +293,9 @@ WZ.shrineNear = function () {
 // the timed buffs: element -> seconds left (the longest of that element's shrines)
 WZ.shrineTick = function (dt, press) {
   const w = G.w, M = CFG.marks;
-  w.shrines = {};
+  if (!WZ.p2) w.shrines = {};   // (the second Wizard's pass only plays his own ring game)
   for (const m of WZ.marks) {
-    if (m.type !== 'shrine') continue;
+    if (m.type !== 'shrine' || WZ.p2) continue;
     const s = w.lm[m.id];
     if (s.state !== 'done') continue;
     if (s.buff > 0) {

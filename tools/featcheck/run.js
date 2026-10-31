@@ -281,7 +281,9 @@ const OUT = process.env.SHOTS || '';
 
   // ================= the feedback ledger (FEEDBACK.md): every row's cue fires, and a row with no cue is a FAIL =================
   // (what / why / what next: a hit carries its source, a bounce its reason, the factory-full bounce is visible at the Spell Portal...)
-  const ledger = require('fs').readFileSync(path.resolve(__dirname, '../../FEEDBACK.md'), 'utf8').split(/\r?\n/).map(l => (l.match(/^\| `([a-z-]+)` \|/) || [])[1]).filter(Boolean);
+  const fbText = require('fs').readFileSync(path.resolve(__dirname, '../../FEEDBACK.md'), 'utf8'), cut = fbText.indexOf('## 4-player mode');
+  const ids = t => t.split(/\r?\n/).map(l => (l.match(/^\| `([a-z-]+)` \|/) || [])[1]).filter(Boolean);
+  const ledger = ids(cut < 0 ? fbText : fbText.slice(0, cut)), ledger4 = cut < 0 ? [] : ids(fbText.slice(cut));   // (the rows under "4-player mode" are proven by a 4P game, below)
   ok(ledger.length >= 14, 'FEEDBACK.md lists the ledger rows', ledger.join(' '));
   r = await run(() => {
     const W = __wands, G = W.G, WZ = W.WZ, FA = W.FA, CFG = W.CFG, UI = W.UI, w = G.w, o = {};
@@ -428,10 +430,63 @@ const OUT = process.env.SHOTS || '';
   const missing = ledger.filter(id => have.indexOf(id) < 0);
   ok(missing.length === 0, 'every row of the feedback ledger has a cue that fires', 'missing: ' + missing.join(' '));
   await shot('feedback-cues');
+  await run(() => { window.__p2 = Object.keys(__wands.G.fb).filter(k => __wands.G.fb[k] > 0); });
 
   // ================= errors + the snapshot photo test =================
   r = await run(() => { const S = __wands.Snap; __wands.snapshot(); return S.report ? { v: S.report.verdict, leaks: JSON.stringify(S.report.leaks.filter(l => !l.known).concat(S.report.issues || [], S.report.diff ? [S.report.diff] : [])).slice(0, 1500) } : null; });
   ok(r && (r.v === 'PASS' || r.v === 'KNOWN'), 'the photo test passes with the new state on screen', JSON.stringify(r));
+  // ================= the 4-player ledger rows: a 4P game exercises each cue, names instead of "the Wizard" =================
+  r = await run(() => {
+    const W = __wands, M4 = W.M4, seats = M4.defaultSeats(); seats[2].att = ['fire', 'water']; seats[3].att = ['air', 'earth']; seats[3].who = 'g1'; seats[1].who = 'g3';
+    W.start4(1, { seats, me: 2 }); W.UI.help(false); W.G.helpT = 0; W.CFG.world.cap = 0;
+    const G = W.G, WZ = W.WZ, FA = W.FA, UI = W.UI, o = {}, step = n => { for (let i = 0; i < n; i++) W.step4(0.05, 1); };
+    G.fb = {};
+    // refract: Violet (Fire / Water) casts Air + Fire: a steam blast, named over his head
+    G.w.x = 60; G.w.y = 60; WZ.as(0, () => WZ.cast('flamethrower'));
+    o.title = G.w.fx_.filter(f => f.type === 'title').map(f => f.text).join('|');
+    // the Builders' hit report carries the caster's name
+    o.pop = (() => { try { FA.landed({ spell: 'flamethrower', hits: 1, kills: 0, weak: 0, x: { seat: 2 } }); return true; } catch (e) { return String(e); } })();
+    // a delivered spell lands as a pickup and the Wizard who walks onto it casts it
+    G.w.pickups.length = 0; WZ.incoming('gust'); const pk = G.w.pickups.find(p => p.spell); o.landed = !!pk;
+    if (pk) { const q = WZ.pw(pk.for); pk.z = 0; pk.x = q.x + 0.2; pk.y = q.y; } step(3);
+    // the names: a toast that says "the Wizard" says which
+    o.words = M4.words('The Wizard meets Ember Imps: send Water!');
+    // a fallen Wizard gets up
+    WZ.as(1, () => { G.w.hp = 1; WZ.damage(50, false, WZ.HAZ.unknown); }); o.down = G.w2.dead;
+    G.w2.deadT = W.CFG.mode4.respawnT; step(2); o.up = !G.w2.dead;
+    // a player drops out and comes back
+    W.Main.hostHooks4.lost({ id: 'g1' }, 'closed'); o.away = G.seats[3].conn === false;
+    W.Main.hostHooks4.back({ id: 'g1' }); o.back = G.seats[3].conn !== false;
+    // a shrine woken by one Wizard is named
+    WZ.as(1, () => WZ.shrineActivate(WZ.marks.find(m => m.type === 'shrine'), G.w.lm[WZ.marks.find(m => m.type === 'shrine').id]));
+    // both down: the game over names each killer
+    for (const i of [0, 1]) WZ.as(i, () => { G.w.dead = false; G.w.hp = 1; WZ.damage(50, false, { ic: 'slime', n: 'Test Foe', el: 'water' }); });
+    step(3); UI.showResults4(); o.html = document.getElementById('results').innerHTML;
+    const txt = o.html.replace(/<[^>]*>/g, ''); o.killers = /VIOLET WAS KILLED BY TEST FOE/.test(txt) && /ROSE WAS KILLED BY TEST FOE/.test(txt);
+    o.fb4 = Object.keys(G.fb).filter(k => G.fb[k] > 0);
+    // the lobby (offline: the same code the network calls): first come first served, then a bump
+    W.menu.make(); const m = W.G.menu; m.online = { code: 'TEST', state: 'live' }; Lobby4.open(); const L = m.l4;
+    const cs = ['g1', 'g2', 'g3'].map(w => Lobby4.addChar(L, w)).concat([L.chars[0]]);
+    Lobby4.pick(L.chars[0], 'W'); Lobby4.pick(cs[0], 'W'); Lobby4.pick(cs[1], 'W'); Lobby4.pick(cs[2], 'B');
+    o.seats = L.seats.map(s => s.who).join(','); o.bumps = L.bumps.length;
+    L.seats[2].att = ['fire', 'water']; L.seats[3].att = ['air', 'earth'];
+    for (const q of m.plates) q.st = 'up';
+    { const c = L.chars.find(q => q.who === 'host'), p = m.plates.find(q => q.kind === 'ready' && q.seat === 2); c.x = p.x; c.y = p.y; c.tele = 0; Lobby4.step(0.05); }   // the host's Wizard stands on his READY plate
+    o.fb4 = o.fb4.concat(Object.keys(W.G.fb).filter(k => W.G.fb[k] > 0));
+    return o;
+  });
+  ok(/VIOLET: STEAM BLAST/.test(r.title), '4P: a refracted cast names whose hands and the form (VIOLET: STEAM BLAST)', r.title);
+  ok(r.pop === true, '4P: the Builders hit report carries the caster name');
+  ok(r.landed && r.fb4.indexOf('spell-grab') >= 0, '4P: a delivered spell lies in the wilds and the Wizard who walks onto it casts it', JSON.stringify(r.fb4));
+  ok(/VIOLET|ROSE/.test(r.words) && !/the Wizard\b/.test(r.words), '4P: no cue says "the Wizard"; it names which one', r.words);
+  ok(r.down && r.up, '4P: a fallen Wizard gets up beside his partner', JSON.stringify([r.down, r.up]));
+  ok(r.away && r.back, '4P: a player dropping out and coming back is shown and handed back', JSON.stringify([r.away, r.back]));
+  ok(r.killers, '4P: the game over names each Wizard and what killed him');
+  ok(r.seats === 'g2,g3,host,g1' && r.bumps === 1, '4P lobby: first come first served, the third Wizard is bumped with a cue', r.seats + ' bumps ' + r.bumps);
+  const missing4 = ledger4.filter(id => r.fb4.indexOf(id) < 0);
+  ok(missing4.length === 0, 'every 4-player row of the feedback ledger has a cue that fires', 'missing: ' + missing4.join(' ') + ' (have ' + r.fb4.join(' ') + ')');
+  ok(ledger4.length >= 8, 'FEEDBACK.md lists the 4-player rows', ledger4.join(' '));
+
   ok(errs.length === 0, 'no page errors', errs.slice(0, 5).join(' | '));
   await browser.close();
   console.log(fails ? 'FEATCHECK FAILED: ' + fails : 'FEATCHECK PASSED');

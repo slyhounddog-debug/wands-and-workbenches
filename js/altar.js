@@ -100,9 +100,9 @@ WZ.cineTick = function (dt) {
         e.kx += dx / m * A.push * kb; e.ky += dy / m * A.push * kb; e.dazeT = Math.max(e.dazeT || 0, A.daze); e.cd = Math.max(e.cd || 0, A.daze);
       }
     }
-    if (!w.dead && !w.jump && !(w.roll > 0)) {   // the Wizard is rocked by the front as it passes him
-      const dx = w.x - A_.x, dy = w.y - A_.y, d = Math.hypot(dx, dy);
-      if (d >= r0 - 0.4 && d < f.r + 0.4) { const m = d || 1; w.kick = { x: dx / m, y: dy / m, t: CFG.wizard.kickT, d: 0.5 }; }
+    for (const q of WZ.allW()) if (!q.dead && !q.jump && !(q.roll > 0)) {   // each Wizard is rocked by the front as it passes him
+      const dx = q.x - A_.x, dy = q.y - A_.y, d = Math.hypot(dx, dy);
+      if (d >= r0 - 0.4 && d < f.r + 0.4) { const m = d || 1; q.kick = { x: dx / m, y: dy / m, t: CFG.wizard.kickT, d: 0.5 }; }
     }
   }
   c.front = c.front.filter(f => f.r < A.ring + 2);
@@ -110,7 +110,7 @@ WZ.cineTick = function (dt) {
     w.cine = null;
     const ok = WZ.keepsOpen();
     UI.toast(ok ? 'The Altar stands! Hit it with a Single, a Pair, a Triple and the Nova' : 'The Altar stands, but it will not answer while the Warden lives', 'R', 'b:altar');
-    UI.toast(ok ? 'The Altar has landed: send the Wizard one spell of each tier' : 'The Altar has landed: the Warden must die before it takes spells', 'L', 'b:altar');
+    UI.toast(ok ? 'The Altar has landed: send the ' + M4.W() + ' one spell of each tier' : 'The Altar has landed: the Warden must die before it takes spells', 'L', 'b:altar');
     if (!ok) WZ.altarSay('THE WARDEN STILL LIVES');
   }
 };
@@ -168,16 +168,16 @@ WZ.altarTick = function (dt) {
   const w = G.w, A = G.altar, K = CFG.altar;
   if (w.altarFlash > 0) w.altarFlash -= dt;
   // bought but not landed yet: it comes as soon as the Wizard is alive to see it
-  if (G.tree.summon && !A.placed && !w.cine && !w.dead) WZ.cineStart();
+  if (G.tree.summon && !A.placed && !w.cine && WZ.anyAlive()) WZ.cineStart();
   if (!A.placed) return;
   WZ.decalPerm(A.x, A.y, K.r * 1.9, 'altar', 0.9);   // its crater in the ground, for good (the world is new every expedition, the mark is laid again)
   // solid to the Wizard, like a boulder (foes walk through: they are not what the Altar is about)
-  if (!w.dead && !w.blink && !w.jump) {
-    const dx = w.x - A.x, dy = w.y - A.y, d = Math.hypot(dx, dy), min = K.solid + CFG.wizard.radius;
-    if (d < min) { const k = d || 0.01; w.x = A.x + dx / k * min; w.y = A.y + dy / k * min; }
+  for (const q of WZ.allW()) if (!q.dead && !q.blink && !q.jump) {
+    const dx = q.x - A.x, dy = q.y - A.y, d = Math.hypot(dx, dy), min = K.solid + CFG.wizard.radius;
+    if (d < min) { const k = d || 0.01; q.x = A.x + dx / k * min; q.y = A.y + dy / k * min; }
   }
   // all four sockets lit: it only wakes the Chimera when every Stronghold has fallen, and the Wizard stands at it
-  const lit = WZ.altarLitN() >= 4, open = WZ.keepsOpen(), near = !w.dead && Math.hypot(w.x - A.x, w.y - A.y) < K.wakeR;
+  const lit = WZ.altarLitN() >= 4, open = WZ.keepsOpen(), near = !WZ.over() && WZ.dmin(A.x, A.y) < K.wakeR;
   if (w.rit > 0) {
     w.rit -= dt;
     w.shake = Math.max(w.shake, 0.12 + 0.3 * (1 - Math.max(0, w.rit) / K.ritual));

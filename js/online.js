@@ -16,7 +16,7 @@ Main.setHold = function (who, on) {
   if (!G) return;
   const p = G.pauseBy || (G.pauseBy = { host: false, guest: false });
   p[who] = !!on;
-  G.paused = p.host || p.guest;
+  G.paused = Object.keys(p).some(k => p[k]);   // (2P: host / guest; 4P: any of the four players)
 };
 // the banner on the machine whose own menu is not the one that stopped the game
 Main.pausedBanner = function () {
@@ -26,9 +26,11 @@ Main.pausedBanner = function () {
     el.style.cssText = 'position:absolute;left:50%;top:70px;transform:translateX(-50%);padding:10px 18px;background:#1d1830;color:#ffe36b;font-family:var(--display);font-size:16px;z-index:40;pointer-events:none';
     $('stage').appendChild(el);
   }
-  const p = G && G.pauseBy, other = Net.role === 'guest' ? p && p.host : p && p.guest;
+  const p = G && G.pauseBy, mine = G && G.m4 ? (G.seats[M4.me()] || {}).who : Net.role === 'guest' ? 'guest' : 'host';
+  let other = Net.role === 'guest' ? p && p.host : p && p.guest, who = Net.role === 'guest' ? 'BUILDER' : 'WIZARD';
+  if (G && G.m4 && p) { const k = Object.keys(p).find(q => p[q] && q !== mine); other = !!k; const s = k && G.seats.find(x => x.who === k); who = s ? s.name : 'A PLAYER'; }
   el.classList.toggle('hidden', !(Net.on && other && !Main.menuUp));
-  if (other) el.textContent = (Net.role === 'guest' ? 'BUILDER' : 'WIZARD') + ' PAUSED THE GAME';
+  if (other) el.textContent = who + ' PAUSED THE GAME';
 };
 Main.modal = () => Net.role === 'host' && (Main.menuUp || Book.isOpen);
 // the host's Builder is held still behind a menu / the book; the Wizard (the guest's virtual pad) carries on
@@ -70,7 +72,13 @@ Main.netUi = function (mode) {
   Main.netBanner(null);
   const help = $('help');
   if (Main.helpHtml === undefined) Main.helpHtml = help.innerHTML;
-  if (mode === 'guest') {
+  if (mode === 'host' && Net.role === 'guest') {   // 4P: a Builder seat on a guest's machine (no mouse: auto-aimed throws)
+    help.innerHTML = '<div class="hcol"><h3>' + UI.img('ic_wrench', 16) + 'YOU ARE A BUILDER</h3>' +
+      '<div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk &nbsp; <kbd>SPACE</kbd> or <kbd>LEFT CLICK</kbd> pick up / place &nbsp; <kbd>RIGHT CLICK</kbd> throw (auto-aimed) &nbsp; <kbd>E</kbd> use / crank</div>' +
+      '<div><kbd>1</kbd>-<kbd>9</kbd> or <kbd>[</kbd><kbd>]</kbd> hotbar &nbsp; <kbd>Q</kbd> next in the family &nbsp; <kbd>R</kbd> rotate &nbsp; <kbd>F</kbd> switch a Harnesser &nbsp; <kbd>B</kbd> demolish &nbsp; <kbd>T</kbd> skill tree &nbsp; <kbd>ESC</kbd> menu</div>' +
+      '<div>Two Builders share one factory. A gamepad works too (A pick, B throw, X use, LB / RB hotbar, RT family).</div></div>' +
+      '<div class="hfoot"><kbd>H</kbd> hides this.</div>';
+  } else if (mode === 'guest') {
     help.innerHTML = '<div class="hcol"><h3>' + UI.img('ic_hat', 16) + 'YOU ARE THE WIZARD</h3>' +
       '<div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk &nbsp; <kbd>SPACE</kbd> dodge roll (invulnerable) &nbsp; <kbd>LEFT CLICK</kbd> mash (dig, wake a shrine)</div>' +
       '<div><kbd>RIGHT CLICK</kbd> cast the wand &nbsp; <kbd>Q</kbd> cycle the wand &nbsp; <kbd>T</kbd> skill tree &nbsp; <kbd>C</kbd> book &nbsp; <kbd>ESC</kbd> menu</div>' +
@@ -121,11 +129,17 @@ Main.guestHooks = {
     if (G && G.menu) { Main.toTitle(true); if (G && G.menu) Menu.say(msg || 'The host ended the game.'); return; }   // (the lobby: back to the menu world with a word)
     Main.netBanner('ended', msg);
   },
-  toast(m) { UI.toast(m.text, 'R', m.icon, true); },
+  toast(m) {
+    if (G && G.m4) { const mine = M4.ROLE[M4.me()] === 'B' ? 'L' : 'R'; if (m.side && m.side !== mine) return; UI.toast(m.text, mine, m.icon, true); return; }   // 4P: each seat shows the toasts of its own half
+    UI.toast(m.text, 'R', m.icon, true);
+  },
+  seatRole() { const i = G && G.m4 ? G.seats.findIndex(x => x.who === Net.me) : G && G.menu && G.menu.l4 ? Lobby4.mySeat() : -1; return i >= 0 ? M4.ROLE[i] : 'W'; },   // (the keyboard mapping: Builder keys or Wizard keys)
   buyres(m) {
-    for (const t of m.toasts || []) if (t.side === 'L') UI.toast(t.text, 'R', t.icon, true);   // the host's answer: "Unlocked: ..." / "Still need ..."
+    const b = G && G.m4 && M4.ROLE[M4.me()] === 'B';
+    for (const t of m.toasts || []) if (t.side === 'L') UI.toast(t.text, b ? 'L' : 'R', t.icon, true);   // the host's answer: "Unlocked: ..." / "Still need ..."
     AU.sfx(m.ok ? 'buy' : 'error');
     if (UI.treeOpen.R) UI.renderTree('R');
+    if (UI.treeOpen.L && b) UI.renderTree('L');
   },
 };
 // the guest types the code at the keyboard prop in the menu world (Menu typingTick); once the host has said welcome, the host's menu world arrives as snapshots
@@ -145,7 +159,9 @@ Main.enterGuest = function () {
   UI.resetCache();
   UI.show('game', true);
   UI.show('pause', false); UI.show('results', false); UI.show('victory', false);
-  Main.netUi('guest');
+  if (G.m4) G.vi = M4.guestSeat();
+  Main.netUi(G.m4 && M4.ROLE[G.vi] === 'B' ? 'host' : 'guest');
+  if (G.m4 && M4.ROLE[G.vi] === 'B') UI.buildHotbar();   // (a Builder seat has the Builder's hotbar)
   UI.openTree('L', false); UI.openTree('R', false);
   R.wcam.x = G.w.x; R.wcam.y = G.w.y; R.fcam.x = G.bd.x; R.fcam.y = G.bd.y;
   UI.help(true);
@@ -153,12 +169,14 @@ Main.enterGuest = function () {
 };
 Main.guestKeys = function (dt) {
   const p = IN.pad[0];
-  if (IN.hit('Escape')) { if (UI.treeOpen.R) UI.openTree('R', false); else if (!Book.isOpen) Main.pause(!Main.menuUp); }
-  if (!Main.menuUp && !Book.isOpen && (IN.hit('KeyT') || IN.hit('KeyY') || (p && p.back))) UI.openTree('R');
+  const bs = G.m4 && M4.ROLE[M4.me()] === 'B';   // 4P: a Builder seat has the Builder's tree (left) and the Builder's keys
+  if (IN.hit('Escape')) { if (UI.treeOpen.R) UI.openTree('R', false); else if (UI.treeOpen.L) UI.openTree('L', false); else if (!Book.isOpen) Main.pause(!Main.menuUp); }
+  if (!Main.menuUp && !Book.isOpen && (IN.hit('KeyT') || (!bs && (IN.hit('KeyY') || (p && p.back))))) UI.openTree(bs ? 'L' : 'R');
   if (IN.hit('KeyC') && !UI.treeOpen.R && !Main.menuUp && !Book.isOpen) Book.open();
   if (IN.hit('KeyH')) UI.help();
   if (Net.helpT > 0) { Net.helpT -= dt; if (Net.helpT <= 0) UI.help(false); }
   if (UI.treeOpen.R && !Main.menuUp) Main.treePads(dt, null, p);
+  if (UI.treeOpen.L && !Main.menuUp && bs) Main.treePads(dt, p, null);
   if (IN.hit('F3') || IN.hit('Backquote')) UI.debugOn = !UI.debugOn;
 };
 // things the guest notices by watching the snapshots go by
@@ -169,10 +187,10 @@ Main.guestSeen = function () {
   }
   Main.lastQW = G.quest.W;
   if ((G.stats.wins || 0) > Main.winsSeen) { Main.winsSeen = G.stats.wins; UI.showVictory(); }
-  const down = G.w.dead && (G.w.deadT || 0) > 0.9;   // the death screen: the roll button (or its button) re-enters
+  const dead = G.m4 ? !!G.over : G.w.dead, down = dead && (G.m4 ? G.overT || 0 : G.w.deadT || 0) > 0.9;   // the death screen: the roll button (or its button) re-enters
   if (down && !Main.resShown) { Main.resShown = true; UI.showResults(); }
-  else if (!G.w.dead && Main.resShown) { Main.resShown = false; UI.show('results', false); }
-  else if (G.w.dead) UI.resultsSync();
+  else if (!dead && Main.resShown) { Main.resShown = false; UI.show('results', false); }
+  else if (dead) UI.resultsSync();
 };
 // ---------- smoothing ----------
 // The guest gets a new picture of the world about 20 times a second; drawn as they come, everything would move in 20 Hz steps. So when one arrives, every thing that
@@ -196,6 +214,8 @@ Main.tween = function (a, b, at) {
   };
   if (a.w && b.w) { push(a.w, b.w, 'x', 4); push(a.w, b.w, 'y', 4); push(a.w, b.w, 't', 1, true); }
   if (a.bd && b.bd) { push(a.bd, b.bd, 'x', 4); push(a.bd, b.bd, 'y', 4); }
+  if (a.w2 && b.w2) { push(a.w2, b.w2, 'x', 4); push(a.w2, b.w2, 'y', 4); }   // (4P: the second Wizard and Builder)
+  if (a.bd2 && b.bd2) { push(a.bd2, b.bd2, 'x', 4); push(a.bd2, b.bd2, 'y', 4); }
   if (a.fac && b.fac) {
     push(a.fac, b.fac, 't', 1, true);
     pair(a.fac.flying, b.fac.flying, ['t'], 3, true);
@@ -258,7 +278,7 @@ const slowOf = w => (1 - Math.min(0.8, w.zSlow || 0)) * (w.slowT > 0 ? 1 - w.slo
 // a new snapshot (G is already it): start the copy from the host's Wizard and replay the pad packets the host has not used yet
 Main.predSnap = function (s) {
   const pr = Main.pr, w = s.w;
-  pr.ok = Main.PREDICT && !!w && !s.menu && !w.dead && !w.jump && !w.blink && !w.kick && !w.ride && !(w.statT > 0) && !(w.cine);   // (a Riding Wave and the Statue's heavy sliding are the host's: shown as they are)
+  pr.ok = Main.PREDICT && !s.m4 && !!w && !s.menu && !w.dead && !w.jump && !w.blink && !w.kick && !w.ride && !(w.statT > 0) && !(w.cine);   // (a Riding Wave and the Statue's heavy sliding are the host's: shown as they are)
   if (!pr.ok) { pr.s = null; pr.ex = pr.ey = 0; return; }
   const o = {};
   for (const f of PFIELDS) o[f] = w[f];
@@ -388,11 +408,13 @@ Main.guestFrame = function (dt, ts) {
   if (G && G.menu && !Net.on) { AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); Menu.guestFrame(dt, ts); return; }   // the host is still in the menu world
   if (!G || !Net.on) { AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); drawBackdrop(ts); return; }
   if (Main.sb.length) Main.interpFrame(performance.now()); else Main.tweenStep(performance.now());
-  Net.mute = !!(UI.treeOpen.R || Main.menuUp || Book.isOpen);
+  if (G.m4) G.vi = M4.guestSeat();   // (this machine's seat; the picture is drawn from it)
+  Net.mute = !!(UI.treeOpen.R || UI.treeOpen.L || Main.menuUp || Book.isOpen);
   Net.guestTick(dt);
   Main.predictFrame(dt);
   Book.tick(dt);
   Main.guestKeys(dt);
+  if (G.m4) { M4.guestView(dt); return; }   // 4P: drawn from this seat's point of view (js/mode4run.js)
   const bh = Main.hintFor(QUESTS.B[G.quest.B]), wh = Main.hintFor(QUESTS.W[G.quest.W]);
   R.hint = bh.f; R.whint = wh.w; R.focus = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null; R.rot = null;
   UI.setHint(null, false, wh.tree);

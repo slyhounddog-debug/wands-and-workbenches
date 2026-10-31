@@ -300,6 +300,7 @@ R.drawFactory = function (main, dt, rect) {
   for (const g of piles2) list.push({ d: g.x + g.y, o: g, t: g.items.length > 1 ? 'floorG' : 'floor' });
   for (const o of f.flying) list.push({ d: o.x + o.y + 0.5, o, t: 'fly' });
   list.push({ d: bd.x + bd.y, o: bd, t: 'builder' });
+  if (G.bd2) list.push({ d: G.bd2.x + G.bd2.y, o: G.bd2, t: 'builder' });   // 4P: the other Builder
   if (R.ghost) list.push({ d: R.ghost.x + R.ghost.y + (R.ghost.type === 'belt' ? 0.45 : R.ghost.type === 'expand' ? FA.tileSz() + 0.05 : 1.05), o: R.ghost, t: 'ghost' });   // the hovering piece sorts among the real ones
   const line = G.drag && !G.drag.cancel && G.drag.path && (!G.drag.del || G.demolish) && G.drag.path;   // a belt line being dragged out: one see-through belt per tile, sorted among the real ones
   if (line) for (const s of line) list.push({ d: s.x + s.y + 0.45, o: s, t: 'line' });
@@ -310,9 +311,9 @@ R.drawFactory = function (main, dt, rect) {
     if (it.t === 'bld') {
       const b = it.o, p = R.toScreen(v, b.x + 0.5, b.y + 0.5), spr = R.bldSprite(b);
       if (spr && R.fallK(b) >= 1) R.reflect(ctx, spr, p[0], p[1] + v.hh * 0.9, S, b.done ? 0.22 : 0.1);
-    } else if (it.t === 'builder' && R.fallK(bd) >= 1 && !(G.outro && G.outro.t0 > 0.05)) {
-      const p = R.toScreen(v, bd.x, bd.y);
-      R.reflect(ctx, G.hands.length ? SP.builderC : SP.builder, p[0], p[1], S, 0.22);
+    } else if (it.t === 'builder' && R.fallK(it.o) >= 1 && !(G.outro && G.outro.t0 > 0.05)) {
+      const p = R.toScreen(v, it.o.x, it.o.y);
+      R.reflect(ctx, (it.o === G.bd ? G.hands : G.bs2 ? G.bs2.hands : []).length ? SP.builderC : SP.builder, p[0], p[1], S, 0.22);
     }
   }
   if (R.ghost) R.drawGhostGround(ctx, v, R.ghost, t);
@@ -324,7 +325,7 @@ R.drawFactory = function (main, dt, rect) {
   }
 
   for (const it of list) {
-    const fk = it.t === 'builder' ? R.fallK(bd) : it.t === 'belt' || it.t === 'bld' || it.t === 'bot' ? R.fallK(it.o) : 1;   // (the start sequence: things still to drop in from their portals)
+    const fk = it.t === 'builder' ? R.fallK(it.o) : it.t === 'belt' || it.t === 'bld' || it.t === 'bot' ? R.fallK(it.o) : 1;   // (the start sequence: things still to drop in from their portals)
     if (fk < 0) continue;
     if (fk < 1) R.fallIn(ctx, v, it, fk, t);
     switch (it.t) {
@@ -347,7 +348,7 @@ R.drawFactory = function (main, dt, rect) {
       case 'floor': R.drawFloor(ctx, v, it.o.items[0], t); break;
       case 'floorG': R.drawFloorPile(ctx, v, it.o, t); break;
       case 'fly': R.drawFly(ctx, v, it.o, t); break;
-      case 'builder': if (G.outro) R.drawBuilderOut(ctx, v, bd, t); else R.drawBuilder(ctx, v, bd, t); break;
+      case 'builder': if (G.outro) R.drawBuilderOut(ctx, v, it.o, t); else R.drawBuilder(ctx, v, it.o, t); break;
       case 'ghost': R.drawGhost(ctx, v, it.o, t); break;
       case 'line': R.drawLineTile(ctx, v, it.o, t); break;
     }
@@ -1226,7 +1227,8 @@ R.drawFly = function (ctx, v, o, t) {
 R.drawBuilder = function (ctx, v, bd, t) {
   const p = R.toScreenLocked(v, bd.x, bd.y), S = 4;
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(Math.round((p[0] - 20) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 40, 12);
-  const carrying = G.hands.length > 0;
+  const hands = bd === G.bd ? G.hands : G.bs2 ? G.bs2.hands : [], carrying = hands.length > 0;   // (4P: the other Builder's pile is G.bs2.hands)
+  if (G.m4) R.seatTag(ctx, v, p, bd === G.bd ? M4.seatB(G.bi || 0) : M4.seatB(1 - (G.bi || 0)));
   for (const gh of bd.ghosts || []) { const q = R.toScreen(v, gh.x, gh.y); dspr(ctx, { c: SP.builder.white, ax: SP.builder.ax, ay: SP.builder.ay }, q[0], q[1], S, 0.35 * (1 - gh.t / 0.25)); }   // Tumble's afterimages
   if (bd.roll > 0) {   // Tumble: a somersault in 8 chunky frames, strobing see-through / white like the Wizard's roll
     const fr = 1 - bd.roll / (bd.rollT0 || CFG.builder.roll.time), step = Math.floor(fr * 8) / 8, ghost = Math.floor(bd.roll * 30) % 2 === 0, spr0 = carrying ? SP.builderC : SP.builder;
@@ -1257,10 +1259,10 @@ R.drawBuilder = function (ctx, v, bd, t) {
   ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S + pv, spr.c.width * S, spr.c.height * S);
   ctx.restore();
   // what he carries: one pile above his head, the last thing grabbed on top (that is the one a throw sends first). No numbers: each item is drawn.
-  const n = G.hands.length, y0 = p[1] - 72 - hop;
+  const n = hands.length, y0 = p[1] - 72 - hop;
   for (let i = 0; i < n; i++) {
     const wob = bd.moving && i > 1 ? (Math.sin(t * 6 + i * 0.7) > 0 ? 4 : 0) : 0;
-    R.item(ctx, G.hands[i].kind, p[0] + wob + (i % 2 ? 4 : -4), y0 - i * 12, 4, t, i === n - 1);
+    R.item(ctx, hands[i].kind, p[0] + wob + (i % 2 ? 4 : -4), y0 - i * 12, 4, t, i === n - 1);
   }
 };
 // The placement preview in three parts so it reads against the green floor and sits correctly among the objects:
@@ -1563,7 +1565,8 @@ R.drawWorld = function (main, dt, rect) {
   for (const pk of w.pickups) objs.push({ d: pk.x + pk.y, t: 'pick', o: pk });
   for (const e of w.enemies) objs.push({ d: e.x + e.y, t: 'enemy', o: e });
   for (const e of w.allies) objs.push({ d: e.x + e.y, t: 'enemy', o: e });   // the friendly creatures (R.drawEnemy shows them in green)
-  objs.push({ d: w.x + w.y, t: 'wiz', o: w });
+  if (!(G.menu && G.menu.l4)) objs.push({ d: w.x + w.y, t: 'wiz', o: w });   // (the 4P lobby draws its own four characters)
+  if (G.w2) { const ow = R.wizOther(); objs.push({ d: ow.x + ow.y, t: 'wiz', o: ow }); }   // 4P: the other Wizard
   if (mv) Menu.collect(objs, v, mv);
   if (alt && !airborne) objs.push({ d: alt.x + alt.y, t: 'altar', o: alt });
   const bsh = G.bshr;   // the Battery Shrines
@@ -1647,6 +1650,7 @@ R.drawWorld = function (main, dt, rect) {
     ctx.strokeStyle = 'rgba(200,0,30,0.5)'; ctx.lineWidth = 24; ctx.strokeRect(left + 12, 12, RW - 24, CFG.H - 24);
   }
   R.drawHurt(ctx, v, w, left, right, wt);   // where the last hit came from and who did it
+  if (G.m4 && w.dead && !G.over) R.drawDown(ctx, left, right, w);   // (4P: he is down; the run goes on with his partner)
   if (R.whint && !w.dead) R.drawWHint(ctx, v, R.whint, wt);
   if (R.mapC && !rc.pip) R.defer.push(c => R.drawMinimap(c));
   // the wilds are frozen while anyone is in the skill tree (the DOM banner says so in words)
@@ -1671,7 +1675,7 @@ R.drawPip = function (main, dt) {
   if (!(pct > 0) || !G) return;
   let sc = R.bufs.pip;
   if (!sc) { const c = document.createElement('canvas'); c.width = CFG.HALF; c.height = CFG.H; sc = R.bufs.pip = { c, x: c.getContext('2d') }; }
-  const wilds = Net.role === 'host', v = wilds ? R.wv : R.fv, rect = { x0: 0, w: CFG.HALF, pip: true };
+  const wilds = G.m4 ? M4.ROLE[M4.me()] === 'B' : Net.role === 'host', v = wilds ? R.wv : R.fv, rect = { x0: 0, w: CFG.HALF, pip: true };
   sc.acc = (sc.acc || 0) + dt;
   // a whole second world is the most expensive thing on screen: redraw the small picture ~24 times a second, not every frame, and slower still when it is costly (a big fight in
   // it): never more than about an eighth of the time, down to 10 pictures a second
@@ -1690,7 +1694,7 @@ R.drawPip = function (main, dt) {
   main.imageSmoothingEnabled = true; main.imageSmoothingQuality = 'medium';
   main.drawImage(sc.c, 0, sy, CFG.HALF, CH, x, y, W, H);
   main.restore();
-  const label = wilds ? 'WIZARD' : 'FACTORY';
+  const label = G.m4 ? M4.name(wilds ? M4.seatW(G.wi || 0) : M4.seatB(G.bi || 0)) : wilds ? 'WIZARD' : 'FACTORY';
   main.fillStyle = 'rgba(26,15,40,0.8)'; main.fillRect(x, y, Math.min(W, 150), 22);
   drawText(main, label, x + 8, y + 17, 10, '#ffe36b', 'left', 'd');
   if (wilds && G.w) {   // the Wizard's health and armour under the picture
@@ -2152,7 +2156,7 @@ R.drawRide = function (ctx, v, w, p, t) {
 R.drawWizard = function (ctx, v, w) {
   const p = R.toScreenLocked(v, w.x, w.y), S = CFG.WT.S, spr = SP.wizard;
   // the worn augments are drawn over him (boots, robe, charm, hat); the Phoenix Feather greys out while it recharges
-  const Wn = G.aug.worn, cool = G.aug.cd.phoenix > 0, layers = ['boots', 'robe', 'charm', 'hat'].filter(k => Wn[k]).map(k => ({ s: SP['ao_' + Wn[k]], a: Wn[k] === 'phoenix' && cool ? 0.4 : 1 }));
+  const Wn = w.augW || G.aug.worn, cool = (w.augW ? w.augCd : G.aug.cd.phoenix) > 0, WD = w.wandX || G.wand, layers = ['boots', 'robe', 'charm', 'hat'].filter(k => Wn[k]).map(k => ({ s: SP['ao_' + Wn[k]], a: Wn[k] === 'phoenix' && cool ? 0.4 : 1 }));
   const wearAll = (alpha, flip, x, y) => { for (const l of layers) dspr(ctx, l.s, x, y, S, alpha * l.a, flip); };
   const wearRot = ghost => { for (const l of layers) ctx.drawImage(ghost ? l.s.c : l.s.white, -l.s.ax * S, -l.s.ay * S + 24, l.s.c.width * S, l.s.c.height * S); };
   for (const gh of w.ghosts) {
@@ -2222,9 +2226,13 @@ R.drawWizard = function (ctx, v, w) {
     R.hpBar(ctx, p[0], p[1] + 9, 27, w.statT / E.t, '#b58a4c');
   }
   else { dspr(ctx, spr, p[0], p[1] - bob, S, (blink ? 0.4 : 1) * ia, flip); wearAll((blink ? 0.4 : 1) * ia, flip, p[0], p[1] - bob); }
-  const fillFx = G.wand && G.wand.fx && G.wand.fx.t < CFG.wandFill.dur ? G.wand.fx : null;   // a slot just filled: the staff is taking the element in (it blinks after)
-  const arm = G.wand && G.wand.armed && G.wand.full[G.wand.armed] && !w.emote && !(fillFx && fillFx.el === G.wand.armed) ? G.wand.armed : null;
-  if (G.wand && G.wand.fx && !w.emote) R.drawWandFill(ctx, p[0] + (flip ? -24 : 24), Math.round((p[1] - 45 - bob) / 3) * 3, tt);
+  if (G.m4) {
+    R.seatTag(ctx, v, p, w.other ? M4.seatW(1 - (G.wi || 0)) : M4.seatW(G.wi || 0));
+    if (w.other && w.hurt && !w.hurt.soft && w.hurt.t < 1.1) txt(ctx, M4.name(M4.seatW(1 - (G.wi || 0))) + ' HIT BY ' + String(w.hurt.n).toUpperCase(), Math.round(p[0]), Math.round(p[1]) - 98, 9, '#ff8a8a', 'center', 'd');   // (a teammate is hurt: who, and by what)
+  }
+  const fillFx = WD && WD.fx && WD.fx.t < CFG.wandFill.dur ? WD.fx : null;   // a slot just filled: the staff is taking the element in (it blinks after)
+  const arm = WD && WD.armed && WD.full[WD.armed] && !w.emote && !(fillFx && fillFx.el === WD.armed) ? WD.armed : null;
+  if (WD && WD.fx && !w.emote) R.drawWandFill(ctx, p[0] + (flip ? -24 : 24), Math.round((p[1] - 45 - bob) / 3) * 3, tt);
   if (arm) {   // the staff glows in the armed wand attack's element colour (dark when nothing is armed), switching the frame the armed element changes
     const gx = p[0] + (flip ? -24 : 24), gy = Math.round((p[1] - 45 - bob) / 3) * 3, pu = 0.5 + 0.5 * Math.sin(tt * 6);
     ctx.fillStyle = ELEM[arm].color;

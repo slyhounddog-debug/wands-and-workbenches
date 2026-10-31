@@ -25,6 +25,8 @@ const CHECKS = [
   { id: 'wandcheck', what: 'the wand, shrines, the four buttons', file: 'tools/wandcheck/run.js', browser: true },
   { id: 'featcheck', what: 'shake cue, allies feel the wand, belt-line chip + link, drag to delete, guest hearing, Altar crater, emotes', file: 'tools/featcheck/run.js', browser: true },
   { id: 'passcheck', what: 'goals count from when they show, goal gems, shard moment, boulders, lava + thermometer, swimmers, the Cauldron, armor rule, drop rates, removed tracks', file: 'tools/passcheck/run.js', browser: true },
+  { id: 'mode4check', what: '4-player mode: two Wizards and two Builders, per-seat input, foes pick the nearer Wizard, spells by whoever grabs them, balance block, garments, element effects, snapshot photo test', file: 'tools/mode4check/run.js', browser: true },
+  { id: 'mode4net', what: '4-player online through the real PeerJS cloud: mode choice, a host and three guests, the lobby, the bump, the start, the game from every seat (needs the internet)', file: 'tools/mode4check/net.js', browser: true, net: true },
   { id: 'nettest', what: 'online co-op through the real PeerJS cloud (needs the internet)', file: 'tools/nettest/run.js', browser: true, net: true },
 ];
 if (has('--list')) { for (const c of CHECKS) console.log(c.id.padEnd(10), c.what); process.exit(0); }

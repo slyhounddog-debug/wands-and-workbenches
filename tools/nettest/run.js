@@ -27,13 +27,13 @@ const stepOn = async (p, role, act, wait) => {
 const press = async (p, k) => { await p.keyboard.down(k); await sleep(80); await p.keyboard.up(k); };
 const hostCreate = async hp => {   // Online > Create > slot 1: resolves with the room code
   await press(hp, 'KeyD');
-  await stepOn(hp, 'B', 'go:online'); await stepOn(hp, 'B', 'go:create'); await stepOn(hp, 'B', 'slot:1', 500);
+  await stepOn(hp, 'B', 'go:online'); await stepOn(hp, 'B', 'mode:2'); await stepOn(hp, 'B', 'go:create'); await stepOn(hp, 'B', 'slot:1', 500);
   await hp.waitForFunction(() => __wands.G.menu && __wands.G.menu.online && __wands.G.menu.online.code, null, { timeout: 30000 });
   return hp.evaluate(() => __wands.G.menu.online.code);
 };
 const typeCode = async (gp, code) => {   // the keyboard prop: walk up, E, type, Enter
   await press(gp, 'KeyD');
-  await stepOn(gp, 'B', 'go:online'); await stepOn(gp, 'B', 'go:join', 1500);
+  await stepOn(gp, 'B', 'go:online'); await stepOn(gp, 'B', 'mode:2'); await stepOn(gp, 'B', 'go:join', 1500);
   await gp.evaluate(() => { const G = __wands.G, k = G.menu.kb; G.bd.x = k.x - 80 + 1.2; G.bd.y = k.y - 80 + 0.2; });
   await sleep(400); await press(gp, 'KeyE'); await sleep(300);
   for (const ch of code) await gp.keyboard.press(/[0-9]/.test(ch) ? 'Digit' + ch : 'Key' + ch);

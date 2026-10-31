@@ -257,6 +257,35 @@ const OUT = process.env.SHOTS || '';
   ok(r.exist.length === 0, 'every part a scoped picture can leave out exists in G (so a guest can always put it back)', r.exist.join(','));
   ok(r.k === 3, 'the scoping knob is CFG.mode4.net.otherEvery (3)');
 
+  // ================= 13. the performance pass's shortcuts give the same answers as the slow way =================
+  r = await run(() => {
+    const W = __wands, WZ = W.WZ, CFG = W.CFG, o = {};
+    W.start4(1, {}); const G = W.G;
+    // the harvestable grid: every node within r of a point is among the candidates (the callers test the exact distance)
+    let miss = 0, tests = 0;
+    for (let i = 0; i < 400; i++) {
+      const x = 2 + Math.random() * (CFG.WW - 4), y = 2 + Math.random() * (CFG.WH - 4), r = 0.5 + Math.random() * 9;
+      const near = new Set(WZ.hitNear(x, y, r).map(h => h.id + ':' + h.kind));
+      for (const h of WZ.harv) if (Math.hypot(h.x - x, h.y - y) < r + 0.4) { tests++; if (!near.has(h.id + ':' + h.kind)) miss++; }
+    }
+    o.miss = miss; o.tests = tests; o.nodes = WZ.harv.length;
+    // a candidate list is small (that is the point), and a shrine / boulder is always in it
+    const s = WZ.hitNear(G.w.x, G.w.y, 3); o.small = s.length < 80;
+    // the respawn loop only visits nodes with state: a broken tree comes back after its timer, a flashing one stops flashing
+    const t = WZ.harv[0]; t.broken = true; t.respawn = 0.2; t.hp = 1; t.flash = 0.1;
+    W.step4 ? W.step4(0.05, 10) : W.step(0.05, 10);
+    o.back = t.broken === false && t.hp === t.maxHp && t.flash <= 0;
+    // grouping a list by Wizard keeps every item and the order inside each group
+    const arr = [1, 2, 3, 4, 5, 6, 7, 8].map(i => ({ i, k: i % 3 === 0 }));
+    WZ.groupW(arr, a => a.k);
+    o.group = arr.map(a => a.i).join(',');
+    return o;
+  });
+  ok(r.miss === 0 && r.tests > 50, 'the harvestable grid finds every node a spell could touch (' + r.tests + ' nodes in range over 400 spells of ' + r.nodes + ')', JSON.stringify(r));
+  ok(r.small, 'a hit list near a spell is a handful of nodes, not the whole world');
+  ok(r.back, 'a broken tree respawns and a hit one stops flashing (the loop visits only nodes with state)', JSON.stringify(r));
+  ok(r.group === '1,2,4,5,7,8,3,6', 'grouping by Wizard keeps every item and the order inside each group', r.group);
+
   ok(errs.length === 0, 'no page errors', errs.slice(0, 5).join(' | '));
   await browser.close();
   console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASS');

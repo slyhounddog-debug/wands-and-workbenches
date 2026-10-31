@@ -42,6 +42,17 @@ WZ.swapP = function () {
   t = WZ.flow; WZ.flow = WZ.flowB; WZ.flowB = t;
   t = WZ.flowCd; WZ.flowCd = WZ.flowCdB; WZ.flowCdB = t;
 };
+// 4P: the loops that play each foe / ally / drop / spell AS a Wizard swap him in item by item, and a swap exchanges ~70 fields of a big object: with the two Wizards' things mixed
+// in one list a frame made ~50 of them (3% of the frame). Grouping the list by Wizard first (stable: the order inside a group is unchanged) makes it 2.
+WZ.groupW = function (arr, key) {
+  if (!G.w2 || arr.length < 3) return;
+  const a = [], b = [];
+  for (let i = 0; i < arr.length; i++) (key(arr[i]) ? b : a).push(arr[i]);
+  if (!a.length || !b.length) return;
+  let n = 0;
+  for (let i = 0; i < a.length; i++) arr[n++] = a[i];
+  for (let i = 0; i < b.length; i++) arr[n++] = b[i];
+};
 WZ.sel = function (i) {
   i = i ? 1 : 0;
   if (!G || !G.w2 || WZ.sIdx === i) return;

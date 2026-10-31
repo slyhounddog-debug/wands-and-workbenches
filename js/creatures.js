@@ -256,6 +256,7 @@ WZ.allyDie = function (a) {
 WZ.allyTick = function (dt) {
   const w = G.w, A = CFG.ally, al = w.allies, cfg = CFG.world;
   if (!al.length) return;
+  if (G.w2) WZ.groupW(al, a => WZ.nearestW(a.x, a.y) > 0);
   for (let i = 0; i < al.length; i++) {
     const a = al[i];
     if (a.dead) continue;

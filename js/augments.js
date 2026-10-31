@@ -308,7 +308,7 @@ WZ.boulderTick = function (dt) {
       if (nx < 1 || nx > CFG.WW - 1 || WZ.blocked(nx, b.y, B.r * 0.8)) bx = true; else b.x = nx;
       if (ny < 1 || ny > CFG.WH - 1 || WZ.blocked(b.x, ny, B.r * 0.8)) by = true; else b.y = ny;
       // trees and rocks are solid: bounce off the side that was hit
-      for (const h of WZ.harv) {
+      for (const h of WZ.harvBox(b.x - 2, b.y - 2, b.x + 2, b.y + 2)) {
         if (h.broken) continue;
         const hx = b.x - h.x, hy = b.y - h.y, hd = Math.hypot(hx, hy), min = B.r + (h.rad || 0.45);
         if (hd >= min || hd < 0.001) continue;

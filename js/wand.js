@@ -134,7 +134,9 @@ WZ.trailTick = function (z, dt) {
     for (const p of z.pts) if (!p.al && Math.hypot(p.x - a.x, p.y - a.y) < F.r + a.rad) { a.burnT = CFG.wand.ally.burn; a.lx = null; WZ.puff(a.x, a.y, '#ff7a30', 6); AU.sfx('zap_fire'); break; }
   }
   for (const e of w.enemies) if (!e.dead && !(e.fall > 0) && hit(e.x, e.y, e.rad)) { WZ.hurtE(e, rate * dt, 0, 0, true); e.flash = 0.05; }
-  for (const h of WZ.hitH()) if (!h.broken && hit(h.x, h.y, h.rad || 0.4)) WZ.hurtHc(h, rate * dt);
+  let bx0 = 1e9, by0 = 1e9, bx1 = -1e9, by1 = -1e9;
+  for (const p of z.pts) { if (p.x < bx0) bx0 = p.x; if (p.x > bx1) bx1 = p.x; if (p.y < by0) by0 = p.y; if (p.y > by1) by1 = p.y; }
+  for (const h of WZ.hitBox(bx0 - F.r - 1, by0 - F.r - 1, bx1 + F.r + 1, by1 + F.r + 1)) if (!h.broken && hit(h.x, h.y, h.rad || 0.4)) WZ.hurtHc(h, rate * dt);
   if (Math.random() < dt * 14) { const p = z.pts[Math.floor(Math.random() * z.pts.length)]; w.fx_.push({ type: 'spark', x: p.x + rand(-0.5, 0.5), y: p.y + rand(-0.5, 0.5), vx: 0, vy: 0, z: 0.1, vz: rand(1, 2.5), g: -2, col: Math.random() < 0.3 ? '#ffe36b' : '#ff7a30', t: 0, dur: 0.5, el: 'fire' }); }
   return true;
 };
@@ -176,7 +178,7 @@ WZ.rideSet = function (dt) {
   // speed follows a half sine (slow, fastest in the middle, slow): the distance covered this step is the exact integral of it, so the whole ride is W.dist
   const a0 = Math.min(1, R0.t / W.t), a1 = Math.min(1, (R0.t + dt) / W.t), step = W.dist / 2 * (Math.cos(Math.PI * a0) - Math.cos(Math.PI * a1)), v = dt > 0 ? step / dt : 0;
   const nx = w.x + R0.dx * step, ny = w.y + R0.dy * step;
-  for (const h of WZ.harv) if (!h.broken && Math.hypot(nx - h.x, ny - h.y) < 0.85) { WZ.rideEnd('wall'); return false; }
+  for (const h of WZ.harvBox(nx - 2, ny - 2, nx + 2, ny + 2)) if (!h.broken && Math.hypot(nx - h.x, ny - h.y) < 0.85) { WZ.rideEnd('wall'); return false; }
   w.vx = R0.dx * v; w.vy = R0.dy * v; w.fx = R0.dx; w.fy = R0.dy;
   R0.ex = nx; R0.ey = ny; R0.ox = w.x; R0.oy = w.y;
   return true;
@@ -198,7 +200,7 @@ WZ.rideTick = function (dt) {
     const id = WZ.eid(e);
     if (R0.hit.indexOf(id) < 0) { R0.hit.push(id); WZ.hurtE(e, W.dmg, px * side * W.push, py * side * W.push); }
   }
-  for (const h of WZ.hitH()) {
+  for (const h of WZ.hitNear(w.x, w.y, 3 + W.w / 2)) {
     if (h.broken) continue;
     const ex = h.x - w.x, ey = h.y - w.y, along = ex * dx + ey * dy, lat = ex * px + ey * py;
     if (along < -0.6 || along > 1.6 || Math.abs(lat) > W.w / 2 + (h.rad || 0.4)) continue;

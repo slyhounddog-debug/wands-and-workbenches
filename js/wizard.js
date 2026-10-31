@@ -226,6 +226,7 @@ WZ.generate = function () {
       WZ.harv.push(h); add(h); c++;
     }
   }
+  WZ.harvGrid();
   // forage spots (dirt mounds, stick piles, berry bushes): stand still and mash the roll button to search them
   WZ.forage = [];
   const ground = { mound: [T_GRASS, T_DIRT, T_SAND, T_DARK], sticks: [T_GRASS, T_DARK, T_FLOWER], bush: [T_GRASS, T_DARK, T_FLOWER] };
@@ -510,7 +511,7 @@ WZ.dodge = function () {
 WZ.forageAt = function (x, y) {
   let best = null, bd = CFG.forage.reach;
   for (const o of WZ.forage) {
-    if (o.broken || Math.abs(o.x - x) > 2 || Math.abs(o.y - y) > 2 || !WZ.forageSeen(o)) continue;
+    if (Math.abs(o.x - x) > 2 || Math.abs(o.y - y) > 2 || o.broken || !WZ.forageSeen(o)) continue;   // (the cheap distance test first: o.broken is an accessor)
     const d = Math.hypot(o.x - x, o.y - y);
     if (d < bd) { bd = d; best = o; }
   }
@@ -610,13 +611,41 @@ WZ.drop = function (kind, x, y, val) {
   }
   G.w.drops.push(d);
 };
+// The trees, rocks and ore never move, so they sit in a coarse grid (HG-tile cells) and every spell asks only for the ones near it. The old way - walk all of WZ.harv, a couple of hundred, each read through a state accessor,
+// them, for every projectile, zone and wave every frame - was the biggest single cost of a busy fight. The lists are CANDIDATES (whole cells): the caller still tests the distance.
+const HG = 8;
+let hgCells = null, hgN = 0;
+WZ.harvGrid = function () {
+  hgN = Math.ceil(CFG.WW / HG); hgCells = new Array(hgN * Math.ceil(CFG.WH / HG));
+  for (const h of WZ.harv) { const i = Math.floor(h.y / HG) * hgN + Math.floor(h.x / HG); (hgCells[i] || (hgCells[i] = [])).push(h); }
+};
+WZ.harvBox = function (x0, y0, x1, y1) {
+  const out = [], rows = Math.ceil(CFG.WH / HG);
+  const a = Math.max(0, Math.floor(x0 / HG)), b = Math.min(hgN - 1, Math.floor(x1 / HG)), c = Math.max(0, Math.floor(y0 / HG)), d = Math.min(rows - 1, Math.floor(y1 / HG));
+  for (let cy = c; cy <= d; cy++) for (let cx = a; cx <= b; cx++) { const cell = hgCells[cy * hgN + cx]; if (cell) for (let i = 0; i < cell.length; i++) out.push(cell[i]); }
+  return out;
+};
+// the hit list near a box: the harvestables there plus every Battery Shrine and loose boulder (few, and they move or appear)
+WZ.hitBox = function (x0, y0, x1, y1) {
+  const out = WZ.harvBox(x0 - 1, y0 - 1, x1 + 1, y1 + 1), L = G.bshr, B = G.w.boulders;
+  if (L && L.length) for (let i = 0; i < L.length; i++) out.push(L[i]);
+  if (B.length) for (let i = 0; i < B.length; i++) out.push(B[i]);
+  return out;
+};
+WZ.hitNear = (x, y, r) => WZ.hitBox(x - r, y - r, x + r, y + r);
 // call fn(target, dist, isEnemy) for everything within r of (x,y)
 WZ.each = function (x, y, r, fn) {
   const w = G.w;
   WZ.altarTouch(x, y, r);   // a player spell that reaches the Summoning Altar lights its socket
   if (G.menu) Menu.touch(x, y, r);   // ...and in the menu world a spell's reach can press the safe floor plates
-  for (const e of w.enemies) { if (e.dead) continue; const d = Math.hypot(e.x - x, e.y - y); if (d <= r + e.rad) fn(e, d, true); }
-  for (const h of WZ.harv) { if (h.broken) continue; const d = Math.hypot(h.x - x, h.y - y); if (d <= r + 0.4) fn(h, d, false); }
+  for (const e of w.enemies) {   // (a box test first: Math.hypot is slow and nearly every foe is far from a given spell)
+    if (e.dead) continue;
+    const dx = e.x - x, dy = e.y - y, rr = r + e.rad;
+    if (dx > rr || dx < -rr || dy > rr || dy < -rr) continue;
+    const d = Math.hypot(dx, dy);
+    if (d <= rr) fn(e, d, true);
+  }
+  for (const h of WZ.harvBox(x - r - 1, y - r - 1, x + r + 1, y + r + 1)) { if (h.broken) continue; const d = Math.hypot(h.x - x, h.y - y); if (d <= r + 0.4) fn(h, d, false); }
   for (const b of w.boulders) { const d = Math.hypot(b.x - x, b.y - y); if (d <= r + b.rad) fn(b, d, false); }   // loose boulders: a spell's reach pushes them
   for (const s of G.bshr) { const d = Math.hypot(s.x - x, s.y - y); if (d <= r + s.rad) fn(s, d, false); }   // the Battery Shrines
 };
@@ -626,7 +655,9 @@ WZ.nearest = function (x, y, maxD, skip) {
   let best = null, bd = maxD || 1e9;
   for (const e of G.w.enemies) {
     if (e.dead || (skip && skip.indexOf(e) >= 0)) continue;
-    const d = Math.hypot(e.x - x, e.y - y);
+    const dx = e.x - x, dy = e.y - y;
+    if (dx >= bd || dx <= -bd || dy >= bd || dy <= -bd) continue;
+    const d = Math.hypot(dx, dy);
     if (d < bd) { bd = d; best = e; }
   }
   return best;
@@ -1024,7 +1055,7 @@ WZ.boomHit = function (b, px, py, leg) {
     WZ.hurtE(e, b.dmg, ux * S.push, uy * S.push);
     WZ.mark(e.x, e.y, 0.6);
   }
-  for (const h of WZ.hitH()) if (!h.broken && h.surf !== tok && Math.hypot(h.x - b.x, h.y - b.y) < r + (h.rad || 0.4)) { h.surf = tok; WZ.hurtH(h, b.dmg); }
+  for (const h of WZ.hitNear(b.x, b.y, r)) if (!h.broken && h.surf !== tok && Math.hypot(h.x - b.x, h.y - b.y) < r + (h.rad || 0.4)) { h.surf = tok; WZ.hurtH(h, b.dmg); }
   WZ.altarTouch(b.x, b.y, r);
   WZ.ctx = null;
 };
@@ -1215,7 +1246,7 @@ WZ.projSpecial = function (p, dt) {
       }
       if (!e.boss) { const kb = e.kb !== undefined ? e.kb : e.elite ? 0.4 : 1, mk = p.mk || 1; e.kx = p.vx * 1.1 * kb * mk; e.ky = p.vy * 1.1 * kb * mk; }   // it surfs the wave
     }
-    for (const h of WZ.hitH()) if (!h.broken && h.surf !== p.sid && Math.hypot(h.x - p.x, h.y - p.y) < p.w / 2 + (h.rad || 0.4)) { h.surf = p.sid; WZ.hurtH(h, p.dmg); }
+    for (const h of WZ.hitNear(p.x, p.y, p.w / 2)) if (!h.broken && h.surf !== p.sid && Math.hypot(h.x - p.x, h.y - p.y) < p.w / 2 + (h.rad || 0.4)) { h.surf = p.sid; WZ.hurtH(h, p.dmg); }
     if (Math.random() < dt * 40) { const s = (Math.random() - 0.5) * p.w; w.fx_.push({ type: 'spark', x: p.x - uy * s, y: p.y + ux * s, vx: ux * 3, vy: uy * 3, z: 0.4, vz: rand(2, 4), g: 16, col: Math.random() < 0.4 ? '#ffffff' : '#7ad0ff', t: 0, dur: 0.5, el: 'water' }); }
     if (p.life > 0) return false;
     WZ.puff(p.x, p.y, '#7ad0ff', 10);
@@ -1276,7 +1307,7 @@ WZ.zoneSpecial = function (z, dt) {
     const am = Math.hypot(z.ax, z.ay) || 1, ux = z.ax / am, uy = z.ay / am, cos = Math.cos(z.half);
     const inCone = (x, y, rad) => { const dx = x - z.x, dy = y - z.y, d = Math.hypot(dx, dy); return d < z.r + rad && (d < 0.6 || (dx * ux + dy * uy) / d > cos); };
     for (const e of w.enemies) if (!e.dead && !(e.fall > 0) && inCone(e.x, e.y, e.rad)) { WZ.hurtE(e, z.dps * dt, 0, 0, true); e.flash = 0.06; }
-    for (const h of WZ.hitH()) if (!h.broken && inCone(h.x, h.y, h.rad || 0.4)) WZ.hurtHc(h, z.dps * dt);
+    for (const h of WZ.hitNear(z.x, z.y, z.r)) if (!h.broken && inCone(h.x, h.y, h.rad || 0.4)) WZ.hurtHc(h, z.dps * dt);
     WZ.altarTouch(z.x + ux * z.r * 0.5, z.y + uy * z.r * 0.5, z.r * 0.4);
     if ((z.trT -= dt) <= 0) { z.trT = S.trailGap; const d = 1 + Math.random() * (z.r - 1), an = Math.atan2(uy, ux) + (Math.random() - 0.5) * z.half * 1.6; WZ.trail(z.x + Math.cos(an) * d, z.y + Math.sin(an) * d); }
     for (let i = 0; i < 3; i++) {   // the flames themselves
@@ -1299,7 +1330,7 @@ WZ.zoneSpecial = function (z, dt) {
       if (e.dead || e.fall > 0 || Math.hypot(e.x - z.x, e.y - z.y) > z.r + e.rad) continue;
       WZ.hurtE(e, S.dps * dt, 0, 0, true); WZ.slowE(e, S.slow, S.slowT); e.flash = 0.05;
     }
-    for (const h of WZ.hitH()) if (!h.broken && Math.hypot(h.x - z.x, h.y - z.y) < z.r + (h.rad || 0.4)) WZ.hurtHc(h, S.dps * dt);
+    for (const h of WZ.hitNear(z.x, z.y, z.r)) if (!h.broken && Math.hypot(h.x - z.x, h.y - z.y) < z.r + (h.rad || 0.4)) WZ.hurtHc(h, S.dps * dt);
     WZ.altarTouch(z.x, z.y, z.r);
     if ((z.trT -= dt) <= 0) { z.trT = S.trailGap; WZ.trail(z.x, z.y); }
     if (Math.random() < dt * 24) w.fx_.push({ type: 'spark', x: z.x, y: z.y, vx: rand(-1, 1), vy: rand(-1, 1), z: 0.5, vz: rand(0.5, 2), g: 6, col: Math.random() < 0.4 ? '#ffffff' : '#4fc3ff', t: 0, dur: 0.4, el: 'water' });
@@ -1612,14 +1643,18 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   w.sx = ((rx || 0) + (ry || 0)) / 1.414; w.sy = ((ry || 0) - (rx || 0)) / 1.414;   // the right stick, in world directions (iso, like the movement stick)
   // broken nodes respawn
   if (!P2) {
-  for (const h of WZ.harv) {
-    if (h.flash > 0) h.flash -= dt;
-    if (h.broken) { h.respawn -= dt; if (h.respawn <= 0) { h.broken = false; h.hp = h.maxHp; } }
+  const hv = w.hv;   // (only a node that differs from a fresh one has an entry: a hit one flashing, a broken one counting down)
+  for (const id in hv) {
+    const e = hv[id];
+    if (e.flash > 0) e.flash -= dt;
+    if (e.broken) { e.respawn -= dt; if (e.respawn <= 0) { e.broken = false; e.hp = WZ.harv[id].maxHp; } }
   }
   // forage spots grow back; a half-dug one keeps its progress for good (walking away never undoes it)
-  for (const o of WZ.forage) {
-    if (o.shake > 0) o.shake -= dt;
-    if (o.broken) { o.respawn -= dt; if (o.respawn <= 0) o.broken = false; }
+  const fg = w.fg;
+  for (const id in fg) {
+    const e = fg[id];
+    if (e.shake > 0) e.shake -= dt;
+    if (e.broken) { e.respawn -= dt; if (e.respawn <= 0) e.broken = false; }
   }
   for (const f of w.fx_) {
     f.t += dt;
@@ -1794,7 +1829,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     w.pickups.splice(i, 1);
   }
   // solid harvestables
-  for (const h of WZ.harv) {
+  for (const h of WZ.harvBox(w.x - 1.5, w.y - 1.5, w.x + 1.5, w.y + 1.5)) {
     if (h.broken) continue;
     const ex = w.x - h.x, ey = w.y - h.y;
     if (Math.abs(ex) > 1 || Math.abs(ey) > 1) continue;
@@ -1816,6 +1851,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
 
   // enemies
   const en = w.enemies;
+  if (G.w2) WZ.groupW(en, e => WZ.nearestW(e.x, e.y) > 0);   // (4P: one swap of the Wizard for each group of foes, not one per foe)
   for (let i = 0; i < en.length; i++) {
     const e = en[i];
     if (e.dead) continue;
@@ -1910,6 +1946,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   WZ.bendTick(dt);
 
   // projectiles
+  if (G.w2) WZ.groupW(w.proj, p => p.pi);
   for (let i = w.proj.length - 1; i >= 0; i--) {
     const p = w.proj[i];
     WZ.sel(p.pi || 0);
@@ -1919,8 +1956,8 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
     if (G.menu && p.ctx) Menu.touch(p.x, p.y, p.r || 0.4);   // (menu world: a bolt flying over a safe plate presses it)
     let hit = null, hitE = false;
-    for (const e of w.enemies) { if (!e.dead && Math.hypot(e.x - p.x, e.y - p.y) < p.r + e.rad) { hit = e; hitE = true; break; } }
-    if (!hit) for (const h of WZ.hitH()) { if (!h.broken && Math.hypot(h.x - p.x, h.y - p.y) < p.r + (h.rad || 0.4)) { hit = h; break; } }
+    for (const e of w.enemies) { if (e.dead) continue; const dx = e.x - p.x, dy = e.y - p.y, rr = p.r + e.rad; if (dx < rr && dx > -rr && dy < rr && dy > -rr && Math.hypot(dx, dy) < rr) { hit = e; hitE = true; break; } }
+    if (!hit) for (const h of WZ.hitNear(p.x, p.y, p.r)) { if (!h.broken && Math.hypot(h.x - p.x, h.y - p.y) < p.r + (h.rad || 0.4)) { hit = h; break; } }
     if (!hit && p.ctx && WZ.altarBlocks(p.x, p.y, p.r)) hit = 'altar';   // a bolt or boulder that reaches the Summoning Altar bursts on it
     WZ.ctx = p.ctx;
     if (hit === 'altar') {
@@ -1972,6 +2009,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   }
 
   // zones
+  if (G.w2) WZ.groupW(w.zones, z => z.pi);
   const zsA = [0, 0], zsrcA = [null, null];
   for (let i = w.zones.length - 1; i >= 0; i--) {
     const z = w.zones[i];
@@ -2025,6 +2063,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   // drops: fly out, then vacuum into the wizard
   w.mergeT -= dt;
   if (w.mergeT <= 0) { w.mergeT = 0.25; WZ.mergeGems(); }
+  if (G.w2) WZ.groupW(w.drops, d => WZ.nearestW(d.x, d.y) > 0);
   for (let i = w.drops.length - 1; i >= 0; i--) {
     const dr = w.drops[i];
     dr.t += dt;

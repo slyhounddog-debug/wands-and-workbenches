@@ -105,7 +105,8 @@ async function boot(browser, name) {
   p1 = await pos(); ok(d2(p0.w2, p1.w2) > 1 && d2(p0.w1, p1.w1) < 0.5, 'guest 1 moves Wizard 2', d2(p0.w2, p1.w2).toFixed(1));
   p0 = p1; await hold(P[2].page, 'KeyS', 800);   // guest 2 is Builder 1
   p1 = await pos(); ok(d2(p0.b1, p1.b1) > 1 && d2(p0.b2, p1.b2) < 0.5, 'guest 2 moves Builder 1', d2(p0.b1, p1.b1).toFixed(1));
-  p0 = p1; await hold(P[3].page, 'KeyA', 800);   // guest 3 is Builder 2
+  await sleep(800); p0 = await pos();   // (Builder 1 is still gliding to a stop after guest 2's key: let him settle before the next one is measured)
+  await hold(P[3].page, 'KeyA', 800);   // guest 3 is Builder 2
   p1 = await pos(); ok(d2(p0.b2, p1.b2) > 1 && d2(p0.b1, p1.b1) < 0.5, 'guest 3 moves Builder 2', d2(p0.b2, p1.b2).toFixed(1));
   await sleep(400);
   const gv = await Promise.all(P.slice(1).map(G_ => G_.page.evaluate(() => { const G = __wands.G; return { vi: G.vi, w2: [G.w2.x, G.w2.y], b2: [G.bd2.x, G.bd2.y] }; })));

@@ -59,10 +59,14 @@ function dspr(ctx, s, x, y, S, alpha, flip) {
   } else ctx.drawImage(s.c, px, py, w, h);
   if (alpha !== undefined && alpha !== 1) ctx.globalAlpha = 1;
 }
-// a sprite leaning over: the base stays put and the top slides sideways by k x its height (grass pushed aside)
+// a sprite leaning over: the base stays put and the top slides sideways by k x its height (grass pushed aside). The transform is set outright and put back (the base transform of
+// a world / factory buffer is known: 1/P scale, shifted left by the half's origin), instead of save() / restore(), which copies the whole drawing state for every blade of grass.
 function dsprSkew(ctx, s, x, y, S, k) {
-  ctx.save(); ctx.translate(snap(x), Math.round(y / R.px) * R.px); ctx.transform(1, 0, -k, 1, 0, 0);
-  ctx.drawImage(s.c, -s.ax * S, -s.ay * S, s.c.width * S, s.c.height * S); ctx.restore();
+  if (!s) return;
+  const P = R.px;
+  ctx.setTransform(1 / P, 0, -k / P, 1 / P, (snap(x) - R.org) / P, Math.round(y / P));
+  ctx.drawImage(s.c, -s.ax * S, -s.ay * S, s.c.width * S, s.c.height * S);
+  ctx.setTransform(1 / P, 0, 0, 1 / P, -R.org / P, 0);
 }
 // draw a sprite squashed/stretched around its anchor (sx = width scale, sy = height scale)
 function dsprSq(ctx, s, x, y, S, sx, sy, alpha, flip) {
@@ -108,19 +112,19 @@ function textBitmap(font, s, col, o) {
   TXTC.set(key, e);
   return e;
 }
+const FONT_STR = {};   // (the font string for a size: built once, and the canvas's font is only set on the slow path below - setting it on every call was a measurable part of the text pass)
 function drawText(c, s, x, y, size, col, align, font) {
   const display = font === 'd';
   const sz = display ? (size < 14 ? 12 : size < 20 ? 16 : 24) : Math.round(size * 1.3 / 2) * 2;
-  c.font = (display ? '' : '700 ') + sz + 'px ' + (display ? FONT_D : FONT_B);
-  c.textAlign = align || 'center';
-  c.textBaseline = 'alphabetic';
-  const o = display ? 3 : 2;
-  const bm = R.noTextCache ? null : textBitmap(c.font, s, col || '#fff', o);   // the outlined string, drawn once into a bitmap: a fresh string was ten fillText calls every frame
+  const kf = (display ? 'd' : 'b') + sz, fstr = FONT_STR[kf] || (FONT_STR[kf] = (display ? '' : '700 ') + sz + 'px ' + (display ? FONT_D : FONT_B));
+  const o = display ? 3 : 2, al = align || 'center';
+  const bm = R.noTextCache ? null : textBitmap(fstr, s, col || '#fff', o);   // the outlined string, drawn once into a bitmap: a fresh string was ten fillText calls every frame
   if (bm) {
-    const al = c.textAlign, dx = al === 'center' ? -bm.w / 2 : al === 'right' || al === 'end' ? -bm.w : 0;
+    const dx = al === 'center' ? -bm.w / 2 : al === 'right' || al === 'end' ? -bm.w : 0;
     c.drawImage(bm.cv, Math.round(x + dx) - bm.pad, Math.round(y) - bm.asc - bm.pad);
     return;
   }
+  c.font = fstr; c.textAlign = al; c.textBaseline = 'alphabetic';
   c.fillStyle = '#1a0f28';
   for (const d of [[-o, 0], [o, 0], [0, -o], [0, o], [o, o], [-o, o], [o, -o], [-o, -o], [0, o + 2]]) c.fillText(s, Math.round(x) + d[0], Math.round(y) + d[1]);
   c.fillStyle = col || '#fff';
@@ -1560,11 +1564,14 @@ R.drawWorld = function (main, dt, rect) {
   if (alt) R.drawAltarGround(ctx, v, w);
   for (const f of w.fx_) if (f.type === 'ring' || f.type === 'warn' || f.type === 'shock') R.drawFx(ctx, v, f); else if (f.type === 'drop') R.drawDrop(ctx, v, f, true);
 
-  for (const b of w.boulders) objs.push({ d: b.x + b.y, t: 'boulder', o: b });
-  for (const dr of w.drops) objs.push({ d: dr.x + dr.y, t: 'drop', o: dr });
+  // off-screen things are not drawn (nor sorted): a foe's sprite stands UP from its feet, so the bottom edge needs a taller margin than the top; a thing lifted into the air by a
+  // geyser or an Egg's portal is drawn above its feet, never below, so the top margin can stay small
+  const vis = (x, y, mx, mt, mb) => { const sx = (x - y) * v.hw + v.ox, sy = (x + y) * v.hh + v.oy; return sx > left - mx && sx < right + mx && sy > -mt && sy < CFG.H + mb; };
+  for (const b of w.boulders) if (vis(b.x, b.y, 120, 80, 160)) objs.push({ d: b.x + b.y, t: 'boulder', o: b });
+  for (const dr of w.drops) if (vis(dr.x, dr.y, 120, 80, 160)) objs.push({ d: dr.x + dr.y, t: 'drop', o: dr });
   for (const pk of w.pickups) objs.push({ d: pk.x + pk.y, t: 'pick', o: pk });
-  for (const e of w.enemies) objs.push({ d: e.x + e.y, t: 'enemy', o: e });
-  for (const e of w.allies) objs.push({ d: e.x + e.y, t: 'enemy', o: e });   // the friendly creatures (R.drawEnemy shows them in green)
+  for (const e of w.enemies) if (vis(e.x, e.y, 240, 100, 360)) objs.push({ d: e.x + e.y, t: 'enemy', o: e });
+  for (const e of w.allies) if (vis(e.x, e.y, 240, 100, 360)) objs.push({ d: e.x + e.y, t: 'enemy', o: e });   // the friendly creatures (R.drawEnemy shows them in green)
   if (!(G.menu && G.menu.l4)) objs.push({ d: w.x + w.y, t: 'wiz', o: w });   // (the 4P lobby draws its own four characters)
   if (G.w2) { const ow = R.wizOther(); objs.push({ d: ow.x + ow.y, t: 'wiz', o: ow }); }   // 4P: the other Wizard
   if (mv) Menu.collect(objs, v, mv);
@@ -1625,7 +1632,7 @@ R.drawWorld = function (main, dt, rect) {
   for (const p of w.eproj) R.drawProj(ctx, v, p);
   for (const p of w.aproj) R.drawProj(ctx, v, p);
   if (airborne) R.drawAltar(ctx, v, w);
-  for (const f of w.fx_) if (f.type !== 'ring' && f.type !== 'warn' && f.type !== 'shock') R.drawFx(ctx, v, f);
+  for (const f of w.fx_) if (f.type !== 'ring' && f.type !== 'warn' && f.type !== 'shock' && (f.type !== 'spark' || vis(f.x, f.y, 80, 200, 80))) R.drawFx(ctx, v, f);   // (a spark flies up from the ground, so it needs room above)
   for (const a of w.arcs) R.drawArc(ctx, v, a);
   if (airborne) R.drawAltarParts(ctx, v, w);
   R.drawKeepCount(ctx, v, wt);

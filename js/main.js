@@ -820,7 +820,7 @@ Main.hintFor = function (q) {
     const w = G.w;
     let best = null, bd = 1e9;
     const near = o => { const d = Math.hypot(o.x - w.x, o.y - w.y); if (d < bd) { bd = d; best = o; } };
-    if (h.harv || h.forage) {   // thousands of nodes: scan when he steps onto a new tile, or when the one found has been used up (this ran every frame, twice, on both goal cards)
+    if (h.harv || h.forage) {   // a few hundred nodes, each read through an accessor: scan when he steps onto a new tile, or when the one found has been used up (this ran every frame, twice, on both goal cards)
       const key = h.harv ? 'h' : 'f', c = Main.hc, tx = Math.floor(w.x), ty = Math.floor(w.y);
       if (c && c.wr === w && c.key === key && c.tx === tx && c.ty === ty && (!c.best || (!c.best.broken && (key === 'h' || WZ.forageSeen(c.best))))) best = c.best;
       else {

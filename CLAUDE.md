@@ -48,6 +48,7 @@ The original design doc was "Complete Game Spec v5.0" (pasted by the user, not s
 | `js/feedbackdraw.js` / `FEEDBACK.md` | The **attention-and-causality layer** (see **What / why / what next**): `R.drawHurt` (who hit the Wizard and from where), `R.drawTether`, `R.drawThreat` (at the Spell Portal), `R.drawRej` (the factory-full bounce), `R.drawBoost`, `R.drawFoeStatus`, `R.drawWandFill`; pure functions of G and the clock. `FEEDBACK.md` is the ledger of every event, its three answers and where each shows; `tools/featcheck` fails when a row has no cue. |
 | `js/mode4.js` / `js/mode4run.js` / `js/mode4draw.js` / `js/elements4.js` / `js/online4.js` | **4-player mode** (see that section): the swap core (second Wizard / Builder, seats, balance wraps, identity words), the runtime (new game, per-seat input, both Builders, fall / revive / game over, saves, the views, the results screen), the drawing helpers (the other Wizard, name tags), the element effects and attunement, and the lobby + host hooks. |
 | `js/emote.js` / `js/emotedraw.js` | The Wizard's **emotes** (see **Emotes, ally buffs and the drag tools**): the wheel / dance state (`WZ.emoteInput` / `emoteTick`, plain data in `G.w.wheel / emote / stk`) and its drawing (the wheel, the four dances, the Builder's die-cut sticker). |
+| `tools/perf/frame.js` | The OFFLINE frame cost run (one page, no network, so steady): a 4P (or `MODE2=1` 2P) game with the stress scene or `CALM=1`; main-thread ms per phase, drawImage calls by caller, Wizard swaps, `PROFILE=1` (a CPU profile), `SHOT=<png>`, `ROOT=<worktree of an older commit>` to compare builds. See the 2026-11 frame pass. |
 | `tools/mode4check/run.js` / `net.js` | The 4-player acceptance runs (offline simulation checks; the online one with a host and three guests). |
 | `tools/featcheck/run.js` | The 2026-10-29 pass: shake cue, ally wand buffs, belt-line chip + green link, drag to delete (real mouse drags), the guest's hearing, the Altar's crater, emotes, the photo test. |
 | `js/devbot.js` | `DevBot` — the dev-only Wizard bot for solo iteration tests (see **Dev Wizard bot**). Loaded after ui.js. Nothing else depends on it except the three hooks in main.js / ui.js. |
@@ -584,6 +585,21 @@ Measured with `tools/nettest/stress.js` (online: host + guest, the stress scene)
 - **PIP** (`R.drawPip`): the small partner view is redrawn at most ~8x its own cost of the time (down to 10 pictures a second in a big fight).
 - Tests: `node tools/nettest/stress.js` (`CALM=1`, `THROTTLE=3`, `LOSS=0.05`, `PROFILE=guest|host`, `ROOT=<git worktree of an older commit>` to compare builds).
 
+
+
+## The 2026-11 frame pass (renderer and sim, 2P and 4P)
+
+Measured with `tools/perf/frame.js` (one page, the stress scene: 60 foes, 5 allies, 20 spells re-cast every 1.5 s; main-thread ms per frame, 3 runs each, the build before this pass against after): **4P stress 13.1 -> 10.5 ms** (the simulation 4.7 -> 3.1, drawing the wilds 6.2 -> 5.4, the text pass 1.2 -> 0.9), 2P stress 9.2 -> 8.8 (the 2P scene has all 60 foes on screen, so culling gains nothing there), calm 4P 4.7 -> 4.2. The four-page online rig (`tools/mode4check/stress.js`) is bound by four browsers sharing one machine, so its fps barely moved; read the milliseconds.
+
+- **Harvestable grid** (wizard.js `WZ.harvGrid` / `harvBox` / `hitBox` / `hitNear`): the trees, rocks and ore never move, so they sit in 8-tile cells and every spell asks only for the ones near it. Every projectile, zone, wave, wand attack and `WZ.each` used to walk ALL of `WZ.harv` (a couple of hundred nodes, each `broken` / `hp` read going through a `WZ.nodeProps` accessor) every frame: the biggest single cost of a busy fight (the sim went 5.5 -> 2.5 ms). The lists are CANDIDATES (whole cells + every Battery Shrine and boulder): the caller still tests the exact distance. `WZ.hitH()` is no longer used. New code that hurts or collides with trees asks `WZ.hitNear(x, y, r)` / `WZ.harvBox(x0, y0, x1, y1)`, never loops `WZ.harv`.
+- **Per-frame node loops only visit nodes with state**: the respawn / flash loops read `G.w.hv` / `G.w.fg` (the sparse stores) instead of every node; `WZ.forageAt` tests distance before the accessor; `Main.hintFor` caches the nearest tree / forage spot until he changes tile.
+- **4P swaps** (mode4.js `WZ.groupW`): the foe / ally / drop / projectile / zone loops play each item AS a Wizard, and a `WZ.swapP` exchanges ~70 fields of a big object. Those lists are grouped by Wizard (stable) before the loop, so a frame makes ~15 swaps, not ~55.
+- **Box tests before `Math.hypot`** in `WZ.each`, `WZ.nearest` and the projectile hit loop.
+- **Off-screen things are not drawn (nor sorted)** (`drawWorld`'s `vis`): foes, allies, boulders, drops and sparks outside the view plus a margin (taller at the bottom: a sprite stands UP from its feet). Pickups are always listed (their off-screen pointers need them).
+- **Text** (`drawText`): the font string is built once per size and the canvas font is only set on the slow path (setting it on every call was a third of the text pass).
+- `dsprSkew` sets the transform outright instead of `save()` / `restore()`.
+- **Tried and dropped**: a sprite atlas for the ground decor (the idea: one texture instead of hundreds of tiny canvases). It made no measurable difference here, so it is not in. The remaining drawing cost is mostly `drawImage` itself: the ~700 decor sprites in view and the blit of the low-res buffers to the stage. Baking decor into the ground cache needs the static things that overlap a moving one to stay live (a foe behind a tree must be drawn under it), which is a large change; scaling the buffers in CSS instead of blitting them would also cut the blit.
+- **Tests**: mode4check section 13 (the grid finds every node a brute-force scan finds, the respawn loop, `groupW`).
 
 ## The 2026-10-31 request pass (goals, gems, shards, boulders, lava, the Cauldron, armor, the INDEX page)
 

@@ -244,11 +244,33 @@ UI.questDone = function (side, q) {
     WZ.ring(w.x, w.y, big ? 2.4 : 1.6, '#ffd23a', 0.5); WZ.puff(w.x, w.y, '#ffd23a', big ? 20 : 10);
   }
   AU.sfx(big ? 'complete' : 'buy');
-  const el = $('quest' + side); el.classList.remove('done'); void el.offsetWidth; el.classList.add('done');
-  UI.changed();
+  UI.changed();   // (the card's own celebration starts in UI.questSide when it sees the goal number move: the guest sees it too)
+};
+// the completed goal's card: it grows, glows and drifts toward the middle of the screen, shakes, and only then shows the next goal while it shrinks back (CSS .celebrate, CFG.questCelebrate)
+UI.qHold = {}; UI.qLast = {};
+UI.celebrate = function (side, q) {
+  UI.qHold[side] = { q, t0: performance.now() };
+  const el = $('quest' + side); el.classList.remove('celebrate'); void el.offsetWidth; el.classList.add('celebrate');
+  if (!el._cel) { el._cel = true; el.addEventListener('animationend', e => { if (e.animationName === 'qcel') el.classList.remove('celebrate'); }); }
+};
+UI.questHeld = function (side) {
+  const h = UI.qHold[side];
+  if (!h) return false;
+  if (performance.now() - h.t0 >= CFG.questCelebrate.swap * 1000) { delete UI.qHold[side]; return false; }
+  const q = h.q;
+  setHtml('qIcon' + side, UI.img('ic_check', 32));
+  setHtml('qHead' + side, '<span>GOAL COMPLETE!</span><span class="qr">+' + q.xp + ' XP' + UI.giftHtml(q.gift, 16) + '</span>');
+  setTxt('qText' + side, q.text);
+  $('qBar' + side).style.display = '';
+  $('qFill' + side).style.width = '100%';
+  return true;
 };
 UI.questSide = function (side) {
   const list = QUESTS[side], i = G.quest[side], q = list[i], nm = QUEST_NAME[side];
+  UI.qLast = UI.qLast || {};   // (the guest's G is replaced by every snapshot, so this lives on UI)
+  if (UI.qLast[side] !== undefined && i === UI.qLast[side] + 1 && list[UI.qLast[side]] && !G.menu) UI.celebrate(side, list[UI.qLast[side]]);   // the goal number moved by one: that goal was just completed
+  UI.qLast[side] = i;
+  if (UI.questHeld(side)) return;
   if (!q) {
     setHtml('qIcon' + side, UI.img('ic_trophy', 32));
     setHtml('qHead' + side, '<span>' + nm + ' GOALS DONE</span><span class="qr">' + list.length + '/' + list.length + '</span>');
@@ -395,8 +417,8 @@ UI.buildHotbar = function () {
     s.className = 'slot'; s.dataset.id = id;
     s.innerHTML = '<kbd>' + KEYLBL[i] + '</kbd><span class="ic"></span><span class="pips"></span><i class="lock">' + UI.img('ic_lock', 16) + '</i><i class="free">FREE</i>';
     s.onclick = () => UI.select(id);
-    s.onmouseenter = () => { UI.tipHover = true; UI.showTip(id); };
-    s.onmouseleave = () => { UI.tipHover = false; UI.tipT = 0.6; };
+    s.onmouseenter = () => { UI.tipHover = true; UI.hovSlot = id; UI.showTip(id); };
+    s.onmouseleave = () => { UI.tipHover = false; UI.hovSlot = null; UI.tipT = 0.6; };
     if (UI.isFam(id)) s.addEventListener('wheel', e => { e.preventDefault(); UI.cycleFam(e.deltaY > 0 ? 1 : -1, id); UI.showTip(id); }, { passive: false });   // the wheel over a family slot cycles its member
     box.appendChild(s);
   });
@@ -900,7 +922,7 @@ const HOWTO = {
     ['Machines', 'The <b>Harnesser</b> carries one of four element crystals: <b>F</b> (<b>LT + X</b> on a pad) switches it to the next element at any time. The old crystal bursts, the new one grows for 7.5 seconds, then the Harnesser shakes and starts making spells (nothing is made while it grows, and switching again restarts the 15 seconds). Every building shows what it holds as real items stacked on it: inputs, what it has made, a blueprint materials (faint copies = still missing), Battery fuel. Harnessers make spells by themselves, or stand next to one and press <b>E</b>, then <b>keep tapping E</b> to fill the meter and crank one out by hand (it never fills by itself; no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
     ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with one charged <b>Battery</b> just south of the Stockpile. A Battery is a building: it gives +10 power while it has charge and drains by itself while anything needs power. To refill it, throw element spells, Wood or Stone at it (or belt them in): it burns them into charge, more kinds at once = faster (hand-gathered spells are free). Every spell charges 10% more than its base, and a spell you throw in by hand adds another 20%. Build more Batteries like any building (place the blueprint, throw its materials at it). A charged Battery right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, the <b>Heavy Batteries</b> node unlocks the <b>Heavy Battery</b>, which drains slower so its charge lasts 50% longer.'],
     ['Creatures', 'The <b>Creature Spawner</b> turns element spells into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. There is only one Spawner and nothing to unlock: feed it ONE thing at a time. An element spell hatches the basic creature of its element. A forged combo spell hatches the pair or triple creature of its elements: Flamethrower (Cinder Phoenix), Tempest Tear (Thunderhead), Magma Bomb (Lava Golem), Mud Shield (Swamp Shambler), Meteor Shower (Ember Dragon), Thunderstorm (Storm Leviathan), Geyser Eruption (Kiln Titan). Steam Mine, Gale Boomerang and Blizzard are no seeds: the Spawner bounces them back. <b>Allies:</b> throw an Element <b>Core</b> (by hand) at an idle Spawner and it grows a <b>friendly</b> version of the creature instead: Gale = Zephyr Wisp, Tide = Puddle Slime, Ember = Cinder Imp, Stone = Pebble Golem. While it grows, throw a Core of a different element to make it the pair creature, then a third for the triple (each Core adds growing time). A Core thrown at a hostile grow, a repeated element, a mix with no creature, a fourth Core, or a spell during an ally grow all bounce back. Send the green-tinted Egg through the Spell Portal: the ally hatches 2-4 tiles from the Wizard with double health and half damage, and hostiles go for it before him. Up to 10 allies, 3 eggs waiting; a spent ally pays nothing. A small icon shows which creature it is hatching; when one dies it sometimes gives back what it was hatched from. At most 25 factory creatures live at once: extra Eggs wait beside the portal. Every creature is in the <b>Collection Book</b> (C) with a live demo. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
-    ['Growing', 'The floor starts small (12 x 9). Place <b>Floor Tiles</b> (slot 8) on empty ground beside it and throw them Wood and Stone (and Iron after the 28th) to turn them into floor. A floor tile holds <b>5</b> loose items; more bounce on to the next tile.'],
+    ['Growing', 'The floor starts small (12 x 8). Place <b>Floor Tiles</b> (slot 8) on empty ground beside it (each covers a 2 x 2 block) and throw them Wood and Stone (and Iron after the 12th) to turn them into floor. A floor tile holds <b>5</b> loose items; more bounce on to the next tile.'],
     ['Stockpile', 'The <b>Stockpile</b> is a real inventory: it starts as 3 x 2 wooden tiles, and every tile holds <b>50 of ONE kind</b> (Wood, Stone, Iron, Shards, Cores, the Warden Key, element spells, garments). Slot 8 swaps (<b>Q</b>) to the <b>Stockpile Tile</b> (4 Wood, 2 Stone, 1 Iron), placed on an empty floor tile. When the Stockpile has no room for something, the Wizard cannot send it home: the portal over his head spits it back out. <b>Demolish</b> takes a building first; on an empty tile it lifts the Stockpile tile (back to floor) or the floor tile itself, refunded, and whatever lay there bounces to the next tile with room. When the whole factory is full the extras go through the Spell Portal into the wilds.'],
     ['Spells', 'Spells need no unlocking: a pair is the two element spells fused at an Elemental Forge, a triple needs its two parent pairs to have been made once, and the Nova needs all four triples. The <b>Collection Book</b> (button beside the Skill Tree, or <b>C</b>) lists every spell and creature with a live demo, its recipe and its numbers.'],
     ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> routes what comes in to up to 3 outputs: every side that has a belt, machine or portal to feed (the side items arrive from is the input). Click it (<b>A</b> on a pad) to share the outputs out by percentage with a slider, and switch element toggles on an output to make it a <b>filter</b> (Fire + Earth left, Water + Air right). The starting Splitter sends 25% to the Spell Portal and 75% to the Spawner. The <b>Storage Crate</b> holds any number of one kind of element spell or Egg and feeds them out of its arrow. E turns a Crate.'],
@@ -919,7 +941,7 @@ const HOWTO = {
     ['Pickups', 'Potions and Shield Potions sent through the Spell Portal fall beside the Wizard. Walk over them to use them. They wait if HP or shield is already full.'],
     ['Weaknesses', 'Biome monsters take <b>double damage</b> from one element and half from another: <b>Ember Imps</b> (sand, dirt) hate Water, <b>Bog Lurkers</b> hate Fire, <b>Gale Wisps</b> (far meadows) hate Earth, <b>Stone Golems</b> (far dark woods) hate Air. Combo spells count every element in them. A small diamond over a foe shows its weakness, and yellow numbers with a ! mean a weak hit.'],
     ['Elites', 'Big gold-ringed monsters with a crown. Much tougher, but they drop <b>Aether Shards</b> and lots of XP. Each one is weak to one element.'],
-    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard walks up: clear them. <b>Crypts</b> (purple) open if he waits at the door, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours) want <b>three Cores</b>, one of each element the Shrine does NOT belong to (an Air Shrine takes Water, Fire and Earth): creatures of those elements drop them now and then (elites always do). Stand near the Shrine and have the Builder send the Cores through the Spell Portal one by one: each sails down onto the Shrine, and the third claims the Shard. A claimed Shrine does nothing until the Wizard <b>wakes</b> it: stand beside it and press <b>Mash</b>, then press Mash again each time a closing ring passes through its target zone, three times (a miss only restarts that ring; walking away cancels it). Awake, it speeds up that element\'s Harnessers by 25% for <b>30 seconds</b>, wherever the Wizard goes, then recharges for <b>2 minutes</b> (it visibly refills). Standing on a Shrine gives nothing, and Shrines never charge the wand.'],
+    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard stands inside their ring for 3 seconds: clear them. <b>Crypts</b> (purple) open when he stands in their bigger ring for 5 seconds, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours) want <b>three Cores</b>, one of each element the Shrine does NOT belong to (an Air Shrine takes Water, Fire and Earth): creatures of those elements drop them now and then (elites always do). Stand near the Shrine and have the Builder send the Cores through the Spell Portal one by one: each sails down onto the Shrine, and the third claims the Shard. A claimed Shrine does nothing until the Wizard <b>wakes</b> it: stand beside it and press <b>Mash</b>, then press Mash again each time a closing ring passes through its target zone, three times (a miss only restarts that ring; walking away cancels it). Awake, it speeds up that element\'s Harnessers by 25% for <b>30 seconds</b>, wherever the Wizard goes, then recharges for <b>2 minutes</b> (it visibly refills). Standing on a Shrine gives nothing, and Shrines never charge the wand.'],
     ['Foraging', '<b>Dirt Mounds</b>, <b>Stick Piles</b> and <b>Berry Bushes</b> are scattered everywhere. Stand at one and <b>mash the Mash button</b> (pad <b>X</b>, left-click, <kbd>/</kbd> on a shared keyboard) to dig out Stone (sometimes Iron Ore) or Wood, or shake a Health Potion or Armor Plate out of a bush. Mash is its own button: the roll never digs. They grow back after a while. Wearing the Kilnsight Mask also shows <b>buried caches</b> glinting in the grass: dig those the same way.'],
     ['The Wand', 'The Wizard\'s staff holds <b>four wand attacks</b>, one per element, and they are charged by <b>the spells the Builder sends</b>: every spell adds one tick to each element it carries (a Gust ticks Air, a Flamethrower Air and Fire, the Nova all four). A slot is READY after <b>8 Air, 7 Water, 6 Fire or 5 Earth</b> ticks and holds exactly one attack (ticks for a full slot are lost). The four slots sit under his health bar. <b>Cycle</b> (pad <b>Y</b>) picks which ready slot is armed; <b>Cast</b> (pad <b>B</b>) fires it. <b>Flame Trail</b> (Fire): +15% speed for 3 seconds and a trail of fire that burns for 5 seconds. <b>Vanishing Puff</b> (Air): a burst of air that shoves and hurts, then for 4 seconds nothing hostile can target him (mashing or casting ends it early). <b>Riding Wave</b> (Water): he rides a wave in a straight line, about 8 tiles in a second, parting foes to the sides; it stops dead at walls and water. <b>Statue</b> (Earth): 4 seconds of stone, slower but taking only 30% damage, then it bursts, harder for every hit he took.'],
     ['Dodging', 'The roll (<b>Dodge</b>: pad <b>A</b>, <kbd>Space</kbd>, <kbd>.</kbd>) makes the Wizard <b>invulnerable</b> while he flickers white. A hit he rolls through pops <b>DODGE!</b>.'],
@@ -967,7 +989,7 @@ const CONTROLS = [
     [K('G') + ' &nbsp;/&nbsp; pad LT + Y', 'Auto-pickup on / off (off by default): loose items that settle within a tile of you hop into your hands'],
     [K('1') + ' - ' + K('9') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, the building families, Floor Tiles, then the Helper Robot)'],
     [K('[') + ' ' + K(']'), 'Previous / next hotbar slot'],
-    [K('Q') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot)'],
+    [K('Q') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot, or Shift + the wheel in the factory; Q over a hotbar slot swaps that slot)'],
     [K('R'), 'Turn the belt or building under the cursor (in front of you on a pad: X), or the one you are about to place. A Splitter never needs turning: it finds its input and outputs itself'],
     [K('CLICK') + ' &nbsp;/&nbsp; ' + K('ENTER'), 'Place the selected building / belt (Enter: on the tile in front). Drag to lay belts'],
     [K('B') + ' &nbsp;/&nbsp; ' + K('DELETE'), 'Demolish mode (full refund)'],
@@ -995,7 +1017,7 @@ const CONTROLS = [
     [K('SPACE'), 'Guest: dodge roll (invulnerable)'],
     [K('LEFT-CLICK'), 'Guest: mash (dig a mound, pile, bush or cache; wake a shrine)'],
     [K('RIGHT-CLICK') + ' ' + K('Q'), 'Guest: cast the armed wand attack / cycle the wand'],
-    [K('N'), 'Guest: emote wheel (WASD picks a dance, N or left-click does it)'],
+    [K('N'), 'Guest: emote wheel (WASD picks a dance, no keys = the centre spot, which cancels; N or left-click does it)'],
     [K('T'), 'Guest: skill tree (a purchase is sent to the host, who checks it). Nothing pauses online: a tree or menu only holds its own player still'],
     ['Gamepad', 'A pad works as on the Wizard side (A dodge, X mash, B cast, Y cycle, Back / Select tree). Job swap is off online'],
     ['Settings > PARTNER VIEW', 'How big the other player\'s world is in your corner, 0% (off) to 45%. Only you see it'],
@@ -1005,7 +1027,7 @@ const CONTROLS = [
     [K('T') + ' &nbsp;/&nbsp; ' + K('Y'), 'Builder / Wizard Skill Tree (the whole game pauses while one is open)'],
     [K('H'), 'Show or hide the controls card'],
     [K('X') + ' &nbsp;hold 1.5s', 'Swap jobs. Then: Builder arrows, ' + K('.') + ' pick up, ' + K(',') + ' throw, ' + K('/') + ' use. Wizard WASD + mouse: ' + K('SPACE') + ' dodge, ' + K('E') + ' / left-click mash, ' + K('Z') + ' / right-click cast, ' + K('V') + ' cycle'],
-    [K('N'), 'Wizard: emote wheel. Move to pick Float (up), Blaze (right), Rain (down) or Stomp (left), then N or Mash. He dances until he moves'],
+    [K('N'), 'Wizard: emote wheel. Move to pick Float (up), Blaze (right), Rain (down) or Stomp (left), or let go for the centre spot (cancel), then N or Mash. He dances until he moves'],
     [K('ESC'), 'Pause menu (Resume, Settings, Save &amp; Title). Losing window focus pauses too'],
   ]],
   ['SKILL TREE', [

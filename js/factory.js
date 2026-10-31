@@ -238,10 +238,28 @@ FA.freshBuilder = () => { const B = CFG.factory.base; return { x: B.x0 + 6.5, y:
   bob: 0, moving: false, squash: 0, throwCd: 0, dustT: 0, roll: 0, rollCd: 0, rdx: 1, rdy: 0, ghosts: [] }; };
 
 // Floor Tiles: a blueprint placed just outside the floor; thrown its materials like any building, it turns into floor when finished.
-// The Iron cost only starts after the first CFG.factory.freeIron tiles were placed.
-FA.tileCost = () => { const c = Object.assign({}, CFG.buildings.expand.cost); if (G.fac.added >= CFG.factory.freeIron) c.iron = 1; return c; };
-FA.canExpand = (x, y) => FA.inb(x, y) && !FA.owned(x, y) && !FA.isQ(x, y) && !G.fac.grid[y * G.fac.w + x] &&
-  DIRS.some(d => FA.owned(x + d[0], y + d[1]));
+// A Floor Tile is a CFG.factory.tile x tile (2 x 2) block: its blueprint building sits on the block's top-left cell (b.x, b.y) and the grid points all four cells at it.
+// G.fac.added counts floor TILES (cells), so the Iron starts once freeIron blocks (freeIron x 4 cells) were placed.
+FA.tileSz = () => CFG.factory.tile || 1;
+FA.tileCost = () => { const c = Object.assign({}, CFG.buildings.expand.cost), n = FA.tileSz(); if (G.fac.added >= CFG.factory.freeIron * n * n) c.iron = 1; return c; };
+FA.tileCells = b => { const n = FA.tileSz(), o = []; for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) o.push([b.x + i, b.y + j]); return o; };
+// can a block with its top-left cell at (ax, ay) go there: every cell in the grid, outside the floor, free, not the ? station, and touching the floor along an edge
+FA.blockOk = (ax, ay) => {
+  const n = FA.tileSz(); let touch = false;
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const x = ax + i, y = ay + j;
+    if (!FA.inb(x, y) || FA.owned(x, y) || FA.isQ(x, y) || G.fac.grid[y * G.fac.w + x]) return false;
+    if (DIRS.some(d => FA.owned(x + d[0], y + d[1]))) touch = true;
+  }
+  return touch;
+};
+// the block that covers the cell (x, y): the one with (x, y) as its top-left cell if that fits, else the neighbours that still contain it (so the cursor can sit on any side of the floor)
+FA.tileAnchor = (x, y) => {
+  const n = FA.tileSz();
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) if (FA.blockOk(x - i, y - j)) return [x - i, y - j];
+  return null;
+};
+FA.canExpand = (x, y) => !!FA.tileAnchor(x, y);
 // a Stockpile Tile goes on a plain, empty floor tile (it is a layer on the floor: demolishing it leaves the floor)
 FA.canPileTile = (x, y) => FA.owned(x, y) && !FA.isPile(x, y) && !G.fac.grid[y * G.fac.w + x];
 FA.isTile = type => type === 'expand' || type === 'stockpile';
@@ -255,19 +273,25 @@ FA.robotCost = function (n) {
   for (const r in R.cost) c[r] = Math.max(1, Math.round(R.cost[r] * Math.pow(r === 'shard' ? R.shardMul : R.costMul, k)));
   return c;
 };
-FA.finishTile = function (b) {   // the blueprint is paid for: the tile becomes floor (or Stockpile) and the blueprint goes away
-  const f = G.fac, pile = b.type === 'stockpile';
-  f.land[b.y * f.w + b.x] = pile ? 2 : 1;
+FA.finishTile = function (b) {   // the blueprint is paid for: the tile(s) become floor (or Stockpile) and the blueprint goes away
+  const f = G.fac, pile = b.type === 'stockpile', cells = pile ? [[b.x, b.y]] : FA.tileCells(b), n = FA.tileSz();
+  for (const c of cells) { f.land[c[1] * f.w + c[0]] = pile ? 2 : 1; FA.setCell(c[0], c[1], null); }
   f.bld.splice(f.bld.indexOf(b), 1);
-  FA.setCell(b.x, b.y, null);
-  if (pile) G.stats.pileTiles = (G.stats.pileTiles || 0) + 1; else G.stats.tiles = (G.stats.tiles || 0) + 1;
-  FA.burst(b.x + 0.5, b.y + 0.5, pile ? '#f4d898' : '#8ee06a', 20); FA.ipop(b.x + 0.5, b.y + 0.5, [['ic_check']]);
+  if (pile) G.stats.pileTiles = (G.stats.pileTiles || 0) + 1; else G.stats.tiles = (G.stats.tiles || 0) + 1;   // a Floor Tile is one 2 x 2 block
+  const mx = b.x + (pile ? 0.5 : n / 2), my = b.y + (pile ? 0.5 : n / 2);
+  FA.burst(mx, my, pile ? '#f4d898' : '#8ee06a', pile ? 20 : 34); FA.ipop(mx, my, [['ic_check']]);
   AU.sfx('complete'); UI.changed();
 };
 // Demolishing with no building on the tile takes the tile itself: a Stockpile tile turns back into floor, a floor tile into empty ground. Both are refunded.
 // What lay on it bounces to the nearest Stockpile tile with room for it / the nearest floor (and, when the factory is full, through the portal into the wilds).
 FA.canLift = (x, y) => FA.owned(x, y) && !G.fac.grid[y * G.fac.w + x] && (FA.isPile(x, y) || !(Math.floor(G.bd.x) === x && Math.floor(G.bd.y) === y));   // never the floor under the Builder's feet
-FA.liftCost = (x, y) => (FA.isPile(x, y) ? CFG.buildings.stockpile.cost : CFG.buildings.expand.cost);
+// a lifted floor tile (one cell of a 2 x 2 block) gives back its quarter of the block: Wood on one diagonal of cells, Stone on the other, so lifting a whole block returns what it cost
+FA.liftCost = (x, y) => {
+  if (FA.isPile(x, y)) return CFG.buildings.stockpile.cost;
+  const c = CFG.buildings.expand.cost, n = FA.tileSz(), o = {};
+  for (const k in c) if (k === 'wood' || k === 'stone') { const per = c[k] / (n * n); if ((x + y) % 2 === (k === 'wood' ? 0 : 1)) o[k] = Math.max(1, Math.round(per * 2)); }   // 2 of a kind per 4 cells: half the cells give it
+  return o;
+};
 FA.liftTile = function (x, y) {
   const f = G.fac, i = y * f.w + x, cx = x + 0.5, cy = y + 0.5;
   if (!FA.canLift(x, y)) { if (FA.owned(x, y) && Math.floor(G.bd.x) === x && Math.floor(G.bd.y) === y) FA.ipop(cx, cy, [['ic_x']]); return false; }
@@ -304,7 +328,8 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   if (d.kind === 'harness') { b.hand = 0; b.el = 'air'; b.grow = CFG.harness.growT; b.shake = 0; }   // hand: how far the Builder has cranked the next packet (it stays when he walks away); el / grow: the element crystal and how far it has grown
   if (d.kind === 'splitter') { b.pct = {}; b.filt = {}; b.outs = []; b.ins = []; b.sig = null; b.acc = {}; b.src = {}; }
   f.bld.push(b);
-  FA.setCell(x, y, b);
+  if (type === 'expand') for (const c of FA.tileCells(b)) FA.setCell(c[0], c[1], b);   // all four cells of the block point at the one blueprint
+  else FA.setCell(x, y, b);
   if (b.done) FA.onComplete(b, true);
   return b;
 };
@@ -371,8 +396,9 @@ FA.toStockFrom = function (kind, n, px, py, port) {
   for (let i = 0; i < fl; i++) {
     const delay = port ? Math.max(0, f.stockNext - f.t) : i * 0.06;
     if (port) f.stockNext = f.t + delay + CFG.stockFlight.gap;
+    const SW = CFG.stockFlight.swirl, sw = port && (kind === 'shard' || kind.startsWith('core_'));   // a Shard or Core coming through the portal takes a looping, round-about path so it is noticed
     f.flying.push({ kind, n: Math.floor(n / fl) + (i < n % fl ? 1 : 0), stock: true, q: !port, sx: px, sy: py, x: px, y: py, z: 0.8, tx: p.x, ty: p.y, t: -delay,
-      T: Math.min(CFG.stockFlight.maxT, CFG.stockFlight.baseT + d * CFG.stockFlight.perTile), h: 1.5 + d * 0.15 });
+      T: Math.min(CFG.stockFlight.maxT, CFG.stockFlight.baseT + d * CFG.stockFlight.perTile) * (sw ? SW.slow : 1), h: 1.5 + d * 0.15, sw: sw ? 1 : 0 });
   }
 };
 // the factory is full (no Stockpile room, no floor left): the item goes through the Spell Portal and lands in the wilds beside the Wizard (FA.update sends
@@ -512,6 +538,7 @@ FA.needOf = function (b) {
 };
 FA.needText = need => Object.keys(need).map(k => need[k] + ' ' + RES[k].name).join(', ');
 FA.place = function (type, x, y, dir) {
+  if (type === 'expand') { const a = FA.tileAnchor(x, y); if (a) { x = a[0]; y = a[1]; } }   // a Floor Tile is a block: it goes where the cursor's block fits
   if (!FA.unlocked(type)) { UI.toast('Unlock ' + CFG.buildings[type].name + ' in the Skill Tree first.', 'L', 'ic_lock'); AU.sfx('error'); return false; }
   if (type === 'robot' && !FA.robotRoom()) { UI.toast('A factory runs ' + CFG.robot.max + ' Helper Robots at most.', 'L', 'ic_x'); AU.sfx('error'); return false; }
   if (!FA.canPut(type, x, y)) return false;
@@ -519,7 +546,7 @@ FA.place = function (type, x, y, dir) {
   const b = FA.makeBuilding(type, x, y, credit, credit, dir);
   if (rcost) b.cost = rcost;
   if (type === 'stockpile') for (const o of G.fac.floor.slice()) if (Math.floor(o.x) === x && Math.floor(o.y) === y) { G.fac.floor.splice(G.fac.floor.indexOf(o), 1); FA.dropAt(o.kind, o.x, o.y, true); }   // loose items make way for the blueprint
-  if (type === 'expand') { b.cost = FA.tileCost(); G.fac.added++; }
+  if (type === 'expand') { b.cost = FA.tileCost(); G.fac.added += FA.tileSz() * FA.tileSz(); }
   if (credit) { G.credits[type]--; FA.burst(x + 0.5, y + 0.5, '#7be0ff', 20); FA.ipop(x + 0.5, y + 0.5, [['ic_gift']]); AU.sfx('complete'); }
   else AU.sfx('place');
   b.pop = 0.4;
@@ -580,10 +607,13 @@ FA.refundOf = function (c) {
 // placement comes back as { gift: 1 }), 'skip' (locked: it would ask first, so a drag leaves it) or 'none' (nothing there). A plain click (one tile) also lifts an empty floor / Stockpile tile.
 FA.delPath = function (sx, sy, tx, ty) {
   const ax = Math.abs(tx - sx), ay = Math.abs(ty - sy), pts = FA.linePts(sx, sy, tx, ty, ax >= ay), one = pts.length === 1;
+  const seen = new Set();   // a Floor Tile blueprint fills four cells: it is refunded once
   return pts.map(p => {
     const c = FA.inb(p[0], p[1]) ? FA.cell(p[0], p[1]) : null;
     if (c && c.type !== 'portal') {
       if (c.type !== 'belt' && !FA.unlocked(c.type) && !one) return { x: p[0], y: p[1], st: 'skip' };
+      if (seen.has(c)) return { x: p[0], y: p[1], st: 'del', r: {} };
+      seen.add(c);
       return { x: p[0], y: p[1], st: 'del', r: c.free && c.done ? { gift: 1 } : FA.refundOf(c) };
     }
     if (!c && one && FA.inb(p[0], p[1]) && FA.canLift(p[0], p[1])) return { x: p[0], y: p[1], st: 'del', tile: true, r: FA.liftCost(p[0], p[1]) };
@@ -604,6 +634,7 @@ FA.demolish =function (x, y, force) {
   if (!force && c.type !== 'belt' && !FA.unlocked(c.type)) { UI.askDemolish(x, y, FA.def(c).name); return false; }
   const f = G.fac, cx = x + 0.5, cy = y + 0.5, add = (k, n) => { G.stock[k] = (G.stock[k] || 0) + n; };
   FA.setCell(x, y, null);   // cleared first, so what it held can be set down on its own tile
+  if (c.type === 'expand') for (const q of FA.tileCells(c)) FA.setCell(q[0], q[1], null);   // a Floor Tile blueprint holds its whole block
   if (c.type === 'belt') {
     add('wood', 1);
     if (c.item) FA.dropAt(c.item.kind, cx, cy);
@@ -619,7 +650,7 @@ FA.demolish =function (x, y, force) {
     if (c.inv) for (const k in c.inv) { if (FA.storable(k)) add(k, c.inv[k]); else for (let i = 0; i < c.inv[k]; i++) FA.dropAt(k, cx, cy); }
     if (c.fuel) for (const k in c.fuel) { const n = Math.floor(c.fuel[k] / CFG.fuelPerPacket); if (FA.storable(k)) add(k, n); else for (let i = 0; i < n; i++) FA.dropAt(k, cx, cy); }   // what was waiting to burn comes back
     f.bld.splice(f.bld.indexOf(c), 1);
-    if (c.type === 'expand') f.added = Math.max(0, f.added - 1);   // an unfinished Floor Tile never counted
+    if (c.type === 'expand') f.added = Math.max(0, f.added - FA.tileSz() * FA.tileSz());   // an unfinished Floor Tile never counted
   }
   FA.burst(cx, cy, '#ff9a8a');
   FA.ipop(cx, cy, c.type === 'belt' ? [['wood']] : Object.keys(FA.costOf(c)).map(k => [k]));   // what came back
@@ -1191,6 +1222,11 @@ FA.update = function (dt) {
     const k = Math.min(1, Math.max(0, o.t / o.T));
     if (o.stock && !o.q && o.t - dt < 0 && o.t >= 0) { FA.burst(o.sx, o.sy, ITEMS[o.kind].color, 5); f.flash = Math.max(f.flash, 0.12); f.flashCol = '#ffffff'; }   // it leaves the Spell Portal
     o.x = o.sx + (o.tx - o.sx) * k; o.y = o.sy + (o.ty - o.sy) * k; o.z = Math.sin(k * Math.PI) * o.h + (1 - k) * 0.8;
+    if (o.sw && o.t > 0) {   // a corkscrew round the straight line (nothing at either end), with a glittering trail
+      const SW = CFG.stockFlight.swirl, a = k * SW.turns * 6.283, r = SW.r * Math.sin(k * Math.PI);
+      o.x += Math.cos(a) * r; o.y += Math.sin(a) * r; o.z += Math.sin(a) * r * 0.5;
+      if (Math.random() < 0.6) f.parts.push({ x: o.x, y: o.y, z: o.z, vx: 0, vy: 0, vz: 0.4, g: 0, t: 0.4, col: Math.random() < 0.4 ? '#ffffff' : (ITEMS[o.kind].color || '#ffffff') });
+    }
     if (k >= 1) { f.flying.splice(i, 1); FA.land(o); }
   }
   for (const o of f.floor) {
@@ -1333,7 +1369,7 @@ FA.botPlan = function (b) {
 // where the current job wants the robot: the tile test for FA.botPath
 FA.botGoal = function (b, J) {
   if (J.ph === 'home') return (x, y) => x === b.x && y === b.y;
-  if (J.ph === 'bp') { const t = FA.byId(J.bp); return t && !t.done ? (x, y) => Math.abs(x - t.x) + Math.abs(y - t.y) === 1 && !FA.solid(x, y) : null; }
+  if (J.ph === 'bp') { const t = FA.byId(J.bp); if (!t || t.done) return null; const cs = t.type === 'expand' ? FA.tileCells(t) : [[t.x, t.y]]; return (x, y) => cs.some(c => Math.abs(x - c[0]) + Math.abs(y - c[1]) === 1) && !cs.some(c => c[0] === x && c[1] === y) && !FA.solid(x, y); }
   if (J.ph === 'stash') { const sp = FA.pileSpot(J.kind); return (x, y) => x === Math.floor(sp.x) && y === Math.floor(sp.y); }
   const have = {}; for (const p of FA.pileList()) if (p.kind === J.kind && p.n > 0) have[p.i] = true;   // 'pile': any tile the kind lies on
   return (x, y) => !!have[y * G.fac.w + x];
@@ -1963,6 +1999,7 @@ FA.toJSON = function () {
       if (b.over > 0) o.over = b.over;
       if (b.cn > 0) { o.ck = b.ck; o.cn = b.cn; }
       if (b.ready) o.ready = 1;
+      if (b.type === 'expand') o.sz = FA.tileSz();   // a 2 x 2 block (older saves had single-cell Floor Tile blueprints)
       if (b.rx !== undefined) o.bot = { rx: Math.round(b.rx * 100) / 100, ry: Math.round(b.ry * 100) / 100, carry: b.carry };   // a robot: where its body is and what it holds (its job is worked out again)
       return o;
     }),
@@ -2014,7 +2051,16 @@ FA.fromJSON = function (j) {
     if (/^spawner[123]$/.test(o.type)) o = Object.assign({}, o, { type: 'spawner' });   // the three Spawner tiers became one
     if (ELEM[o.type]) o = Object.assign({}, o, { type: 'harness', el: o.type, grow: CFG.harness.growT });   // the four Harnessers became one that switches element
     if (!CFG.buildings[o.type] || !FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;
+    let old1 = false;
+    if (o.type === 'expand') {   // a Floor Tile blueprint is a block now: an older single-cell one moves to a block that fits (or is refunded)
+      if (o.sz !== FA.tileSz()) {
+        const a = FA.tileAnchor(o.x, o.y);
+        if (!a) { for (const k in o.got || {}) G.stock[k] = (G.stock[k] || 0) + o.got[k]; G.fac.added = Math.max(0, G.fac.added - 1); return; }
+        o = Object.assign({}, o, { x: a[0], y: a[1], cost: null }); old1 = true; G.fac.added += FA.tileSz() * FA.tileSz() - 1;
+      } else if (!FA.tileCells(o).every(c => FA.inb(c[0], c[1]) && !G.fac.grid[c[1] * G.fac.w + c[0]])) return;
+    }
     const b = FA.makeBuilding(o.type, o.x, o.y, false, o.free, o.dir || 0);
+    if (old1) b.cost = FA.tileCost();
     if (o.cost && typeof o.cost === 'object') b.cost = o.cost;
     if (b.el !== undefined) { if (ELEM[o.el]) b.el = o.el; b.grow = o.grow >= 0 ? Math.min(CFG.harness.growT, +o.grow) : CFG.harness.growT; }
     b.done = !!o.done; b.got = o.got || {}; b.out = Array.isArray(o.out) ? o.out.filter(x => x && known(x.kind)) : []; b.timer = o.timer || 0;

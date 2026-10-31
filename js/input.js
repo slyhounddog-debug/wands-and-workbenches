@@ -3,7 +3,7 @@
 const IN = {
   keys: new Set(), pressed: new Set(), order: [],   // order: the keys pressed this frame in the order they went down (typing a room code)
   mouse: { x: 0, y: 0, l: false, r: false, lp: false, rp: false, inside: false },
-  wheel: 0,
+  wheel: 0, wheelS: 0,   // wheelS: the wheel turned with Shift held (it cycles a family slot's member)
   pad: [null, null], prevBtn: [[], []], prevRs: [0, 0], padBlock: [false, false],
   padList: [],
   anyKey: false,
@@ -42,7 +42,8 @@ const IN = {
   window.addEventListener('wheel', e => {
     pos(e);
     if (e.target && e.target.closest && e.target.closest('.tree, #pause, #results, .sheet, #hotbar')) return;
-    IN.wheel += Math.sign(e.deltaY);
+    if (e.shiftKey) IN.wheelS += Math.sign(e.deltaY || e.deltaX);   // (browsers turn Shift + wheel sideways: deltaX)
+    else IN.wheel += Math.sign(e.deltaY);
   }, { passive: true });
   window.addEventListener('contextmenu', e => { if (e.target && e.target.id === 'cv') e.preventDefault(); });
   window.addEventListener('gamepadconnected', e => {
@@ -98,6 +99,6 @@ IN.shift = () => IN.down('ShiftLeft') || IN.down('ShiftRight');
 IN.endFrame = function () {
   IN.pressed.clear(); IN.order.length = 0;
   IN.mouse.lp = false; IN.mouse.rp = false; IN.mouse.mv = false;
-  IN.wheel = 0;
+  IN.wheel = 0; IN.wheelS = 0;
   IN.anyKey = false;
 };

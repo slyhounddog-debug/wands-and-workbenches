@@ -7,9 +7,9 @@ const CFG = {
   // Everything is drawn into a low-res buffer and scaled up by P, so the whole game shares one pixel grid.
   FT: { TW: 80, TH: 40, S: 4, P: 4 },   // factory iso tile (in screen px) + sprite scale + pixel size
   WT: { TW: 60, TH: 30, S: 3, P: 3 },   // wizard world
-  // the factory grid is fixed (w x h tiles); the floor starts as the base rectangle (12x9) and grows one placed Floor Tile at a time. The Stockpile starts as the
-  // base rectangle's south-west pile.w x pile.h Stockpile tiles and grows by placed Stockpile Tiles. The first freeIron floor tiles cost wood + stone only, later ones add 1 Iron.
-  factory: { w: 48, h: 36, base: { x0: 18, y0: 14, w: 12, h: 9 }, pile: { w: 3, h: 2 }, freeIron: 28 },
+  // the factory grid is fixed (w x h tiles); the floor starts as the base rectangle (12x8) and grows one placed Floor Tile (a tile x tile = 2x2 block) at a time. The Stockpile starts as the
+  // base rectangle's south-west pile.w x pile.h Stockpile tiles and grows by placed Stockpile Tiles. The first freeIron Floor Tiles (blocks) cost wood + stone only, later ones add 1 Iron.
+  factory: { w: 48, h: 36, base: { x0: 18, y0: 14, w: 12, h: 8 }, pile: { w: 3, h: 2 }, tile: 2, freeIron: 12 },
   stockCap: 50,               // items of ONE kind a Stockpile tile holds (a kind with more spreads over more tiles)
   rotFlash: 0.7,              // seconds a belt / machine flashes (and shows a big arrow) after R turned it
   carry: { holdT: 0.6 },      // hold the carry key this long on a finished building to pick it up and move it
@@ -38,7 +38,7 @@ const CFG = {
   autoPick: { r: 1.0, delay: 0.7, gap: 0.12 },   // a slight pickup range: loose items that have settled within r tiles hop into the hands, one every gap seconds (r 0 = off); delay = seconds after landing
   tipRadius: 3.5,            // building info panels only show within this many tiles of the Builder (or when hovered)
   portalAlpha: 0.25,         // how solid the Spell / Skill Portals are drawn (they are see-through)
-  stockFlight: { gap: 0.12, baseT: 0.6, perTile: 0.05, maxT: 1.6 },   // what the Wizard sends to the Stockpile flies out of the Spell Portal: seconds between items, flight time = baseT + perTile x distance (capped)
+  stockFlight: { gap: 0.12, baseT: 0.6, perTile: 0.05, maxT: 1.6, swirl: { r: 1.3, turns: 2, slow: 1.8 } },   // swirl: Shards and Cores corkscrew (radius in tiles, turns) and take this many times as long   // what the Wizard sends to the Stockpile flies out of the Spell Portal: seconds between items, flight time = baseT + perTile x distance (capped)
   inputBuffer: 0.1,         // pick / use / place / roll presses that can't happen yet keep trying this long
   sweepRepeat: 0.07,         // holding pick sweeps up identical nearby items this fast
   throwStackGap: 0.05,       // seconds between items when throwing a whole stack (Shift + right-click / LT + B)
@@ -102,7 +102,9 @@ const CFG = {
     earth: { t: 6, speedMul: 0.5, take: 0.3, perHit: 0.2, cap: 1, r: 3.4, dmg: 48, push: 9, accel: 5, friction: 2.2, ram: 2.6, ramPush: 1.8, ramGap: 0.6, ramMin: 1, ramReach: 0.45 },
   },
   // the online guest's hearing: a wilds sound made within full tiles of his Wizard plays at full volume, then falls off linearly to floor (x volume) at far tiles and beyond; lp = the low-pass cutoff (Hz) it closes to
-  emote: { beat: 0.8, sticker: 3.2 },   // the Wizard's dances (js/emote.js): seconds a beat lasts (dust, ripples, a stomp); seconds the sticker stays on the Builder's side
+  questCelebrate: { swap: 1.95 },   // seconds into the completed-goal animation (2.6 s, style.css qcel) at which the next goal replaces it
+  needChipTouch: 0.9,   // a blueprint's need chips show only for the one under the mouse or within this many tiles of the Builder (touching it)
+  emote: { beat: 0.8, sticker: 3.2, stickerScale: 0.7, centerGrace: 0.15 },   // the Wizard's dances (js/emote.js): seconds a beat lasts (dust, ripples, a stomp); seconds the sticker stays on the Builder's side
   hear: { full: 9, far: 34, floor: 0.12, lp: 700 },
   world: {
     respawn: 120, vacuum: 2, minSpawnDist: 8,
@@ -114,7 +116,7 @@ const CFG = {
   },
   harvest: {      // node counts are 50% up on the original 60/35/25, then +10% (broken nodes grow back after world.respawn seconds)
     tree: { hp: 20, drop: 'wood', n: 3, count: 99 },
-    rock: { hp: 30, drop: 'stone', n: 3, count: 58 },
+    rock: { hp: 30, drop: 'stone', n: 3, count: 58, bonus: { iron: 0.75 } },   // bonus = chance of one more of that kind
     ore:  { hp: 40, drop: 'iron', n: 2, count: 41 },
   },
   enemies: {      // gem = [guaranteed XP gems, chance of one more] (1 gem = 1 XP, never fractional). w = spawn weight anywhere; biome foes (w: 0) spawn by terrain
@@ -129,8 +131,10 @@ const CFG = {
   },
   // spell damage vs a foe's weak / resisted element (combo spells count every element they contain)
   weakMul: 2, resistMul: 0.5,
-  // pity: after this many elites in a row without the bonus shard, the next one has it
-  elite: { hp: 5, speed: 0.85, dmg: 1.5, gems: 3, shardBonus: 0.35, pity: 3, minTime: 90, base: 0.015, perMin: 0.004, perDist: 0.02, max: 0.08 },
+  // shard: chance an elite drops its ONE shard (no bonus shard, no pity); max caps the spawn odds (wild spawns are further scaled by world.wildElite, so the real wild cap is max x 0.2 = 2%)
+  elite: { hp: 5, speed: 0.85, dmg: 1.5, gems: 3, shard: 0.10, minTime: 90, base: 0.015, perMin: 0.004, perDist: 0.02, max: 0.10 },
+  // what an ordinary kill drops besides gems / packets / Cores: a common resource (Wood or Stone) and, separately, Iron. A spell packet's chance is 15% now (crafted.recycle), so these follow it: the common drop about the same, Iron a quarter of the old 30%
+  drops: { common: 0.15, iron: 0.075 },
   boss: {
     weakMul: 1.6, otherMul: 0.4,            // the Chimera shrugs off everything except its current weakness
     slamEvery: 4.5, slamDelay: 1.0, slamR: 2.4, slamDmg: 24,
@@ -140,7 +144,7 @@ const CFG = {
   },
   marks: {        // landmarks in the wilds: the only source of Aether Shards besides elites
     camps: 9, shrines: 8, crypts: 4, spacing: 16,
-    campWake: 8, campFoes: 6, campShards: 3,
+    campFoes: 6, campShards: 1,
     shrineR: 2.6, shrineBoost: 0.25,   // an ACTIVATED shrine speeds up that element's harnessers (shrineBoost) for buffT seconds, wherever the Wizard goes; then it recharges for cdT s
     // claiming a shrine: the Builder sends that element's Core (dropped by its creatures) through the Spell Portal while the Wizard is within CFG.unlockR of it; the Core flies down onto the shrine.
     // shrineShards = Aether Shards paid out when it is claimed (unchanged from the mini-game days)
@@ -149,12 +153,13 @@ const CFG = {
     // activate it. A miss restarts that ring (no other penalty); walking off cancels it, nothing is consumed. ring[i] = seconds one ring takes to close; the zone is the stretch of it
     // (fractions) that counts; netLag = seconds a guest's press is treated as earlier (he sees the ring that much late)
     buffT: 30, cdT: 120, rings: 3, ring: [1.3, 1.15, 1.0], zone: [0.72, 0.88], lead: 0.5, netLag: 0.25,
-    cryptHold: 1.5, cryptShards: 5, cryptMinions: 7, xpBonus: 6,
+    cryptHold: 5, cryptShards: 2, cryptMinions: 7, xpBonus: 6,   // campHold / cryptHold: seconds a player must stand inside the ring to wake it (it drains at double speed outside)
+    campHold: 3, campR: 5, cryptR: 7,   // the activation rings (tiles); the Stronghold's is CFG.strong.wake = 9
   },
   // forage spots in the wilds: the Wizard stands still at one and mashes the roll button to dig / search it.
   // drop = resources always found, bonus = chance of one more of that kind; a bush gives one pickup (potion or armor)
   forage: {
-    mound:  { count: 50, taps: 10, drop: { stone: 2 }, bonus: { iron: 0.35 } },
+    mound:  { count: 50, taps: 10, drop: { stone: 2 }, bonus: { iron: 0.75 } },
     sticks: { count: 55, taps: 8,  drop: { wood: 3 },  bonus: { wood: 0.5 } },
     bush:   { count: 40, taps: 4,  potion: 0.6 },   // otherwise Armor Plate
     // buried caches are invisible until the Wizard wears the Kilnsight Mask (they glint through the grass); dug like a mound
@@ -183,9 +188,9 @@ const CFG = {
   overdrive: 0.15,           // a charged Battery right beside a Forge or Cauldron: +15% crafting speed
   heavyBattery: 0.5,          // a Heavy Battery drains this much slower than a Battery, so it lasts 50% longer
   // Helper robots: each carries Wood / Stone / Iron / Shards from the Stockpile to blueprints, one item at a time. Its charge is its own (it adds nothing to the factory's
-  // power): it burns fuel like a Battery and drains like one Harnesser pulling from it (power 2 = 300 s a charge) only while it has a job; flat, it naps where it stands.
+  // power): it burns fuel like a Battery and drains like one Harnesser pulling from it (power 10 = 60 s a charge, like a Battery under a 10-power load) only while it has a job; flat, it naps where it stands.
   // The Nth robot costs the base x costMul^N (Wood / Stone / Iron) and x shardMul^N Shards (N = robots already owned or planned); the Builder still finishes a robot-fed blueprint with E.
-  robot: { max: 3, cost: { wood: 12, stone: 8, iron: 4, shard: 1 }, costMul: 1.5, shardMul: 2, speed: 3.4, power: 2, look: 0.5, giveUp: 2.5 },   // look = s between job searches while idle; giveUp = s it waits after finding nothing/no path
+  robot: { max: 3, cost: { wood: 12, stone: 8, iron: 4, shard: 1 }, costMul: 1.5, shardMul: 2, speed: 3.4, power: 10, look: 0.5, giveUp: 2.5 },   // look = s between job searches while idle; giveUp = s it waits after finding nothing/no path
   pickups: {
     potion: { heal: 35 }, elixir: { heal: 80 },
     armor: { armor: 35 }, plate: { armor: 70 },
@@ -205,9 +210,9 @@ const CFG = {
     heavybat: { name: 'Heavy Battery', kind: 'cell', cost: { wood: 20, stone: 15, iron: 12 }, unlock: null,
                 desc: 'A Battery with a heavy core: the same power and the same charging, but it drains 33% slower, so a charge lasts 50% longer.' },
     robot:    { name: 'Helper Robot', kind: 'bot', cost: { wood: 12, stone: 8, iron: 4, shard: 1 }, unlock: null,
-                desc: 'Fetches Wood, Stone, Iron and Shards from the Stockpile and carries them to blueprints, one at a time. It has its own charge: throw it element spells, Wood or Stone (it adds no power to the factory) and it works about 5 minutes a charge, then naps where it stands. You still finish a robot-fed blueprint with E (Floor Tiles finish themselves). Each robot costs 50% more Wood, Stone and Iron and double the Shards; 3 at most.' },
-    expand:   { name: 'Floor Tile', kind: 'expand', cost: { wood: 1, stone: 1 }, unlock: null,
-                desc: 'Place it on the edge of the floor and throw its Wood and Stone at it (from the 29th tile on, 1 Iron too): when it is finished the tile becomes factory floor. A floor tile holds 3 loose items. Demolish an empty tile to take it back.' },
+                desc: 'Fetches Wood, Stone, Iron and Shards from the Stockpile and carries them to blueprints, one at a time. It has its own charge: throw it element spells, Wood or Stone (it adds no power to the factory) and it works about a minute a charge, then naps where it stands. You still finish a robot-fed blueprint with E (Floor Tiles finish themselves). Each robot costs 50% more Wood, Stone and Iron and double the Shards; 3 at most.' },
+    expand:   { name: 'Floor Tile', kind: 'expand', cost: { wood: 2, stone: 2 }, unlock: null,
+                desc: 'Place it on the edge of the floor (it covers a 2 x 2 block) and throw its Wood and Stone at it (from the 13th block on, 1 Iron too): when it is finished the block becomes factory floor. A floor tile holds 3 loose items. Demolish an empty tile to take it back.' },
     stockpile: { name: 'Stockpile Tile', kind: 'expand', cost: { wood: 4, stone: 2, iron: 1 }, unlock: null,
                 desc: 'Place it on an empty floor tile and throw its Wood, Stone and Iron at it: it becomes a Stockpile tile that holds 50 of ONE kind (resources, Cores, spells, garments). The Wizard can only send home what the Stockpile has room for. Demolish it to turn it back into floor (what it held bounces to the next tile).' },
     splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 3, stone: 2 }, unlock: null,
@@ -384,10 +389,10 @@ const CFG = {
     jitter: 0.15,             // hp / speed / damage each rolled within +-15%
     size: 0.15,               // body size +-15% (basics also get a palette variant)
     variants: 3,
-    eliteChance: 0.05, eliteHp: 3, eliteDmg: 1.5, eliteShards: true,   // elites keep the usual elite rewards (3 gems + shard rules)
+    eliteChance: 0.02, eliteHp: 3, eliteDmg: 1.5, eliteShards: true,   // elites keep the usual elite rewards (3 gems + shard rules)
     mutChance: 0.08,
-    recycle: 0.3,             // chance a crafted BASIC creature drops one packet of its element on death
-    recycleSpell: { 2: 0.25, 3: 0.2 },   // chance a crafted double / triple drops the combo spell it was hatched from (it flies home to the Stockpile like a packet)
+    recycle: 0.15,            // chance a crafted BASIC creature drops one packet of its element on death
+    recycleSpell: { 2: 0.125, 3: 0.1 },   // chance a crafted double / triple drops the combo spell it was hatched from (it flies home to the Stockpile like a packet)
   },
   // ---- Allies: Element Cores thrown at a Creature Spawner grow FRIENDLY versions of the same 11 creatures ----
   // double HP, half damage (on every attack and ability), never elite, never mutated. They hatch 2-4 tiles from the Wizard and fight what comes within engage tiles of him
@@ -427,7 +432,7 @@ const CFG = {
   // ---- the Stronghold: one far-off keep (its element is picked by the world seed), guarded by crafted creatures and THE Warden. The Warden must fall
   // before the Summoning Altar takes spells ----
   strong: {
-    minDist: 70, reveal: 30, wake: 9, warnT: 10, shards: 8, gems: 12,   // warnT: seconds the Wizard must stand inside the wake radius before the guards and the Warden spawn (leaving resets it)
+    minDist: 70, reveal: 30, wake: 9, warnT: 10, shards: 4, gems: 12,   // warnT: seconds the Wizard must stand inside the wake radius before the guards and the Warden spawn (leaving resets it)
     arenaR: 6.5,              // the door: the arena inside this radius only opens to a Wizard who has had the Warden Key sent in through the portal (the key is shown at the door)
     // the approach terrain around each keep (tiles from its centre), world-gen carves it: water = a lake moat (an island keep), fire = a scorched field,
     // earth = a ring of cracked rock, air = a chasm ring with a broken bridge. Each needs the augment of the element this keep's element is weak to
@@ -447,7 +452,7 @@ const CFG = {
   },
   // ---- Cores: the components of the Wizard's garments, and the keys to shrines and keeps. A kill by a creature of an element can drop that element's Core
   // (a rare chance for normals, more for pairs and triples, a guaranteed chunk [min, max] from elites); Cores fly home to the Stockpile like shards.
-  cores: { wild: 0.022, basic: 0.033, pair: 0.055, triple: 0.085, elite: [1, 1], warden: 2, boss: 4 },   // chances per normal kill / elite chunk / Warden (of each element) / Chimera (of each)
+  cores: { wild: 0.011, basic: 0.0165, pair: 0.0275, triple: 0.0425, elite: [1, 1], warden: 2, boss: 4 },   // chances per normal kill / elite chunk / Warden (of each element) / Chimera (of each)
   keyCost: { cores: 3, iron: 3, shard: 3, time: 24 },   // the Warden Key at the Armory: this many Cores of EACH element, Iron Ore and Aether Shards
   altar: {   // the Summoning Altar (js/altar.js): bought in the tree, it falls out of the sky beside the Wizard and stands in the wilds from then on
     shards: 6,                  // Aether Shards the Summoning node costs (sent into the Skill Portal)
@@ -770,7 +775,7 @@ const QUESTS = {
     { from: 16, v5: 17, icon: 'armor', text: 'Brew a Shield Potion at the Cauldron (Earth + Fire spells) and send it to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'cauldron' } },
     { v5: 18, icon: 'plate', text: 'Build the Armory: forge a garment from Cores, send it', xp: 20, gift: { stock: { iron: 6 } }, done: g => !!g.flags.sent_aug, hint: { make: 'anvil' } },
     { icon: 'egg_pebble', text: 'Hatch a Pebble Golem: set a Harnesser to Earth, feed a Spawner, send the Egg', xp: 12, stat: g => (g.stats.sent || {}).egg_pebble || 0, n: 1, hint: { make: 'spawner' } },
-    { from: 17, v5: 19, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 8) and throw 1 Wood + 1 Stone at it', xp: 15, done: g => (g.stats.tiles || 0) >= 1, hint: { make: 'expand' } },
+    { from: 17, v5: 19, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 8) and throw 2 Wood + 2 Stone at it', xp: 15, done: g => (g.stats.tiles || 0) >= 1, hint: { make: 'expand' } },
     { v5: 20, icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner' } },
     { from: 19, v5: 21, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, done: g => g.flags.triple, hint: { combo: 3 } },
     { from: 20, v5: 22, icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, done: g => g.flags.sent_nova, hint: { combo: 4 } },

@@ -96,6 +96,11 @@ WZ.onDeath = function (e) {
     if (tier === 1 ? Math.random() < CFG.crafted.recycle : Math.random() < CFG.crafted.recycleSpell[tier]) WZ.drop(tier === 1 ? cd.order[0] : Object.keys(cd.cost)[0], e.x, e.y, 1);
   }
   if (e.evt) w.evKills = (w.evKills || 0) + 1;
+  if (!e.mini) {   // a common resource now and then (Wood or Stone), and Iron more rarely: any foe, wild or hatched
+    const D = CFG.drops;
+    if (Math.random() < D.common) WZ.drop(Math.random() < 0.5 ? 'wood' : 'stone', e.x, e.y, 1);
+    if (Math.random() < D.iron) WZ.drop('iron', e.x, e.y, 1);
+  }
   WZ.lootDrops(e);   // Cores and Ward Keys (augments.js)
 };
 // the Phoenix's one rebirth: true when the death was cancelled

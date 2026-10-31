@@ -9,6 +9,11 @@ R.drawWheel = function (ctx, v, w, t) {
   const p = R.toScreenLocked(v, w.x, w.y), cx = p[0], cy = p[1] - 114;   // over his head, so he stays in view under it
   ctx.globalAlpha = 0.5; ctx.fillStyle = '#1a0f28'; diamond(ctx, cx, cy, 150, 96); ctx.fill(); ctx.globalAlpha = 1;
   ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.globalAlpha = 0.5; ctx.setLineDash([9, 9]); ctx.lineDashOffset = -Math.floor(t * 8) * 3; diamond(ctx, cx, cy, 150, 96); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  {   // the centre spot: pick it (let go of the stick) and confirm to cancel
+    const sel = !wh.sel, sz = sel ? 36 : 30, blink = sel && Math.floor(t * 8) % 2;
+    pbox(ctx, cx - sz / 2, cy - sz / 2, sz, sz, sel ? '#3a2a60' : '#2b1d48', blink ? '#ffffff' : sel ? '#ff6a6a' : '#5a4a7a');
+    ctx.strokeStyle = sel ? '#ff6a6a' : '#b8a8d8'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(cx - 6, cy - 6); ctx.lineTo(cx + 6, cy + 6); ctx.moveTo(cx + 6, cy - 6); ctx.lineTo(cx - 6, cy + 6); ctx.stroke();
+  }
   for (const el of WZ.emoteOrder) {
     const d = { air: [0, -1], fire: [1, 0], water: [0, 1], earth: [-1, 0] }[el], sel = wh.sel === el, sz = sel ? 60 : 48;
     const bx = cx + d[0] * 99, by = cy + d[1] * 60, blink = sel && Math.floor(t * 8) % 2;
@@ -126,7 +131,7 @@ R.drawSticker = function (ctx, t) {
   if (!s) return;
   const c = stickerOf(s.el);
   if (!c) return;
-  const e = Math.max(0, Math.min(1, s.t / 0.35, (s.dur - s.t) / 0.35)), ease = 1 - Math.pow(1 - e, 3), P = R.px || 4, W = c.width * P, H = c.height * P;
+  const e = Math.max(0, Math.min(1, s.t / 0.35, (s.dur - s.t) / 0.35)), ease = 1 - Math.pow(1 - e, 3), P = R.px || 4, W = c.width * P * CFG.emote.stickerScale, H = c.height * P * CFG.emote.stickerScale;
   const x = R.rect.w - W / 2 - 16 + (1 - ease) * (W + 40), y = 330 + Math.sin(t * 3) * 4;
   ctx.save(); ctx.translate(snap(x), Math.round(y / P) * P); ctx.rotate(Math.round((Math.sin(s.t * 5) * 0.09 - 0.05) * 24) / 24);
   ctx.drawImage(c, -W / 2, -H / 2, W, H);

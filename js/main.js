@@ -442,7 +442,11 @@ Main.controls = function (dt) {
   if (IN.hit('BracketRight') || (p0 && p0.rb && !p0.ltHeld)) rot = 1;
   if (IN.wheel && IN.mouse.x < Main.viewW() && !UI.treeOpen.L) rot = IN.wheel > 0 ? 1 : -1;
   if (rot && !(UI.treeOpen.L || UI.treeOpen.R)) UI.cycle(rot);
-  if (!(UI.treeOpen.L || UI.treeOpen.R) && Main.graceT <= 0 && ((c.kbB && IN.hit('KeyQ')) || (p0 && p0.rt))) UI.cycleFam(IN.shift() ? -1 : 1);   // next member of a family slot
+  // Q (Shift + Q back), pad RT, or Shift + the mouse wheel over the factory: the next member of the family slot he has selected (or the one the mouse is over in the hotbar)
+  if (!(UI.treeOpen.L || UI.treeOpen.R) && Main.graceT <= 0) {
+    const fq = ((c.kbB || !p0) && IN.hit('KeyQ')) || (p0 && p0.rt), fw = IN.wheelS && IN.mouse.x < Main.viewW();
+    if (fq || fw) UI.cycleFam(fw ? (IN.wheelS > 0 ? 1 : -1) : IN.shift() ? -1 : 1, UI.hovSlot && UI.isFam(UI.hovSlot) ? UI.hovSlot : undefined);
+  }
   if (IN.hit('KeyB') || IN.hit('Delete') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt, or an empty tile to lift it (full refund). Esc cancels.', 'L', 'ic_bomb'); }
   if (IN.hit('KeyR') && !frozenNow()) {
     // R turns whatever is already placed under the cursor (or in front / in reach); only with nothing there does it turn the next placement
@@ -770,6 +774,8 @@ Main.hintFor = function (q) {
     if (!G.tree.summon) out.tree = true;
     else if (WZ.altarOn()) out.w = { x: G.altar.x, y: G.altar.y, lift: 190 };
   }
+  if (out.f) out.f.icon = q.icon;   // the goal's own picture rides on the pointer, so a glowing building says WHY it glows
+  if (out.w) out.w.icon = q.icon;
   return out;
 };
 // both tracks at once: the Builder's goal points at the factory / hotbar / left tree button, the Wizard's at the wilds / right button
@@ -834,7 +840,8 @@ Main.updateFocus = function () {
   } else if (G.selected !== 'hand' && FA.inb(gx, gy)) {
     const c = FA.cell(gx, gy);
     const ok = G.selected === 'belt' ? (FA.canPlace(gx, gy) || (c && c.type === 'belt')) : FA.isTile(G.selected) ? FA.canPut(G.selected, gx, gy) : FA.canPlace(gx, gy) && FA.unlocked(G.selected);
-    R.ghost = { type: G.selected, x: gx, y: gy, ok: !!ok, dir: G.placeDir };
+    const an = G.selected === 'expand' ? FA.tileAnchor(gx, gy) : null;   // a Floor Tile is a 2 x 2 block: the ghost shows where it would really go
+    R.ghost = { type: G.selected, x: an ? an[0] : gx, y: an ? an[1] : gy, ok: !!ok, dir: G.placeDir };
   }
   if (G.drag && G.drag.path && !G.drag.cancel) { R.ghost = null; if (G.drag.del) R.demo = null; }   // a belt / delete line being dragged shows its own preview
   // the belt / machine R would turn gets a pulsing rim (with the mouse, or while a belt is selected); a turn flashes it with a big arrow (R.drawRotFlash)

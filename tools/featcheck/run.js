@@ -204,8 +204,83 @@ const OUT = process.env.SHOTS || '';
   ok(r.placed && r.decal === 1, 'the Altar lands and leaves a permanent crater', JSON.stringify(r)); ok(r.keeps && r.stays, 'the crater survives the cap and the ageing');
   await wait(1200); await shot('altar_wisps');
 
+  // ================= 7. the 2026-10-30 pass: emote centre, 2 x 2 Floor Tiles, need chips, drops, camps and crypts, goal celebration =================
+  r = await run(() => {
+    const W = __wands, G = W.G, WZ = W.WZ, w = G.w, o = {};
+    T.clear();
+    const A = x => Object.assign({ mash: false, cast: false, cycle: false, emote: false }, x);
+    WZ.emoteInput(0, 0, false, A({ emote: true }), 0.016); o.centre0 = w.wheel && w.wheel.sel === null;
+    WZ.emoteInput(1, 0, false, A({}), 0.016); o.fire = w.wheel.sel === 'fire';
+    WZ.emoteInput(0, 0, false, A({}), 0.3); o.back = w.wheel.sel === null;
+    WZ.emoteInput(0, 0, false, A({ emote: true }), 0.016); o.cancelled = !w.wheel && !w.emote;
+    return o;
+  });
+  ok(r.centre0 && r.fire && r.back && r.cancelled, 'the emote wheel opens on a centre spot; the stick picks, letting go returns to it, confirming it cancels', JSON.stringify(r));
+  r = await run(() => {
+    const W = __wands, G = W.G, FA = W.FA, o = {};
+    const cells = (x, y) => [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]];
+    o.base = G.fac.land.filter(v => v >= 1).length;   // 12 x 8
+    const b = FA.place('expand', 30, 16);
+    o.block = !!b && cells(30, 16).every(c => FA.cell(c[0], c[1]) === b);
+    o.cost = JSON.stringify(b.cost); o.added = G.fac.added;
+    FA.insert(b, 'wood', false, false); FA.insert(b, 'wood', false, false); FA.insert(b, 'stone', false, false); FA.insert(b, 'stone', false, false);
+    o.owned = cells(30, 16).every(c => FA.owned(c[0], c[1])); o.land = G.fac.land.filter(v => v >= 1).length - o.base;
+    G.fac.added = 12 * 4; o.iron = JSON.stringify(FA.tileCost());   // the 13th block asks for Iron
+    G.fac.added = 4;
+    const before = G.stock.wood + G.stock.stone;
+    for (const c of cells(30, 16)) FA.liftTile(c[0], c[1]);
+    o.lifted = G.stock.wood + G.stock.stone - before; o.gone = cells(30, 16).every(c => !FA.owned(c[0], c[1]));
+    const b2 = FA.place('expand', 30, 16); b2.got = { wood: 1 };
+    const j = JSON.parse(JSON.stringify(FA.toJSON())); FA.fromJSON(j);
+    const nb = G.fac.bld.find(q => q.type === 'expand');
+    o.saved = !!nb && nb.got.wood === 1 && cells(nb.x, nb.y).every(c => FA.cell(c[0], c[1]) === nb);
+    G.bd.x = nb.x - 0.5; G.bd.y = nb.y + 0.5; o.chip = W.R.needPick() === nb;
+    G.bd.x = 20; G.bd.y = 18; o.noChip = W.R.needPick() === null;
+    return o;
+  });
+  ok(r.base === 96 && r.block && r.cost === '{"wood":2,"stone":2}' && r.added === 4, 'the factory starts 12 x 8 and a Floor Tile is a 2 x 2 block for 2 Wood + 2 Stone', JSON.stringify(r));
+  ok(r.owned && r.land === 4 && r.iron === '{"wood":2,"stone":2,"iron":1}', 'paid, it becomes four floor tiles; from the 13th block it asks for 1 Iron', JSON.stringify(r));
+  ok(r.lifted === 4 && r.gone && r.saved, 'lifting its four tiles refunds the block; a blueprint block survives a save', JSON.stringify(r));
+  ok(r.chip && r.noChip, 'the need chips show only for the blueprint the Builder is touching', JSON.stringify(r));
+  r = await run(() => {
+    const W = __wands, G = W.G, WZ = W.WZ, CFG = W.CFG, w = G.w, o = {};
+    T.clear();
+    const camp = WZ.marks.find(m => m.type === 'camp'), crypt = WZ.marks.find(m => m.type === 'crypt');
+    w.x = camp.x + 2; w.y = camp.y; T.step(30); o.c15 = w.lm[camp.id].state === 'idle' && w.lm[camp.id].t > 1.4;
+    w.x = camp.x + 20; T.step(10); o.cDrain = w.lm[camp.id].t < 0.6;
+    w.x = camp.x + 2; T.step(64); o.camp = w.lm[camp.id].state === 'active';
+    w.x = crypt.x + 4; w.y = crypt.y; T.step(80); o.y4 = w.lm[crypt.id].state === 'idle';
+    T.step(26); o.crypt = w.lm[crypt.id].state === 'active';
+    o.shards = [CFG.marks.campShards, CFG.marks.cryptShards, CFG.strong.shards, CFG.elite.shard, CFG.elite.max];
+    return o;
+  });
+  ok(r.c15 && r.cDrain && r.camp, 'a camp wakes after 3 s inside its ring and the timer drains outside', JSON.stringify(r));
+  ok(r.y4 && r.crypt && r.shards.join() === '1,2,4,0.1,0.1', 'a crypt needs 5 s; camps pay 1 shard, crypts 2, the Warden 4, elites 10%', JSON.stringify(r));
+  r = await run(() => {
+    const W = __wands, G = W.G, WZ = W.WZ, w = G.w, o = {}, cnt = {};
+    w.drops = [];
+    for (let i = 0; i < 4000; i++) { const e = WZ.makeEnemy('slime', w.x + 3, w.y + 3, false); WZ.onDeath(e); w.enemies.length = 0; }
+    for (const d of w.drops) cnt[d.kind] = (cnt[d.kind] || 0) + 1;
+    o.common = ((cnt.wood || 0) + (cnt.stone || 0)) / 4000; o.iron = (cnt.iron || 0) / 4000;
+    w.drops = []; let sh = 0;
+    for (let i = 0; i < 3000; i++) { const e = WZ.makeEnemy('slime', w.x + 3, w.y + 3, true); WZ.kill(e); w.enemies.length = 0; }
+    o.eShard = w.drops.filter(d => d.kind === 'shard').length / 3000;
+    return o;
+  });
+  ok(Math.abs(r.common - 0.15) < 0.03 && Math.abs(r.iron - 0.075) < 0.025 && Math.abs(r.eShard - 0.1) < 0.03, 'foes drop Wood / Stone about 15% and Iron about 7.5%; an elite drops a shard 10% of the time', JSON.stringify(r));
+  r = await run(() => {
+    const W = __wands, G = W.G, UI = W.UI, o = {};
+    UI.updateQuest(0); G.quest.B++; UI.updateQuest(0);
+    o.held = !!UI.qHold.B && /celebrate/.test(document.getElementById('questB').className) && /COMPLETE/.test(document.getElementById('qHeadB').textContent);
+    return o;
+  });
+  ok(r.held, 'a completed goal holds its card (it grows and glows) before the next goal appears', JSON.stringify(r));
+  await wait(2800);
+  r = await run(() => ({ cls: document.getElementById('questB').className, head: document.getElementById('qHeadB').textContent }));
+  ok(!/celebrate/.test(r.cls) && /GOAL/.test(r.head) && !/COMPLETE/.test(r.head), 'then the next goal shows and the card settles back', JSON.stringify(r));
+
   // ================= errors + the snapshot photo test =================
-  r = await run(() => { const S = __wands.Snap; __wands.snapshot(); return S.report ? { v: S.report.verdict, leaks: JSON.stringify(S.report).slice(0, 400) } : null; });
+  r = await run(() => { const S = __wands.Snap; __wands.snapshot(); return S.report ? { v: S.report.verdict, leaks: JSON.stringify(S.report.leaks.filter(l => !l.known).concat(S.report.issues || [], S.report.diff ? [S.report.diff] : [])).slice(0, 1500) } : null; });
   ok(r && (r.v === 'PASS' || r.v === 'KNOWN'), 'the photo test passes with the new state on screen', JSON.stringify(r));
   ok(errs.length === 0, 'no page errors', errs.slice(0, 5).join(' | '));
   await browser.close();

@@ -518,6 +518,7 @@ WZ.hurtH = function (h, d) {
     h.broken = true; h.respawn = CFG.world.respawn;
     const def = CFG.harvest[h.kind];
     for (let i = 0; i < def.n; i++) WZ.drop(def.drop, h.x, h.y, 1);
+    for (const k in def.bonus || {}) if (Math.random() < def.bonus[k]) WZ.drop(k, h.x, h.y, 1);   // a rock may hold an Iron Ore
     AU.sfx('kill', h.x, h.y);
   }
 };
@@ -543,11 +544,8 @@ WZ.kill = function (e) {
   if (e.elite && !Net.on) w.hitstop = Math.max(w.hitstop || 0, e.warden ? CFG.hitstop.warden : CFG.hitstop.elite);   // hit-stop: the Wizard's side holds still for a beat (offline only: a guest's prediction would rubber-band)
   WZ.dropGems(e.x, e.y, WZ.killGems(e));
   if (e.elite) {
-    // the bonus shard is random, but never dry for more than CFG.elite.pity elites in a row
-    const dry = G.stats.eliteDry || 0, bonus = dry >= CFG.elite.pity || Math.random() < CFG.elite.shardBonus;
-    G.stats.eliteDry = bonus ? 0 : dry + 1;
-    const n = e.crafted && !CFG.crafted.eliteShards ? 0 : 1 + (bonus ? 1 : 0);
-    for (let i = 0; i < n; i++) WZ.drop('shard', e.x, e.y, 1);
+    // one shard, CFG.elite.shard of the time: no bonus shard and no pity
+    if (!(e.crafted && !CFG.crafted.eliteShards) && Math.random() < CFG.elite.shard) WZ.drop('shard', e.x, e.y, 1);
     G.stats.elites = (G.stats.elites || 0) + 1; w.run.elites++;
     WZ.ring(e.x, e.y, 2.2, '#ffd23a', 0.45);
   }
@@ -1362,8 +1360,10 @@ WZ.updMarks = function (dt) {
     if (s.state === 'done' && m.type !== 'shrine') continue;   // (claimed shrines are still looked at: their flash)
     const d = Math.hypot(w.x - m.x, w.y - m.y);
     if (m.type === 'camp') {
-      if (s.state === 'idle' && d < M.campWake) {
-        s.state = 'active';
+      // stand inside its ring for campHold seconds to stir it up; the timer drains at double speed while he is outside
+      if (s.state === 'idle') { if (d < M.campR && !w.dead) s.t += dt; else s.t = Math.max(0, s.t - dt * 2); }
+      if (s.state === 'idle' && s.t >= M.campHold) {
+        s.state = 'active'; s.t = 0;
         const sp = WZ.dryNear(m.x, m.y, 12, [1, 2.5]) || [m.x, m.y];
         WZ.makeEnemy(WZ.pickType(sp[0], sp[1]), sp[0], sp[1], true).mark = m.id;
         WZ.foesNear(m, M.campFoes - 1 + Math.floor(w.time / 180));
@@ -1372,7 +1372,7 @@ WZ.updMarks = function (dt) {
       } else if (s.state === 'active' && !w.enemies.some(e => e.mark === m.id && !e.dead)) WZ.claim(m);
     } else if (m.type === 'crypt') {
       if (s.state === 'idle') {
-        if (d < 1.6) {
+        if (d < M.cryptR && !w.dead) {
           s.t += dt;
           if (s.t >= M.cryptHold) {
             s.state = 'active'; s.sp = M.cryptMinions;
@@ -1582,7 +1582,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
 
   // the wand's buttons: Cycle picks the armed slot, Cast fires it (a spell-delivery 'act' never comes from the menu world)
   let A = act || {};
-  { const eo = WZ.emoteInput(ix, iy, rollPressed, A); ix = eo.ix; iy = eo.iy; rollPressed = eo.roll; A = eo.act; }   // the emote wheel / dance (js/emote.js)
+  { const eo = WZ.emoteInput(ix, iy, rollPressed, A, dt); ix = eo.ix; iy = eo.iy; rollPressed = eo.roll; A = eo.act; }   // the emote wheel / dance (js/emote.js)
   if (!G.menu && G.wand) { if (A.cycle && !WZ.wandCycle()) AU.sfx('error'); if (A.cast && !WZ.wandCast() && !w.ride && !(w.statT > 0)) AU.sfx('error'); }   // (nothing ready: a dull no)
   if (w.ride) { ix = 0; iy = 0; rollPressed = false; w.rollBuf = 0; w.target = null; }   // a Riding Wave has the controls
   if (w.statT > 0) { rollPressed = false; w.rollBuf = 0; }   // stone does not roll

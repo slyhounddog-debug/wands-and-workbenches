@@ -36,6 +36,7 @@ const Snap = { snap: null, mode: 'off', img: null, report: null, MODES: ['live',
       'read UI.treeOpen',                                            // the skill tree being open lives in UI (and it freezes the sim)
     ]),
     issues: [
+      'alias G.fac.grid[]', 'alias G.fac.grid[].got', 'alias G.fac.grid[].out', 'alias G.fac.grid[].cost',   // a Floor Tile blueprint is ONE object in all four cells of its 2 x 2 block (flagged, 2026-10-30)
       'alias G.fac.bld[]', 'alias G.fac.belts[]', 'alias G.bd.then', 'alias G.bd.gather', 'alias G.lock',   // grid cells ARE the bld / belts objects, and targets point into them
       'alias G.w.enemies[]._c', 'alias G.w.proj[].ctx', 'alias G.w.zones[].ctx',                            // the spell context (WZ.ctx) is shared by reference
       'alias G.w.boss', 'alias G.ev.active.plan',                    // G.w.boss is also in G.w.enemies; the active event's plan is also G.ev.plan

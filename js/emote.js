@@ -21,18 +21,20 @@ WZ.emoteStart = function (el) {
   AU.sfx('el_' + el); UI.changed();
 };
 // before the movement / buttons are read: the wheel and the dance eat or end the input. Returns the (possibly cleared) { ix, iy, roll, act }
-WZ.emoteInput = function (ix, iy, roll, A) {
+WZ.emoteInput = function (ix, iy, roll, A, dt) {
   const w = G.w, out = { ix, iy, roll, act: A };
   if (G.menu) return out;
   if (!WZ.emoteOk()) { w.wheel = null; if (w.emote && (w.ride || w.statT > 0 || w.jump || w.blink)) w.emote = null; return out; }
   if (w.wheel) {
     const m = Math.hypot(ix, iy);
-    if (m > 0.5) w.wheel.sel = Math.abs(ix) > Math.abs(iy) ? (ix > 0 ? 'fire' : 'earth') : (iy < 0 ? 'air' : 'water');   // (ix, iy) are on-screen directions
-    if (A.emote || A.mash) { const sel = w.wheel.sel; w.wheel = null; AU.sfx('blip'); if (sel) WZ.emoteStart(sel); }
+    // the stick (or keys) pick a direction; let go and the centre spot (cancel) is picked after a short grace, so letting go to press confirm still counts the direction
+    if (m > 0.5) { w.wheel.sel = Math.abs(ix) > Math.abs(iy) ? (ix > 0 ? 'fire' : 'earth') : (iy < 0 ? 'air' : 'water'); w.wheel.rel = 0; }   // (ix, iy) are on-screen directions
+    else { w.wheel.rel = (w.wheel.rel || 0) + dt; if (w.wheel.rel > CFG.emote.centerGrace) w.wheel.sel = null; }
+    if (A.emote || A.mash) { const sel = w.wheel.sel; w.wheel = null; AU.sfx('blip'); if (sel) WZ.emoteStart(sel); else WZ.emoteEnd(); }   // the centre spot cancels: no dance (and a running one stops)
     else if (roll || A.cast) { w.wheel = null; AU.sfx('blip'); }
     return { ix: 0, iy: 0, roll: false, act: { mash: false, cast: false, cycle: false, emote: false } };   // the wheel has the controls: he stands still
   }
-  if (A.emote) { w.wheel = { sel: w.emote ? w.emote.el : null }; AU.sfx('blip'); return { ix: 0, iy: 0, roll: false, act: Object.assign({}, A, { emote: false, mash: false, cast: false }) }; }
+  if (A.emote) { w.wheel = { sel: null, rel: 0 }; AU.sfx('blip'); return { ix: 0, iy: 0, roll: false, act: Object.assign({}, A, { emote: false, mash: false, cast: false }) }; }
   if (w.emote && (ix || iy || roll || A.mash || A.cast)) WZ.emoteEnd();   // moving (or any action) ends the dance
   return out;
 };

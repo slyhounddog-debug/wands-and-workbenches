@@ -258,7 +258,7 @@ R.drawFactory = function (main, dt, rect) {
 
   const list = [];
   for (const b of f.belts) list.push({ d: b.x + b.y + 0.4, o: b, t: 'belt' });
-  for (const b of f.bld) list.push({ d: b.x + b.y + 1, o: b, t: 'bld' });
+  for (const b of f.bld) list.push({ d: b.x + b.y + (b.type === 'expand' ? FA.tileSz() : 1), o: b, t: 'bld' });
   for (const b of f.bld) if (b.done && b.type === 'robot') list.push({ d: b.rx + b.ry + 0.9, o: b, t: 'bot' });   // a robot's body roams, so it sorts by where it is
   const ps = FA.portal('spell'), pk = FA.portal('skill');
   list.push({ d: ps.x + ps.y + 2, t: 'portal', o: 'spell' });
@@ -273,7 +273,7 @@ R.drawFactory = function (main, dt, rect) {
   for (const g of piles2) list.push({ d: g.x + g.y, o: g, t: g.items.length > 1 ? 'floorG' : 'floor' });
   for (const o of f.flying) list.push({ d: o.x + o.y + 0.5, o, t: 'fly' });
   list.push({ d: bd.x + bd.y, o: bd, t: 'builder' });
-  if (R.ghost) list.push({ d: R.ghost.x + R.ghost.y + (R.ghost.type === 'belt' ? 0.45 : 1.05), o: R.ghost, t: 'ghost' });   // the hovering piece sorts among the real ones
+  if (R.ghost) list.push({ d: R.ghost.x + R.ghost.y + (R.ghost.type === 'belt' ? 0.45 : R.ghost.type === 'expand' ? FA.tileSz() + 0.05 : 1.05), o: R.ghost, t: 'ghost' });   // the hovering piece sorts among the real ones
   const line = G.drag && !G.drag.cancel && G.drag.path && (!G.drag.del || G.demolish) && G.drag.path;   // a belt line being dragged out: one see-through belt per tile, sorted among the real ones
   if (line) for (const s of line) list.push({ d: s.x + s.y + 0.45, o: s, t: 'line' });
   list.sort((a, b) => a.d - b.d);
@@ -517,26 +517,23 @@ R.drawBelt = function (ctx, v, b, t, noItem) {
   const m = Math.hypot(sdx, sdy), nx = sdx / m, ny = sdy / m;
   ctx.save();
   diamond(ctx, p[0], p[1] - lift, hw - 6, hh - 3); ctx.clip();
-  // chunky slats scroll in 4px steps so they stay on the pixel grid
-  ctx.fillStyle = '#e4c08a';
-  const speed = 1 / FA.beltTime();
-  for (let i = 0; i < 3; i++) {
-    const ph = Math.floor(((t * speed + i / 3) % 1) * 8) / 8 - 0.5;
-    const cx = p[0] + sdx * ph, cy = p[1] - lift + sdy * ph;
-    ctx.beginPath();
-    ctx.moveTo(cx - ny * 16, cy + nx * 8); ctx.lineTo(cx + ny * 16, cy - nx * 8);
-    ctx.lineTo(cx + ny * 16 + nx * 6, cy - nx * 8 + ny * 6); ctx.lineTo(cx - ny * 16 + nx * 6, cy + nx * 8 + ny * 6);
-    ctx.fill();
+  // direction chevrons (>), a dark outline under a bright stroke, two to a tile, pointing downstream and scrolling that way in 8 steps so they stay on the pixel grid
+  const speed = 1 / FA.beltTime(), wx = (-dd[1] - dd[0]) * v.hw * 0.3, wy = (-dd[1] + dd[0]) * v.hh * 0.3;   // half the chevron's width, across the belt
+  ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
+  for (let i = 0; i < 2; i++) {
+    const ph = Math.floor(((t * speed + i / 2) % 1) * 8) / 8 - 0.5;
+    const cx = p[0] + sdx * ph, cy = p[1] - lift + sdy * ph, tx = cx + sdx * 0.2, ty = cy + sdy * 0.2, bx = cx - sdx * 0.14, by = cy - sdy * 0.14;
+    for (const [col, w] of [['#3a2410', 14], ['#ffe9a8', 7]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(bx + wx, by + wy); ctx.lineTo(tx, ty); ctx.lineTo(bx - wx, by - wy); ctx.stroke();
+    }
   }
-  // a solid arrowhead on the downstream half says which way the belt runs even when nothing moves (the slats still scroll); the upstream edge gets a dark notch
+  // the upstream edge gets a dark bar (where items come on) and the downstream edge a bright one (where they leave), so the run reads even when the chevrons are hidden under items
   const px = -ny, py = nx, cx0 = p[0], cy0 = p[1] - lift;
-  ctx.fillStyle = '#4a3018';
-  ctx.beginPath(); ctx.moveTo(cx0 - sdx * 0.5 + px * 22, cy0 - sdy * 0.5 + py * 11); ctx.lineTo(cx0 - sdx * 0.5 + nx * 10, cy0 - sdy * 0.5 + ny * 10); ctx.lineTo(cx0 - sdx * 0.5 - px * 22, cy0 - sdy * 0.5 - py * 11); ctx.lineTo(cx0 - sdx * 0.5 - nx * 4 - px * 22, cy0 - sdy * 0.5 - ny * 4 - py * 11); ctx.lineTo(cx0 - sdx * 0.5 - nx * 4 + px * 22, cy0 - sdy * 0.5 - ny * 4 + py * 11); ctx.fill();
-  const head = (k, col) => {
-    ctx.beginPath(); ctx.moveTo(cx0 + sdx * 0.40, cy0 + sdy * 0.40); ctx.lineTo(cx0 - sdx * 0.05 + px * 24 * k, cy0 - sdy * 0.05 + py * 12 * k); ctx.lineTo(cx0 - sdx * 0.05 + px * 9 * k - nx * 8, cy0 - sdy * 0.05 + py * 4.5 * k - ny * 8);
-    ctx.lineTo(cx0 - sdx * 0.05 - px * 9 * k - nx * 8, cy0 - sdy * 0.05 - py * 4.5 * k - ny * 8); ctx.lineTo(cx0 - sdx * 0.05 - px * 24 * k, cy0 - sdy * 0.05 - py * 12 * k); ctx.closePath(); ctx.fillStyle = col; ctx.fill();
-  };
-  head(1.25, '#2a1a0a'); head(1, '#fff1c0');
+  ctx.fillStyle = '#3a2410';
+  ctx.beginPath(); ctx.moveTo(cx0 - sdx * 0.5 + wx * 1.1, cy0 - sdy * 0.5 + wy * 1.1); ctx.lineTo(cx0 - sdx * 0.5 - wx * 1.1, cy0 - sdy * 0.5 - wy * 1.1); ctx.lineTo(cx0 - sdx * 0.38 - wx * 1.1, cy0 - sdy * 0.38 - wy * 1.1); ctx.lineTo(cx0 - sdx * 0.38 + wx * 1.1, cy0 - sdy * 0.38 + wy * 1.1); ctx.fill();
+  ctx.fillStyle = '#fff1c0';
+  ctx.beginPath(); ctx.moveTo(cx0 + sdx * 0.5 + wx * 1.1, cy0 + sdy * 0.5 + wy * 1.1); ctx.lineTo(cx0 + sdx * 0.5 - wx * 1.1, cy0 + sdy * 0.5 - wy * 1.1); ctx.lineTo(cx0 + sdx * 0.42 - wx * 1.1, cy0 + sdy * 0.42 - wy * 1.1); ctx.lineTo(cx0 + sdx * 0.42 + wx * 1.1, cy0 + sdy * 0.42 + wy * 1.1); ctx.fill();
   ctx.restore();
   if (b.rot > 0) R.drawRotFlash(ctx, v, p, b, t, lift);
   else if (R.rot && R.rot.x === b.x && R.rot.y === b.y) R.drawRotSoft(ctx, v, p, t, lift);
@@ -599,12 +596,26 @@ R.pips = function (ctx, x, y, list, t) {
     if (q.on) { ctx.fillStyle = '#ffffff'; ctx.fillRect(px + 4, y0 + 4, 4, 4); }
   });
 };
-// a blueprint's STILL MISSING materials as a small row of chips (icon + have/need), centred on x with its bottom on y. Only drawn near the Builder or under the mouse
-// (R.inTip), low against the tile's front edge; the P pin card lists every blueprint's needs from anywhere.
+// the ONE blueprint whose need chips show: the one under the mouse, else the one the Builder is touching (nearest cell within CFG.needChipTouch tiles of him).
+// A pure function of G (+ the hovered building), so the photo test sees the same thing.
+R.needPick = function () {
+  if (R.hoverB && !R.hoverB.done) return R.hoverB;
+  let best = null, bd = CFG.needChipTouch;
+  for (const b of G.fac.bld) {
+    if (b.done) continue;
+    for (const c of (b.type === 'expand' ? FA.tileCells(b) : [[b.x, b.y]])) {
+      const d = Math.hypot(Math.max(c[0] - G.bd.x, 0, G.bd.x - (c[0] + 1)), Math.max(c[1] - G.bd.y, 0, G.bd.y - (c[1] + 1)));
+      if (d < bd) { bd = d; best = b; }
+    }
+  }
+  return best;
+};
+// a blueprint's STILL MISSING materials as a small row of chips (icon + the amount still needed), centred on x with its bottom on y. Only the blueprint under the mouse or touching the
+// Builder shows them (R.needPick), low against the tile's front edge; the P pin card lists every blueprint's needs from anywhere.
 R.needChips = function (c, x, y, cost, got) {
   c.imageSmoothingEnabled = false;
   const items = Object.keys(cost).filter(k => (got[k] || 0) < cost[k]).map(k => {
-    const s = R.spr(k), S = s ? Math.max(1, Math.floor(18 / Math.max(s.c.width, s.c.height))) : 1, txt = (got[k] || 0) + '/' + cost[k];
+    const s = R.spr(k), S = s ? Math.max(1, Math.floor(18 / Math.max(s.c.width, s.c.height))) : 1, txt = String(cost[k] - (got[k] || 0));
     return { s, S, txt, w: (s ? s.c.width * S : 0) + 4 + txt.length * 9 + 8 };
   });
   if (!items.length) return;
@@ -634,10 +645,10 @@ R.drawBuilding = function (ctx, v, b, t) {
   const th = b.thump > 0 ? 1 - b.thump / CFG.thump : 1, tq = th < 1 ? 1 - 0.24 * Math.cos(th * Math.PI * 2.5) * (1 - th) : 1;
   const top = p[1] - 128;
   if (!b.done) {
-    if (FA.isTile(b.type)) {   // a Floor / Stockpile Tile waiting for its materials: a slab that rises as it is paid for
-      const need = Object.values(FA.costOf(b)).reduce((a2, c2) => a2 + c2, 0), gt = Object.values(b.got).reduce((a2, c2) => a2 + c2, 0);
-      R.drawTileSlab(ctx, v, p, 4 + Math.round(gt / need * 8) + (b.pop > 0 ? 4 : 0), 0.6 + 0.3 * gt / need, b.type === 'stockpile');
-      ctx.strokeStyle = '#d6eeff'; ctx.lineWidth = 4; diamond(ctx, p[0], p[1], v.hw - 3, v.hh - 1.5); ctx.stroke();
+    if (FA.isTile(b.type)) {   // a Floor / Stockpile Tile waiting for its materials: a slab that rises as it is paid for (a Floor Tile is a 2 x 2 block of slabs)
+      const need = Object.values(FA.costOf(b)).reduce((a2, c2) => a2 + c2, 0), gt = Object.values(b.got).reduce((a2, c2) => a2 + c2, 0), n = b.type === 'expand' ? FA.tileSz() : 1;
+      for (const c of (n > 1 ? FA.tileCells(b) : [[b.x, b.y]])) R.drawTileSlab(ctx, v, n > 1 ? R.toScreen(v, c[0] + 0.5, c[1] + 0.5) : p, 4 + Math.round(gt / need * 8) + (b.pop > 0 ? 4 : 0), 0.6 + 0.3 * gt / need, b.type === 'stockpile');
+      ctx.strokeStyle = '#d6eeff'; ctx.lineWidth = 4; diamond(ctx, p[0], p[1] + (n - 1) * v.hh, (v.hw - 3) * n, (v.hh - 1.5) * n); ctx.stroke();
     } else {
     dsprSq(ctx, spr, p[0], base, S, 1, sq, b.ready ? 0.8 : 0.45);
     ctx.strokeStyle = b.ready ? (Math.sin(t * 8) > 0 ? '#ffd23a' : '#fff0aa') : '#78c8ff'; ctx.lineWidth = b.ready ? 8 : 4; ctx.setLineDash(b.ready ? [] : [12, 8]); ctx.lineDashOffset = -Math.floor(t * 6) * 4;
@@ -645,9 +656,10 @@ R.drawBuilding = function (ctx, v, b, t) {
     if (b.ready) dspr(ctx, SP.ic_check, p[0], base - 112 - (Math.sin(t * 6) > 0 ? 0 : 4), 4);   // a robot brought everything: waiting for the Builder's E
     }
     const cost = FA.costOf(b), tot = Object.values(cost).reduce((a, b2) => a + b2, 0), got = Object.values(b.got).reduce((a, b2) => a + b2, 0);
-    // what it still needs: a small row of chips low on the tile, only near the Builder or under the mouse
-    if (R.inTip(b)) { const nb = p[1] + v.hh + 28; R.defer.push(c => R.needChips(c, p[0], nb, cost, b.got)); }
-    R.rim(ctx, v, p, got / tot, '#7be0ff', 0.86);
+    // what it still needs: a small row of chips low on the block, only for the blueprint under the mouse or touching the Builder (one at a time)
+    const nt = b.type === 'expand' ? FA.tileSz() : 1, pc = nt > 1 ? [p[0], p[1] + (nt - 1) * v.hh] : p;   // pc = the middle of the footprint
+    if (R.needPick() === b) { const nb = pc[1] + v.hh * nt + 28; R.defer.push(c => R.needChips(c, pc[0], nb, cost, b.got)); }
+    R.rim(ctx, v, pc, got / tot, '#7be0ff', 0.86 * nt);
     return;
   }
   const tip = R.inTip(b);   // info panels (recipes, battery bars, counts) only near the Builder
@@ -1053,6 +1065,17 @@ R.drawPile = function (ctx, v, pl) {
   if (n > 1) txt(ctx, '' + n, p[0], p[1] + 26, 12, n >= CFG.stockCap ? '#ffd23a' : k === 'shard' ? '#e0b8ff' : '#ffffff', 'center', 'd');   // gold = the tile is full
 };
 // goal pointer in the factory: a bouncing arrow over the target, or an arrow on the edge pointing toward it
+// the goal's picture in a small gold badge on a goal pointer (centred on x, y), with GOAL over it: so a building that glows for a goal says why
+R.goalBadge = function (ctx, x, y, icon, t) {
+  if (!icon) return;
+  const s = icon.startsWith('b:') ? SP['b_' + (ELEM[icon.slice(2)] ? 'harness' : icon.slice(2))] : R.spr(icon);
+  const q = Math.round(x / 4) * 4, r = Math.round(y / 4) * 4, hot = Math.sin(t * 6) > 0;
+  ctx.fillStyle = '#1a0f28'; ctx.fillRect(q - 28, r - 28, 56, 56);
+  ctx.fillStyle = hot ? '#ffe36b' : '#ffa62a'; ctx.fillRect(q - 24, r - 24, 48, 48);
+  ctx.fillStyle = '#3a2a52'; ctx.fillRect(q - 20, r - 20, 40, 40);
+  if (s) { const k = s.c.height > 24 ? 1 : Math.max(1, Math.floor(32 / Math.max(s.c.width, s.c.height))), w = s.c.width * k, h = s.c.height * k; ctx.drawImage(s.c, Math.round((q - w / 2) / 4) * 4, Math.round((r - h / 2) / 4) * 4, w, h); }
+  R.defer.push(c => drawText(c, 'GOAL', q, r - 34, 12, '#ffe36b', 'center', 'd'));
+};
 R.drawHint = function (ctx, v, h, t) {
   const p = R.toScreen(v, h.x, h.y), lift = h.lift || 150;
   const x0 = 40, x1 = R.rect.w - 40, y0 = 140, y1 = CFG.H - 130;
@@ -1062,10 +1085,12 @@ R.drawHint = function (ctx, v, h, t) {
     ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffe36b' : '#ffa62a'; ctx.lineWidth = 8;
     if (h.tile) { diamond(ctx, p[0], p[1], v.hw * 1.05, v.hh * 1.05); ctx.stroke(); }
     R.arrow(ctx, p[0], p[1] - lift - bob, 0, 1);
+    R.goalBadge(ctx, p[0], p[1] - lift - bob - 76, h.icon, t);
   } else {
     const cx = Math.max(x0, Math.min(x1, p[0])), cy = Math.max(y0, Math.min(y1, p[1] - lift / 2));
     const dx = p[0] - cx, dy = p[1] - lift / 2 - cy, m = Math.hypot(dx, dy) || 1;
     R.arrow(ctx, cx - dx / m * bob, cy - dy / m * bob, dx / m, dy / m);
+    R.goalBadge(ctx, cx - dx / m * (bob + 78), cy - dy / m * (bob + 78), h.icon, t);
   }
 };
 // trouble off screen: a machine that has sat jammed, starved or unpowered for CFG.edgeFlag.after s while out of view gets a bubble on the
@@ -1192,9 +1217,9 @@ R.drawBuilder = function (ctx, v, bd, t) {
 // the footprint lies on the ground under everything (a lifted dark shadow, a cyan / red wash and marching dashes: nothing like the grass),
 // the hovering piece is depth-sorted with the buildings, and the links show what it would connect to.
 R.drawGhostGround = function (ctx, v, g, t) {
-  const p = R.toScreen(v, g.x + 0.5, g.y + 0.5), col = g.ok ? '#5ab4ff' : '#ff6a6a';
-  ctx.fillStyle = 'rgba(0,0,0,0.12)'; diamond(ctx, p[0] + 6, p[1] + 6, v.hw * 0.9, v.hh * 0.9); ctx.fill();   // a soft shadow under the hovering piece
-  ctx.globalAlpha = 0.55 + 0.12 * Math.sin(t * 5); ctx.fillStyle = col; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill(); ctx.globalAlpha = 1;
+  const n = g.type === 'expand' ? FA.tileSz() : 1, p = R.toScreen(v, g.x + n / 2, g.y + n / 2), col = g.ok ? '#5ab4ff' : '#ff6a6a';   // a Floor Tile is a block: centred on its middle
+  ctx.fillStyle = 'rgba(0,0,0,0.12)'; diamond(ctx, p[0] + 6, p[1] + 6, v.hw * 0.9 * n, v.hh * 0.9 * n); ctx.fill();   // a soft shadow under the hovering piece
+  ctx.globalAlpha = 0.55 + 0.12 * Math.sin(t * 5); ctx.fillStyle = col; diamond(ctx, p[0], p[1], v.hw * n, v.hh * n); ctx.fill(); ctx.globalAlpha = 1;
 };
 // what the piece would connect to: neighbours that would feed it (an input finished) and neighbours it would feed (an output started)
 R.ghostLinks = function (g) {
@@ -1268,10 +1293,13 @@ R.drawLineTile = function (ctx, v, s, t) {
   if (s.corner) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8; diamond(ctx, p[0], p[1], v.hw - 4, v.hh - 2); ctx.stroke(); }
 };
 R.drawGhost = function (ctx, v, g, t) {
-  const p = R.toScreen(v, g.x + 0.5, g.y + 0.5), hov = Math.sin(t * 4) > 0 ? 8 : 4;
+  const gn = g.type === 'expand' ? FA.tileSz() : 1, p = R.toScreen(v, g.x + gn / 2, g.y + gn / 2), hov = Math.sin(t * 4) > 0 ? 8 : 4;
   if (g.type === 'belt') { ctx.globalAlpha = g.ok ? 0.75 : 0.4; R.drawBelt(ctx, v, { x: g.x, y: g.y, dir: g.dir, item: null }, t); ctx.globalAlpha = 1; }   // the real belt, see-through: its chevrons show the way it will run
-  if (FA.isTile(g.type)) R.drawTileSlab(ctx, v, p, hov + 4, g.ok ? 0.75 : 0.4, g.type === 'stockpile');
-  ctx.strokeStyle = g.ok ? '#d6eeff' : '#ffd0d0'; ctx.lineWidth = 8; diamond(ctx, p[0], p[1], v.hw - 4, v.hh - 2); ctx.stroke();   // the tile's edge stays clear whatever stands on it
+  if (FA.isTile(g.type)) {
+    if (gn > 1) { for (let j = 0; j < gn; j++) for (let i = 0; i < gn; i++) R.drawTileSlab(ctx, v, R.toScreen(v, g.x + i + 0.5, g.y + j + 0.5), hov + 4, g.ok ? 0.75 : 0.4, false); }
+    else R.drawTileSlab(ctx, v, p, hov + 4, g.ok ? 0.75 : 0.4, g.type === 'stockpile');
+  }
+  ctx.strokeStyle = g.ok ? '#d6eeff' : '#ffd0d0'; ctx.lineWidth = 8; diamond(ctx, p[0], p[1], (v.hw - 4) * gn, (v.hh - 2) * gn); ctx.stroke();   // the tile's edge stays clear whatever stands on it
   const dd = DIRS[g.dir], sdx = (dd[0] - dd[1]) * v.hw * 0.45, sdy = (dd[0] + dd[1]) * v.hh * 0.45;
   if (g.type !== 'belt' && !FA.isTile(g.type)) dspr(ctx, R.bldSprite({ type: g.type }), p[0], p[1] + v.hh * 0.9 - 2 - hov, 4, 0.85);
   if (g.type === 'belt') {   // the tile it will feed is washed gold, so the way the belt runs reads from the cursor to the next tile
@@ -1775,6 +1803,7 @@ R.drawMark = function (ctx, v, m) {
   let ic = null;   // a row of icons over the landmark instead of a label
   if (m.type === 'camp') {
     dspr(ctx, SP.lm_camp, p[0], p[1], S, done ? 0.5 : 1);
+    R.drawHoldRing(ctx, v, m, s, p, M.campR, M.campHold, '#ff7a30', t);
     if (!done) for (let i = 0; i < 3; i++) {
       ctx.fillStyle = i ? '#ffe36b' : '#ff7a30';
       ctx.fillRect(snap(p[0] + Math.sin(t * 7 + i) * 3 - 6 + i * 3), Math.round((p[1] - 9 - ((t * 24 + i * 8) % 18)) / 3) * 3, 9 - i * 3, 9 - i * 3);
@@ -1820,13 +1849,26 @@ R.drawMark = function (ctx, v, m) {
     else if (d < K.reveal + 6 && Math.sin(t * 3) > 0) ic = [['ic_keep']];
   } else {
     dspr(ctx, SP.lm_crypt, p[0], p[1], S, done ? 0.6 : 1);
+    R.drawHoldRing(ctx, v, m, s, p, M.cryptR, M.cryptHold, '#b07aff', t);
     if (s.state === 'idle') {
-      if (s.t > 0) R.hpBar(ctx, p[0], p[1] + 12, 48, s.t / M.cryptHold, '#b07aff');
-      else if (d < 8 && Math.sin(t * 3) > 0) ic = [['ic_clock']];   // wait at the door
+      if (!(s.t > 0) && d < M.cryptR + 3 && Math.sin(t * 3) > 0) ic = [['ic_clock']];   // wait inside the ring
     } else if (!done) ic = [['ic_skull']];
   }
   if (done && d < 8 && m.type !== 'shrine') ic = [['ic_check']];
   if (ic && d < (m.type === 'stronghold' ? CFG.strong.reveal + 6 : 13)) R.defer.push(c => R.iconRow(c, p[0], p[1] - (m.type === 'stronghold' ? 126 : 96), ic));
+};
+// a camp's / crypt's activation ring on the ground (faint dashed while idle and the Wizard is near, filling and flashing while he holds it) and its small countdown right over it
+R.drawHoldRing = function (ctx, v, m, s, p, rad, hold, col, t) {
+  const w = G.w;
+  if (s.state !== 'idle' || w.dead) return;
+  const d = Math.hypot(w.x - m.x, w.y - m.y), hot = s.t > 0;
+  if (!hot && d > rad + 14) return;
+  const fl = Math.sin(t * 12) > 0;
+  ctx.beginPath(); ctx.ellipse(p[0], p[1], rad * v.hw * 1.414, rad * v.hh * 1.414, 0, 0, 6.283);
+  if (hot) { ctx.globalAlpha = (fl ? 0.3 : 0.14) * (0.5 + 0.5 * s.t / hold); ctx.fillStyle = col; ctx.fill(); }
+  ctx.globalAlpha = hot ? 1 : 0.4; ctx.strokeStyle = hot && fl ? '#ffffff' : col; ctx.lineWidth = hot ? 5 : 4;
+  ctx.setLineDash([16, 12]); ctx.lineDashOffset = -Math.floor(t * 10) * 6; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  if (hot) { const n = Math.ceil(hold - s.t); txt(ctx, '' + n, p[0], p[1] - 100, 24, fl ? '#ffffff' : col, 'center', 'd'); R.hpBar(ctx, p[0], p[1] - 84, 40, s.t / hold, col); }
 };
 // a Stronghold's wake radius on the ground: a faint dashed rim once it is scouted and close, a flashing red warning while the Wizard stands in it
 R.drawKeepArea = function (ctx, v, m) {
@@ -1857,10 +1899,11 @@ R.drawWHint = function (ctx, v, h, t) {
   const p = R.toScreen(v, h.x, h.y), left = R.rect.x0, right = left + R.rect.w;
   const on = p[0] > left + 40 && p[0] < right - 40 && p[1] > 200 && p[1] < CFG.H - 40;
   const bob = Math.sin(t * 6) > 0 ? 0 : 6;
-  if (on) { R.arrow(ctx, p[0], p[1] - (h.lift || 80) - bob, 0, 1); return; }
+  if (on) { R.arrow(ctx, p[0], p[1] - (h.lift || 80) - bob, 0, 1); R.goalBadge(ctx, p[0], p[1] - (h.lift || 80) - bob - 76, h.icon, t); return; }
   const cx = Math.max(left + 60, Math.min(right - 60, p[0])), cy = Math.max(200, Math.min(CFG.H - 200, p[1]));
   const dx = p[0] - cx, dy = p[1] - cy, m = Math.hypot(dx, dy) || 1;
   R.arrow(ctx, cx + dx / m * (20 - bob), cy + dy / m * (20 - bob), dx / m, dy / m);
+  R.goalBadge(ctx, cx - dx / m * 112, cy - dy / m * 112, h.icon, t);
   txt(ctx, Math.round(Math.hypot(h.x - G.w.x, h.y - G.w.y)) + 'm', cx - dx / m * 50, cy - dy / m * 50 + 6, 12, '#ffe36b', 'center', 'd');
 };
 // ---------- minimap: the whole wilds as a little iso diamond in the bottom-right corner ----------

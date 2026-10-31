@@ -78,13 +78,14 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   function dropsHtml(id) {
     const I = WZ.dropInfo(id), D = CFG.enemies[id], E = CFG.elite, C = CFG.cores, kind = kindOf(id);
     const line = (ic, text, state) => '<div class="bkd">' + ic + '<span>' + text + '</span>' + (state || '') + '</div>';
-    const eliteShard = ' + a Shard (a bonus one ' + pct(E.shardBonus) + ' of the time)';
+    const eliteShard = ' + ' + pct(E.shard) + ' chance of a Shard';
     const coreIcons = els => els.map(e => UI.img('core_' + e, 16)).join('');
     let s = '<div class="bkdc"><h4>NORMAL DROPS</h4>';
     if (id === 'boss') s += line(UI.img('gem', 16), D.gem[0] + ' XP Gems') + line(UI.img('shard', 16), CFG.boss.shards + ' Aether Shards') + line(coreIcons(ELEMS), C.boss + ' of every Core');
     else if (id === 'warden') s += line(UI.img('shard', 16), 'keep claimed: ' + CFG.strong.shards + ' Shards, ' + CFG.strong.gems + ' XP Gems') + line(coreIcons(ELEMS), C.warden + ' Cores of every element') + line(UI.img('b:altar', 16), 'its death opens the Summoning Altar to spells') + line(UI.img('ic_crown', 16), 'the glow-up (it leaves a faint aura round the Wizard for good)');
     else {
       s += line(UI.img('gem', 16), 'XP Gems: ' + gemPct(D.gem, kind === 'wild' ? CFG.world.wildGem : 1));
+      s += line(UI.img('wood', 16) + UI.img('stone', 16), pct(CFG.drops.common) + ' chance of Wood or Stone') + line(UI.img('iron', 16), pct(CFG.drops.iron) + ' chance of Iron Ore');
       if (I.els.length) s += line(coreIcons(I.els), pct(I.core) + ' chance of a ' + I.els.map(e => CORE_NAME[e]).join(' or ') + ' (rides home to the Stockpile)');
       else s += line(UI.img('ic_x', 16), 'no element: no Cores');
       if (kind === 'crafted') { const cd = CFG.creatures[id], tier = cd.order.length; s += tier === 1 ? line(UI.img(cd.order[0], 16), pct(CFG.crafted.recycle) + ' chance of a ' + ELEM_WORD[cd.order[0]] + ' spell (rides home)') : line(UI.img(Object.keys(cd.cost)[0], 16), pct(CFG.crafted.recycleSpell[tier]) + ' chance of a ' + itemName(Object.keys(cd.cost)[0]) + ' (the spell it hatched from; rides home)'); }

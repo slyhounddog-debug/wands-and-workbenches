@@ -24,6 +24,7 @@ const scrOf = (v, x, y) => R.toScreen(v, x, y);
 // ---------- the ground: the patch's edge and rim, then the plates ----------
 Menu.drawGround = function (ctx, v, mv) {
   const m = G.menu, t = m.t;
+  bakes = 0;
   for (const p of m.plates) if (p.kind !== 'tag') drawPlate(ctx, v, p, t);
   if (m.tele) {   // the teleport: a ring on the ground under each of them
     const k = clamp((m.t - m.tele.t0) / 0.8, 0, 1), a = Math.sin(k * Math.PI);
@@ -78,6 +79,36 @@ function plateColors(p) {
     default: return p.safe ? ['#8fd8ff', '#2a78b8'] : ['#ffd75a', '#b8861a'];
   }
 }
+// A cosmetic or volume plate at rest (up, not pressed, not flashing) never changes between frames, so it is painted once into a bitmap on the buffer's grid and pasted: seventy of
+// them were five fills and a face each, every frame. Anything that moves it (popping in or out, a character on it, a flash) takes the live path.
+const PLC = new Map(), uids = new WeakMap(); let uidN = 0, bakes = 0;
+const uidOf = o => { let u = uids.get(o); if (!u) uids.set(o, u = ++uidN); return u; };
+function plateSig(p, top, rim) {
+  if (p.kind === 'cos') {
+    const { cat, op } = optOf(p), cv = cat.kind === 'color' || cat.kind === 'trail' ? null : Players.thumb(p.data.who, cat, op);
+    return 'c|' + top + rim + '|' + p.r + '|' + p.data.who + cat.key + op.id + '|' + (Players.selId(p.data.who, p.data.cat) === op.id) + Players.has(op) + (cv ? uidOf(cv) : 0);
+  }
+  return 'v|' + top + rim + '|' + p.r + '|' + p.data.k + p.data.i + '|' + p.ic;
+}
+function plateCached(ctx, v, p, c, hw, hh, top, rim) {
+  const P = R.px, key = plateSig(p, top, rim) + '|' + hw + '|' + hh + '|' + P;
+  let e = PLC.get(key);
+  if (!e) {
+    if (bakes >= 8) return false;   // (a screen of new plates is painted a few a frame; the rest are drawn live meanwhile)
+    bakes++;
+    if (PLC.size > 400) PLC.clear();
+    const ex = Math.ceil((hw + 10) / P) * P, A = Math.ceil((hh + 16) / P) * P, H = A + Math.ceil((hh + 14) / P) * P;
+    const cv = document.createElement('canvas'); cv.width = ex * 2 / P; cv.height = H / P;
+    const g = cv.getContext('2d'); g.setTransform(1 / P, 0, 0, 1 / P, 0, 0);
+    const org = R.org; R.org = 0;
+    plateBody(g, p, [ex, A], hw, hh, 1, 0, 0, top, rim, 0);
+    R.org = org;
+    e = { cv, ex, A };
+    PLC.set(key, e);
+  }
+  ctx.drawImage(e.cv, snap(c[0]) - e.ex, Math.round(c[1] / P) * P - e.A, e.cv.width * P, e.cv.height * P);
+  return true;
+}
 function drawPlate(ctx, v, p, t) {
   const s = plateScale(p);
   if (s <= 0.01) return;
@@ -90,6 +121,10 @@ function drawPlate(ctx, v, p, t) {
     const { cat, op } = optOf(p), has = Players.has(op), sel = Players.selId(p.data.who, p.data.cat) === op.id;
     top = !has ? '#8a80a0' : sel ? '#9affb8' : '#efe8f6';
   }
+  if (s >= 1 && p.st === 'up' && !press && !flash && (p.kind === 'cos' || p.kind === 'vol')) { if (plateCached(ctx, v, p, c, hw, hh, top, rim)) return; }
+  plateBody(ctx, p, c, hw, hh, s, press, flash, top, rim, t);
+}
+function plateBody(ctx, p, c, hw, hh, s, press, flash, top, rim, t) {
   const depth = 8 * s;
   // the dark slab under it (it stands a little proud of the ground, and sinks when something stands on it)
   ctx.fillStyle = 'rgba(0,0,0,0.28)'; diamond(ctx, c[0] + 3, c[1] + 6, hw + 1.5, hh + 1.5); ctx.fill();

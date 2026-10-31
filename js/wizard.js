@@ -419,12 +419,18 @@ WZ.hurtE = function (e, d, kx, ky, quiet) {
     e.flash = 0.12;
     const kb = e.kb !== undefined ? e.kb : e.boss ? 0.08 : e.elite ? 0.4 : 1;
     if (kx || ky) { e.kx += kx * kb; e.ky += ky * kb; }
-    WZ.num(e.x, e.y, Math.round(d) + (m > 1 ? '!' : ''), m > 1 ? '#ffe36b' : m < 1 ? '#9a94b0' : d >= 40 ? '#ffd23a' : '#ffffff');
+    // one floating number per foe per numGap: what landed since adds up in it
+    e.nAcc = (e.nAcc || 0) + d; if (m > 1) e.nWk = 1;
+    if (G.w.t - (e.nT === undefined ? -9 : e.nT) >= CFG.numGap || e.hp <= 0) {
+      if (WZ.numCount() < CFG.numMax || e.hp <= 0) WZ.num(e.x, e.y, Math.round(e.nAcc) + (e.nWk ? '!' : ''), e.nWk ? '#ffe36b' : m < 1 ? '#9a94b0' : e.nAcc >= 40 ? '#ffd23a' : '#ffffff');
+      e.nAcc = 0; e.nWk = 0; e.nT = G.w.t;
+    }
   }
   if (e.hp <= 0) { if (c && m > 1) G.stats.weakKills = (G.stats.weakKills || 0) + 1; WZ.kill(e); }
 };
 WZ.icon = (x, y, k) => G.w.fx_.push({ type: 'icon', x: x + rand(-0.2, 0.2), y, k, t: 0, dur: 0.7 });   // a sprite floating up
-WZ.num = (x, y, text, col) => G.w.fx_.push({ type: 'num', x: x + rand(-0.2, 0.2), y: y + rand(-0.2, 0.2), text: String(text), col, t: 0, dur: 0.7 });
+WZ.numCount = () => G.w.numN || 0;   // floating numbers alive (counted each frame in WZ.update, plus the ones made since)
+WZ.num = (x, y, text, col) => { G.w.numN = (G.w.numN || 0) + 1; G.w.fx_.push({ type: 'num', x: x + rand(-0.2, 0.2), y: y + rand(-0.2, 0.2), text: String(text), col, t: 0, dur: 0.7 }); };
 WZ.puff = function (x, y, col, n) {
   for (let i = 0; i < (n || 8); i++) {
     const a = Math.random() * 6.283, s = rand(1.5, 4);
@@ -1576,6 +1582,11 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
       if (f.spin) { const a = dt * 6, vx = f.vx; f.vx = vx * Math.cos(a) - f.vy * Math.sin(a); f.vy = vx * Math.sin(a) + f.vy * Math.cos(a); }
       if (f.z < 0) { f.z = 0; f.vz = 0; }
     }
+  }
+  w.numN = 0;
+  for (let i = w.fx_.length - 1, ns = 0; i >= 0; i--) {   // newest first: past sparkMax the oldest sparks end now (ten spells at once threw a thousand of them, and each one rides every snapshot)
+    const f = w.fx_[i];
+    if (f.type === 'spark') { if (++ns > CFG.sparkMax) f.t = f.dur; } else if (f.type === 'num' && f.t < f.dur) w.numN++;
   }
   w.fx_ = w.fx_.filter(f => f.t < f.dur);
   for (let i = w.decals.length - 1; i >= 0; i--) if ((w.decals[i].t += dt) > w.decals[i].dur) w.decals.splice(i, 1);

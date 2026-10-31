@@ -122,14 +122,16 @@ const AU = (() => {
     o.connect(g); g.connect(dest || cur || sfxG);
     o.start(t0); o.stop(t0 + dur + 0.05);
   }
+  let noiseBuf = null;   // one second of white noise, made once: every noise() burst is a slice of it with a fading gain (it used to fill a fresh buffer sample by sample, per sound)
   function noise(dur, vol, hp, delay, dest) {
     if (!ctx) return;
-    const n = Math.floor(ctx.sampleRate * dur), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-    const s = ctx.createBufferSource(); s.buffer = b;
+    if (!noiseBuf) { const n = ctx.sampleRate, d = (noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate)).getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; }
+    const t0 = ctx.currentTime + (delay || 0), s = ctx.createBufferSource();
+    s.buffer = noiseBuf;
     const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp || 800;
-    const g = ctx.createGain(); g.gain.value = vol || 0.1;
-    s.connect(f); f.connect(g); g.connect(dest || cur || sfxG); s.start(ctx.currentTime + (delay || 0));
+    const g = ctx.createGain(); g.gain.setValueAtTime(vol || 0.1, t0); g.gain.linearRampToValueAtTime(0, t0 + dur);
+    s.connect(f); f.connect(g); g.connect(dest || cur || sfxG);
+    s.start(t0, Math.random() * Math.max(0, noiseBuf.duration - dur), dur);
   }
   const N = s => 261.63 * Math.pow(2, s / 12);
 

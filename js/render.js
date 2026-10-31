@@ -87,6 +87,27 @@ function pbox(ctx, x, y, w, h, fill, edge) {
   ctx.fillRect(x + p, y + p, w - 2 * p, h - 2 * p);
 }
 // ----- text: always crisp pixel fonts at full resolution, drawn after the low-res buffer is scaled up -----
+// A text bitmap is a pure function of (font, string, colour): the same pixels the fillText calls draw, memoised (module state like GROUND: nothing it holds can change what is drawn).
+const TXTC = new Map(), OUTL = [];
+function textBitmap(font, s, col, o) {
+  const key = font + '|' + col + '|' + s;
+  let e = TXTC.get(key);
+  if (e !== undefined) return e;
+  if (typeof document === 'undefined' || (document.fonts && document.fonts.check && !document.fonts.check(font, s))) return null;   // the font is still loading: draw it the slow way, cache nothing
+  if (TXTC.size > 500) TXTC.clear();
+  const cv = document.createElement('canvas'), c = cv.getContext('2d');
+  c.font = font; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+  const m = c.measureText(s), pad = o + 4, asc = Math.ceil(m.actualBoundingBoxAscent || 20), desc = Math.ceil(m.actualBoundingBoxDescent || 6) + 2, w = m.width;
+  cv.width = Math.ceil(Math.max(w, m.actualBoundingBoxRight || 0)) + pad * 2; cv.height = asc + desc + pad * 2;
+  c.font = font; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+  if (!OUTL.length) for (const d of [[-1, 0], [1, 0], [0, -1], [0, 1], [1, 1], [-1, 1], [1, -1], [-1, -1], [0, 1]]) OUTL.push(d);
+  c.fillStyle = '#1a0f28';
+  OUTL.forEach((d, i) => c.fillText(s, pad + d[0] * o, pad + asc + d[1] * o + (i === 8 ? 2 : 0)));
+  c.fillStyle = col; c.fillText(s, pad, pad + asc);
+  e = { cv, w, pad, asc };
+  TXTC.set(key, e);
+  return e;
+}
 function drawText(c, s, x, y, size, col, align, font) {
   const display = font === 'd';
   const sz = display ? (size < 14 ? 12 : size < 20 ? 16 : 24) : Math.round(size * 1.3 / 2) * 2;
@@ -94,6 +115,12 @@ function drawText(c, s, x, y, size, col, align, font) {
   c.textAlign = align || 'center';
   c.textBaseline = 'alphabetic';
   const o = display ? 3 : 2;
+  const bm = R.noTextCache ? null : textBitmap(c.font, s, col || '#fff', o);   // the outlined string, drawn once into a bitmap: a fresh string was ten fillText calls every frame
+  if (bm) {
+    const al = c.textAlign, dx = al === 'center' ? -bm.w / 2 : al === 'right' || al === 'end' ? -bm.w : 0;
+    c.drawImage(bm.cv, Math.round(x + dx) - bm.pad, Math.round(y) - bm.asc - bm.pad);
+    return;
+  }
   c.fillStyle = '#1a0f28';
   for (const d of [[-o, 0], [o, 0], [0, -o], [0, o], [o, o], [-o, o], [o, -o], [-o, -o], [0, o + 2]]) c.fillText(s, Math.round(x) + d[0], Math.round(y) + d[1]);
   c.fillStyle = col || '#fff';
@@ -1504,7 +1531,7 @@ R.drawWorld = function (main, dt, rect) {
       const b = bk[i];
       if (b) for (let j = 0; j < b.length; j++) {
         const o = b[j];
-        if ((!o.broken || o.kind === 'bush') && !(mv && Menu.cleared(o) && !(o.deco && BENDY.has(o.spr) && o.spr.slice(0, 3) !== 'sh_'))) objs.push({ d: o.x + o.y, t: o.lm ? 'lm' : o.deco ? 'deco' : o.forage ? 'forage' : 'harv', o, k: i * 32 + j });
+        if ((!o.broken || o.kind === 'bush') && !(mv && Menu.cleared(o) && !(o.deco && BENDY.has(o.spr) && o.spr.slice(0, 3) !== 'sh_')) && !(mv && o.deco && BENDY.has(o.spr) && !Menu.cleared(o) && (x * 3 + y * 5) % 3)) objs.push(   /* (the menu's dimmed wilds outside the patch keep a third of their grass: the screen is twice as wide as a game half) */ { d: o.x + o.y, t: o.lm ? 'lm' : o.deco ? 'deco' : o.forage ? 'forage' : 'harv', o, k: i * 32 + j });
       }
     }
   }
@@ -1628,10 +1655,14 @@ R.drawPip = function (main, dt) {
   if (!sc) { const c = document.createElement('canvas'); c.width = CFG.HALF; c.height = CFG.H; sc = R.bufs.pip = { c, x: c.getContext('2d') }; }
   const wilds = Net.role === 'host', v = wilds ? R.wv : R.fv, rect = { x0: 0, w: CFG.HALF, pip: true };
   sc.acc = (sc.acc || 0) + dt;
-  if (!sc.drawn || sc.acc >= 1 / 24) {   // a whole second world is the most expensive thing on screen: redraw the small picture ~24 times a second, not every frame
+  // a whole second world is the most expensive thing on screen: redraw the small picture ~24 times a second, not every frame, and slower still when it is costly (a big fight in
+  // it): never more than about an eighth of the time, down to 10 pictures a second
+  if (!sc.drawn || sc.acc >= Math.min(0.1, Math.max(1 / 24, (sc.cost || 0) * 8 / 1000))) {
+    const t0 = performance.now();
     sc.x.clearRect(0, 0, CFG.HALF, CFG.H);
     if (wilds) R.drawWorld(sc.x, sc.acc, rect); else R.drawFactory(sc.x, sc.acc, rect);
     sc.drawn = true; sc.acc = 0;
+    sc.cost = sc.cost ? sc.cost * 0.7 + (performance.now() - t0) * 0.3 : performance.now() - t0;
   }
   const CH = 500, sy = Math.max(0, Math.min(CFG.H - CH, Math.round(v.cy - CH / 2)));
   const W = Math.round(CFG.W * pct / 100), H = Math.round(W * CH / CFG.HALF), x = CFG.W - W - 16, y = CFG.H - H - 16;
@@ -2589,28 +2620,34 @@ R.drawVine = function (ctx, v, x, y, t) {
   ctx.fillStyle = '#c8e87a'; ctx.fillRect(snap(cx + 3), Math.round((cy - 24 - h * 2) / 3) * 3, 3, 3);
 };
 // a spell's mark on the ground (G.w.decals). Every shape comes from the decal's own seed, so it holds still while it fades
-R.drawDecal = function (ctx, v, dc) {
-  const s = R.toScreen(v, dc.x, dc.y);
-  if (s[0] < R.rect.x0 - 260 || s[0] > R.rect.x0 + R.rect.w + 260 || s[1] < -160 || s[1] > CFG.H + 160) return;
-  const k = dc.t / dc.dur, a = dc.a * Math.min(1, dc.t / 0.12) * Math.min(1, (1 - k) / 0.4), rx = dc.r * v.hw * 1.414, ry = dc.r * v.hh * 1.414;
-  const H = n => { const q = Math.sin(dc.s * 977 + n * 12.9898) * 43758.5453; return q - Math.floor(q); }, Y = q => Math.round(q / 3) * 3;
-  const blot = (col, sc, al) => {
-    ctx.globalAlpha = a * al; ctx.fillStyle = col;
-    diamond(ctx, snap(s[0]), Y(s[1]), Math.round(rx * sc * 0.62 / 3) * 3, Math.round(ry * sc * 0.62 / 3) * 3); ctx.fill();
-    for (let i = 0; i < 6; i++) {
-      const an = H(i) * 6.283, d = 0.3 + H(i + 9) * 0.45, z = 0.3 + H(i + 20) * 0.3;
-      diamond(ctx, snap(s[0] + Math.cos(an) * rx * sc * d), Y(s[1] + Math.sin(an) * ry * sc * d), Math.round(rx * sc * z / 3) * 3, Math.round(ry * sc * z / 3) * 3); ctx.fill();
-    }
-  };
-  const rays = (col, n, len, wd) => {
-    ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = wd;
-    for (let i = 0; i < n; i++) {
-      let an = (i + H(i + 30) * 0.6) / n * 6.283, x = s[0], y = s[1];
-      ctx.beginPath(); ctx.moveTo(snap(x), Y(y));
-      for (let j = 1; j <= 3; j++) { an += (H(i * 3 + j + 40) - 0.5) * 0.9; x = s[0] + Math.cos(an) * rx * len * j / 3; y = s[1] + Math.sin(an) * ry * len * j / 3; ctx.lineTo(snap(x), Y(y)); }
-      ctx.stroke();
-    }
-  };
+// A decal's shape is a pure function of its seed, kind and size, so the ones that only change in strength (everything but lava, glass and swirl) are painted ONCE into a bitmap on the
+// buffer's own pixel grid and pasted: they were thirty-odd path fills each, a hundred and forty of them in a big fight. The bitmap is painted at one alpha and pasted at the decal's.
+const DECALC = new Map(), DEC_STATIC = { burn: 1, crater: 1, altar: 1, crack: 1, frost: 1, wet: 1, scorch: 1, sand: 1, mud: 1, scuff: 1, ember: 1, nova: 1 };
+const decH = (dc, n) => { const q = Math.sin(dc.s * 977 + n * 12.9898) * 43758.5453; return q - Math.floor(q); }, decY = q => Math.round(q / 3) * 3;
+const blotPaint = (ctx, dc, s, rx, ry, col, sc, al) => {
+  const H = n => decH(dc, n), Y = decY;
+  ctx.globalAlpha = al; ctx.fillStyle = col;
+  diamond(ctx, snap(s[0]), Y(s[1]), Math.round(rx * sc * 0.62 / 3) * 3, Math.round(ry * sc * 0.62 / 3) * 3); ctx.fill();
+  for (let i = 0; i < 6; i++) {
+    const an = H(i) * 6.283, d = 0.3 + H(i + 9) * 0.45, z = 0.3 + H(i + 20) * 0.3;
+    diamond(ctx, snap(s[0] + Math.cos(an) * rx * sc * d), Y(s[1] + Math.sin(an) * ry * sc * d), Math.round(rx * sc * z / 3) * 3, Math.round(ry * sc * z / 3) * 3); ctx.fill();
+  }
+};
+const raysPaint = (ctx, dc, s, rx, ry, col, n, len, wd, al) => {
+  const H = q => decH(dc, q), Y = decY;
+  ctx.globalAlpha = al; ctx.strokeStyle = col; ctx.lineWidth = wd;
+  for (let i = 0; i < n; i++) {
+    let an = (i + H(i + 30) * 0.6) / n * 6.283, x = s[0], y = s[1];
+    ctx.beginPath(); ctx.moveTo(snap(x), Y(y));
+    for (let j = 1; j <= 3; j++) { an += (H(i * 3 + j + 40) - 0.5) * 0.9; x = s[0] + Math.cos(an) * rx * len * j / 3; y = s[1] + Math.sin(an) * ry * len * j / 3; ctx.lineTo(snap(x), Y(y)); }
+    ctx.stroke();
+  }
+};
+// L: paint each blot / ray set from its own cached bitmap (the marks that change over time: lava cooling, lightning glass) instead of painting it again every frame
+function decalShape(ctx, dc, s, a, k, rx, ry, L) {
+  const H = n => decH(dc, n), Y = decY;
+  const blot = (col, sc, al) => L ? decalLayer(ctx, dc, s, rx, ry, L, 'b', col, sc, 0, 0, a * al) : blotPaint(ctx, dc, s, rx, ry, col, sc, a * al);
+  const rays = (col, n, len, wd) => L ? decalLayer(ctx, dc, s, rx, ry, L, 'r', col, n, len, wd, a) : raysPaint(ctx, dc, s, rx, ry, col, n, len, wd, a);
   switch (dc.k) {
     case 'burn': blot('#1a120c', 1, 0.6); blot('#3a2414', 0.55, 0.6); break;
     case 'crater': blot('#1a120c', 1, 0.65); rays('#120c08', 7, 1.15, 6); blot('#4a2a14', 0.45, 0.7); break;
@@ -2643,6 +2680,48 @@ R.drawDecal = function (ctx, v, dc) {
       break;
     }
   }
+}
+// a bitmap the size of the mark, painted by fn(ctx, centre) on the buffer's grid; cached under key
+function decalCanvas(v, rq, key, fn) {
+  let e = DECALC.get(key);
+  if (e) return e;
+  if (DECALC.size > 900) { let n = 0; for (const kk of DECALC.keys()) { DECALC.delete(kk); if (++n > 400) break; } }
+  const P = R.px, rx = rq * v.hw * 1.414, ry = rq * v.hh * 1.414, ex = Math.ceil((rx * 1.5 + 12) / P) * P, ey = Math.ceil((ry * 1.5 + 12) / P) * P;
+  const cv = document.createElement('canvas'); cv.width = ex * 2 / P; cv.height = ey * 2 / P;
+  const c = cv.getContext('2d'); c.setTransform(1 / P, 0, 0, 1 / P, 0, 0);
+  const org = R.org; R.org = 0;   // (snap() works on the grid of the buffer being drawn; this one starts at 0)
+  fn(c, [ex, ey], rx, ry);
+  R.org = org;
+  e = { cv, ex, ey };
+  DECALC.set(key, e);
+  return e;
+}
+const decVar = dc => 1 + Math.floor(Math.abs(dc.s) * 997) % 6, decQ = dc => Math.ceil(dc.r * 4) / 4;   // (marks share six shapes per kind and size: a mark that grows or a new one is a paste, not a repaint)
+function decalPaste(ctx, e, s, alpha) {
+  const P = R.px;
+  ctx.globalAlpha = Math.min(1, alpha);
+  ctx.drawImage(e.cv, snap(s[0]) - e.ex, Math.round(s[1] / P) * P - e.ey, e.cv.width * P, e.cv.height * P);
+}
+function decalLayer(ctx, dc, s, rx, ry, v, type, col, p1, p2, p3, alpha) {
+  const rq = decQ(dc), vs = decVar(dc), vd = { k: dc.k, s: vs };
+  const e = decalCanvas(v, rq, 'L' + type + '|' + col + '|' + p1 + '|' + p2 + '|' + p3 + '|' + vs + '|' + rq + '|' + v.hw + '|' + R.px, (c, cs, rrx, rry) => {
+    if (type === 'b') blotPaint(c, vd, cs, rrx, rry, col, p1, 1); else raysPaint(c, vd, cs, rrx, rry, col, p1, p2, p3, 1);
+  });
+  decalPaste(ctx, e, s, alpha);
+}
+function decalBitmap(v, dc, thin) {
+  const rq = decQ(dc), vs = decVar(dc), vd = { k: dc.k, s: vs, c: dc.c };
+  return decalCanvas(v, rq, dc.k + '|' + vs + '|' + rq + '|' + v.hw + '|' + R.px + (thin ? 't' : ''), (c, cs, rrx, rry) => decalShape(c, vd, cs, thin ? 0.7 : 1, 0, rrx, rry)) ;
+}
+R.drawDecal = function (ctx, v, dc) {
+  const s = R.toScreen(v, dc.x, dc.y);
+  if (s[0] < R.rect.x0 - 260 || s[0] > R.rect.x0 + R.rect.w + 260 || s[1] < -160 || s[1] > CFG.H + 160) return;
+  const k = dc.t / dc.dur, a = dc.a * Math.min(1, dc.t / 0.12) * Math.min(1, (1 - k) / 0.4), rx = dc.r * v.hw * 1.414, ry = dc.r * v.hh * 1.414;
+  const H = n => decH(dc, n), Y = decY;
+  if (DEC_STATIC[dc.k]) {
+    const thin = a <= 0.7 && dc.k === 'crack';
+    decalPaste(ctx, decalBitmap(v, dc, thin), s, a / (thin ? 0.7 : 1));
+  } else decalShape(ctx, dc, s, a, k, rx, ry, v);
   if (dc.k === 'ember' && k < 0.6) {   // a fireball's trail still smoulders
     ctx.fillStyle = Math.sin(G.w.t * 14 + dc.s * 9) > 0 ? '#ffb030' : '#ff6a1a'; ctx.globalAlpha = a * (1 - k / 0.6);
     ctx.fillRect(snap(s[0] - 3), Y(s[1] - 3), 6, 3);

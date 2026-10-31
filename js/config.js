@@ -78,7 +78,9 @@ const CFG = {
   // those screens, in the pause menu and while a skill tree is open (cutoff in Hz, seconds to glide there and back)
   music: { fadeIn: 0.5, fadeOut: 1, gain: 0.63, fade: 1.2, curve: 0.5, airFloor: 0.3, menu: 0.8, muffleHz: 2200, muffleT: 0.25 },
   weather: { tau: 30, min: 6, full: 30, ease: 0.035, shrine: 0.5 },   // wilds weather from the factory: packets/min of an element below min = clear, at full = full weather; ease = how fast it turns (per s); a claimed shrine / Portal Storm adds this much of its element
-  decalMax: 140,              // spell scorch / crack / frost marks on the ground at once (each spell's dec in CFG.spells)
+  sparkMax: 150,   // spark particles alive at once (the oldest end early past this)
+  numGap: 0.22, numMax: 48,   // floating damage numbers: one per foe per numGap s (what landed since adds up in it: a zone ticking on a crowd printed hundreds a second), numMax on screen
+  decalMax: 100,             // spell scorch / crack / frost marks on the ground at once (each spell's dec in CFG.spells)
   bend: { r: 0.45, hold: 0.1, spring: 10, damp: 3.4, amp: 0.6, life: 1.5, bigRad: 0.45, tufts: 24000, shrubs: 1100 },   // grass and flowers lean away from the Wizard and big foes, then spring back; tufts = extra grass tufts sown over the wilds
   wizard: {
     hp: 100, speed: 6.5, accel: 48, friction: 40, radius: 0.3,

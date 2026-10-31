@@ -255,7 +255,7 @@ const OUT = process.env.SHOTS || '';
     return o;
   });
   ok(r.c15 && r.cDrain && r.camp, 'a camp wakes after 3 s inside its ring and the timer drains outside', JSON.stringify(r));
-  ok(r.y4 && r.crypt && r.shards.join() === '1,2,4,0.1,0.1', 'a crypt needs 5 s; camps pay 1 shard, crypts 2, the Warden 4, elites 10%', JSON.stringify(r));
+  ok(r.y4 && r.crypt && r.shards.join() === '1,2,4,0.2,0.1', 'a crypt needs 5 s; camps pay 1 shard, crypts 2, the Warden 4, elites 20%', JSON.stringify(r));
   r = await run(() => {
     const W = __wands, G = W.G, WZ = W.WZ, w = G.w, o = {}, cnt = {};
     w.drops = [];
@@ -267,7 +267,7 @@ const OUT = process.env.SHOTS || '';
     o.eShard = w.drops.filter(d => d.kind === 'shard').length / 3000;
     return o;
   });
-  ok(Math.abs(r.common - 0.15) < 0.03 && Math.abs(r.iron - 0.075) < 0.025 && Math.abs(r.eShard - 0.1) < 0.03, 'foes drop Wood / Stone about 15% and Iron about 7.5%; an elite drops a shard 10% of the time', JSON.stringify(r));
+  ok(Math.abs(r.common - 0.2) < 0.03 && Math.abs(r.iron - 0.1) < 0.025 && Math.abs(r.eShard - 0.2) < 0.03, 'foes drop Wood / Stone about 20% and Iron about 10%; an elite drops a shard 20% of the time', JSON.stringify(r));
   r = await run(() => {
     const W = __wands, G = W.G, UI = W.UI, o = {};
     UI.updateQuest(0); G.quest.B++; UI.updateQuest(0);
@@ -384,7 +384,7 @@ const OUT = process.env.SHOTS || '';
   ok(r.untagged0 === 0 && r.untaggedSeen, 'no hit goes untagged in play, and a source-less WZ.damage is counted (hurt-untagged)', r.untagged0);
   ok(r.orbSrc && r.orbHurt && r.zoneSrc && r.zoneHurt, 'an orb and a zone remember whose they are', JSON.stringify([r.orbSrc, r.zoneSrc]));
   ok(r.zSrc && r.zSrc.st === 'snare' && r.chips.indexOf('ic_snare') >= 0 && r.chipHtml, 'a snare shows as a chip over his health bar with its source', JSON.stringify([r.zSrc, r.chips]));
-  ok(/^[a-z]+:MUTANT$/.test(r.mutThreat || '') && /^[a-z]+:ELITE$/.test(r.eliteThreat || '') && r.threatGone, 'a mutation and an elite sighting show their weakness over the Spell Portal, which clears by itself', JSON.stringify([r.mutThreat, r.eliteThreat, r.threatGone]));
+  ok(/^[a-z]+:MUTANT SPAWNED$/.test(r.mutThreat || '') && /^[a-z]+:ELITE SPAWNED$/.test(r.eliteThreat || '') && r.threatGone, 'a mutation and an elite sighting show their weakness over the Spell Portal, which clears by itself', JSON.stringify([r.mutThreat, r.eliteThreat, r.threatGone]));
   ok(r.rw.reject > 0 && r.rw.full > 0 && r.rw.rej === 1 && r.rw.arc >= 1 && r.rw.home && r.rw.mn === 1 && r.rw.mx === 1, 'a pickup the Stockpile refuses bounces off the Spell Portal (visible to the Builder), goes back up and lands beside him, and is never lost', JSON.stringify(r.rw));
   ok(r.b1 === '[["wood"],["ic_x"]]' && r.b2 === '[["ic_skull","0/0"],["ic_clock","0/0"]]' && r.b3 === '[["ic_heart","0/0"],["ic_clock","0/0"]]' && r.b4 === '[["core_air"],["ic_lock"]]' && r.bounces >= 4, 'every bounce shows one reason row: wrong item, creature cap / queue counters, ally caps, locked Core', JSON.stringify([r.b1, r.b2, r.b3, r.b4]));
   ok(r.plus && r.hboost, 'a Battery Shrine charge makes its Battery pulse with a "+" and a surging element boosts its Harnesser', JSON.stringify([r.plus, r.hboost]));
@@ -418,6 +418,8 @@ const OUT = process.env.SHOTS || '';
     const b = G.fac.bld.find(q => FA.isCell(q) && q.done); b.plusT = 1;
     const d = { kind: 'shard', x: w.x - 2, y: w.y + 2, vx: 0, vy: 0, t: 1, val: 1, fx: w.x - 3, fy: w.y + 1, tet: 1 }; w.drops.push(d);
     G.wand.fx = { el: 'water', kind: 'wand', t: 0.5 };
+    FA.shardPreview();   // the Builder's preview of an incoming shard
+    { const i = Math.floor(w.y) * CFG.WW + Math.floor(w.x + 2); WZ.terrain[i] = 13 * 8; w.heatT = 0; T.step(1); }   // lava two tiles away: the thermometer
     const proof = window.__proof; proof['foe-status'] = f.slow > 0; proof['status'] = true; proof['priority'] = true; proof['starve-icon'] = true; proof['jam-icon'] = true;
     return { ids: Object.keys(G.fb) };
   });

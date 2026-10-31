@@ -7,7 +7,7 @@ const T_GRASS = 0, T_DIRT = 1, T_SAND = 2, T_FLOWER = 3, T_DARK = 4, T_POND = 5,
 const T_ICE = 8, T_WALL = 9;   // temporary terrain from spells (G.w.tmod): Flash Frost ice (full speed, even over water), Earth Wall blocks (impassable)
 // scorched ground hurts and slows (the Emberward Cloak walks it unharmed), a chasm can't be entered (the Gale Circlet's blink crosses it); T_VINE comes from
 // G.w.tmod too: a vine tangle blocks everyone but a Wizard in the Bogwalker Shroud. Cracked rock is a tmod 'rock' (impassable, T_WALL) until a Gust breaks it
-const T_SCORCH = 10, T_CHASM = 11, T_VINE = 12;
+const T_SCORCH = 10, T_CHASM = 11, T_VINE = 12, T_LAVA = 13;   // T_SCORCH is the ash round the edge of a burning field (a quarter of the burn), T_LAVA the magma in the middle (the full burn)
 // decor that leans when a body pushes through it (G.w.bend)
 const BENDY = new Set(['tuft', 'tuft2', 'tuft3', 'flower0', 'flower1', 'flower2', 'flower3', 'reeds'].concat(SHRUB_NAMES));
 // which plain shrub grows at a spot: shape, size and colour come from a hash of the position (no RNG, so nothing else in the world moves); the colours follow the ground
@@ -64,9 +64,9 @@ const FORAGE_STATE = { prog: 0, lastT: 0, broken: false, respawn: 0, shake: 0 };
 WZ.generate = function () {
   const WW = CFG.WW, WH = CFG.WH;
   // a small flat palette per terrain (8-bit look): 8 shade slots, but only 3 distinct steps
-  const base = [[102, 52, 58], [32, 38, 52], [46, 55, 72], [108, 55, 62], [118, 40, 42], [205, 65, 56], [34, 35, 60], [70, 32, 34], [0, 0, 50], [0, 0, 50], [10, 38, 14], [262, 40, 7]];   // 8 and 9 are the virtual ice / wall types (never stored in the terrain)
+  const base = [[102, 52, 58], [32, 38, 52], [46, 55, 72], [108, 55, 62], [118, 40, 42], [205, 65, 56], [34, 35, 60], [70, 32, 34], [0, 0, 50], [0, 0, 50], [10, 38, 14], [262, 40, 7], [100, 40, 30], [14, 92, 36]];   // 8 and 9 are the virtual ice / wall types (never stored in the terrain)
   WZ.palette = [];
-  for (let t = 0; t < 12; t++) for (let s = 0; s < 8; s++) {
+  for (let t = 0; t < 14; t++) for (let s = 0; s < 8; s++) {
     const b = base[t], step = s < 5 ? 0 : s < 7 ? 1 : -1;
     WZ.palette.push('hsl(' + b[0] + ',' + b[1] + '%,' + (b[2] + step * 3) + '%)');
   }
@@ -97,7 +97,7 @@ WZ.generate = function () {
     (WZ.bucket[i] || (WZ.bucket[i] = [])).push(o);
   };
   const tyAt = (x, y) => (ter[Math.floor(y) * WW + Math.floor(x)] >> 3);
-  const hostile = t => t === T_POND || t === T_SCORCH || t === T_CHASM;   // nothing grows or is placed on these
+  const hostile = t => t === T_POND || t === T_SCORCH || t === T_LAVA || t === T_CHASM;   // nothing grows or is placed on these
   // landmarks first, so decor and harvestables keep clear of them
   const M = CFG.marks;
   WZ.marks = [];
@@ -144,7 +144,7 @@ WZ.generate = function () {
       if (d < g.r0) { if ((ter[ty * WWd + tx] >> 3) === T_POND) setT(tx, ty, T_GRASS); return; }   // inside the ring: dry land (an island, for the moat)
       if (d > g.r1) return;
       if (g.kind === 'moat') setT(tx, ty, T_POND);
-      else if (g.kind === 'scorch') setT(tx, ty, T_SCORCH);
+      else if (g.kind === 'scorch') { const mid = (g.r0 + g.r1) / 2, half = (g.r1 - g.r0) / 2; setT(tx, ty, Math.abs(d - mid) < half * 0.62 * (0.8 + 0.4 * vnoise(tx * 0.5, ty * 0.5, 7)) ? T_LAVA : T_SCORCH); }   // magma through the middle of the field, ash round both edges
       else if (g.kind === 'chasm') setT(tx, ty, T_CHASM);
       else { if ((ter[ty * WWd + tx] >> 3) === T_POND) setT(tx, ty, T_GRASS); rock(tx, ty); }
     });
@@ -161,7 +161,7 @@ WZ.generate = function () {
   const spot = rr => { for (let t = 0; t < 400; t++) { const x = 12 + rf() * (WW - 24), y = 12 + rf() * (WH - 24); if (awayFrom(x, y, rr)) return [x, y]; } return null; };
   for (let n = 0; n < H.scorch; n++) {   // lava fields
     const s = spot(8), rr = 4 + rf() * 3, sd = Math.floor(rf() * 99);
-    if (s) each(s[0], s[1], rr + 1.5, (tx, ty, d) => { if (d < rr * (0.78 + 0.5 * vnoise(tx * 0.5, ty * 0.5, sd))) setT(tx, ty, T_SCORCH); });
+    if (s) each(s[0], s[1], rr + 1.5, (tx, ty, d) => { { const lim = rr * (0.78 + 0.5 * vnoise(tx * 0.5, ty * 0.5, sd)); if (d < lim) setT(tx, ty, d < lim * 0.6 ? T_LAVA : T_SCORCH); } });
   }
   for (let n = 0; n < H.chasm; n++) {   // rifts: long cracks about 3 tiles wide (a blink crosses them)
     const s = spot(16), a = rf() * Math.PI, len = 16 + rf() * 10;
@@ -175,7 +175,7 @@ WZ.generate = function () {
     if (s) each(s[0], s[1], len / 2 + 2, (tx, ty) => {
       const dx = tx + 0.5 - s[0], dy = ty + 0.5 - s[1], al = dx * Math.cos(a) + dy * Math.sin(a), sd = -dx * Math.sin(a) + dy * Math.cos(a);
       const t0 = ter[ty * WWd + tx] >> 3;
-      if (Math.abs(al) < len / 2 && Math.abs(sd) < 1.1 && t0 !== T_POND && t0 !== T_SCORCH && t0 !== T_CHASM) rock(tx, ty);
+      if (Math.abs(al) < len / 2 && Math.abs(sd) < 1.1 && t0 !== T_POND && t0 !== T_SCORCH && t0 !== T_LAVA && t0 !== T_CHASM) rock(tx, ty);
     });
   }
   for (let n = 0, tries = 0; n < H.vines && tries < 4000; tries++) {   // vine tangles knotted over the bog
@@ -269,7 +269,7 @@ WZ.maxHp = () => CFG.wizard.hp + CFG.upgrade.hearty * lvl('hearty');
 // the tree's WIZARD branch (numbers only: his verbs come from garments)
 WZ.rollCd = () => CFG.wizard.rollCd * (1 - CFG.upgrade.slippery * lvl('slippery'));   // Slippery: shorter roll cooldown
 WZ.harvMul = () => 1 + CFG.upgrade.harvest * lvl('harvest');   // Harvest Strength: every spell hits trees, rocks and ore harder
-WZ.remedy = k => (k === 'potion' || k === 'elixir' ? 1 + CFG.upgrade.remedies * lvl('remedies') : k === 'armor' || k === 'plate' ? 1 + CFG.upgrade.wardwoven * lvl('wardwoven') : 1);   // Remedies (healing) / Wardwoven (armor)
+   // Remedies (healing) / Wardwoven (armor)
 // a spell's numbers as cast: the four basic spells get Mighty Elements' bonus on damage and knockback
 WZ.spellS = function (spell) {
   const S = CFG.spells[spell], m = 1 + CFG.upgrade.mighty * lvl('mighty');
@@ -339,6 +339,12 @@ WZ.tmodTick = function (dt) {
 };
 // circle-vs-water test (r = body radius)
 WZ.blocked = (x, y, r) => WZ.wet(x - r, y - r) || WZ.wet(x + r, y - r) || WZ.wet(x - r, y + r) || WZ.wet(x + r, y + r);
+// a body that may swim (water creatures) moves like WZ.slide but water does not stop it
+WZ.moveOn = function (o, nx, ny, r) {
+  if (!o.swim) return WZ.slide(o, nx, ny, r);
+  const was = WZ.pass.water; WZ.pass.water = true;
+  try { return WZ.slide(o, nx, ny, r); } finally { WZ.pass.water = was; }
+};
 // move a body with axis sliding; water can't be entered at all
 WZ.slide = function (o, nx, ny, r) {
   const inside = WZ.blocked(o.x, o.y, r);
@@ -372,7 +378,7 @@ WZ.fresh = function () {
     cine: null, rit: 0, quake: 0, altarFlash: 0,   // the Altar's landing cinematic, the Chimera ritual countdown, the world shake after the impact, the flash when a spell hits it
     hv: {}, fg: {},   // harvestable / forage node state (see WZ.nodeProps)
     arcs: [], decals: [], bend: {}, tmod, tmodN, kick: null, jump: null,   // deliveries in flight, ground marks, leaning grass, spell terrain, recoil, geyser jump
-    boulders: (WZ.boulderSpots || []).map(b => ({ x: b.x, y: b.y, vx: 0, vy: 0 })), blink: null, glowT: 0, scorchT: 0,   // loose boulders, the Circlet's blink, the glow-up timer, time spent on scorched ground
+    boulders: (WZ.boulderSpots || []).map(b => ({ x: b.x, y: b.y, vx: 0, vy: 0, rad: CFG.aug.boulder.r, bld: true, hp: 1e9, flash: 0 })), blink: null, glowT: 0, scorchT: 0,   // loose boulders, the Circlet's blink, the glow-up timer, time spent on scorched ground
     lm: WZ.marks.map(() => ({ state: 'idle', t: 0, sp: 0, near: false })),
     run: { deliveries: 0, harvested: 0, dmg: 0, weak: 0, elites: 0, shards: 0, marks: 0, xp: 0, spells: {} },
     t: 0,
@@ -430,6 +436,13 @@ WZ.hurtE = function (e, d, kx, ky, quiet) {
 };
 WZ.icon = (x, y, k) => G.w.fx_.push({ type: 'icon', x: x + rand(-0.2, 0.2), y, k, t: 0, dur: 0.7 });   // a sprite floating up
 WZ.numCount = () => G.w.numN || 0;   // floating numbers alive (counted each frame in WZ.update, plus the ones made since)
+// what he just picked up, floating over his head and fading: a picture and "+3 Wood" (picks of the same thing within a moment add up, new rows stack upward)
+WZ.pickText = function (kind, n, name) {
+  const w = G.w, f = w.fx_.find(o => o.type === 'ptext' && o.k === kind && o.t < 0.45);
+  if (f) { f.n += n; f.t = Math.min(f.t, 0.2); return; }
+  const row = w.fx_.reduce((a, o) => a + (o.type === 'ptext' ? 1 : 0), 0);
+  w.fx_.push({ type: 'ptext', x: w.x, y: w.y, k: kind, n, name, row: Math.min(row, 4), t: 0, dur: 1.5 });
+};
 WZ.num = (x, y, text, col) => { G.w.numN = (G.w.numN || 0) + 1; G.w.fx_.push({ type: 'num', x: x + rand(-0.2, 0.2), y: y + rand(-0.2, 0.2), text: String(text), col, t: 0, dur: 0.7 }); };
 WZ.puff = function (x, y, col, n) {
   for (let i = 0; i < (n || 8); i++) {
@@ -447,7 +460,7 @@ WZ.epuff = function (x, y, el, n) {
 };
 // ---------- who hurt him: every hit carries a SOURCE (the attacker's sprite, name, place and the element it is weak to) so the Wizard sees where it came from and the
 // Builder sees what to send. WZ.src is set around a creature's turn (like WZ.ctx) and captured by everything it leaves behind: its orbs, zones and telegraphed strikes. ----------
-WZ.HAZ = { scorch: { ic: 'ic_flame', n: 'Scorched ground' }, steam: { ic: 'ic_slow', n: 'Steam burst' }, unknown: { ic: 'ic_warn', n: 'Danger' } };
+WZ.HAZ = { scorch: { ic: 'ic_flame', n: 'Hot ash' }, lava: { ic: 'ic_flame', n: 'Lava' }, steam: { ic: 'ic_slow', n: 'Steam burst' }, unknown: { ic: 'ic_warn', n: 'Danger' } };
 WZ.nameOf = e => e.boss ? 'Primal Chimera' : e.warden ? 'The Warden' : (CFG.enemies[e.type] && CFG.enemies[e.type].name) || (CFG.creatures[e.type] && CFG.creatures[e.type].name) || e.type;
 WZ.srcOf = e => ({ ic: e.var && SP[e.type + '_' + e.var] ? e.type + '_' + e.var : e.type, n: WZ.nameOf(e), x: e.x, y: e.y, el: e.weak || null });   // (a NEW object every time: it ends up in G and shared references would leak in the photo test)
 // WZ.cur = the hostile whose turn it is (set around its AI in the enemy loop); WZ.src is built from it only when something asks (a hit, a zone, a timer), not for every foe every frame
@@ -462,15 +475,21 @@ WZ.damage = function (d, soft, src) {   // armor soaks damage first. soft = burn
   w.hurt = { ic: sr.ic, n: sr.n, ax: sr.x === undefined ? null : sr.x, ay: sr.y === undefined ? null : sr.y, el: sr.el || null, t: 0, soft: !!soft, d: Math.round(d) };   // the cue: R.drawHurt
   w.lastHit = { ic: sr.ic, n: sr.n, el: sr.el || null };   // what to blame if this kills him
   FA.fb('hurt');
+  const d0 = d;   // the size of the hit before anything cuts it
   if (w.statT > 0) { d *= CFG.wand.earth.take; if (!soft) w.statHits++; }   // the Statue: stone takes 30% of it, and every hit charges the burst that ends it
   if (!soft) FA.rumble(d);   // any hit rattles the factory, harder for a bigger one
   if (!soft && d >= CFG.pressure.hit * WZ.maxHp()) FA.pressure(Math.min(1.5, d / WZ.maxHp() * 3), '#ff5a5a');   // a heavy hit shakes the factory too
-  const soak = Math.min(w.armor, d);
-  w.armor -= soak; d -= soak;
-  if (soak > 0) WZ.num(w.x, w.y, '-' + Math.round(soak), '#9fc4ff');
+  // Armor: while there are points left every hit is cut by 70% (with the Statue on top, 91%), and a hit takes 2 / 3 / 5 points off by its size (a burning tick takes 1)
+  let soak = 0;
+  if (w.armor > 0) {
+    const A = CFG.armorRule, cost = soft ? 1 : d0 <= A.smallMax ? A.small : d0 <= A.mediumMax ? A.medium : A.big;
+    d *= 1 - A.cut; soak = Math.min(w.armor, cost); w.armor -= soak;
+    WZ.num(w.x, w.y, '-' + soak, '#9fc4ff');
+    if (!soft && Math.floor(w.armor) === 0) WZ.icon(w.x, w.y, 'ic_shield');   // the last of it is gone
+  }
   if (d > 0) { w.hp -= d; WZ.num(w.x, w.y, '-' + Math.round(d), soft ? '#ff9a3a' : '#ff6a6a'); }
-  if (!soft && d > 0 && w.hp > 0) FA.shakeLoose(w.hp / WZ.maxHp());   // health lost: the factory may drop something (armor soaking the hit keeps it still)
-  if (!soft) { w.hurtT = 0.35; w.shake = Math.max(w.shake, 0.35); AU.sfx(soak > 0 && d <= 0 ? 'clank' : 'hurt'); }
+  if (!soft && d > 0 && w.hp > 0 && soak === 0) FA.shakeLoose(w.hp / WZ.maxHp());   // health lost: the factory may drop something (armor soaking the hit keeps it still)
+  if (!soft) { w.hurtT = 0.35; w.shake = Math.max(w.shake, 0.35); AU.sfx(soak > 0 ? 'clank' : 'hurt'); }
   if (w.hp <= 0) {
     if (WZ.phoenixSave()) return;   // the Phoenix Feather cancels death
     w.hp = 0; w.dead = true; AU.sfx('die'); WZ.puff(w.x, w.y, '#b58cff', 20);
@@ -509,9 +528,9 @@ WZ.mash = function (o) {
   const twice = Math.random() < CFG.upgrade.forager * lvl('forager'), rounds = twice ? 2 : 1;
   if (twice) { WZ.icon(o.x, o.y - 0.4, 'ic_check'); WZ.puff(o.x, o.y, '#ffd23a', 8); }
   for (let r = 0; r < rounds; r++) {
-    if (o.kind === 'cache') { const s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y]; w.pickups.push({ kind: Math.random() < def.pickup ? 'elixir' : 'plate', x: s[0], y: s[1], z: 1.6, t: 0 }); }   // a pickup tumbles out of the cache as well
+    if (o.kind === 'cache') { const s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y]; w.pickups.push({ kind: (Math.random() < def.pickup ? 'hp_' : 'ap_') + ['flamethrower', 'steam', 'sandstorm', 'magma', 'tempest', 'mud'][Math.floor(Math.random() * 6)], x: s[0], y: s[1], z: 1.6, t: 0 }); }   // a pickup tumbles out of the cache as well
     if (o.kind === 'bush') {   // a pickup tumbles out of the bush: walk over it to use it
-      const kind = Math.random() < def.potion ? 'potion' : 'armor', s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y];
+      const kind = (Math.random() < def.potion ? 'hp_' : 'ap_') + ELEMS[Math.floor(Math.random() * 4)], s = WZ.dryNear(o.x, o.y, 12, [0.9, 1.5]) || [o.x, o.y];
       w.pickups.push({ kind, x: s[0], y: s[1], z: 1.6, t: 0 });
     } else {
       for (const k in def.drop) for (let i = 0; i < def.drop[k]; i++) WZ.drop(k, o.x, o.y, 1);
@@ -532,6 +551,7 @@ WZ.dropPickup = function (kind) {
   AU.sfx('portalDrop');
 };
 WZ.hurtH = function (h, d) {
+  if (h.bld) { WZ.boulderHit(h, d); return; }   // a loose boulder: the damage is a push
   if (h.bshr) { WZ.bshrHurt(h, d); return; }   // a Battery Shrine: the damage is charge for its Battery
   if (h.broken) return;
   h.hp -= d * WZ.harvMul(); h.flash = 0.1;
@@ -545,6 +565,7 @@ WZ.hurtH = function (h, d) {
 };
 // continuous damage to a tree / rock / shrine (d is already dps x dt)
 WZ.hurtHc = function (h, d) {
+  if (h.bld) { WZ.boulderHit(h, d); return; }
   if (h.bshr) { WZ.bshrHurt(h, d); return; }
   h.hp -= d * WZ.harvMul(); h.flash = 0.05;
   if (h.hp <= 0) { h.hp = 0.0001; WZ.hurtH(h, 1); }
@@ -596,6 +617,7 @@ WZ.each = function (x, y, r, fn) {
   if (G.menu) Menu.touch(x, y, r);   // ...and in the menu world a spell's reach can press the safe floor plates
   for (const e of w.enemies) { if (e.dead) continue; const d = Math.hypot(e.x - x, e.y - y); if (d <= r + e.rad) fn(e, d, true); }
   for (const h of WZ.harv) { if (h.broken) continue; const d = Math.hypot(h.x - x, h.y - y); if (d <= r + 0.4) fn(h, d, false); }
+  for (const b of w.boulders) { const d = Math.hypot(b.x - x, b.y - y); if (d <= r + b.rad) fn(b, d, false); }   // loose boulders: a spell's reach pushes them
   for (const s of G.bshr) { const d = Math.hypot(s.x - x, s.y - y); if (d <= r + s.rad) fn(s, d, false); }   // the Battery Shrines
 };
 WZ.hit = (t, isE, d, kx, ky) => { if (isE) WZ.hurtE(t, d, kx || 0, ky || 0); else WZ.hurtH(t, d); };
@@ -685,10 +707,31 @@ WZ.bendAt = function (x, y, vx, vy, r) {
     }
   }
 };
+// ash and lava within heatR tiles of the Wizard (and no Emberward Cloak): w.heat = 0 nothing, 1 ash, 2 lava, 3 standing in either. The HUD shows a blinking thermometer (R.drawHeat).
+WZ.heatTick = function (dt) {
+  const w = G.w, H = CFG.aug.scorch;
+  w.heatT = (w.heatT || 0) - dt;
+  if (w.heatT > 0) return;
+  w.heatT = 0.15;
+  if (WZ.has('ember') || w.dead) { w.heat = 0; return; }
+  let best = 0;
+  const R0 = H.heatR, x0 = Math.floor(w.x), y0 = Math.floor(w.y);
+  for (let ty = y0 - R0; ty <= y0 + R0 && best < 2; ty++) for (let tx = x0 - R0; tx <= x0 + R0; tx++) {
+    if (Math.hypot(tx + 0.5 - w.x, ty + 0.5 - w.y) > R0) continue;
+    const t = WZ.tile(tx + 0.5, ty + 0.5);
+    if (t === T_LAVA) { best = 2; break; }
+    if (t === T_SCORCH) best = 1;
+  }
+  const here = WZ.tile(w.x, w.y);
+  w.heat = here === T_SCORCH || here === T_LAVA ? 3 : best;
+  if (w.heat && !w.heatSeen) FA.fb('heat-warn');
+  w.heatSeen = w.heat;
+};
 WZ.bendTick = function (dt) {
   const w = G.w, B = CFG.bend;
   for (const k in w.bend) if ((w.bend[k].t += dt) > B.life) delete w.bend[k];
   if (!w.dead && !w.jump) WZ.bendAt(w.x, w.y, w.vx, w.vy, CFG.wizard.radius);
+  if (G.menu && G.bd) WZ.bendAt(G.bd.x + Menu.OX, G.bd.y + Menu.OY, G.bd.vx || 0, G.bd.vy || 0, 0.4);   // in the menu world the Builder stands in the same grass
   for (const e of w.enemies) if (!e.dead && !e.fly && !(e.fall > 0) && (e.rad >= B.bigRad || e.elite || e.boss)) WZ.bendAt(e.x, e.y, e.mvx || 0, e.mvy || 0, e.rad * (e.sz || 1));
 };
 // ---------- deliveries crossing the split: what the Spell Portal sends leaves the factory's top-right corner (FA.suck), then sails in from
@@ -1350,8 +1393,8 @@ WZ.spawn = function () {
   const spot = WZ.dryNear(w.x, w.y, 12, [cfg.ringMin, cfg.ringMax]);   // never spawn on water
   if (!spot) return;
   const dist = Math.hypot(w.x - SPAWN.x, w.y - SPAWN.y);
-  const pElite = w.time < E.minTime ? 0 : Math.min(E.max, E.base + E.perMin * w.time / 60 + E.perDist * dist / 100);
-  const e = WZ.makeEnemy(WZ.pickType(spot[0], spot[1]), spot[0], spot[1], Math.random() < pElite * cfg.wildElite);
+  const pElite = w.time < E.minTime ? 0 : E.spawn;   // a flat 3% of wild spawns are elites once the run is a minute and a half old
+  const e = WZ.makeEnemy(WZ.pickType(spot[0], spot[1]), spot[0], spot[1], Math.random() < pElite);
   e.wild = true; e.hp = e.maxHp = e.maxHp * cfg.wildHp; e.dmg *= cfg.wildDmg;
   if (w.bloom && Math.random() < w.bloom) WZ.mutate(e);   // Mutation Bloom: wild spawns mutate a lot
 };
@@ -1360,10 +1403,10 @@ WZ.announce = function (e, key) {
   const def = CFG.enemies[e.type], el = e.weak;
   if (key === 'elite') {
     UI.toast('Elite near the Wizard: send ' + ELEM_WORD[el] + '!', 'L', el);
-    FA.threat([el], e.type, 'ELITE');
+    FA.threat([el], e.type, 'ELITE SPAWNED');
   } else {
     UI.toast('The Wizard meets ' + def.name + 's: send ' + ELEM_WORD[el] + ' spells!', 'L', el);
-    FA.threat([el], e.type, null);
+    FA.threat([el], e.type, def.name.toUpperCase() + ' SPOTTED');
   }
   AU.sfx('alert');
 };
@@ -1569,11 +1612,10 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     if (h.flash > 0) h.flash -= dt;
     if (h.broken) { h.respawn -= dt; if (h.respawn <= 0) { h.broken = false; h.hp = h.maxHp; } }
   }
-  // forage spots grow back; a half-dug one slowly fills in again if the Wizard stops mashing
+  // forage spots grow back; a half-dug one keeps its progress for good (walking away never undoes it)
   for (const o of WZ.forage) {
     if (o.shake > 0) o.shake -= dt;
     if (o.broken) { o.respawn -= dt; if (o.respawn <= 0) o.broken = false; }
-    else if (o.prog > 0 && w.t - o.lastT > 0.5) o.prog = Math.max(0, o.prog - CFG.forage.decay * dt);
   }
   for (const f of w.fx_) {
     f.t += dt;
@@ -1653,7 +1695,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   let sp = WZ.speed();
   const tn = WZ.tile(w.x, w.y);
   if (tn === T_BOG && !WZ.has('bog')) sp *= cfg.slowTerrain;   // the Bogwalker Shroud: bog never slows him
-  if (tn === T_SCORCH && !WZ.has('ember')) sp *= CFG.aug.scorch.slow;
+  if ((tn === T_SCORCH || tn === T_LAVA) && !WZ.has('ember')) sp *= CFG.aug.scorch.slow;
   // hostile mud / steam slows (the roll ignores them)
   const slowK = (1 - Math.min(0.8, w.zSlow || 0)) * (w.slowT > 0 ? 1 - w.slowAmt : 1);
   if (w.slowT > 0) w.slowT -= dt;
@@ -1709,11 +1751,12 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   WZ.altarTick(dt);   // the Summoning Altar: placing it, its sockets, the Chimera ritual
   WZ.bshrTick(dt);   // the Battery Shrines: one per Battery, their shockwaves
   // scorched ground burns (the Emberward Cloak walks it unharmed and throws embers up instead)
-  if (tn === T_SCORCH && !w.jump && !w.blink) {
+  WZ.heatTick(dt);   // a thermometer blinks over his head when ash or lava is within 4 tiles
+  if ((tn === T_SCORCH || tn === T_LAVA) && !w.jump && !w.blink) {
     if (WZ.has('ember')) { if (Math.random() < dt * 10) w.fx_.push({ type: 'spark', x: w.x + rand(-0.4, 0.4), y: w.y + rand(-0.4, 0.4), vx: 0, vy: 0, z: 0.1, vz: rand(1.5, 3), g: -2, col: Math.random() < 0.5 ? '#ffb030' : '#ff7a30', t: 0, dur: 0.5 }); }
     else {
       w.scorchT = (w.scorchT || 0) + dt; w.burn = (w.burn || 0) + dt;   // burn = seconds in a row on scorched ground: the longer he stays, the worse it gets
-      if (w.scorchT >= 0.25) { w.scorchT = 0; WZ.damage(CFG.aug.scorch.dps * (1 + CFG.aug.scorch.ramp * w.burn) * 0.25, true, WZ.HAZ.scorch); w.statBurn = 0.6; if (Math.random() < 0.5) AU.sfx('blip'); }
+      if (w.scorchT >= 0.25) { w.scorchT = 0; WZ.damage(CFG.aug.scorch.dps * (tn === T_LAVA ? 1 : CFG.aug.scorch.ash) * (1 + CFG.aug.scorch.ramp * w.burn) * 0.25, true, tn === T_LAVA ? WZ.HAZ.lava : WZ.HAZ.scorch); w.statBurn = 0.6; if (Math.random() < 0.5) AU.sfx('blip'); }
     }
   } else if (w.burn > 0) w.burn = Math.max(0, w.burn - dt * 2);   // off the ground: it cools quickly
   WZ.flowCd -= dt;
@@ -1724,19 +1767,20 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     const p = w.pickups[i];
     p.t += dt;
     if (p.z > 0) { p.z = Math.max(0, p.z - dt * 14); if (p.z === 0) { WZ.puff(p.x, p.y, ITEMS[p.kind].color, 8); AU.sfx('thud'); } continue; }
-    if (Math.hypot(p.x - w.x, p.y - w.y) > 0.8 + CFG.upgrade.magnet * lvl('magnet')) continue;   // Loot Magnet reaches these too
+    if (Math.hypot(p.x - w.x, p.y - w.y) > 0.8) continue;
     if (ITEMS[p.kind].aug) { WZ.wearGarment(ITEMS[p.kind].id); w.pickups.splice(i, 1); continue; }
     const def = CFG.pickups[p.kind];
     if (def.heal) {
       if (w.hp >= WZ.maxHp()) { p.full = true; continue; }
-      const got = Math.min(Math.round(def.heal * WZ.remedy(p.kind)), WZ.maxHp() - w.hp);   // Remedies
+      const got = Math.min(Math.round(def.heal), WZ.maxHp() - w.hp);
       w.hp += got; WZ.num(w.x, w.y, '+' + Math.round(got), '#6aff8a');
     } else {
       if (w.armor >= CFG.wizard.armorMax) { p.full = true; continue; }
-      const got = Math.min(Math.round(def.armor * WZ.remedy(p.kind)), CFG.wizard.armorMax - w.armor);   // Wardwoven
+      const got = Math.min(Math.round(def.armor), CFG.wizard.armorMax - w.armor);
       w.armor += got; WZ.num(w.x, w.y, '+' + Math.round(got), '#9fc4ff');
     }
     G.stats.used = (G.stats.used || 0) + 1;
+    WZ.pickText(p.kind, 1, itemName(p.kind));
     WZ.puff(p.x, p.y, ITEMS[p.kind].color, 12);
     AU.sfx('powerup');
     w.pickups.splice(i, 1);
@@ -1791,10 +1835,11 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     const TG = WZ.foeTarget(e), ex = TG.x - e.x, ey = TG.y - e.y, d = TG.a ? Math.hypot(ex, ey) || 1 : dw;   // an ally within aggro range comes first
     WZ.cur = e;   // (whatever it hurts the Wizard with this turn is tagged with it: WZ.src)
     if (e.boss && !TG.mill) WZ.bossAI(e, dt, d, TG);
-    const s = e.spd * (1 - e.slow) * (!e.fly && WZ.tile(e.x, e.y) === T_BOG ? cfg.slowTerrain : 1);
+    if (e.swim === undefined) e.swim = !e.fly && WZ.elemsOf(e).indexOf('water') >= 0;   // anything made of Water walks on water
+    const s = e.spd * (1 - e.slow) * (!e.fly && !e.swim && WZ.tile(e.x, e.y) === T_BOG ? cfg.slowTerrain : 1);
     let ux = ex / d, uy = ey / d, steered = false;
     if (e.detour > 0) { e.detour -= dt; const px = -uy * e.side, py = ux * e.side; ux = px; uy = py; }   // last-resort sidestep
-    else if (d > 1.5 && !e.fly && !TG.a && !TG.mill) { const f = WZ.flowDir(e, d); if (f) { ux = f[0]; uy = f[1]; steered = true; } }   // (the flow field leads to the Wizard: an ally is chased in a straight line)
+    else if (d > 1.5 && !e.fly && !e.swim && !TG.a && !TG.mill) { const f = WZ.flowDir(e, d); if (f) { ux = f[0]; uy = f[1]; steered = true; } }   // (the flow field leads to the Wizard: an ally is chased in a straight line)
     if (TG.mill) {   // Vanishing Puff: nobody to go for (he is unseen and no ally is near): it mills about where it stands
       e.millT = (e.millT || 0) - dt;
       if (e.millT <= 0) { e.millT = rand(0.7, 1.8); const an = Math.random() * 6.283, st = Math.random() < 0.35 ? 0 : 0.3; e.millX = Math.cos(an) * st; e.millY = Math.sin(an) * st; }
@@ -1815,7 +1860,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     }
     const ox0 = e.x, oy0 = e.y;
     if (e.fly) { e.x = Math.max(0.5, Math.min(CFG.WW - 0.5, e.x + (mx + e.kx) * dt)); e.y = Math.max(0.5, Math.min(CFG.WH - 0.5, e.y + (my + e.ky) * dt)); }   // flyers cross water
-    else if (WZ.slide(e, e.x + (mx + e.kx) * dt, e.y + (my + e.ky) * dt, 0.3) && !(e.detour > 0) && !steered) {
+    else if (WZ.moveOn(e, e.x + (mx + e.kx) * dt, e.y + (my + e.ky) * dt, 0.3) && !(e.detour > 0) && !steered) {
       e.detour = 0.5 + Math.random() * 0.6; e.side = e.side || (Math.random() < 0.5 ? 1 : -1);
       e.kx = 0; e.ky = 0;
     }
@@ -1970,6 +2015,10 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     if (dr.pulse > 0) dr.pulse -= dt;
     if (dr.tet > 0) dr.tet -= dt;
     if (dr.hide > 0) dr.hide -= dt;
+    if (dr.up !== undefined && (dr.up += dt) < CFG.shardUp.rise + CFG.shardUp.shake) {   // a shard being lifted: it hovers and shakes where he picked it up, then goes
+      if (dr.up > CFG.shardUp.rise && Math.floor(dr.up * 14) % 2 === 0) dr.cf = (dr.cf || 0) + 1;
+      continue;
+    }
     if (dr.rejT > 0) { dr.rejT -= dt; continue; }   // it was just turned away by the portal over his head: it lies where it fell for a moment
     const loot = WZ.isLoot(dr.kind), keep = WZ.keepDrop(dr), vac = keep ? WZ.vacuum() * 2.5 : WZ.vacuum();   // shards, Cores, garments and the factory's overflow are precious: they come to you
     if (dr.t > 0.3 && d < vac) {
@@ -1977,11 +2026,16 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
       dr.x += ex / (d || 1) * sp2 * dt; dr.y += ey / (d || 1) * sp2 * dt;
       dr.mag = true;
     }
-    if (d < 0.45 && dr.t > 0.3) {
+    if ((d < 0.45 && dr.t > 0.3) || dr.up !== undefined) {
       // everything he picks up is sucked into a little portal over his head. What goes to the Stockpile only goes when it has room for it:
       // otherwise it still goes up his portal, but the Spell Portal turns it away and it comes back down beside him (WZ.rejectToWild)
       if (dr.kind !== 'xp' && FA.room(dr.kind) < dr.val) { WZ.rejectToWild(dr); w.drops.splice(i, 1); continue; }
+      if (dr.kind === 'shard' && dr.up === undefined) {   // a special moment: the shard rises, hovers, shakes with confetti, and only then flies home
+        dr.up = 0; dr.mag = true; FA.shardPreview(); AU.sfx('powerup'); WZ.ring(dr.x, dr.y, 1.2, '#c890ff', 0.5);
+        continue;
+      }
       WZ.hsuck(dr.kind, dr.x, dr.y, false, dr.val);
+      WZ.pickText(dr.kind === 'xp' ? 'gem' : dr.kind, dr.val, dr.kind === 'xp' ? 'XP' : itemName(dr.kind));
       if (dr.kind === 'xp') { G.xp += dr.val; G.stats.xpEarned += dr.val; w.run.xp += dr.val; AU.sfx(dr.val >= CFG.bigGem.tiers[1] ? 'gemBig' : 'gem'); if (dr.val >= CFG.bigGem.tiers[1]) WZ.num(w.x, w.y, '+' + dr.val, '#7be0ff'); }
       else if (loot) WZ.collect(dr);
       else if (ELEM[dr.kind]) {   // a recycled packet flies out of the Spell Portal onto its Stockpile tile

@@ -237,7 +237,7 @@ Main.walkStep = function (o, dt, ix, iy, press, slowK) {
   let sp = WZ.speed();
   const tn = WZ.tile(o.x, o.y);
   if (tn === T_BOG && !WZ.has('bog')) sp *= CFG.world.slowTerrain;
-  if (tn === T_SCORCH && !WZ.has('ember')) sp *= CFG.aug.scorch.slow;
+  if ((tn === T_SCORCH || tn === T_LAVA) && !WZ.has('ember')) sp *= CFG.aug.scorch.slow;
   if (o.roll > 0) { o.roll -= dt; o.vx = o.rdx * sp * CFG.wizard.rollSpeed; o.vy = o.rdy * sp * CFG.wizard.rollSpeed; }
   else {
     const wx = dx * sp * slowK, wy = dy * sp * slowK, ex = wx - o.vx, ey = wy - o.vy, el = Math.hypot(ex, ey);

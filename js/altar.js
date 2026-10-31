@@ -27,7 +27,7 @@ WZ.altarSpot = function () {
     if (x < 6 || y < 6 || x > CFG.WW - 6 || y > CFG.WH - 6) return false;
     for (let i = 0; i < 9; i++) { const a = i * 0.785, rr = i ? A.r : 0; if (WZ.blocked(x + Math.cos(a) * rr, y + Math.sin(a) * rr, 0.3)) return false; }
     const t = WZ.tile(x, y);
-    if (t === T_BOG || t === T_SCORCH || t === T_ICE) return false;
+    if (t === T_BOG || t === T_SCORCH || t === T_LAVA || t === T_ICE) return false;
     if (WZ.marks.some(m => Math.hypot(m.x - x, m.y - y) < A.clear)) return false;
     if (WZ.harv.some(h => !h.broken && Math.hypot(h.x - x, h.y - y) < A.r + 1.3)) return false;
     if (WZ.forage.some(f => Math.hypot(f.x - x, f.y - y) < A.r + 1)) return false;

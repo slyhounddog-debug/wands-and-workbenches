@@ -179,7 +179,7 @@ const ok = (c, msg, extra) => { console.log((c ? 'PASS ' : 'FAIL ') + msg + (ext
     for (let i = 0; i < 12; i++) { const q = await pt(dx, dy); await page.mouse.move(q[0], q[1], steps ? { steps } : undefined); await page.waitForTimeout(110); if (await over(dx, dy)) return; }
     throw new Error('could not put the mouse over tile +' + dx + ',+' + dy);
   };
-  const woodBefore = await page.evaluate(() => __wands.G.stock.wood);
+  const woodBefore = await page.evaluate(() => { const D = __wands.CFG.drops; D.common = 0; D.iron = 0; return __wands.G.stock.wood; });   // (a kill's Wood drop must not fly in and hide the belts' cost)
   await aim(0, 0);
   await page.mouse.down();
   await aim(3, 0, 6);

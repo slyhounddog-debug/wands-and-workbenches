@@ -28,11 +28,11 @@ WZ.bshrSave = function () {
 };
 WZ.bshrBat = s => (s.id == null ? null : G.fac.bld.find(b => b.id === s.id) || null);
 // the hit list: the harvestables and the shrines (cached; harvestables never change, so only a change of shrines rebuilds it)
-let hhList = null, hhFor = null, hhV = -1, hhBase = null;
+let hhList = null, hhFor = null, hhV = -1, hhBase = null, hhB = null;
 WZ.hitH = function () {
-  const L = G.bshr;
-  if (!L || !L.length) return WZ.harv;
-  if (hhFor !== L || hhV !== WZ.bshrV || hhBase !== WZ.harv) { hhList = WZ.harv.concat(L); hhFor = L; hhV = WZ.bshrV; hhBase = WZ.harv; }
+  const L = G.bshr || [], B = G.w.boulders;
+  if (!L.length && !B.length) return WZ.harv;
+  if (hhFor !== L || hhV !== WZ.bshrV || hhBase !== WZ.harv || hhB !== B) { hhList = WZ.harv.concat(L, B); hhFor = L; hhV = WZ.bshrV; hhBase = WZ.harv; hhB = B; }
   return hhList;
 };
 
@@ -43,7 +43,7 @@ WZ.bshrSpot = function (near) {
     if (x < 6 || y < 6 || x > CFG.WW - 6 || y > CFG.WH - 6) return false;
     for (let i = 0; i < 9; i++) { const a = i * 0.785, rr = i ? B.r + 0.3 : 0; if (WZ.blocked(x + Math.cos(a) * rr, y + Math.sin(a) * rr, 0.3)) return false; }
     const t = WZ.tile(x, y);
-    if (t === T_BOG || t === T_SCORCH || t === T_ICE) return false;
+    if (t === T_BOG || t === T_SCORCH || t === T_LAVA || t === T_ICE) return false;
     if (WZ.marks.some(m => Math.hypot(m.x - x, m.y - y) < B.clear)) return false;
     if (WZ.harv.some(h => !h.broken && Math.hypot(h.x - x, h.y - y) < B.r + 1.2)) return false;
     if (WZ.forage.some(f => Math.hypot(f.x - x, f.y - y) < B.r + 1)) return false;

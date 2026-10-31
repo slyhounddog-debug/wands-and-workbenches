@@ -129,6 +129,8 @@ FA.qInfo = function (k) {
   else if (isKeyKind(k)) use = 'Spell Portal: opens the Stronghold door.';
   else if (ELEM[k]) use = 'Feeds Forge, Spawner, Battery.';
   else if (ITEMS[k] && ITEMS[k].spell) use = SEED_SPELL[k] ? 'Cast it, bank it, or hatch a ' + CFG.creatures[SEED_SPELL[k]].name + ' at the Spawner.' : 'Cast it: Spell Portal. Bank it: Skill.';
+  else if (ITEMS[k] && ITEMS[k].potion === 'hp') use = 'Heals the Wizard ' + ITEMS[k].val + ' HP: Spell Portal.' + (isElixir(k) ? ' Overcharges a Battery too.' : '');
+  else if (ITEMS[k] && ITEMS[k].potion === 'ap') use = '+' + ITEMS[k].val + ' armor points for the Wizard: Spell Portal.';
   else if (k === 'potion' || k === 'elixir') use = 'Heals the Wizard via the Spell Portal.';
   else if (k === 'armor' || k === 'plate') use = 'Armors the Wizard via the Spell Portal.';
   else if (ITEMS[k] && ITEMS[k].ally) use = 'Spell Portal: a FRIENDLY creature joins the Wizard.';
@@ -198,7 +200,7 @@ FA.portalTakes = (c, k) => (c.which === 'skill' ? FA.isBankable(k) : FA.isDelive
 FA.isLogi = b => { const k = FA.def(b).kind; return k === 'splitter' || k === 'crate'; };
 
 FA.fresh = function (w, h) {
-  const f = { w, h, grid: new Array(w * h).fill(null), land: new Array(w * h).fill(0), pp: { x: 0, y: 0 }, added: 0, bld: [], belts: [], floor: [], flying: [], parts: [], pops: [],
+  const f = { w, h, grid: new Array(w * h).fill(null), land: new Array(w * h).fill(0), pp: { x: 0, y: 0 }, added: 0, bld: [], belts: [], floor: [], flying: [], parts: [], pops: [], xpg: [], shardPrev: null,
     portalQ: [], eggQ: [], portalT: 0, nextId: 1, gen: 0, demand: 0, lowT: 0, flash: 0, flashCol: '#fff', skillFlash: 0, t: 0,
     log: { spell: [], skill: [] }, working: 0, thumps: [], sucks: [], bump: 0, bumpAmp: 0, weakFlash: 0, stockNext: 0,
     rings: [], waves: [], slots: {}, q: null, qp: null, outQ: [], outT: 0, rejs: [], threat: null,   // throw impact rings, Spell Portal shockwaves; qp = the ? station's tile; outQ = items the full factory sends into the wilds; rejs = items bouncing off the Spell Portal on their way back out; threat = what the Wizard just met, weakness first (FA.threat)
@@ -325,6 +327,7 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   }
   if (FA.isLogi(b)) { b.rr = 0; b.cd = 0; }
   if (d.kind === 'crate') { b.ck = null; b.cn = 0; }   // what it holds: one kind, any number of them
+  if (type === 'cauldron') { b.mode = 'hp'; b.grow = CFG.harness.growT; }   // Health mode by default; grow = how far the potion that shows the mode has regrown above it (switching restarts it)
   if (d.kind === 'harness') { b.hand = 0; b.el = 'air'; b.grow = CFG.harness.growT; b.shake = 0; }   // hand: how far the Builder has cranked the next packet (it stays when he walks away); el / grow: the element crystal and how far it has grown
   if (d.kind === 'splitter') { b.pct = {}; b.filt = {}; b.outs = []; b.ins = []; b.sig = null; b.acc = {}; b.src = {}; }
   f.bld.push(b);
@@ -333,11 +336,14 @@ FA.makeBuilding = function (type, x, y, done, free, dir) {
   if (b.done) FA.onComplete(b, true);
   return b;
 };
+// a goal event: sets the old flag AND counts it (G.stats.fl), so a goal that wants "do this" can ask for a fresh one since it showed (QUESTS stat goals)
+FA.flag = function (k) { G.flags[k] = true; const f = G.stats.fl || (G.stats.fl = {}); f[k] = (f[k] || 0) + 1; };
 FA.onComplete = function (b, quiet) {
   b.done = true;
+  if (!quiet) { const bt = G.stats.built || (G.stats.built = {}); bt[b.type] = (bt[b.type] || 0) + 1; }   // (goals: buildings the player finished, not the starting ones)
   if (FA.def(b).kind === 'harness' && !quiet) { b.grow = 0; b.shake = 0; }   // a new Harnesser grows its crystal first
   if (FA.def(b).kind === 'expand') { FA.finishTile(b); return; }
-  if (FA.def(b).kind === 'crafter' && !b.recipe && b.type !== 'spawner') b.recipe = FA.recipesFor(b.type)[0] || null;
+  if (FA.def(b).kind === 'crafter' && !b.recipe && b.type !== 'spawner' && b.type !== 'cauldron') b.recipe = FA.recipesFor(b.type)[0] || null;
   if (!quiet && FA.def(b).kind === 'cell') WZ.bshrAdd(b, true);   // a finished Battery: its shrine arrives in the wilds with a shockwave
   b.ready = false;
   if (FA.def(b).kind === 'bot' && !quiet) { b.nap = true; UI.toast('Helper Robot built! Throw it element spells, Wood or Stone to wake it', 'L', 'ic_bolt'); }
@@ -384,6 +390,33 @@ FA.eburst = function (x, y, el, n) {
 };
 FA.pop = function (x, y, text, col) { G.fac.pops.push({ x, y, text, col: col || '#fff', t: 0 }); };
 // an icon pop instead of words: a row of [spriteKey, number?] floating up
+// XP gems that fly out of the Builder when he finishes a goal (the Wizard's burst out of him in the wilds): they scatter, lie where they landed and are picked up by walking
+// near them (they also come to him by themselves after CFG.goalGems.auto s, so none is ever lost). G.fac.xpg is plain data; a save counts what is still lying there.
+// an Aether Shard is about to arrive: its picture appears over the Spell Portal for as long as the Wizard's shard takes to rise and shake (R.drawShardPrev)
+FA.shardPreview = function () { if (G.fac && !G.menu) { G.fac.shardPrev = { t: 0, dur: CFG.shardUp.rise + CFG.shardUp.shake + 1.1 }; FA.fb('shard-pick'); } };
+FA.confetti = function (x, y, z, n) {
+  const cols = ['#ffe36b', '#ff6a8a', '#7be0ff', '#9aff8a', '#c890ff', '#ffffff'];
+  for (let i = 0; i < n; i++) { const a = Math.random() * 6.283, s = 0.8 + Math.random() * 2; G.fac.parts.push({ x, y, z, vx: Math.cos(a) * s, vy: Math.sin(a) * s, vz: 1.5 + Math.random() * 2.5, g: 7, t: 0.9 + Math.random() * 0.4, col: cols[Math.floor(Math.random() * cols.length)] }); }
+};
+FA.gemBurst = function (n) {
+  const f = G.fac, bd = G.bd, G2 = CFG.goalGems, k = Math.min(G2.max, n), each = Math.floor(n / k), extra = n - each * k;
+  for (let i = 0; i < k; i++) {
+    const a = Math.random() * 6.283, s = 3.2 + Math.random() * 3;
+    f.xpg.push({ x: bd.x, y: bd.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0, val: each + (i < extra ? 1 : 0), seed: Math.random() * 6.283 });
+  }
+};
+FA.gemsPending = () => (G.fac && G.fac.xpg ? G.fac.xpg.reduce((a, g) => a + g.val, 0) : 0);
+FA.gemTick = function (dt) {
+  const f = G.fac, bd = G.bd, C = CFG.goalGems;
+  for (let i = f.xpg.length - 1; i >= 0; i--) {
+    const g = f.xpg[i];
+    g.t += dt;
+    const ex = bd.x - g.x, ey = bd.y - g.y, d = Math.hypot(ex, ey);
+    if (g.t < 0.5) { g.x += g.vx * dt; g.y += g.vy * dt; g.vx *= 0.92; g.vy *= 0.92; }
+    else if (d < C.pull || g.t > C.auto) { const sp = 7 + Math.max(0, C.pull - d) * 6 + (g.t > C.auto ? 10 : 0); g.x += ex / (d || 1) * sp * dt; g.y += ey / (d || 1) * sp * dt; g.mag = true; }
+    if (g.t > 0.4 && d < 0.5) { G.xp += g.val; G.stats.xpEarned += g.val; AU.sfx(g.val >= CFG.bigGem.tiers[1] ? 'gemBig' : 'gem'); f.xpg.splice(i, 1); }
+  }
+};
 FA.ipop = function (x, y, ic) { G.fac.pops.push({ x, y, ic, t: 0 }); };
 FA.pileIn = k => { const p = FA.pileSpot(k, true); if (p) FA.ipop(p.x, p.y - 0.4, [[k]]); };   // a harvest reached the Stockpile
 // something for the Stockpile (from the wilds: harvests, shards, Cores, spells, gifts) comes out of the Spell Portal and flies to its pile;
@@ -465,6 +498,7 @@ FA.why = function (c, kind, where) {
       if (have.length) return [K, ['ic_clock']];   // busy growing something else
       return [K, ['ic_x']];
     }
+    if (c.type === 'cauldron') return [K, [c.out.length >= CFG.buffer ? 'ic_full' : FA.cauldronHave(c).length ? 'ic_clock' : 'ic_x']];   // full of potions / busy brewing / not a spell it can use
     if (c.recipe && CFG.recipes[c.recipe].in[kind]) return [K, ['ic_full']];   // wants it, but its buffer holds all it can
     return [K, ['ic_x']];
   }
@@ -786,8 +820,30 @@ FA.spawnerFix = function (b) {
 };
 // what it would take now (an empty Spawner takes any of the four packets): shown as blinking lamps on its front
 FA.spawnerCan = b => ELEMS.filter(k => FA.spawnerTakes(b, k) || FA.spawnerTakes(b, 'core_' + k));
+// The Alchemy Cauldron works like the Spawner: it takes ONE element spell or combo spell at a time (only while it is empty), absorbs it at once and brews the potion that spell
+// makes in its current mode (Health or Armor): the better the spell, the stronger the potion. F (the Harnesser's key) switches the mode; the new potion regrows above it for
+// CFG.harness.growT seconds, during which nothing is brewed.
+FA.cauldronHave = b => Object.keys(b.inv).filter(k => b.inv[k] > 0);
+FA.cauldronPick = b => { const have = FA.cauldronHave(b); return have.length === 1 && CFG.recipes[b.mode + '_' + have[0]] ? b.mode + '_' + have[0] : null; };
+FA.cauldronTakes = (b, kind) => b.out.length < CFG.buffer && !FA.cauldronHave(b).length && !!CFG.recipes[b.mode + '_' + kind];
+FA.cauldronGrowing = b => b.grow < CFG.harness.growT;
+FA.setMode = function (b) {
+  b.mode = b.mode === 'hp' ? 'ap' : 'hp'; b.grow = 0; b.prog = 0;
+  const cx = b.x + 0.5, cy = b.y + 0.5;
+  if (b.done) { FA.burst(cx, cy, '#ffffff', 10); AU.sfx('complete'); b.pop = 0.4; }
+  b.recipe = FA.cauldronPick(b);
+  UI.changed();
+  return true;
+};
+// a saved Cauldron from before the potions were brewed from one spell: whatever it held beyond ONE spell it can take is set down, the rest becomes its input
+FA.cauldronFix = function (b) {
+  const have = FA.cauldronHave(b), keep = have.find(k => CFG.recipes[b.mode + '_' + k]);
+  for (const k of have) { const n = k === keep ? 1 : 0; if (ITEMS[k]) for (let i = n; i < b.inv[k]; i++) FA.dropAt(k, b.x + 0.5, b.y + 0.5); b.inv[k] = n; }
+  b.recipe = FA.cauldronPick(b);
+  if (!b.recipe) { b.inv = {}; b.prog = 0; }
+};
 FA.refreshRecipes = function () {
-  for (const b of G.fac.bld) if (b.done && FA.def(b).kind === 'crafter' && b.type !== 'spawner' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
+  for (const b of G.fac.bld) if (b.done && FA.def(b).kind === 'crafter' && b.type !== 'spawner' && b.type !== 'cauldron' && !b.recipe) b.recipe = FA.recipesFor(b.type)[0] || null;
 };
 FA.setRecipe = function (b, id) {
   b.recipe = id; b.prog = 0;
@@ -802,7 +858,7 @@ FA.setRecipe = function (b, id) {
 FA.crafterReady = function (b) {   // power draw wanted (or -1 = ready with no power need), 0 = not ready
   if (!b.done || !b.recipe) return 0;
   const R = CFG.recipes[b.recipe];
-  if (b.out.length >= CFG.buffer) return 0;
+  if (b.out.length >= CFG.buffer || (b.type === 'cauldron' && b.grow < CFG.harness.growT)) return 0;
   for (const k in R.in) if ((b.inv[k] || 0) < R.in[k]) return 0;
   return R.power || -1;
 };
@@ -814,6 +870,7 @@ FA.canInsert = function (b, kind) {
   const d = FA.def(b);
   if (d.kind === 'crafter') {
     if (b.type === 'spawner') return FA.spawnerTakes(b, kind);
+    if (b.type === 'cauldron') return FA.cauldronTakes(b, kind);
     if (!b.recipe) return false;
     const need = CFG.recipes[b.recipe].in[kind];
     return !!need && (b.inv[kind] || 0) < Math.max(6, need * 3);
@@ -842,6 +899,11 @@ FA.insert = function (b, kind, thrown, byBot) {
       else if (ELEM[kind]) { FA.eburst(b.x + 0.5, b.y + 0.5, kind, 8); AU.sfx('el_' + kind); }
       else { FA.burst(b.x + 0.5, b.y + 0.5, ITEMS[kind].color, 14); (SPELL_EL[kind] || []).forEach(el => FA.eburst(b.x + 0.5, b.y + 0.5, el, 4)); AU.sfx('complete'); }   // a seed spell
     }
+    if (b.type === 'cauldron') {   // absorbed whole at once: the potion starts to brew
+      b.recipe = FA.cauldronPick(b); b.prog = 0;
+      if (ELEM[kind]) { FA.eburst(b.x + 0.5, b.y + 0.5, kind, 8); AU.sfx('el_' + kind); }
+      else { FA.burst(b.x + 0.5, b.y + 0.5, ITEMS[kind].color, 12); (SPELL_EL[kind] || []).forEach(el => FA.eburst(b.x + 0.5, b.y + 0.5, el, 4)); AU.sfx('complete'); }
+    }
   }
   else if (d.kind === 'crate') { b.ck = kind; b.cn = (b.cn || 0) + 1; }
   else if (FA.isLogi(b)) b.out.push({ kind });
@@ -849,7 +911,7 @@ FA.insert = function (b, kind, thrown, byBot) {
     if (ELEM[kind]) FA.elTick(kind);   // the weather feels it, and the packet below still fuels it
     b.fuel[kind] += CFG.fuelPerPacket * (1 + CFG.chargeBonus + (thrown ? CFG.chargeThrowBonus : 0));
     if (b.types.indexOf(kind) < 0) b.types.push(kind);
-    if (d.kind === 'cell') G.flags.fed = true;
+    if (d.kind === 'cell') FA.flag('fed');
   }
 };
 // a blueprint a robot finished paying for waits, glowing, for the Builder's use button (b.ready); FA.buildNow completes it
@@ -865,10 +927,10 @@ FA.buildNow = function (b) {
 };
 // Overclocking: a combo spell (tier = its element count) or an Elixir thrown into a Battery overcharges it:
 // extra charge past full (up to overcharge.max) and +power for a while (b.over seconds)
-FA.overTier = k => (k === 'elixir' ? 1 : ITEMS[k] && ITEMS[k].spell && (SPELL_EL[k] || []).length >= 2 ? SPELL_EL[k].length : 0);
+FA.overTier = k => (isElixir(k) ? 1 : ITEMS[k] && ITEMS[k].spell && (SPELL_EL[k] || []).length >= 2 ? SPELL_EL[k].length : 0);
 FA.canOver = (b, k) => FA.isCell(b) && !!b.done && FA.overTier(k) > 0 && b.bat < CFG.batteryMax * CFG.overcharge.max;
 FA.overcharge = function (b, k) {
-  const O = CFG.overcharge, n = FA.overTier(k), elx = k === 'elixir';
+  const O = CFG.overcharge, n = FA.overTier(k), elx = isElixir(k);
   b.bat = Math.min(CFG.batteryMax * O.max, b.bat + CFG.batteryMax * (elx ? O.elixir : O.fill[n]));
   b.over = Math.max(b.over || 0, elx ? O.elixirT : O.time[n]);
   b.pop = 0.45;
@@ -932,8 +994,8 @@ FA.deliver = function (kind, x, y) {
   f.flash = 0.5; f.flashCol = ITEMS[kind].color || '#fff';
   if (ELEM[kind]) FA.eburst(p.x + 0.5, p.y + 1, kind, 8);
   f.log.spell.push(f.t);
-  G.flags['sent_' + kind] = true;
-  if (ITEMS[kind].aug) G.flags.sent_aug = true;
+  FA.flag('sent_' + kind);
+  if (ITEMS[kind].aug) FA.flag('sent_aug');
   G.stats.sent[kind] = (G.stats.sent[kind] || 0) + 1;   // for the goals: Potions sent, Eggs hatched, combo spells delivered
   if (ITEMS[kind].egg && !ITEMS[kind].ally) G.stats.eggs = (G.stats.eggs || 0) + 1;
   else if ((SPELL_EL[kind] || []).length >= 2) G.stats.combos = (G.stats.combos || 0) + 1;
@@ -944,8 +1006,8 @@ FA.deliver = function (kind, x, y) {
   else {
     const spell = BASIC_SPELL[kind] || kind;
     if (!BASIC_SPELL[kind]) {
-      G.flags.combo = true;
-      if (CFG.recipes[kind] && Object.keys(CFG.recipes[kind].in).length === 3) G.flags.triple = true;
+      FA.flag('combo');
+      if (CFG.recipes[kind] && Object.keys(CFG.recipes[kind].in).length === 3) FA.flag('triple');
     }
     WZ.send(kind, 'spell', spell);
   }
@@ -1126,6 +1188,7 @@ FA.state = function (b) {
     return b.out.length && b.blocked ? 'jam' : 'work';
   }
   if (k === 'crafter') {
+    if (b.type === 'cauldron' && b.grow < CFG.harness.growT) return null;
     if (b.out.length >= CFG.buffer) return 'full';
     if (b.out.length && b.blocked) return 'jam';
     if (!b.recipe) return 'starve';
@@ -1227,8 +1290,15 @@ FA.update = function (dt) {
       b.blocked = b.out.length > 0 && !FA.tryOut(b);
     } else if (d.kind === 'crafter') {
       b.blocked = b.out.length > 0 && !FA.tryOut(b);
-      b.od = FA.overdrive(b);
+      const od0 = b.od; b.od = FA.overdrive(b); if (b.od && !od0) FA.flag('overdrive');
       if (b.type === 'spawner') b.recipe = FA.spawnerPick(b);   // the egg follows from the elements absorbed so far
+      if (b.type === 'cauldron') {
+        b.recipe = FA.cauldronPick(b);
+        if (b.grow < CFG.harness.growT) {   // the potion that shows the mode is regrowing: nothing is brewed until it is full
+          b.grow = Math.min(CFG.harness.growT, b.grow + dt);
+          if (b.grow >= CFG.harness.growT) { b.pop = 0.5; FA.burst(b.x + 0.5, b.y + 0.5, b.mode === 'hp' ? '#ff4a6a' : '#6a9aff', 14); AU.sfx('complete'); }
+        }
+      }
       const w = FA.crafterReady(b);
       if (w !== 0) {
         if (b.powered) {
@@ -1295,6 +1365,7 @@ FA.update = function (dt) {
       const SW = CFG.stockFlight.swirl, a = k * SW.turns * 6.283, r = SW.r * Math.sin(k * Math.PI);
       o.x += Math.cos(a) * r; o.y += Math.sin(a) * r; o.z += Math.sin(a) * r * 0.5;
       if (Math.random() < 0.6) f.parts.push({ x: o.x, y: o.y, z: o.z, vx: 0, vy: 0, vz: 0.4, g: 0, t: 0.4, col: Math.random() < 0.4 ? '#ffffff' : (ITEMS[o.kind].color || '#ffffff') });
+      if (o.kind === 'shard' && Math.random() < 0.5) FA.confetti(o.x, o.y, o.z, 1);   // a shard throws confetti as it swirls round
     }
     if (k >= 1) { f.flying.splice(i, 1); FA.land(o); }
   }
@@ -1316,6 +1387,8 @@ FA.update = function (dt) {
     if (p.t <= 0) f.parts.splice(i, 1);
   }
   for (let i = f.pops.length - 1; i >= 0; i--) { f.pops[i].t += dt; if (f.pops[i].t > 1.1) f.pops.splice(i, 1); }
+  FA.gemTick(dt);
+  if (f.shardPrev && (f.shardPrev.t += dt) > f.shardPrev.dur) f.shardPrev = null;
   FA.updGather(dt);
   if (G.bd.squash > 0) G.bd.squash -= dt;
 };
@@ -1629,13 +1702,14 @@ FA.catchNear = function (x, y, kind) {
 // a tiny ring where a throw hits, leaning the way it was flying
 FA.impact = (o, bad) => G.fac.rings.push({ x: o.x, y: o.y, dx: o.x - o.sx, dy: o.y - o.sy, t: 0, col: bad ? '#ff6a6a' : ITEMS[o.kind].color || '#ffffff' });
 FA.land = function (o) {
+  if (o.stock && o.kind === 'shard') FA.confetti(o.tx, o.ty, 0.5, 16);   // ...and a last burst as it settles into the Stockpile
   if (o.stock) { G.stock[o.kind] = (G.stock[o.kind] || 0) + (o.n || 1); FA.ipop(o.tx, o.ty - 0.4, [[o.kind]]); AU.sfx('drop'); UI.changed(); return; }   // (a stack that no longer fits spills out again: FA.pileSync)
   if (o.boing) { FA.dropAt(o.kind, o.x, o.y); AU.sfx('thud'); return; }   // the end of a bounce-back: it just lands
   if (G.menu && Menu.catchSpell(o)) return;   // the menu world: a spell that comes down within a tile of the Wizard fires on him
   const tx = Math.floor(o.x), ty = Math.floor(o.y), c = FA.cell(tx, ty);
   const toPortal = c => {
     if (!FA.enterPortal(c, o.kind, o.x, o.y)) return false;
-    if (o.fromBuilder && c.which === 'spell') G.flags.portalHand = true;
+    if (o.fromBuilder && c.which === 'spell') FA.flag('portalHand');
     FA.impact(o);
     return true;
   };
@@ -1686,7 +1760,7 @@ FA.land = function (o) {
 FA.solid = function (tx, ty) {
   if (!FA.owned(tx, ty)) return true;   // the void beyond the floor
   const c = G.fac.grid[ty * G.fac.w + tx];
-  return !!c && c.type !== 'belt';
+  return !!c && c.type !== 'belt' && c.done !== false;   // (a blueprint that is not finished yet can be walked through)
 };
 FA.blockedAt = function (px, py) {
   const r = CFG.builder.radius;
@@ -1788,7 +1862,7 @@ FA.updGather = function (dt) {
   if (g.t >= g.total) {
     bd.gather = null; g.b.hand = 0;
     if (FA.canHold(g.el)) FA.addHands(g.el, 1); else FA.dropAt(g.el, bd.x, bd.y);
-    G.flags.gathered = true; G.stats.packets++; FA.elTick(g.el);
+    FA.flag('gathered'); G.stats.packets++; FA.elTick(g.el);
     AU.sfx('el_' + g.el);
     FA.eburst(g.b.x + 0.5, g.b.y + 0.5, g.el, 12);
     FA.ipop(g.b.x + 0.5, g.b.y + 0.5, [[g.el]]);
@@ -1896,6 +1970,7 @@ FA.bldAction = function (b, pick) {
     if (FA.growing(b)) return A('The crystal is still growing', null, false, ['ic_clock', b.el]);
     return FA.canHold(b.el) ? A('Hand-gather ' + ELEM[b.el].name + ' (tap to fill the meter)', () => FA.startGather(b), false, [b.el]) : FULL;
   }
+  if (b.type === 'cauldron') return NONE;   // nothing to choose: the spell it is fed names the potion (F switches Health / Armor)
   if (d.kind === 'crafter' && b.type !== 'spawner') {
     const list = FA.recipesFor(b.type);
     if (list.length > 1) {
@@ -1914,12 +1989,13 @@ FA.setElem = function (b, el) {
   const cx = b.x + 0.5, cy = b.y + 0.5;
   if (b.done) { FA.eburst(cx, cy, b.el, 22); FA.burst(cx, cy, '#ffffff', 8); AU.sfx('el_' + el); b.pop = 0.4; }
   b.el = el; b.timer = 0; b.hand = 0; b.shake = 0;
-  if (b.done) { b.grow = 0; G.flags.switched = true; }   // (goal: switch the Harnesser to another element)
+  if (b.done) { b.grow = 0; FA.flag('switched'); const es = G.stats.elSet || (G.stats.elSet = {}); es[el] = (es[el] || 0) + 1; }   // (goal: switch the Harnesser to another element)
   if (G.bd.gather && G.bd.gather.b === b) G.bd.gather = null;
   UI.changed();
   return true;
 };
 FA.cycleElem = function (b, dir) {
+  if (b.type === 'cauldron') return FA.setMode(b);   // the Cauldron's Health / Armor switch
   const o = CFG.harness.order;
   return FA.setElem(b, o[(o.indexOf(b.el) + (dir || 1) + o.length) % o.length]);
 };
@@ -1928,7 +2004,7 @@ FA.harnessNear = function () {
   const bd = G.bd;
   let best = null, bs = 1e9;
   for (const b of G.fac.bld) {
-    if (FA.def(b).kind !== 'harness') continue;
+    if (FA.def(b).kind !== 'harness' && !(b.type === 'cauldron' && b.done)) continue;
     const d = Math.hypot(b.x + 0.5 - bd.x, b.y + 0.5 - bd.y);
     if (d <= CFG.reach && d < bs) { bs = d; best = b; }
   }
@@ -1963,7 +2039,7 @@ FA.takePile = function (r) {   // one item per press (hold to keep grabbing)
   if (G.stock[r] <= 0 || !FA.canHold(r)) return;
   G.stock[r]--;
   FA.addHands(r, 1);
-  G.flags.tookPile = true;
+  FA.flag('tookPile');
   G.bd.squash = 0.2;
   AU.sfx('pickup');
 };
@@ -2016,6 +2092,13 @@ FA.statusText = function (b) {
       if (b.out.length) s += '. ' + b.out.length + ' ready (click to take)';
       return s;
     }
+    if (b.type === 'cauldron') {
+      const hp = b.mode === 'hp', md = hp ? 'HEALTH' : 'ARMOR';
+      if (FA.cauldronGrowing(b)) return n + ' (' + md + ' mode): the ' + (hp ? 'Health' : 'Armor') + ' Potion is regrowing, ' + Math.ceil(CFG.harness.growT - b.grow) + 's until it brews. F switches the mode';
+      if (!b.recipe) return n + ' (' + md + ' mode): feed it ONE spell: an element spell or any combo spell. The better the spell, the stronger the ' + (hp ? 'Health' : 'Armor') + ' Potion. F switches the mode' + (b.out.length ? '. ' + b.out.length + ' ready (click to take)' : '');
+      const R = CFG.recipes[b.recipe];
+      return n + ' (' + md + ' mode): brewing ' + recipeName(b.recipe) + ' (' + recipeUse(b.recipe) + ') ' + Math.min(99, Math.floor(b.prog / R.time * 100)) + '%' + (b.out.length ? '. ' + b.out.length + ' ready (click to take)' : '') + (b.od ? '. OVERDRIVE +' + Math.round(CFG.overdrive * 100) + '%' : '');
+    }
     if (!b.recipe) return n + ': no recipe unlocked yet';
     const R = CFG.recipes[b.recipe];
     let s = n + ': ' + recipeName(b.recipe) + ' (' + recipeUse(b.recipe) + ') needs ' + Object.keys(R.in).map(k => itemName(k) + ' ' + (b.inv[k] || 0) + '/' + R.in[k]).join(', ');
@@ -2061,6 +2144,7 @@ FA.toJSON = function () {
     bld: f.bld.map(b => {
       const o = { type: b.type, x: b.x, y: b.y, dir: b.dir, done: b.done, free: b.free, got: b.got, out: b.out, timer: b.timer };
       if (b.inv) { o.recipe = b.recipe; o.inv = b.inv; o.prog = b.prog; }
+      if (b.mode) { o.mode = b.mode; o.grow = Math.round(b.grow * 10) / 10; }   // a Cauldron's Health / Armor mode and how far its potion has regrown
       if (b.bat !== undefined) o.bat = b.bat;
       if (b.fuel) { o.fuel = b.fuel; o.types = b.types; }
       if (b.hand > 0 && b.el) o.hand = Math.round(b.hand * 1000) / 1000;
@@ -2139,6 +2223,7 @@ FA.fromJSON = function (j) {
       b.recipe = o.recipe && CFG.recipes[o.recipe] && CFG.recipes[o.recipe].machine === b.type ? o.recipe : null; b.inv = o.inv || {}; b.prog = o.prog || 0;   // (the Battery recipe was dropped: an old Forge / Bench on it falls back)
       if (o.recipe && !b.recipe) for (const k in b.inv) { for (let i = 0; i < b.inv[k]; i++) if (ITEMS[k]) b.out.push({ kind: k }); b.inv[k] = 0; }   // what it was holding is set out for the Builder to take
       if (b.type === 'spawner') FA.spawnerFix(b);
+      if (b.type === 'cauldron') { b.mode = o.mode === 'ap' ? 'ap' : 'hp'; b.grow = o.grow >= 0 ? Math.min(CFG.harness.growT, +o.grow) : CFG.harness.growT; FA.cauldronFix(b); }
     }
     if (b.bat !== undefined) { b.bat = o.bat > 0 ? Math.min(+o.bat, CFG.batteryMax * CFG.overcharge.max) : 0; b.top = b.bat >= CFG.batteryMax; }
     if (b.fuel) { b.fuel = Object.assign(b.fuel, o.fuel || {}); b.types = o.types || []; }

@@ -22,7 +22,7 @@
 // toasts) and a second UNRELIABLE, UNORDERED one for the 20 Hz snapshots (a late or lost picture is simply skipped: nothing waits behind it, so one bad packet on a phone
 // hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
-  VERSION: 11,   // 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
+  VERSION: 12,   // 12: the 2026-10-31 pass puts new plain data in the snapshot (G.fac.xpg / shardPrev, G.w boulder motion, drop.up, w.heat, G.stats.fl / built); 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
   BUILD: 11,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
@@ -591,7 +591,7 @@ const Net = {
     if (IN.mouse.rp || IN.hit('Comma') || (gp && gp.b)) L.b = true;
     if (IN.hit('KeyQ') || IN.hit('KeyM') || (gp && gp.y)) L.y = true;
     if (IN.hit('KeyT') || (gp && gp.back)) L.back = true;
-    if (IN.hit('KeyN')) L.rb = true;   // the emote wheel (the Wizard's pad RB)
+    if (IN.hit('KeyN') || Main.takeEmoteClick()) L.rb = true;   // the emote wheel (the Wizard's pad RB)
     if (gp) { if (gp.lb) L.lb = true; if (gp.rb) L.rb = true; if (gp.rt) L.rt = true; if (gp.l3) L.l3 = true; if (gp.back) L.back = true; if (gp.cyc) L.cyc = gp.cyc; }
   };
   // a press made on the guest's own UI that has to reach the host as a button (the re-enter button on the results screen is the roll button)

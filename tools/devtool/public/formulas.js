@@ -218,7 +218,7 @@ add({
   id: 'tree', title: 'Economy: skill-tree cost & time to afford', blurb: 'UI.nodeCost: an upgrade tier asks tiers[i] XP and about pk[i] packets split over its elements (tier 1 asks firstTierPay of that), plus its spell combos. Give it an XP and packet income to see how long each track takes. The two scale boxes are what-ifs on top of the shipped prices (costScale itself is applied when the game starts).',
   params: () => [{ head: 'Income' }, { key: 'xpm', label: 'XP / min you earn', min: 1, max: 300, step: 1, def: 40 }, { key: 'pkm', label: 'Packets / min you bank', min: 1, max: 600, step: 1, def: 60 },
     { head: 'Prices' }, { cfg: 'firstTierPay', label: 'Tier 1 packet share' }, { key: 'xs', label: 'XP cost scale (what-if)', min: 0.2, max: 2, step: 0.05, def: 1 }, { key: 'ps', label: 'Packet cost scale (what-if)', min: 0.2, max: 2, step: 0.05, def: 1 },
-    { head: 'Per tier effect' }, ...['swift', 'manual', 'belts', 'satchel', 'zoomies', 'hearty', 'gems', 'magnet'].map(u => ({ cfg: 'upgrade.' + u, label: u }))],
+    { head: 'Per tier effect' }, ...['swift', 'manual', 'belts', 'satchel', 'zoomies', 'hearty', 'gems'].map(u => ({ cfg: 'upgrade.' + u, label: u }))],
   draw(out) {
     const xs = num('xs', 1), ps = num('ps', 1), xpm = num('xpm', 40), pkm = num('pkm', 60);
     const tracks = CFG.tree.filter(n => n.tiers).map(n => {

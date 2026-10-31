@@ -209,7 +209,7 @@ WZ.blinkStart = function () {   // returns true when it blinked (false: nowhere 
   for (let d = 0.25; d <= B.dist; d += 0.25) if (WZ.blinkStop(w.x + ux * d, w.y + uy * d)) { far = d - 0.5; break; }
   for (let d = far; d >= B.min; d -= 0.25) {
     const x = w.x + ux * d, y = w.y + uy * d;
-    if (x < 1 || y < 1 || x > CFG.WW - 1 || y > CFG.WH - 1 || WZ.blocked(x, y, r) || (WZ.tile(x, y) === T_SCORCH && !WZ.has('ember'))) continue;   // never lands in lava
+    if (x < 1 || y < 1 || x > CFG.WW - 1 || y > CFG.WH - 1 || WZ.blocked(x, y, r) || ((WZ.tile(x, y) === T_SCORCH || WZ.tile(x, y) === T_LAVA) && !WZ.has('ember'))) continue;   // never lands in lava
     w.blink = { sx: w.x, sy: w.y, tx: x, ty: y, t: 0, T: B.T };
     w.roll = B.T + 0.12;   // a few i-frames after he lands
     WZ.ring(w.x, w.y, 1.2, '#e6f8ff', 0.3); WZ.puff(w.x, w.y, '#e6f8ff', 8);
@@ -273,17 +273,73 @@ WZ.gustEffects = function (px, py, r) {
   if (cracked) { WZ.flowDirty(); w.shake = Math.max(w.shake, 0.3); AU.sfx('wall'); G.stats.cracked = (G.stats.cracked || 0) + cracked; WZ.icon(px, py, 'aug_stone'); }
   else if (shoved) AU.sfx('thud');
 };
-// loose boulders slide where a Gust sent them, then stop; water and chasms swallow them; they are solid to the Wizard
-WZ.boulderTick = function (dt) {
+// Loose boulders. ANY player spell or wand attack that reaches one (they stand in WZ.each / WZ.hitH next to trees and rocks, WZ.hurtH hands the damage to WZ.boulderHit)
+// gives it a push along the line from the Wizard through the boulder, in proportion to the damage: slow at first, faster the more spells land on it. A rolling boulder
+// shoves foes out of its way WITHOUT slowing down and hurts each for lo..hi damage by its speed; friction stops it on its own; water, walls, rock, trees and the other
+// boulders bounce it. They are solid to the Wizard.
+WZ.boulderHit = function (b, dmg) {
   const w = G.w, B = CFG.aug.boulder;
-  for (let i = w.boulders.length - 1; i >= 0; i--) {
-    const b = w.boulders[i];
-    if (b.vx || b.vy) {
-      const nx = b.x + b.vx * dt, ny = b.y + b.vy * dt, t = WZ.tile(nx, ny);
-      if (t === T_POND || t === T_CHASM) { WZ.puff(nx, ny, t === T_POND ? '#bfe6ff' : '#4a3a6a', 10); AU.sfx('thud'); w.boulders.splice(i, 1); continue; }
-      if (WZ.wet(nx, ny)) { b.vx = 0; b.vy = 0; } else { b.x = nx; b.y = ny; }
-      const k = Math.exp(-B.friction * dt); b.vx *= k; b.vy *= k;
-      if (Math.hypot(b.vx, b.vy) < 0.3) { b.vx = 0; b.vy = 0; }
+  if (!WZ.ctx) return;   // only the Wizard's spells and wand attacks move them (foes' hits and the menu world do not)
+  let dx = b.x - w.x, dy = b.y - w.y, d = Math.hypot(dx, dy);
+  if (d < 0.01) { dx = w.fx || 1; dy = w.fy || 0; d = Math.hypot(dx, dy) || 1; }
+  const k = Math.min(B.maxPush, dmg * B.perDmg);
+  b.vx += dx / d * k; b.vy += dy / d * k;
+  const sp = Math.hypot(b.vx, b.vy);
+  if (sp > B.maxV) { b.vx *= B.maxV / sp; b.vy *= B.maxV / sp; }
+  b.flash = 0.1;
+  if (!b.hitSnd || w.t - b.hitSnd > 0.25) { b.hitSnd = w.t; AU.sfx('thud', b.x, b.y); }
+};
+WZ.boulderDamage = sp => { const B = CFG.aug.boulder; return B.dmgLo + (B.dmgHi - B.dmgLo) * Math.max(0, Math.min(1, (sp - B.hitMin) / (B.hitFull - B.hitMin))); };
+WZ.boulderTick = function (dt) {
+  const w = G.w, B = CFG.aug.boulder, list = w.boulders;
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    if (b.flash > 0) b.flash -= dt;
+    let sp = Math.hypot(b.vx, b.vy);
+    if (sp > 0) {
+      // friction: a little drag and a steady slowing, until it stops on its own
+      const ns = Math.max(0, sp * Math.exp(-B.drag * dt) - B.decel * dt);
+      b.vx *= ns / sp; b.vy *= ns / sp; sp = ns;
+      if (sp < 0.25) { b.vx = 0; b.vy = 0; sp = 0; }
+    }
+    if (sp > 0) {
+      const nx = b.x + b.vx * dt, ny = b.y + b.vy * dt;
+      let bx = false, by = false;
+      if (nx < 1 || nx > CFG.WW - 1 || WZ.blocked(nx, b.y, B.r * 0.8)) bx = true; else b.x = nx;
+      if (ny < 1 || ny > CFG.WH - 1 || WZ.blocked(b.x, ny, B.r * 0.8)) by = true; else b.y = ny;
+      // trees and rocks are solid: bounce off the side that was hit
+      for (const h of WZ.harv) {
+        if (h.broken) continue;
+        const hx = b.x - h.x, hy = b.y - h.y, hd = Math.hypot(hx, hy), min = B.r + (h.rad || 0.45);
+        if (hd >= min || hd < 0.001) continue;
+        const nxn = hx / hd, nyn = hy / hd, vn = b.vx * nxn + b.vy * nyn;
+        b.x = h.x + nxn * min; b.y = h.y + nyn * min;
+        if (vn < 0) { b.vx -= (1 + B.bounce) * vn * nxn; b.vy -= (1 + B.bounce) * vn * nyn; if (sp > 2) { AU.sfx('thud', b.x, b.y); WZ.puff(b.x, b.y, '#a98a5c', 4); } }
+      }
+      if (bx) b.vx = -b.vx * B.bounce;
+      if (by) b.vy = -b.vy * B.bounce;
+      if ((bx || by) && sp > 2) { AU.sfx('thud', b.x, b.y); WZ.puff(b.x, b.y, '#a98a5c', 5); w.shake = Math.max(w.shake, Math.min(0.12, sp * 0.01)); }
+      // other boulders: an elastic knock
+      for (let j = i + 1; j < list.length; j++) {
+        const o = list[j], ox = o.x - b.x, oy = o.y - b.y, od = Math.hypot(ox, oy);
+        if (od >= B.r * 2 || od < 0.001) continue;
+        const nxn = ox / od, nyn = oy / od, rel = (b.vx - o.vx) * nxn + (b.vy - o.vy) * nyn;
+        o.x = b.x + nxn * B.r * 2; o.y = b.y + nyn * B.r * 2;
+        if (rel > 0) { b.vx -= rel * nxn; b.vy -= rel * nyn; o.vx += rel * nxn; o.vy += rel * nyn; AU.sfx('thud', b.x, b.y); }
+      }
+      if (sp > 3 && Math.random() < dt * 9) WZ.puff(b.x, b.y, '#a98a5c', 2);   // dust kicked up by a fast one
+      // it hurts and shoves every foe it rolls through, and never slows down for them
+      if (sp >= B.hitMin) for (const e of w.enemies) {
+        if (e.dead || e.fall > 0 || e.fly) continue;
+        const ex = e.x - b.x, ey = e.y - b.y, ed = Math.hypot(ex, ey), min = B.r + e.rad;
+        if (ed >= min) continue;
+        const ux = b.vx / sp, uy = b.vy / sp, side = ex * -uy + ey * ux;   // which side of its path the foe is on
+        if (w.t - (e.bldAt || -9) >= B.hitGap) { e.bldAt = w.t; WZ.hurtE(e, Math.round(WZ.boulderDamage(sp)), ux * 2, uy * 2); WZ.puff(e.x, e.y, '#d8c8a0', 4); AU.sfx('hit', e.x, e.y); }
+        if (!e.boss) {   // out of the way: along its path and off to the side the foe stands on
+          const sg = side >= 0 ? 1 : -1, sx = -uy * sg, sy = ux * sg;
+          WZ.slide(e, e.x + (ux * 0.8 + sx * 1.2) * B.shove * dt * sp, e.y + (uy * 0.8 + sy * 1.2) * B.shove * dt * sp, e.rad);
+        }
+      }
     }
     if (!w.dead && !w.blink && !w.jump) {
       const dx = w.x - b.x, dy = w.y - b.y, d = Math.hypot(dx, dy), min = B.r + CFG.wizard.radius;

@@ -61,6 +61,9 @@ const CFG = {
   boost: { plusT: 1.2 },      // seconds a Battery keeps pulsing with its bouncing "+" after its Battery Shrine charged it (a shrine-boosted Harnesser pulses for as long as the boost lasts)
   hurt: { dur: 1, edge: 0.55 },   // the "where did that hit come from" cue on the Wizard: seconds it stays up, strength of the red edge flash toward the attacker
   cue: { danger: 3, goal: 2, loss: 1, ambient: 0, hold: { danger: 2.5, goal: 1.8, loss: 1.2 }, spread: 0.6 },   // cue priorities (danger > goal > resource loss > ambient): a higher one holds lower toasts back for `hold` s (they appear after it, `spread` s apart) and dims the edge bubbles
+  shardUp: { rise: 1.0, shake: 0.6, h: 2.4 },   // a picked-up Aether Shard rises h tiles over the spot and hovers (rise s), shakes with confetti (shake s), then flies into his portal; the Builder's Spell Portal shows a preview icon meanwhile
+  goalGems: { max: 12, pull: 2.2, auto: 9 },   // a finished goal pays its XP as gems that burst out of the player (at most `max` gems; the Builder's come to him within `pull` tiles, and all of them after `auto` s)
+  questMinShow: 3,           // a goal can never complete before it has been on its card this many seconds (so a goal the player had already met is still SEEN)
   goalFocus: 2.4,             // seconds after a goal celebration that the new goal's pointer is the ONLY blinking thing (the hotbar slot / tree button blinks wait)
   wandFill: { dur: 1.35, pulse: 1.0 },   // a wand slot filling: seconds the element particles swirl into the staff, seconds the slot under the health bar grows and pulses
   tether: { dur: 1.6 },       // a rare drop (Core, Shard, recycled spell) keeps a thin line back to the kill that made it for this long
@@ -143,9 +146,9 @@ const CFG = {
   // spell damage vs a foe's weak / resisted element (combo spells count every element they contain)
   weakMul: 2, resistMul: 0.5,
   // shard: chance an elite drops its ONE shard (no bonus shard, no pity); max caps the spawn odds (wild spawns are further scaled by world.wildElite, so the real wild cap is max x 0.2 = 2%)
-  elite: { hp: 5, speed: 0.85, dmg: 1.5, gems: 3, shard: 0.10, minTime: 90, base: 0.015, perMin: 0.004, perDist: 0.02, max: 0.10 },
+  elite: { hp: 5, speed: 0.85, dmg: 1.5, gems: 3, shard: 0.20, spawn: 0.03, minTime: 90, base: 0.015, perMin: 0.004, perDist: 0.02, max: 0.10 },   // spawn: the flat chance a wild spawn is an elite (after minTime); shard: the chance an elite drops its ONE Aether Shard
   // what an ordinary kill drops besides gems / packets / Cores: a common resource (Wood or Stone) and, separately, Iron. A spell packet's chance is 15% now (crafted.recycle), so these follow it: the common drop about the same, Iron a quarter of the old 30%
-  drops: { common: 0.15, iron: 0.075 },
+  drops: { common: 0.20, iron: 0.10, packet: 0.25, mutMul: 2, eliteMul: 3 },   // every kill (not minis): Wood / Stone, Iron, and a spell packet of its element (crafted doubles / triples drop their seed spell). Mutants roll x2, elites x3.
   boss: {
     weakMul: 1.6, otherMul: 0.4,            // the Chimera shrugs off everything except its current weakness
     slamEvery: 4.5, slamDelay: 1.0, slamR: 2.4, slamDmg: 24,
@@ -175,7 +178,7 @@ const CFG = {
     bush:   { count: 40, taps: 4,  potion: 0.6 },   // otherwise Armor Plate
     // buried caches are invisible until the Wizard wears the Kilnsight Mask (they glint through the grass); dug like a mound
     cache:  { count: 28, taps: 10, drop: { iron: 2, stone: 2 }, bonus: { iron: 0.5 }, pickup: 0.5 },   // pickup = chance of an Elixir (else a Heavy Plate) on top
-    reach: 2.3, decay: 2.5, respawn: 150, bushRespawn: 240,
+    reach: 2.3, respawn: 150, bushRespawn: 240,
   },
   // DEV ONLY: the solo-testing Wizard bot (js/devbot.js, toggled with F4 on the F3 overlay or __wands.bot('wizard')). Distances are tiles.
   devBot: {
@@ -202,6 +205,13 @@ const CFG = {
   // power): it burns fuel like a Battery and drains like one Harnesser pulling from it (power 10 = 60 s a charge, like a Battery under a 10-power load) only while it has a job; flat, it naps where it stands.
   // The Nth robot costs the base x costMul^N (Wood / Stone / Iron) and x shardMul^N Shards (N = robots already owned or planned); the Builder still finishes a robot-fed blueprint with E.
   robot: { max: 3, cost: { wood: 12, stone: 8, iron: 4, shard: 1 }, costMul: 1.5, shardMul: 2, speed: 3.4, power: 10, look: 0.5, giveUp: 2.5 },   // look = s between job searches while idle; giveUp = s it waits after finding nothing/no path
+  // Alchemy Cauldron: ONE spell in (like the Creature Spawner), a potion out. The better the spell, the better the potion. hp / ap = what a single element gives (a Health Potion
+  // prefers Water, Air, Fire, Earth; an Armor Potion the reverse); a pair / triple / the Nova adds up its elements and `extra[n elements]` more for the work of making the spell.
+  // time[n elements] = brew seconds. A Health Potion of `overVal` or more also overcharges a Battery like the old Elixir.
+  potion: { hp: { water: 15, air: 12, fire: 10, earth: 7 }, ap: { earth: 8, fire: 6, air: 5, water: 3 }, extra: [0, 0, 0.15, 0.3, 0.45], time: [0, 5, 8, 11, 14], overVal: 30 },
+  // Armor: while armor points are left it cuts every hit by `cut` (Statue on top of it = 91%) and each hit takes `small` (0-smallMax damage), `medium` (up to mediumMax) or `big` points off it.
+  armorRule: { cut: 0.7, small: 2, medium: 3, big: 5, smallMax: 6, mediumMax: 15 },
+  // (the old potions and plates, kept so a save that still holds some can use them; the Cauldron no longer brews them)
   pickups: {
     potion: { heal: 35 }, elixir: { heal: 80 },
     armor: { armor: 35 }, plate: { armor: 70 },
@@ -211,7 +221,7 @@ const CFG = {
     harness:  { name: 'Harnesser', kind: 'harness', cost: { wood: 6, stone: 4 }, unlock: null,
                 desc: 'Makes element packets: Air, Water, Fire or Earth, whichever crystal it carries. F (LT + X on a pad) switches the element at any time: the old crystal bursts and the new one takes 7.5 seconds to grow, and nothing is made meanwhile. Draws 2 power (hand-gathering is free, so the factory can always restart). Stand beside it and press E to hand-gather.' },
     cauldron: { name: 'Alchemy Cauldron', kind: 'crafter', cost: { wood: 9, stone: 9 }, unlock: null,
-                desc: 'Brews Health Potions and Shield Potions from element spells only (no raw resources). No power. Send them through the Spell Portal: they land beside the Wizard.' },
+                desc: 'Feed it ONE element spell or combo spell at a time: the better the spell, the stronger the potion. Health mode (default) brews Health Potions, Armor mode brews Armor Potions; F (LT + X on a pad) switches the mode and the new potion regrows above it for 7.5 seconds. No power. Send them through the Spell Portal: they land beside the Wizard.' },
     forge:    { name: 'Elemental Forge', kind: 'crafter', cost: { wood: 20, stone: 15, iron: 6 }, unlock: null,
                 desc: 'Fuses element spells into combo spells. Press E at it to switch recipe.' },
     anvil:    { name: 'Armory', kind: 'crafter', cost: { wood: 10, stone: 12, iron: 6 }, unlock: null,
@@ -248,10 +258,6 @@ const CFG = {
   hotkeys: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9'],
   recipes: {
     // machine, inputs (any mix of belt / hand / thrown), output, craft time, power draw, skill-tree node(s) that unlock it
-    potion:       { machine: 'cauldron', in: { water: 2, air: 1 },              out: 'potion',  time: 6,  power: 0, use: 'Heals the Wizard 35 HP' },
-    elixir:       { machine: 'cauldron', in: { water: 2, earth: 1, air: 1 },    out: 'elixir',  time: 9,  power: 0, use: 'Heals the Wizard 80 HP' },
-    armor:        { machine: 'cauldron', in: { earth: 2, fire: 1 },             out: 'armor',   time: 7,  power: 0, use: '+35 armor for the Wizard' },
-    plate:        { machine: 'cauldron', in: { earth: 3, fire: 1, water: 1 },   out: 'plate',   time: 11, power: 0, use: '+70 armor for the Wizard' },
     flamethrower: { machine: 'forge', in: { air: 1, fire: 1 },       out: 'flamethrower', time: 8,  power: 5 },
     steam:        { machine: 'forge', in: { fire: 1, water: 1 },     out: 'steam',        time: 8,  power: 5 },
     sandstorm:    { machine: 'forge', in: { air: 1, earth: 1 },      out: 'sandstorm',    time: 8,  power: 5 },
@@ -358,10 +364,8 @@ const CFG = {
     nova:         { drop: 0.9, r: 8, pullR: 12, pullT: 1.4, pull: 14, zapEvery: 0.16, zapDmg: 6, zapN: 9, dmg: 50, push: 30, slow: 0.5, slowT: 2.4, stagger: 0.7, bits: 5, bitSpeed: 18, bitDmg: 8, dec: { k: 'nova', r: 0.7, t: 6, a: 1 } },
   },
   // what each upgrade tier is worth
-  upgrade: { swift: 0.125, manual: 0.3, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125, magnet: 0.35,   // gems: x(1+0.125) per tier on every gem drop chance (cap gemCap); magnet: tiles of extra pickup radius per tier
+  upgrade: { swift: 0.125, manual: 0.3, belts: 0.15, satchel: 1, zoomies: 0.06, hearty: 12, gems: 0.125,   // gems: x(1+0.125) per tier on every gem drop chance (cap gemCap)
     crafting: 0.06,    // Swift Crafting: every crafter's cycle takes this much less per tier (Forge, Cauldron, Armory, Spawner growth)
-    remedies: 0.12,    // Health Potions and Elixirs heal this much more per tier
-    wardwoven: 0.10,   // Shield Potions grant this much more armor per tier
     slippery: 0.07,    // the Wizard's roll cooldown is this much shorter per tier
     mighty: 0.08,      // the four basic spells: damage, knockback and (through the damage) harvest strength, per tier
     harvest: 0.20,     // every spell: this much more damage to trees, rocks and ore, per tier
@@ -400,10 +404,10 @@ const CFG = {
     jitter: 0.15,             // hp / speed / damage each rolled within +-15%
     size: 0.15,               // body size +-15% (basics also get a palette variant)
     variants: 3,
-    eliteChance: 0.02, eliteHp: 3, eliteDmg: 1.5, eliteShards: true,   // elites keep the usual elite rewards (3 gems + shard rules)
+    eliteChance: 0.03, eliteHp: 3, eliteDmg: 1.5, eliteShards: true,   // elites keep the usual elite rewards (3 gems + shard rules)
     mutChance: 0.08,
-    recycle: 0.15,            // chance a crafted BASIC creature drops one packet of its element on death
-    recycleSpell: { 2: 0.125, 3: 0.1 },   // chance a crafted double / triple drops the combo spell it was hatched from (it flies home to the Stockpile like a packet)
+    recycle: 0.25,            // chance a crafted BASIC creature drops one packet of its element on death (x2 mutants, x3 elites)
+    recycleSpell: { 2: 0.25, 3: 0.25 },   // chance a crafted double / triple drops the combo spell it was hatched from (it flies home to the Stockpile like a packet)
   },
   // ---- Allies: Element Cores thrown at a Creature Spawner grow FRIENDLY versions of the same 11 creatures ----
   // double HP, half damage (on every attack and ability), never elite, never mutated. They hatch 2-4 tiles from the Wizard and fight what comes within engage tiles of him
@@ -493,8 +497,10 @@ const CFG = {
     phoenix: { cd: 900, hp: 0.5 },   // Phoenix Feather: seconds to recharge after it saves him (15 minutes of play), the share of max HP he comes back with
     blink: { dist: 5.5, min: 2, T: 0.16 },   // Gale Circlet: how far the roll jumps (tiles), the shortest jump it will make, seconds it takes
     stat: { r: 2.8, push: 12, cd: 0.9 },   // Static Cloak: radius of the burst, knockback, seconds between bursts
-    scorch: { dps: 45, ramp: 1.2, slow: 0.6 },   // scorched ground hurts and slows anyone who is not wearing the Emberward Cloak; the burn grows by ramp x its base every second he stays on it, so the keep's field is lethal to cross without the Cloak
-    boulder: { r: 0.7, push: 9, friction: 3.2 },   // loose boulders: body radius, how hard a Gust shoves one, how fast it slows down
+    scorch: { dps: 45, ramp: 1.2, slow: 0.6, ash: 0.25, heatR: 4 },   // ash is a quarter of the lava's burn; a thermometer blinks over his head within heatR tiles of either;   // scorched ground hurts and slows anyone who is not wearing the Emberward Cloak; the burn grows by ramp x its base every second he stays on it, so the keep's field is lethal to cross without the Cloak
+    // loose boulders: body radius, how hard the Stonefist Charm's Gust shoves one; any spell that hits one pushes it along (Wizard -> boulder) by its damage x perDmg (max maxPush a hit, max speed maxV tiles/s);
+    // drag + decel slow it to a stop; it bounces (bounce keeps this much speed); rolling faster than hitMin it hurts foes dmgLo..dmgHi (full at hitFull tiles/s) once per hitGap s and shoves them aside (shove)
+    boulder: { r: 0.7, push: 6, perDmg: 0.1, maxPush: 5, maxV: 15, drag: 0.8, decel: 2.4, bounce: 0.75, hitMin: 1.5, hitFull: 12, dmgLo: 5, dmgHi: 30, hitGap: 0.45, shove: 0.9 },
     mask: { glintR: 16, hintR: 60 },   // Kilnsight Mask: how far buried caches glint, how far landmark hints reach
     glow: { dur: 3.2 },   // seconds of the one-time glow-up when the first Warden falls
     // free-standing hazards sown over the wilds (their own RNG), so the verbs have uses beyond the Strongholds: counts
@@ -559,20 +565,10 @@ const WEAK_TO = { fire: 'water', water: 'earth', earth: 'air', air: 'fire' };
   for (const id in NOTE) CFG.creatures[id].note = NOTE[id];
   const W = CFG.strong.warden;
   CFG.enemies.warden = { name: W.name, hp: W.hp, speed: W.speed, dmg: W.dmg, gem: [3, 0], w: 0, col: '#ffd23a', rad: W.rad };
-  // the Loot Magnet track (spells and creatures are not in the tree: the Collection Book lists them and production gates them)
-  CFG.tree.push({ id: 'magnet', col: 2, br: 'wiz', icon: 'ic_magnet', name: 'Loot Magnet', per: '+0.35 tiles of pickup range',
-    tiers: [8, 12, 18, 25, 34], pk: [6, 9, 13, 18, 24],
-    kinds: [['water'], ['air', 'earth'], ['water', 'fire'], ['air', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']], combos: {} });
 // the new tracks are priced straight in the rebalanced scale (they are not scaled again); xpFirst = tier 1 costs XP only; fullFirst = tier 1 pays full packets (no half-price first tier)
   CFG.tree.push({ id: 'crafting', col: 2, br: 'bld', icon: 'b:forge', name: 'Swift Crafting', per: '-6% craft time: Forge, Cauldron, Armory, Spawner growth',
     tiers: [10,16,23,31,40,50], pk: [7.5,12,17.5,24,31,39],
     kinds: [['fire'], ['water', 'earth'], ['air', 'fire'], ['air', 'water'], ['air', 'earth'], ['air', 'water', 'fire', 'earth']], combos: {} });
-  CFG.tree.push({ id: 'remedies', col: 2, br: 'wiz', icon: 'potion', name: 'Remedies', per: '+12% healing from Potions and Elixirs',
-    tiers: [9,15,22,30,40], pk: [0,11,17,23.5,31],
-    kinds: [[], ['water'], ['air', 'earth'], ['water', 'fire'], ['air', 'water', 'earth']], xpFirst: true, combos: {} });
-  CFG.tree.push({ id: 'wardwoven', col: 2, br: 'wiz', icon: 'armor', name: 'Wardwoven', per: '+10% armor from Shield Potions',
-    tiers: [9,16,25,36], pk: [0,12,19.5,28],
-    kinds: [[], ['earth'], ['fire', 'water'], ['air', 'fire', 'earth']], xpFirst: true, combos: {} });
   CFG.tree.push({ id: 'slippery', col: 2, br: 'wiz', icon: 'ic_rotate', name: 'Slippery', per: '-7% roll cooldown',
     tiers: [10,16,23,31,41], pk: [0,12,18,24,32],
     kinds: [[], ['air'], ['water', 'earth'], ['air', 'fire'], ['water', 'fire', 'earth']], xpFirst: true, combos: {} });
@@ -606,9 +602,6 @@ crafting: { 3: { flamethrower: 1 }, 4: { steam: 1 }, 5: { sandstorm: 1, meteor: 
     zoomies: { 3: { tempest: 1 }, 4: { mud: 1 }, 5: { flamethrower: 1, geyser: 1 } },
     hearty: { 4: { steam: 1 }, 5: { sandstorm: 1 }, 6: { magma: 1 }, 7: { tempest: 1, meteor: 1 } },
     gems: { 4: { mud: 1 }, 5: { flamethrower: 1 }, 6: { steam: 1 }, 7: { sandstorm: 1, thunder: 1 } },
-    magnet: { 3: { magma: 1 }, 4: { tempest: 1 } },
-    remedies: { 3: { mud: 1 }, 4: { flamethrower: 1 } },
-    wardwoven: { 2: { steam: 1 }, 3: { sandstorm: 1 } },
     slippery: { 3: { magma: 1 }, 4: { tempest: 1 } },
     mighty: { 3: { mud: 1 }, 4: { flamethrower: 1 } },
     harvest: { 2: { steam: 1 }, 3: { sandstorm: 1 } },
@@ -627,7 +620,7 @@ crafting: { 3: { flamethrower: 1 }, 4: { steam: 1 }, 5: { sandstorm: 1, meteor: 
   CFG.branches = [
     { id: 'bldr', name: 'BUILDER', icon: 'ic_wrench', nodes: ['manual', 'satchel', 'longarm', 'tumble', 'hustle', 'rapid'] },
     { id: 'bld', name: 'BUILDINGS', icon: 'ic_factory', nodes: ['crafting', 'swift', 'belts', 'summon'] },
-    { id: 'wiz', name: 'WIZARD', icon: 'ic_hat', nodes: ['zoomies', 'hearty', 'remedies', 'wardwoven', 'slippery', 'mighty', 'harvest', 'forager', 'gems', 'magnet'] },
+    { id: 'wiz', name: 'WIZARD', icon: 'ic_hat', nodes: ['zoomies', 'hearty', 'slippery', 'mighty', 'harvest', 'forager', 'gems'] },
   ];
 })();
 
@@ -747,6 +740,27 @@ for (const k in CFG.recipes) { const r = CFG.recipes[k]; if (ITEMS[r.out] && ITE
 const SEED_SPELL = {};
 for (const id in CFG.creatures) { const ks = Object.keys(CFG.creatures[id].cost); if (ks.length === 1 && ITEMS[ks[0]] && ITEMS[ks[0]].spell) SEED_SPELL[ks[0]] = id; }
 
+// The Alchemy Cauldron's potions: one Health Potion and one Armor Potion for every spell it can be fed (the four element spells, the six pairs, the four triples and the Nova).
+// hp_<spell> / ap_<spell> are items like any other (they ride belts, hands and the Spell Portal); CFG.pickups[kind] says what walking over one does, and the Cauldron's recipes are
+// generated here too. `rank` (0..1, among its own kind) decides how the flask looks: bigger, richer in colour and finally gold-rimmed and sparkling as it gets stronger.
+const POTION_SRC = Object.keys(ELEM).concat(Object.keys(SPELL_EL).filter(k => SPELL_EL[k].length >= 2));
+const potionVal = (mode, src) => { const els = SPELL_EL[src] || [src], P = CFG.potion; return Math.max(1, Math.round(els.reduce((a, el) => a + P[mode][el], 0) * (1 + P.extra[els.length]))); };
+const potionSrcName = src => (ELEM_WORD[src] || SPELLS[src] || src);
+(function () {
+  for (const mode of ['hp', 'ap']) {
+    const vals = POTION_SRC.map(src => potionVal(mode, src)), lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    POTION_SRC.forEach((src, i) => {
+      const id = mode + '_' + src, n = (SPELL_EL[src] || [src]).length, v = vals[i], rank = hi > lo ? (v - lo) / (hi - lo) : 0;
+      const color = mode === 'hp' ? mixHex('#ff8aa0', '#e0108a', rank) : mixHex('#a8d0ff', '#2a3aff', rank);
+      ITEMS[id] = { name: potionSrcName(src) + (mode === 'hp' ? ' Health Potion' : ' Armor Potion'), pickup: true, potion: mode, src, val: v, rank, color };
+      CFG.pickups[id] = mode === 'hp' ? { heal: v } : { armor: v };
+      CFG.recipes[id] = { machine: 'cauldron', in: { [src]: 1 }, out: id, time: CFG.potion.time[n], power: 0, mode, use: mode === 'hp' ? 'Heals the Wizard ' + v + ' HP' : '+' + v + ' armor points for the Wizard' };
+    });
+  }
+})();
+const isElixir = k => k === 'elixir' || !!(ITEMS[k] && ITEMS[k].potion === 'hp' && ITEMS[k].val >= CFG.potion.overVal);   // a strong Health Potion overcharges a Battery
+const potionN = (g, mode) => Object.keys(g.stats.sent || {}).reduce((a, k) => a + (ITEMS[k] && ITEMS[k].potion === mode ? g.stats.sent[k] : 0), 0);   // potions of a mode the Builder has sent
+
 // Guided goals: TWO tracks that run at the same time, one for each player (`B` = the Builder, `W` = the Wizard). Each goal
 // pays `xp` and, for the bigger steps, a `gift` ({ bank: {kind: n} spells for the skill tree, stock: {res: n} materials,
 // credit: {building: n} free placements, pickup: [kinds] potions / armor that drop beside the Wizard }). `icon` is a sprite key.
@@ -760,61 +774,65 @@ for (const id in CFG.creatures) { const ks = Object.keys(CFG.creatures[id].cost)
 const QUEST_SIDES = ['B', 'W'];
 const QUEST_NAME = { B: 'BUILDER', W: 'WIZARD' };
 const sentN = (g, ...ks) => ks.reduce((a, k) => a + ((g.stats.sent || {})[k] || 0), 0);
+const flN = (g, k) => (g.stats.fl || {})[k] || 0;   // how many times a goal event happened (FA.flag)
+const builtN = (g, ...ks) => ks.reduce((a, k) => a + ((g.stats.built || {})[k] || 0), 0);   // buildings the player finished (not the starting ones)
+// A goal NEVER completes on what happened before it showed: counters (`stat` + `n`) start from the value when the goal appears, and even a plain `done` goal waits
+// CFG.questMinShow seconds on the card first (UI.questSide)
 const QUESTS = {
   B: [
     // v5: the goal's index in the previous list (saves from before QUEST_VERSION 6 resume at the first goal with v5 >= their old index)
-    { from: 0,  v5: 0,  icon: 'wood',  text: 'Walk to the Stockpile and left-click (pad A) to grab some Wood', xp: 2, done: g => g.flags.tookPile, hint: { pile: 'wood' } },
-    { from: 2,  v5: 1,  icon: 'air',   text: 'Stand by the Harnesser: press E to hand-gather Air, then keep tapping E to fill the meter', xp: 3, done: g => g.flags.gathered, hint: { use: 'harness' } },
-    { from: 3,  v5: 2,  icon: 'ic_portal', text: 'Throw (right-click / pad B) a spell into the Spell Portal', xp: 3, done: g => g.flags.portalHand, hint: { portal: 'spell' } },
-    { from: 5,  v5: 3,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, done: g => (g.bankTotal || 0) >= 5, prog: g => [g.bankTotal || 0, 5], hint: { portal: 'skill' } },
-    { icon: 'b:water', text: 'Switch the Harnesser to another element: press F beside it (the new crystal grows for 7.5 seconds)', xp: 4, done: g => !!g.flags.switched, hint: { use: 'harness' } },
-    { from: 6,  v5: 4,  icon: 'b:air', text: 'Build a second Harnesser: press 3, click a tile, then throw Wood & Stone at it', xp: 8, done: g => FA.count('harness') >= 2, hint: { build: 'harness' } },
-    { from: 7,  v5: 5,  icon: 'battery', text: 'Feed the Battery: throw Air spells (or Wood or Stone) at it so it never runs flat', xp: 10, done: g => !!g.flags.fed, hint: { make: 'battery' } },
+    { from: 0,  v5: 0,  icon: 'wood',  text: 'Walk to the Stockpile and left-click (pad A) to grab some Wood', xp: 2, stat: g => flN(g, 'tookPile'), n: 1, hint: { pile: 'wood' } },
+    { from: 2,  v5: 1,  icon: 'air',   text: 'Stand by the Harnesser: press E to hand-gather Air, then keep tapping E to fill the meter', xp: 3, stat: g => flN(g, 'gathered'), n: 1, hint: { use: 'harness' } },
+    { from: 3,  v5: 2,  icon: 'ic_portal', text: 'Throw (right-click / pad B) a spell into the Spell Portal', xp: 3, stat: g => flN(g, 'portalHand'), n: 1, hint: { portal: 'spell' } },
+    { from: 5,  v5: 3,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, stat: g => Object.values(g.stats.banked || {}).reduce((a, n) => a + n, 0), n: 5, hint: { portal: 'skill' } },
+    { icon: 'b:water', text: 'Switch the Harnesser to another element: press F beside it (the new crystal grows for 7.5 seconds)', xp: 4, stat: g => flN(g, 'switched'), n: 1, hint: { use: 'harness' } },
+    { from: 6,  v5: 4,  icon: 'b:air', text: 'Build a second Harnesser: press 3, click a tile, then throw Wood & Stone at it', xp: 8, stat: g => builtN(g, 'harness'), n: 1, hint: { build: 'harness' } },
+    { from: 7,  v5: 5,  icon: 'battery', text: 'Feed the Battery: grab an Air spell and throw it at the Battery (Wood or Stone work too)', xp: 10, stat: g => flN(g, 'fed'), n: 1, hint: { make: 'battery' } },
     { icon: 'egg_zephyr', text: 'Hatch Air creatures: send 3 Zephyr Wisp Eggs through the Spell Portal', xp: 8, stat: g => (g.stats.sent || {}).egg_zephyr || 0, n: 3, hint: { make: 'spawner' } },
-    { v5: 6,  icon: 'b:water', text: 'Switch a Harnesser to Water: press F beside it. The new crystal grows for 7.5 seconds', xp: 8, gift: { bank: { water: 4 } }, done: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
-    { from: 11, v5: 8,  icon: 'potion', text: 'Build an Alchemy Cauldron, brew a Health Potion from Water and send it through the Spell Portal', xp: 12, done: g => g.flags.sent_potion, hint: { make: 'cauldron' } },
-    { v5: 9,  icon: 'elixir', text: 'Keep the Wizard healthy: send 3 more Potions or Elixirs', xp: 10, gift: { stock: { wood: 12, stone: 9, iron: 6 } }, stat: g => sentN(g, 'potion', 'elixir'), n: 3, hint: { make: 'cauldron' } },
+    { v5: 6,  icon: 'b:water', text: 'Switch a Harnesser to Water: press F beside it. The new crystal grows for 7.5 seconds', xp: 8, gift: { bank: { water: 4 } }, stat: g => (g.stats.elSet || {}).water || 0, n: 1, also: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
+    { from: 11, v5: 8,  icon: 'hp_water', text: 'Build an Alchemy Cauldron, feed it ONE Water spell and send the Health Potion through the Spell Portal', xp: 12, stat: g => potionN(g, 'hp'), n: 1, hint: { make: 'cauldron' } },
+    { v5: 9,  icon: 'hp_flamethrower', text: 'Keep the Wizard healthy: send 3 more Health Potions (a stronger spell makes a stronger potion)', xp: 10, gift: { stock: { wood: 12, stone: 9, iron: 6 } }, stat: g => potionN(g, 'hp'), n: 3, hint: { make: 'cauldron' } },
     { icon: 'egg_puddle', text: 'Hatch a Puddle Slime: feed Water to a Spawner, then send the Egg', xp: 10, stat: g => (g.stats.sent || {}).egg_puddle || 0, n: 1, hint: { make: 'spawner' } },
     { icon: 'egg_cinder', text: 'Hatch a Cinder Imp: set a Harnesser to Fire, feed a Spawner, send the Egg', xp: 10, gift: { bank: { fire: 4 } }, stat: g => (g.stats.sent || {}).egg_cinder || 0, n: 1, hint: { make: 'spawner' } },
-    { from: 12, v5: 10, icon: 'b:forge', text: 'Build the Elemental Forge: it fuses element spells into combo spells', xp: 12, done: g => FA.count('forge') >= 1, hint: { make: 'forge' } },
-    { v5: 11, icon: 'battery', text: 'Build a second Battery: press 5, click a tile, then throw Wood, Stone & Iron at it', xp: 8, done: g => FA.count('battery') + FA.count('heavybat') >= 2, hint: { build: 'battery' } },
+    { from: 12, v5: 10, icon: 'b:forge', text: 'Build the Elemental Forge: it fuses element spells into combo spells', xp: 12, stat: g => builtN(g, 'forge'), n: 1, hint: { make: 'forge' } },
+    { v5: 11, icon: 'battery', text: 'Build a second Battery: press 5, click a tile, then throw Wood, Stone & Iron at it', xp: 8, stat: g => builtN(g, 'battery', 'heavybat'), n: 1, hint: { build: 'battery' } },
     { v5: 12, icon: 'ic_bolt', text: 'Keep the power on: top a Battery up to full 3 times with spells, Wood or Stone', xp: 15, gift: { credit: { battery: 1 } }, stat: g => g.stats.charged || 0, n: 3, hint: { make: 'battery' } },
-    { from: 13, v5: 13, icon: 'flamethrower', text: 'Craft a combo spell at the Forge (press E to pick Air + Fire, Air + Water...) and deliver it', xp: 15, gift: { bank: { air: 3, fire: 3 } }, done: g => g.flags.combo, hint: { combo: 2 } },
-    { v5: 14, icon: 'ic_fast', text: 'Overdrive: put a charged Battery right beside a Forge or Cauldron', xp: 12, done: g => G.fac.bld.some(b => b.done && b.od), hint: { make: 'battery' } },
+    { from: 13, v5: 13, icon: 'flamethrower', text: 'Craft a combo spell at the Forge (press E to pick Air + Fire, Air + Water...) and deliver it', xp: 15, gift: { bank: { air: 3, fire: 3 } }, stat: g => flN(g, 'combo'), n: 1, hint: { combo: 2 } },
+    { v5: 14, icon: 'ic_fast', text: 'Overdrive: put a charged Battery right beside a Forge or Cauldron', xp: 12, stat: g => flN(g, 'overdrive'), n: 1, hint: { make: 'battery' } },
     { v5: 15, icon: 'steam', text: 'Deliver 6 combo spells to the Wizard (two or more elements each)', xp: 15, gift: { stock: { shard: 1 } }, stat: g => g.stats.combos || 0, n: 6, hint: { combo: 2 } },
-    { from: 15, v5: 16, icon: 'b:splitter', text: 'Build a Splitter (it routes spells to up to 3 outputs)', xp: 15, done: g => G.fac.bld.some(b => b.done && !b.free && b.type === 'splitter'), hint: { make: 'splitter' } },
-    { from: 16, v5: 17, icon: 'armor', text: 'Brew a Shield Potion at the Cauldron (Earth + Fire spells) and send it to the Wizard', xp: 15, done: g => g.flags.sent_armor || g.flags.sent_plate, hint: { make: 'cauldron' } },
-    { v5: 18, icon: 'plate', text: 'Build the Armory: forge a garment from Cores, send it', xp: 20, gift: { stock: { iron: 6 } }, done: g => !!g.flags.sent_aug, hint: { make: 'anvil' } },
+    { from: 15, v5: 16, icon: 'b:splitter', text: 'Build a Splitter (it routes spells to up to 3 outputs)', xp: 15, stat: g => builtN(g, 'splitter'), n: 1, hint: { make: 'splitter' } },
+    { from: 16, v5: 17, icon: 'ap_earth', text: 'Switch the Cauldron to Armor mode (F beside it), feed it an Earth spell and send the Armor Potion', xp: 15, stat: g => potionN(g, 'ap'), n: 1, hint: { make: 'cauldron' } },
+    { v5: 18, icon: 'plate', text: 'Build the Armory: forge a garment from Cores, send it', xp: 20, gift: { stock: { iron: 6 } }, stat: g => flN(g, 'sent_aug'), n: 1, hint: { make: 'anvil' } },
     { icon: 'egg_pebble', text: 'Hatch a Pebble Golem: set a Harnesser to Earth, feed a Spawner, send the Egg', xp: 12, stat: g => (g.stats.sent || {}).egg_pebble || 0, n: 1, hint: { make: 'spawner' } },
-    { from: 17, v5: 19, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 8) and throw 2 Wood + 2 Stone at it', xp: 15, done: g => (g.stats.tiles || 0) >= 1, hint: { make: 'expand' } },
+    { from: 17, v5: 19, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 8) and throw 2 Wood + 2 Stone at it', xp: 15, stat: g => g.stats.tiles || 0, n: 1, hint: { make: 'expand' } },
     { v5: 20, icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner' } },
-    { from: 19, v5: 21, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, done: g => g.flags.triple, hint: { combo: 3 } },
-    { from: 20, v5: 22, icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, done: g => g.flags.sent_nova, hint: { combo: 4 } },
-    { from: 23, v5: 23, icon: 'b:altar', text: 'Buy Summoning (6 Shards into the Skill Portal first): the Altar falls into the wilds', xp: 40, done: g => !!g.tree.summon, hint: { tree: 1 } },
+    { from: 19, v5: 21, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, stat: g => flN(g, 'triple'), n: 1, hint: { combo: 3 } },
+    { from: 20, v5: 22, icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, stat: g => flN(g, 'sent_nova'), n: 1, hint: { combo: 4 } },
+    { from: 23, v5: 23, icon: 'b:altar', text: 'Buy Summoning (6 Shards into the Skill Portal first): the Altar falls into the wilds', xp: 40, stat: g => flN(g, 'bought_summon'), n: 1, hint: { tree: 1 } },
     { from: 24, v5: 24, icon: 'ic_crown', text: 'Light the Altar (the Warden must be dead): send a Single, a Pair, a Triple and the Nova', xp: 60, done: g => !!(g.altar && g.altar.placed && WZ.altarLitN() >= 4), hint: { altar: 1 } },
   ],
   W: [
-    { from: 1,  icon: 'ic_hat', text: 'Stand right next to a tree. The factory\'s Air Gusts will chop it down', xp: 4, done: g => g.stats.harvested >= 1, hint: { harv: 1 } },
-    { icon: 'stone', text: 'Gather 10 more Wood or Stone: stand by trees and rocks while spells land', xp: 4, stat: g => g.stats.harvested || 0, n: 10, hint: { harv: 1 } },
+    { from: 1,  icon: 'ic_hat', text: 'Stand right next to a tree. The factory\'s Air Gusts will chop it down', xp: 4, stat: g => g.stats.harvested || 0, n: 1, hint: { harv: 1 } },
+    { icon: 'wood', text: 'Gather 10 more Wood or Stone: stand by trees and rocks while spells land', xp: 4, stat: g => g.stats.harvested || 0, n: 10, hint: { harv: 1 } },
     { icon: 'ic_boot', text: 'Forage 3 spots: stand next to a mound, sticks or bush and mash Mash (X)', xp: 6, stat: g => g.stats.foraged || 0, n: 3, hint: { forage: 1 } },
-    { from: 4,  icon: 'egg_zephyr', text: 'Defeat a creature the factory made (the Spawner\'s Eggs arrive through the Spell Portal)', xp: 6, done: g => (g.stats.craftedKills || 0) >= 1, hint: { crafted: 1 } },
-    { from: 8,  icon: 'ic_skull', text: 'Defeat 15 monsters', xp: 8, done: g => g.stats.kills >= 15, prog: g => [g.stats.kills, 15] },
+    { from: 4,  icon: 'egg_zephyr', text: 'Defeat a creature the factory made (the Spawner\'s Eggs arrive through the Spell Portal)', xp: 6, stat: g => g.stats.craftedKills || 0, n: 1, hint: { crafted: 1 } },
+    { from: 8,  icon: 'ic_skull', text: 'Defeat 15 monsters', xp: 8, stat: g => g.stats.kills || 0, n: 15 },
     { icon: 'ic_shield', text: 'Dodge 3 hits: roll into an attack (you can\'t be hurt mid-roll)', xp: 8, stat: g => g.stats.dodges || 0, n: 3 },
-    { icon: 'ic_tree', text: 'Open your Skill Tree (Y) and buy a Wizard upgrade: Hearty Hat or Wizard Zoomies', xp: 8, gift: { bank: { air: 3 } }, done: g => lvl('hearty') >= 1 || lvl('zoomies') >= 1, hint: { tree: 1 } },
-    { icon: 'potion', text: 'Walk over 2 Potions or Shield Potions the Builder sends you', xp: 8, stat: g => g.stats.used || 0, n: 2 },
-    { icon: 'ic_bolt', text: 'Hit weaknesses: finish off 10 monsters with a yellow ! hit (match the element)', xp: 12, gift: { pickup: ['potion'], stock: { core_air: 1, core_water: 1, core_fire: 1, core_earth: 1 } }, stat: g => g.stats.weakKills || 0, n: 10 },   // the Cores are for the next goal: any Shrine takes one of each of the three OTHER elements, so one of each is enough for the first
-    { icon: 'ic_flag', text: 'Claim a Shrine: while the Wizard stands by it, send the Cores of the 3 other elements', xp: 12, gift: { pickup: ['plate'] }, stat: g => g.stats.shrines || 0, n: 1, hint: { mark: 'shrine' } },
+    { icon: 'ic_tree', text: 'Open your Skill Tree (Back / Y) and buy any upgrade', xp: 8, gift: { bank: { air: 3 } }, stat: g => g.stats.bought || 0, n: 1, hint: { tree: 1 } },
+    { icon: 'hp_water', text: 'Walk over 2 Potions the Builder sends you', xp: 8, stat: g => g.stats.used || 0, n: 2 },
+    { icon: 'ic_bolt', text: 'Hit weaknesses: finish off 10 monsters with a yellow ! hit (match the element)', xp: 12, gift: { pickup: ['hp_water'], stock: { core_air: 1, core_water: 1, core_fire: 1, core_earth: 1 } }, stat: g => g.stats.weakKills || 0, n: 10 },   // the Cores are for the next goal: any Shrine takes one of each of the three OTHER elements, so one of each is enough for the first
+    { icon: 'ic_flag', text: 'Claim a Shrine: while the Wizard stands by it, send the Cores of the 3 other elements', xp: 12, gift: { pickup: ['ap_magma'] }, stat: g => g.stats.shrines || 0, n: 1, hint: { mark: 'shrine' } },
     { icon: 'ic_fast', text: 'Activate a claimed Shrine: press Mash as the ring closes, 3 times', xp: 10, stat: g => g.stats.shrineAct || 0, n: 1, hint: { mark: 'myshrine' } },
-    { from: 14, icon: 'ic_flag', text: 'Clear a Monster Camp or an Ancient Crypt (see the map) for Aether Shards', xp: 15, gift: { pickup: ['potion', 'plate'] }, stat: g => g.stats.clears || 0, n: 1, hint: { mark: 'camp' } },
-    { icon: 'ic_skull', text: 'Defeat 60 monsters', xp: 12, done: g => g.stats.kills >= 60, prog: g => [g.stats.kills, 60] },
-    { icon: 'flamethrower', text: 'Finish off 10 monsters with combo spells (two elements). Ask the Builder!', xp: 20, gift: { pickup: ['elixir'] }, stat: g => g.stats.k2 || 0, n: 10 },
-    { icon: 'ic_crown', text: 'Take down an Elite (a gold ring): it drops Aether Shards and a chunk of Cores', xp: 15, gift: { pickup: ['plate'] }, stat: g => g.stats.elites || 0, n: 1 },
-    { from: 18, icon: 'ic_skull', text: 'Defeat 300 monsters', xp: 40, done: g => g.stats.kills >= 300, prog: g => [g.stats.kills, 300] },
+    { from: 14, icon: 'ic_flag', text: 'Clear a Monster Camp or an Ancient Crypt (see the map) for Aether Shards', xp: 15, gift: { pickup: ['hp_water', 'ap_magma'] }, stat: g => g.stats.clears || 0, n: 1, hint: { mark: 'camp' } },
+    { icon: 'ic_skull', text: 'Defeat 60 monsters', xp: 12, stat: g => g.stats.kills || 0, n: 60 },
+    { icon: 'flamethrower', text: 'Finish off 10 monsters with combo spells (two elements). Ask the Builder!', xp: 20, gift: { pickup: ['hp_flamethrower'] }, stat: g => g.stats.k2 || 0, n: 10 },
+    { icon: 'ic_crown', text: 'Take down an Elite (a gold ring): it drops Aether Shards and a chunk of Cores', xp: 15, gift: { pickup: ['ap_magma'] }, stat: g => g.stats.elites || 0, n: 1 },
+    { from: 18, icon: 'ic_skull', text: 'Defeat 300 monsters', xp: 40, stat: g => g.stats.kills || 0, n: 300 },
     { icon: 'ic_trophy', text: 'Survive a Wilds Event: check the card under the goals, then clear it', xp: 30, gift: { stock: { shard: 1 } }, stat: g => g.stats.events || 0, n: 1 },
-    { icon: 'meteor', text: 'Wipe out 15 monsters with Triple spells (three elements)', xp: 30, gift: { pickup: ['elixir', 'plate'] }, stat: g => g.stats.k3 || 0, n: 15 },
+    { icon: 'meteor', text: 'Wipe out 15 monsters with Triple spells (three elements)', xp: 30, gift: { pickup: ['hp_meteor', 'ap_meteor'] }, stat: g => g.stats.k3 || 0, n: 15 },
     { from: 21, icon: 'ic_keep', text: 'Scout the Stronghold, far out in the wilds (see the map): get near to reveal its guards', xp: 20, done: g => !!g.flags.scouted, hint: { keep: 'scout' } },
     { from: 22, icon: 'wardkey', text: 'Storm the Stronghold: wear its garment, have the Warden Key sent in, beat the Warden', xp: 40, done: g => (g.stats.keeps || 0) >= 1, hint: { keep: 'claim' } },
-    { icon: 'nova', text: 'Blast 10 monsters with the Elemental Nova', xp: 40, gift: { pickup: ['elixir', 'plate'] }, stat: g => g.stats.k4 || 0, n: 10 },
+    { icon: 'nova', text: 'Blast 10 monsters with the Elemental Nova', xp: 40, gift: { pickup: ['hp_nova', 'ap_nova'] }, stat: g => g.stats.k4 || 0, n: 10 },
     { from: 24, icon: 'ic_crown', text: 'Light the Altar with the Warden dead, then defeat the Primal Chimera!', xp: 150, done: g => g.flags.won, hint: { boss: 1 } },
   ],
 };

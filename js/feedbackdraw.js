@@ -1,7 +1,7 @@
 'use strict';
 // Drawing the attention-and-causality cues (loaded after render.js; the rule and the list of events are in CLAUDE.md and FEEDBACK.md). Every cue answers
 // WHAT happened, WHY, and what to look at NEXT, in icons. All of it is a pure function of G and the clock, so the photo test sees nothing hidden:
-//   R.drawHurt      the Wizard was hit: a red edge flash and a chevron toward the attacker, the attacker's picture, its weakness pip (G.w.hurt)
+//   R.drawHurt      the Wizard was hit: a red edge flash and a chevron toward the attacker, the direction only (G.w.hurt)
 //   R.drawTether    a rare drop's dotted line back to the kill that made it (drop.fx / fy / tet)
 //   R.drawThreat    at the Spell Portal: what the Wizard just met and what it is weak to (G.fac.threat)
 //   R.drawRej       a pickup the full Stockpile refused bouncing off the Spell Portal (G.fac.rejs)
@@ -35,18 +35,61 @@ R.drawHurt = function (ctx, v, w, left, right, t) {
   if (side === 'r') ctx.fillRect(right - 36, 0, 36, CFG.H); else if (side === 'l') ctx.fillRect(left, 0, 36, CFG.H);
   else if (side === 'b') ctx.fillRect(left, CFG.H - 36, RW, 36); else ctx.fillRect(left, 0, RW, 36);
   ctx.globalAlpha = 1;
-  // the chevron round his body pointing at the attacker, and its picture beyond it
+  // the chevron round his body pointing at the attacker (the arrow alone: no picture, the direction is the answer)
   const r = 78, px = -dy, py = dx, tx = q[0] + dx * (r + 16), ty = cy + dy * (r + 16) * 0.7;
   const pts = [[tx, ty], [q[0] + dx * (r - 8) + px * 15, cy + (dy * (r - 8) + py * 15) * 0.7], [q[0] + dx * (r - 8) - px * 15, cy + (dy * (r - 8) - py * 15) * 0.7]];
   ctx.globalAlpha = Math.min(1, k * 1.6);
   ctx.fillStyle = blink ? '#ffffff' : '#ff4a5a'; ctx.strokeStyle = '#1a0f28'; ctx.lineWidth = 6;
   ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); ctx.lineTo(pts[1][0], pts[1][1]); ctx.lineTo(pts[2][0], pts[2][1]); ctx.closePath(); ctx.stroke(); ctx.fill();
-  const bx = Math.max(left + 40, Math.min(right - 40, Math.round(q[0] + dx * (r + 62)))), by = Math.max(150, Math.min(CFG.H - 60, Math.round(cy + dy * (r + 62) * 0.7)));
-  pbox(ctx, bx - 30, by - 30, 60, 60, '#2b1d48', blink ? '#ffffff' : '#ff6a6a');
-  if (sp) dspr(ctx, sp, bx, by + sp.c.height * S2 / 2, S2);
-  if (h.el) dspr(ctx, SP['wk_' + h.el], bx + 30, by - 24, 3);   // what it is weak to: the pip the Builder needs
-  if (h.t < D.dur * 0.7) txt(ctx, h.n, bx, by + 46, 12, '#ffffff', 'center', 'd');
   ctx.globalAlpha = 1;
+};
+
+// ---------- ash or lava within 4 tiles: a thermometer blinks over his head (not with the Emberward Cloak) ----------
+R.drawHeat = function (ctx, v, w, t) {
+  if (!w.heat || w.dead || WZ.has('ember') || G.menu) return;
+  const q = R.toScreenLocked(v, w.x, w.y), fast = w.heat >= 2 ? 6 : 3;
+  if (Math.floor(t * fast) % 2) return;
+  const y = Math.round(q[1] - 150);
+  pbox(ctx, Math.round(q[0] - 24), y - 30, 48, 60, '#2b1d48', w.heat === 3 ? '#ff5a3a' : '#ffb030');
+  dspr(ctx, SP.ic_thermo, q[0], y + 22, 5);
+};
+// ---------- an Aether Shard being picked up: it rises over the spot, hovers, shakes with confetti ----------
+R.drawShardUp = function (ctx, v, o, p, t) {
+  const U = CFG.shardUp, rise = Math.min(1, o.up / U.rise), e = 1 - Math.pow(1 - rise, 3), lift = Math.round(e * U.h * v.hh * 2 / 3) * 3, shaking = o.up > U.rise, k = Math.max(0, o.up - U.rise) / U.shake;
+  const jx = shaking ? (Math.floor(o.up * 40) % 2 ? 4 : -4) * (0.5 + k) : 0, hov = shaking ? 0 : Math.round(Math.sin(t * 6) * 1.5) * 3, y = p[1] - 12 - lift - hov;
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; diamond(ctx, p[0], p[1], 14 - e * 4, 7 - e * 2); ctx.fill();
+  ctx.globalAlpha = 0.35 + 0.25 * Math.sin(t * 8); ctx.fillStyle = '#c890ff'; diamond(ctx, p[0] + jx, y + 6, 22 + (shaking ? 10 * k : 0), 11); ctx.fill(); ctx.globalAlpha = 1;   // a halo
+  dspr(ctx, itemSprite('shard'), p[0] + jx, y, shaking ? 4 : 3);
+  if (shaking) {   // confetti pours off it
+    const cols = ['#ffe36b', '#ff6a8a', '#7be0ff', '#9aff8a', '#c890ff', '#ffffff'], age = o.up - U.rise;
+    for (let i = 0; i < 22; i++) {
+      const cyc = (age * 1.5 + i * 0.173) % 1, a = i * 2.4 + 0.7, sp = 34 + (i % 5) * 12;
+      ctx.fillStyle = cols[i % cols.length]; ctx.globalAlpha = 1 - cyc * 0.7;
+      ctx.fillRect(Math.round((p[0] + jx + Math.cos(a) * sp * cyc) / 3) * 3, Math.round((y - 12 + Math.sin(a) * sp * 0.5 * cyc + cyc * cyc * 90) / 3) * 3, i % 3 ? 6 : 9, i % 3 ? 6 : 3);
+    }
+    ctx.globalAlpha = 1;
+  } else if (rise > 0.5) { ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.round((p[0] + 12) / 3) * 3, Math.round((y - 18 + Math.sin(t * 9) * 6) / 3) * 3, 6, 6); }
+};
+// ---------- over the Spell Portal: an Aether Shard is on its way (the preview before the real one comes out) ----------
+R.drawShardPrev = function (ctx, v, t, base) {
+  const sp = G.fac.shardPrev;
+  if (!sp) return;
+  const fade = Math.min(1, (sp.dur - sp.t) / 0.5), pop = sp.t < 0.25 ? sp.t / 0.25 : 1, y = Math.round(base[1] - 96 - (1 - pop) * 30 + Math.sin(t * 5) * 2), bx = Math.min(R.rect.x0 + R.rect.w - 52, Math.round(base[0] - 78));   // beside the portal, clear of the danger panel above it
+  ctx.globalAlpha = fade;
+  pbox(ctx, bx - 40, y - 44, 80, 80, '#2b1d48', Math.floor(t * 6) % 2 ? '#ffffff' : '#c890ff');
+  dspr(ctx, itemSprite('shard'), bx, y + 4, 4);
+  txt(ctx, 'SHARD', bx, y - 52, 12, '#e0b8ff', 'center', 'd');
+  ctx.globalAlpha = 1;
+};
+
+// ---------- the Builder's goal gems: scattered XP gems lying on the floor until he walks near them ----------
+R.drawFacGems = function (ctx, v, f, t) {
+  for (const g of f.xpg) {
+    const s = R.toScreen(v, g.x, g.y), rest = g.t >= 0.5, arc = rest ? 0 : Math.sin(g.t / 0.5 * Math.PI) * 40, bob = rest ? Math.round(Math.sin(t * 4 + g.seed) * 1.5) * 3 : 0, sc = 3 + WZ.gemTier(g.val);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; diamond(ctx, s[0], s[1], 10 + sc * 2, 5 + sc); ctx.fill();
+    dspr(ctx, SP.gem, s[0], s[1] - 8 - arc - bob, sc);
+    if (rest && Math.floor(t * 3 + g.seed * 5) % 6 === 0) { ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.round(s[0] + 9), Math.round(s[1] - 26 - bob), 6, 6); }   // a glint
+  }
 };
 
 // ---------- a rare drop remembers which kill made it ----------
@@ -64,19 +107,22 @@ R.drawTether = function (ctx, v, o, t) {
 R.drawThreat = function (ctx, v, t, base) {
   const th = G.fac.threat;
   if (!th) return;
-  const left = th.dur - th.t, fade = Math.min(1, left / 1), n = th.els.length, bw = 60 + n * 48, bh = 66;
-  const x = Math.round(base[0] - bw / 2), y = Math.round(base[1] - 226 - (th.t < 0.3 ? (0.3 - th.t) * 60 : 0));
+  // the title says WHY the picture is there (MUTANT SPAWNED, ELITE SPAWNED...), the box says "this one is WEAK TO" these elements: no arrow to misread
+  const left = th.dur - th.t, fade = Math.min(1, left / 1), n = th.els.length, bw = 92 + Math.max(110, n * 48 + 20), bh = 84;
+  const rx0 = R.rect.x0, rx1 = R.rect.x0 + R.rect.w, x = Math.max(rx0 + 8, Math.min(rx1 - bw - 8, Math.round(base[0] - bw / 2))), y = Math.round(base[1] - 236 - (th.t < 0.3 ? (0.3 - th.t) * 60 : 0));   // (kept inside this half: the portal stands at its edge)
   const blink = th.t < 1.6 && Math.floor(th.t * 8) % 2;
   ctx.globalAlpha = fade;
   pbox(ctx, x, y, bw, bh, '#2b1d48', blink ? '#ffffff' : '#ff9a3a');
-  const sp = R.spr(th.ic), S2 = sp ? Math.max(2, Math.min(4, Math.floor(40 / Math.max(sp.c.width, sp.c.height)))) : 3;
-  if (sp) dspr(ctx, sp, x + 33, y + 15 + sp.c.height * S2 / 2 + (Math.sin(t * 5) > 0 ? 0 : 3), S2);
-  ctx.fillStyle = '#ffd23a'; const ax = x + 60; ctx.fillRect(ax, y + 30, 12, 6); ctx.fillRect(ax + 12, y + 24, 6, 18); ctx.fillRect(ax + 18, y + 30, 6, 6);   // "->" : it is weak to
+  const sp = R.spr(th.ic), S2 = sp ? Math.max(2, Math.min(4, Math.floor(56 / Math.max(sp.c.width, sp.c.height)))) : 3;
+  if (sp) dspr(ctx, sp, x + 44, y + 12 + (56 - sp.c.height * S2) / 2 + sp.c.height * S2 / 2 + (Math.sin(t * 5) > 0 ? 0 : 3), S2);
+  ctx.fillStyle = '#ffd23a'; ctx.fillRect(x + 88, y + 8, 4, bh - 16);   // a divider between what it is and what it is weak to
+  txt(ctx, 'WEAK TO', x + 100 + Math.max(110, n * 48 + 20) / 2 - 6, y + 28, 12, '#ffd23a', 'center', 'd');
   th.els.forEach((el, i) => {
-    const ex = x + 60 + 24 + i * 44, ey = y + 54 + (Math.floor(t * 5 + i) % 2 ? 0 : -3);
+    const ex = x + 100 + i * 48, ey = y + 74 + (Math.floor(t * 5 + i) % 2 ? 0 : -3);
     dspr(ctx, itemSprite(el), ex + 12, ey, 3);
+    txt(ctx, ELEM_WORD[el] || el, ex + 12, ey + 14, 8, '#ffffff', 'center', 'd');
   });
-  if (th.n) txt(ctx, th.n, base[0], y - 8, 12, '#ffd23a', 'center', 'd');
+  if (th.n) { const tw = th.n.length * 14 / 2 + 8; txt(ctx, th.n, Math.max(rx0 + tw, Math.min(rx1 - tw, x + bw / 2)), y - 10, 14, '#ffd23a', 'center', 'd'); }
   ctx.globalAlpha = 1;
 };
 

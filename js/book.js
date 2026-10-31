@@ -3,8 +3,8 @@
 // Four pages (spells, creatures, the wardrobe, the wand). Each entry shows what the tree's hover card used to (name, icon, description, recipe / production, stats) with a looping demo:
 // SPV for spells (spellpreview.js), CPV for creatures (creaturepreview.js). It opens over the paused game from the button beside the
 // skill-tree button (or C), or from the pause menu, and nothing runs while it is closed.
-const PAGES = ['spells', 'creatures', 'wardrobe', 'wand'];
-const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 'zephyr', wardrobe: 'tide', wand: 'fire' }, from: 'play', navT: 0 };
+const PAGES = ['spells', 'creatures', 'wardrobe', 'wand', 'index'];
+const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 'zephyr', wardrobe: 'tide', wand: 'fire', index: 'harness' }, from: 'play', navT: 0, entries: [] };
 (function () {
   const SPELL_ORDER = ['gust', 'fireball', 'spray', 'boulder', 'flamethrower', 'tempest', 'steam', 'sandstorm', 'magma', 'mud', 'meteor', 'thunder', 'blizzard', 'geyser', 'nova'];
   // the Creatures page lists every enemy type: the crafted creatures, then the wild foes, the Warden and the Chimera (each with its drop table)
@@ -88,8 +88,10 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
       s += line(UI.img('wood', 16) + UI.img('stone', 16), pct(CFG.drops.common) + ' chance of Wood or Stone') + line(UI.img('iron', 16), pct(CFG.drops.iron) + ' chance of Iron Ore');
       if (I.els.length) s += line(coreIcons(I.els), pct(I.core) + ' chance of a ' + I.els.map(e => CORE_NAME[e]).join(' or ') + ' (rides home to the Stockpile)');
       else s += line(UI.img('ic_x', 16), 'no element: no Cores');
+      if (kind !== 'crafted' && I.els.length) s += line(I.els.map(e => UI.img(e, 16)).join(''), pct(CFG.drops.packet) + ' chance of a ' + I.els.map(e => ELEM_WORD[e]).join(' or ') + ' spell (rides home)');
       if (kind === 'crafted') { const cd = CFG.creatures[id], tier = cd.order.length; s += tier === 1 ? line(UI.img(cd.order[0], 16), pct(CFG.crafted.recycle) + ' chance of a ' + ELEM_WORD[cd.order[0]] + ' spell (rides home)') : line(UI.img(Object.keys(cd.cost)[0], 16), pct(CFG.crafted.recycleSpell[tier]) + ' chance of a ' + itemName(Object.keys(cd.cost)[0]) + ' (the spell it hatched from; rides home)'); }
     }
+    if (id !== 'boss' && id !== 'warden') s += line(UI.img('ic_skull', 16), 'Mutants roll the Wood, Iron and spell drops x' + CFG.drops.mutMul + '; elites x' + CFG.drops.eliteMul);
     s += '</div>';
     if (id !== 'boss') {
       s += '<div class="bkdc"><h4>ELITE DROPS</h4>';
@@ -143,8 +145,8 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   const st = () => G.stats;
   const seenSpell = id => ((st().made || {})[id] || 0) > 0 || ((st().sent || {})[id] || 0) > 0 || (!!BASIC_EL[id] && ((st().sent || {})[BASIC_EL[id]] || 0) > 0);
   const seenCreature = id => ((st().met || {})[id] || 0) > 0 || ((st().sent || {})['egg_' + id] || 0) > 0;
-  const seen = (pg, id) => (pg === 'spells' ? seenSpell(id) : pg === 'creatures' ? seenCreature(id) : pg === 'wand' ? ((st().wandUsed || {})[id] || 0) > 0 : FA.augMade(id));
-  const idsOf = pg => (pg === 'spells' ? SPELL_ORDER : pg === 'creatures' ? CREATURE_ORDER : pg === 'wand' ? WAND_ORDER : AUG_ORDER);
+  const seen = (pg, id) => (pg === 'index' ? true : pg === 'spells' ? seenSpell(id) : pg === 'creatures' ? seenCreature(id) : pg === 'wand' ? ((st().wandUsed || {})[id] || 0) > 0 : FA.augMade(id));
+  const idsOf = pg => (pg === 'index' ? Book.entries.map(e => e.id) : pg === 'spells' ? SPELL_ORDER : pg === 'creatures' ? CREATURE_ORDER : pg === 'wand' ? WAND_ORDER : AUG_ORDER);
   // ---- the Wand page: the four wand attacks, what charges them and what each does (every number read off CFG.wand, so it never drifts from js/wand.js) ----
   const WAND_ORDER = ['fire', 'air', 'water', 'earth'];
   const WAND_BOOK = {
@@ -171,7 +173,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   Book.build = function () {
     const el = $('book');
     el.innerHTML = '<div class="bookPanel px"><div class="treeHead"><h2>' + UI.img('ic_book', 32) + 'COLLECTION BOOK</h2><div class="tabs bkTabs">' +
-      '<button class="tab" data-p="spells">SPELLS</button><button class="tab" data-p="creatures">CREATURES</button><button class="tab" data-p="wardrobe">WARDROBE</button><button class="tab" data-p="wand">WAND</button></div><div class="bkCount"></div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>' +
+      '<button class="tab" data-p="spells">SPELLS</button><button class="tab" data-p="creatures">CREATURES</button><button class="tab" data-p="wardrobe">WARDROBE</button><button class="tab" data-p="wand">WAND</button><button class="tab" data-p="index">INDEX</button></div><div class="bkCount"></div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>' +
       '<div class="bookBody"><div class="bookList"></div><div class="bookDetail"><div class="tth bkh"></div>' +
       '<div class="bkLeft"><p class="bkDesc"></p><div class="bkDemoBox"><canvas class="bkDemo"></canvas></div><div class="spvc"></div></div><div class="bkRows"></div><div class="bkDrops"></div></div></div>' +
       '<p class="hint"></p></div>';
@@ -183,6 +185,8 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   };
   const hintHtml = pg => '<kbd>C</kbd> / Esc closes. <kbd>W</kbd><kbd>S</kbd> or <kbd>UP</kbd><kbd>DOWN</kbd> pick an entry, <kbd>A</kbd><kbd>D</kbd> or <kbd>TAB</kbd> flip the page' + (IN.padList.length ? ' <kbd>STICK</kbd> pick <kbd>LB</kbd><kbd>RB</kbd> page <kbd>B</kbd> close' : '');
   Book.fillList = function () {   // the tiles of the current page (once per page flip)
+    ref.list.classList.toggle('idxList', Book.page === 'index');
+    if (Book.page === 'index') return Book.fillIndexList();
     const pg = Book.page, sp = pg === 'spells', aug = pg === 'wardrobe', wd = pg === 'wand', ids = idsOf(pg);
     ref.hint.innerHTML = hintHtml(pg);
     ref.list.innerHTML = ids.map(i => {
@@ -198,6 +202,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   Book.fillDetail = function () {   // the selected entry: text, stats and demo, swapped in place
     if (Book.page === 'wardrobe') return Book.fillGarment();
     if (Book.page === 'wand') return Book.fillWand();
+    if (Book.page === 'index') return Book.fillIndex();
     const pg = Book.page, sp = pg === 'spells', id = Book.sel[pg], ok = seen(pg, id);
     ref.list.querySelectorAll('.bkItem').forEach(b => b.classList.toggle('on', b.dataset.id === id));
     const crafted = !sp && kindOf(id) === 'crafted';
@@ -215,6 +220,47 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     SPV.stop(); CPV.stop();
     if (sp || crafted) (sp ? SPV : CPV).mount(ref.cv, id); else Book.stillLife(ref.cv, id);
     ref.list.querySelector('.bkItem.on').scrollIntoView({ block: 'nearest' });
+  };
+  // ---- the Index page: every building, resource, item, potion, landmark and system the other pages do not cover (js/bookindex.js: what it does, how to get it, why you need it) ----
+  const esc = s => ('' + s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  Book.fillIndexList = function () {
+    ref.hint.innerHTML = hintHtml('index');
+    ref.list.classList.add('idxList');
+    let html = '', last = null;
+    for (const e of Book.entries) {
+      if (e.cat !== last) { last = e.cat; html += '<div class="bkCat">' + esc(BOOK_CATS.find(c => c[0] === e.cat)[1]) + '</div>'; }
+      html += '<div class="bkItem idx" data-cat="' + e.cat + '" data-id="' + e.id + '">' + UI.img(e.icon, 32) + '<b>' + esc(e.name) + '</b></div>';
+    }
+    ref.list.innerHTML = html;
+    ref.list.querySelectorAll('.bkItem').forEach(bt => { bt.onclick = () => Book.pick(bt.dataset.id); });
+    ref.el.querySelectorAll('.tab').forEach(bt => bt.classList.toggle('on', bt.dataset.p === 'index'));
+    ref.count.textContent = Book.entries.length + ' ENTRIES';
+  };
+  Book.fillIndex = function () {
+    const e = Book.entries.find(q => q.id === Book.sel.index) || Book.entries[0];
+    Book.sel.index = e.id;
+    ref.list.querySelectorAll('.bkItem').forEach(bt => bt.classList.toggle('on', bt.dataset.id === e.id));
+    ref.head.innerHTML = UI.img(e.icon, 48) + '<div><b>' + esc(e.name) + '</b><small>' + esc(BOOK_CATS.find(c => c[0] === e.cat)[1]) + '</small></div>';
+    ref.desc.textContent = e.what;
+    ref.cap.textContent = '';
+    ref.rows.innerHTML = e.rows;
+    ref.drops.innerHTML = '<div class="bkdc"><h4>HOW TO GET IT</h4><div class="bkd long"><span>' + esc(e.how) + '</span></div></div><div class="bkdc"><h4>WHY YOU NEED IT</h4><div class="bkd long"><span>' + esc(e.why) + '</span></div></div>';
+    ref.drops.className = 'bkDrops idx';
+    ref.detail.classList.remove('unseen');
+    if (ref.page !== 'index') { ref.page = 'index'; ref.cv.width = CPV.W; ref.cv.height = CPV.H; }
+    SPV.stop(); CPV.stop();
+    Book.stillIndex(ref.cv, e.icon);
+    const on = ref.list.querySelector('.bkItem.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+  };
+  Book.stillIndex = function (cv, key) {   // the thing itself, large, on the meadow
+    const c = cv.getContext('2d'), s = key.startsWith('b:') ? SP['b_' + key.slice(2)] : (SP[key] || itemSprite(key));
+    c.imageSmoothingEnabled = false;
+    c.fillStyle = '#2e6a3a'; c.fillRect(0, 0, cv.width, cv.height);
+    c.fillStyle = '#3a7e46'; for (let i = 0; i < 40; i++) c.fillRect((i * 53) % cv.width, (i * 37) % cv.height, 6, 3);
+    if (!s) return;
+    const k = Math.max(1, Math.floor(Math.min(cv.width * 0.6 / s.c.width, cv.height * 0.72 / s.c.height)));
+    c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(Math.round(cv.width / 2 - s.c.width * k / 2), Math.round(cv.height * 0.9 - 4), s.c.width * k, 8);
+    c.drawImage(s.c, Math.round(cv.width / 2 - s.ax * k), Math.round(cv.height * 0.9 - s.ay * k), s.c.width * k, s.c.height * k);
   };
   Book.fillWand = function () {   // the Wand page's selected attack: what it does, what charges it, a looping demo
     const el = Book.sel.wand, W = G.wand, ok = seen('wand', el), full = W && W.full[el], m = W ? W.m[el] : 0, need = CFG.wand.need[el];
@@ -269,7 +315,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(Math.round(cv.width / 2 - s.c.width * k / 2), Math.round(cv.height * 0.9 - 4), s.c.width * k, 8);
     c.drawImage(s.c, Math.round(cv.width / 2 - s.ax * k), Math.round(cv.height * 0.9 - s.ay * k), s.c.width * k, s.c.height * k);
   };
-  Book.render = function () { Book.build(); Book.fillList(); Book.fillDetail(); };
+  Book.render = function () { Book.entries = bookIndexEntries(); Book.build(); Book.fillList(); Book.fillDetail(); };
   Book.setPage = function (p) { if (p === Book.page) return; Book.page = p; AU.sfx('tab'); Book.fillList(); Book.fillDetail(); };
   Book.pick = function (id) { if (id === Book.sel[Book.page]) return; Book.sel[Book.page] = id; AU.sfx('blip'); Book.fillDetail(); };
   Book.step = function (d) {

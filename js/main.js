@@ -14,7 +14,7 @@ window.addEventListener('resize', fit);
 // ---------- new / load / save ----------
 const SAVE_VERSION = 4;
 const TREE_VERSION = 3;   // v2: spells and creatures left the skill tree (Main.refundTree gives back what was spent on every removed node)
-const QUEST_VERSION = 6;   // v6 re-sequenced the Builder goals around building things with elements (each carried-over goal has v5 = its old index: Main.questOf); v5 split the single goal chain into two tracks, Builder and Wizard (Main.splitQuest); v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1; v4 inserted the first-creature-kill goal at 5 and the two Stronghold goals before Summoning: goals from the old 5 shift by 1, from the old 21 (Summoning) by 3
+const QUEST_VERSION = 7;   // v7: goals count from when they show (no more instant completions), so older baselines are measured again;   // v6 re-sequenced the Builder goals around building things with elements (each carried-over goal has v5 = its old index: Main.questOf); v5 split the single goal chain into two tracks, Builder and Wizard (Main.splitQuest); v2 inserted goals 14-15 (landmark, logistics): older saves past goal 13 shift by 2; v3 inserted the recharge goal at 7 and dropped "power the factory" (old 11): old goals 7-11 shift by 1; v4 inserted the first-creature-kill goal at 5 and the two Stronghold goals before Summoning: goals from the old 5 shift by 1, from the old 21 (Summoning) by 3
 // the Stockpile: the starting materials, and a count (0) for every other resource (shards, Cores, element Cores, Ward Keys) and element packet
 function blankStock() {
   const s = { wood: CFG.start.wood, stone: CFG.start.stone, iron: CFG.start.iron, air: 0, water: 0, fire: 0, earth: 0 };
@@ -80,7 +80,9 @@ Main.applySave = function (slot, s) {
   { const held = s.hold && s.hold.spell, k = held && (Object.keys(BASIC_SPELL).find(el => BASIC_SPELL[el] === held) || held); if (k && FA.storable(k)) G.stock[k] = (G.stock[k] || 0) + 1; }
   G.wand = WZ.wandFix(s.wand);
   if (s.qbase && typeof s.quest === 'object') G.qbase = Object.assign(G.qbase, s.qbase);   // null = measured from when the goal first shows
-  if ((s.qv || 1) < 6) G.qbase.B = null;   // the Builder's goals moved: its old baseline belonged to another goal
+  if ((s.qv || 1) < 7) { G.qbase.B = null; G.qbase.W = null; }   // v7: goals count from when they show; older baselines belonged to other kinds of goal
+  if (G.tree.summon) { const fl = G.stats.fl || (G.stats.fl = {}); if (!fl.bought_summon) fl.bought_summon = 1; }   // (an older save that owns Summoning: its goal reads the purchase counter)
+  if ((s.qv || 1) < 6) G.qbase.B = null;   // the Builder's goals moved: its old baseline belonged to another goal   // the Builder's goals moved: its old baseline belonged to another goal
   G.refund = Main.refundTree();   // spells, creatures and other removed nodes: what they cost comes back (toasted in Main.enter)
   G.bankLog = Array.isArray(s.bankLog) ? s.bankLog.filter(k => ITEMS[k]) : [];
   G.pins = Object.assign({ L: null, R: null }, s.pins || {}); G.pinBp = !!s.pinBp;
@@ -120,11 +122,23 @@ const REMOVED_NODES = {
 const REMOVED_EXPAND = [[21, { air: 8 }], [31, { air: 11, water: 11 }], [46, { air: 11, water: 11, fire: 11 }], [59, { air: 14, fire: 14, earth: 14, sandstorm: 1 }],
   [74, { air: 13, water: 13, fire: 13, earth: 13, blizzard: 1, thunder: 1 }], [91, { air: 16, water: 16, fire: 16, earth: 16, meteor: 1, geyser: 1 }]];   // tier 1..6 of Factory Expansion
 for (const id in CFG.freeNodes) REMOVED_NODES[id] = [CFG.freeNodes[id].xp, CFG.freeNodes[id].pay];   // the building unlocks went too: a save that bought one gets it back
+// the three Wizard tracks that left the tree (Remedies, Wardwoven, Loot Magnet): XP and spells per tier, handed back for the tiers a save owns
+const REMOVED_TRACKS = {
+  remedies: { tiers: [9, 15, 22, 30, 40], pk: [0, 11, 17, 23.5, 31], kinds: [[], ['water'], ['air', 'earth'], ['water', 'fire'], ['air', 'water', 'earth']] },
+  wardwoven: { tiers: [9, 16, 25, 36], pk: [0, 12, 19.5, 28], kinds: [[], ['earth'], ['fire', 'water'], ['air', 'fire', 'earth']] },
+  magnet: { tiers: [8, 12, 18, 25, 34], pk: [6, 9, 13, 18, 24], kinds: [['water'], ['air', 'earth'], ['water', 'fire'], ['air', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']] },
+};
 Main.refundTree = function () {
   const back = { xp: 0, core: 0, bank: {} };
   const give = (xp, pay, core) => { back.xp += xp; back.core += core || 0; for (const k in pay) back.bank[k] = (back.bank[k] || 0) + pay[k]; };
   for (const id in G.tree) {
     if (REMOVED_NODES[id]) { give(...REMOVED_NODES[id]); delete G.tree[id]; if (G.tree[id] === undefined && SPELL_INFO[id]) G.stats.made[id] = Math.max(1, G.stats.made[id] || 0); }
+    else if (REMOVED_TRACKS[id]) {
+      const T = REMOVED_TRACKS[id], lv = Math.min(T.tiers.length, +G.tree[id] || 0), pay = {};
+      let xp = 0;
+      for (let i = 0; i < lv; i++) { xp += T.tiers[i]; const ks = T.kinds[i]; for (const k of ks) pay[k] = (pay[k] || 0) + Math.round(T.pk[i] / ks.length); }
+      give(xp, pay); delete G.tree[id];
+    }
     else if (id === 'expand') { for (let i = 0; i < Math.min(REMOVED_EXPAND.length, +G.tree.expand || 0); i++) give(...REMOVED_EXPAND[i]); delete G.tree.expand; }
   }
   if (!back.xp && !back.core && !Object.keys(back.bank).length) return null;
@@ -169,7 +183,7 @@ Main.save = function () {
     // shards still lying in the wilds count as banked in the save, so quitting mid-run never loses them
     const stockSaved = Main.stockSaved();
     const data = JSON.stringify({
-      v: SAVE_VERSION, qv: QUEST_VERSION, tv: TREE_VERSION, xp: G.xp, tree: G.tree, stock: stockSaved, ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
+      v: SAVE_VERSION, qv: QUEST_VERSION, tv: TREE_VERSION, xp: G.xp + FA.gemsPending(), tree: G.tree, stock: stockSaved, ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
       flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: Main.facSaved(), at: Date.now(),
       bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp, aug: G.aug, wand: G.wand, altar: G.altar, bshr: WZ.bshrSave(),
     });
@@ -273,6 +287,8 @@ Main.wizKeyNames = function () {
   if (guest || !Main.kbShared()) return { cycle: 'Q', cast: 'RMB', dodge: 'SPACE', mash: 'LMB', emote: 'N' };
   return G.swapped ? { cycle: 'V', cast: 'Z', dodge: 'SPACE', mash: 'E', emote: 'N' } : { cycle: 'M', cast: ',', dodge: '.', mash: '/', emote: 'N' };
 };
+Main.emoteClick = false;
+Main.takeEmoteClick = function () { const c = Main.emoteClick; Main.emoteClick = false; return c; };
 Main.wizBtns = function (hit, p1, noMouse) {
   const c = G.ctl, sh = Main.kbShared(), K = c.kbW ? Main.WKEYS[sh ? (G.swapped ? 'swap' : 'duo') : 'solo'] : null, mouse = Main.mouseW() && !noMouse;
   const key = list => !!K && list.some(code => hit(code));
@@ -281,7 +297,7 @@ Main.wizBtns = function (hit, p1, noMouse) {
     cast: key(K ? K.cast : []) || (mouse && IN.mouse.rp) || !!(p1 && p1.b),
     roll: key(K ? K.dodge : []) || !!(p1 && p1.a),
     mash: key(K ? K.mash : []) || (mouse && IN.mouse.lp) || !!(p1 && p1.x),
-    emote: (!!K && hit('KeyN')) || !!(p1 && p1.rb),   // the emote wheel (js/emote.js): N on the keyboard, RB on his pad
+    emote: (!!K && hit('KeyN')) || !!(p1 && p1.rb) || Main.takeEmoteClick(),   // the emote wheel (js/emote.js): N on the keyboard, RB on his pad
   };
 };
 const useMouseAim = () => G.lastInput === 'mouse' && mouseInFactory() && Main.mouseB();
@@ -292,7 +308,7 @@ function aimNow() {
 }
 // every throw lands exactly where the lead line on screen points (R.aim, refreshed each frame)
 function throwAlongAim() {
-  if (!G.hands.length || G.bd.gather || G.noThrow) return;
+  if (!G.hands.length || G.noThrow) return;
   const a = R.aim || aimNow();
   if (a) FA.throwOne(a.x, a.y);
 }
@@ -507,16 +523,13 @@ Main.controls = function (dt) {
     }
     bix = 0; biy = 0; use = false; pick = false;
   }
-  // right-click / B / swapped , cancels hand-gathering (and that press doesn't throw)
+  // right-click / B / swapped , only ever throws what is held: hand-gathering is never cancelled by it (the Builder just walks away from a Harnesser to stop)
   if (!IN.mouse.r && !throwHeld) G.noThrow = false;
-  if (G.bd.gather && !frozen && ((IN.mouse.rp && mouseInFactory() && Main.mouseB()) || (altB && IN.hit('Comma')) || (p0 && p0.b))) {
-    G.bd.gather = null; G.noThrow = true; IN.mouse.rp = false; AU.sfx('blip');
-  }
 
   if (!frozen) handleMouseFactory(dt);   // (the Wizard's mouse is two buttons now: left click = Mash, right click = Cast; there is no click-to-walk)
   if (!frozen) {
     if (cyc) FA.cycleLock(cyc);
-    if (stackThrow && G.hands.length && !G.bd.gather && !G.noThrow) {   // a burst at one aim point, one item every throwStackGap
+    if (stackThrow && G.hands.length && !G.noThrow) {   // a burst at one aim point, one item every throwStackGap
       const a = R.aim || aimNow();
       if (a) { G.bd.burst = G.hands.length; G.bd.burstAim = { x: a.x, y: a.y }; }
     }
@@ -776,7 +789,7 @@ Main.hintFor = function (q) {
     else if (WZ.altarOn()) out.w = { x: G.altar.x, y: G.altar.y, lift: 190 };
   }
   if (out.f) out.f.icon = q.icon;   // the goal's own picture rides on the pointer, so a glowing building says WHY it glows
-  if (out.w) out.w.icon = q.icon;
+  if (out.w) out.w.icon = h.harv ? 'wood' : q.icon;   // the arrow stands over a tree: its badge says Wood
   return out;
 };
 // both tracks at once: the Builder's goal points at the factory / hotbar / left tree button, the Wizard's at the wilds / right button
@@ -800,7 +813,8 @@ Main.updateFocus = function () {
   if (au && au.fn) list.push({ t, a: au, key: 'use' });
   if (!list.length) { if (ap && ap.label) list.push({ t: tp, a: ap }); else if (au && au.label) list.push({ t, a: au }); }
   const hn = G.selected === 'hand' && !G.demolish ? FA.harnessNear() : null;   // a third prompt: switch the Harnesser's element
-  if (hn) { const o = CFG.harness.order; list.push({ t: { kind: 'bld', o: hn, x: hn.x + 0.5, y: hn.y + 0.5 }, a: { label: 'Change element', fn: null, ic: [hn.el, 'ic_swap', o[(o.indexOf(hn.el) + 1) % o.length]] }, key: 'cycle' }); }
+  if (hn && hn.type === 'cauldron') list.push({ t: { kind: 'bld', o: hn, x: hn.x + 0.5, y: hn.y + 0.5 }, a: { label: 'Change mode', fn: null, ic: [hn.mode === 'hp' ? 'potion' : 'armor', 'ic_swap', hn.mode === 'hp' ? 'armor' : 'potion'] }, key: 'cycle' });
+  else if (hn) { const o = CFG.harness.order; list.push({ t: { kind: 'bld', o: hn, x: hn.x + 0.5, y: hn.y + 0.5 }, a: { label: 'Change element', fn: null, ic: [hn.el, 'ic_swap', o[(o.indexOf(hn.el) + 1) % o.length]] }, key: 'cycle' }); }
   R.focus = list.length ? { list } : null;
   let b = null;
   if (mouseInFactory() && G.lastInput === 'mouse') {
@@ -962,6 +976,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btnTree').onclick = () => UI.openTree('L');
   $('btnTreeR').onclick = () => UI.openTree('R');
   $('btnBook').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB) Book.open(); };
+  $('btnEmote').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB && !Main.menuUp) Main.emoteClick = true; };   // the emote wheel's own button: the same press as N / RB
   $('btnBookR').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB) Book.open(); };
   $('pBook').onclick = () => Book.open(true);
   $('btnDemo').onclick = () => { G.demolish = !G.demolish; AU.sfx('blip'); };

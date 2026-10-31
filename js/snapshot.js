@@ -24,7 +24,7 @@ const Snap = { snap: null, mode: 'off', img: null, report: null, MODES: ['live',
   const ALLOW = new Set([
     'R.defer', 'R.px', 'R.org', 'R.bufs', 'R.fv', 'R.wv', 'R.mapC', 'R.rect',   // (R.rect: the rectangle the draw call was given)
     'WZ.terrain', 'WZ.palette', 'WZ.marks', 'WZ.bucket',   // (WZ.bucket is the static layout of nodes; their changing state is G.w.hv / G.w.fg)
-    'FA.splitCol',   // constant colour table
+    'FA.splitCol', 'WZ.emoteOrder', 'WZ.emoteName',   // constant tables (colours, the emote wheel's order and names)
   ]);
   // The audit of 2026-10-22: what is already known to leak or break the rules. The photo test reports these as KNOWN; the standing
   // check fails only for something that is NOT in here. Delete a line when its cause is fixed.
@@ -33,6 +33,7 @@ const Snap = { snap: null, mode: 'off', img: null, report: null, MODES: ['live',
     leaks: new Set([
       'read R.fcam', 'read R.wcam',                                  // smoothed cameras live on R
       'read R.focus', 'read R.hoverB', 'read R.ghost', 'read R.rot', 'read R.demo', 'read R.aim', 'read R.hint', 'read R.whint', 'read R.padMode',   // prompts, pointers, placement ghost: computed in Main.updateFocus, stored on R
+      'read IN.pad',                                                 // which key cap the Wizard's Mash prompt shows (a pad's X or a key) follows the local controller: a per-machine label (flagged 2026-10-31)
       'read UI.treeOpen',                                            // the skill tree being open lives in UI (and it freezes the sim)
     ]),
     issues: [

@@ -235,8 +235,9 @@ UI.updateWand = function () {
     const on = W.armed === el && !(fx && fx.t < CFG.wandFill.dur);   // a slot that just filled grows and pulses while the staff takes the element in; it only starts to blink after
     s += '<span class="ws' + (full ? ' full' : '') + (on ? ' armed' : '') + (fx ? ' grow' : '') + '" style="--ec:' + ELEM[el].color + '" title="' + CFG.wandNames[el] + ': ' + (full ? 'READY' + (on ? ' (armed: Cast fires it)' : ' (Cycle arms it)') : m + ' of ' + need + ' spells') + '">' + UI.img('wand_' + el, 24) + '<i style="height:' + Math.round(m / need * 100) + '%"></i>' + (full ? '' : '<b>' + m + '</b>') + (on ? '<u></u>' : '') + '</span>';
   }
-  s += '<span class="wk" title="Cycle the armed wand attack / Cast it / Emote wheel"><kbd>' + kn.cycle + '</kbd><kbd>' + kn.cast + '</kbd><kbd>' + kn.emote + '</kbd></span>';
+  s += '<span class="wk" title="Cycle the armed wand attack / Cast it"><kbd>' + kn.cycle + '</kbd><kbd>' + kn.cast + '</kbd></span>';
   setHtml('wandRow', s);
+  setTxt('emoteKey', kn.emote);   // (the emote wheel has its own button beside the Book, not a chip on the wand)
 };// The building note sits right above the hotbar and the button prompts (drawn by R.drawFocus) stack above it; UI.inspectH is how tall the note is, so they can clear it.
 UI.inspectH = 0;
 UI.setInspect = function (s) {
@@ -274,7 +275,6 @@ UI.giveGift = function (gift) {
 };
 // finished a goal: XP, the gift, then a fanfare on that player's half (floating icons, ring, sound, the card flashes)
 UI.questDone = function (side, q) {
-  G.xp += q.xp; G.stats.xpEarned += q.xp;
   G.quest[side]++; G.qbase[side] = null;
   G.fac.focusT = CFG.questCelebrate.swap + CFG.goalFocus; FA.fb('goal-focus');   // once the card has celebrated, the NEW goal's pointer is the only thing blinking for a moment
   UI.giveGift(q.gift);
@@ -282,10 +282,12 @@ UI.questDone = function (side, q) {
   UI.toast('Goal complete! +' + q.xp + ' XP' + (q.gift && q.gift.credit ? ' and a FREE ' + Object.keys(q.gift.credit).map(k => CFG.buildings[k].name).join(', ') : ''), side === 'W' ? 'R' : 'L', 'ic_target');
   if (side === 'B') {
     FA.ipop(G.bd.x, G.bd.y - 0.6, [['ic_check'], ['ic_xp', q.xp]]);
+    FA.gemBurst(q.xp);   // the XP pours out of him as gems to walk over
     FA.burst(G.bd.x, G.bd.y, '#ffd23a', big ? 28 : 14);
   } else if (G.w) {
     const w = G.w;
-    WZ.num(w.x, w.y, '+' + q.xp + ' XP', '#ffe36b'); WZ.icon(w.x, w.y, 'ic_check');
+    WZ.icon(w.x, w.y, 'ic_check');
+    if (w.dead) { G.xp += q.xp; G.stats.xpEarned += q.xp; } else WZ.goalGems(q.xp);   // the XP pours out of him as gems for him to collect
     WZ.ring(w.x, w.y, big ? 2.4 : 1.6, '#ffd23a', 0.5); WZ.puff(w.x, w.y, '#ffd23a', big ? 20 : 10);
   }
   AU.sfx(big ? 'complete' : 'buy');
@@ -327,8 +329,11 @@ UI.questSide = function (side) {
   }
   const guest = Net.role === 'guest';   // (the guest only reads: the host starts, counts and completes goals)
   if (G.qbase[side] == null && !guest) G.qbase[side] = q.stat ? q.stat(G) : 0;
+  UI.qSince = UI.qSince || {};
+  if (!UI.qSince[side] || UI.qSince[side].i !== i) UI.qSince[side] = { i, t: performance.now() };   // (when this goal first showed: local, the card only needs to be seen)
+  const seen = performance.now() - UI.qSince[side].t >= CFG.questMinShow * 1000;
   const p = guest && G.qbase[side] == null ? (q.stat ? [0, q.n] : (q.prog ? q.prog(G) : null)) : UI.questProg(side, q);
-  if (!guest && (q.stat ? p[0] >= p[1] : q.done(G))) { UI.questDone(side, q); return; }
+  if (!guest && seen && (q.stat ? p[0] >= p[1] && (!q.also || q.also(G)) : q.done(G))) { UI.questDone(side, q); return; }
   setHtml('qIcon' + side, UI.img(q.icon, 32));
   setHtml('qHead' + side, '<span>' + nm + ' GOAL ' + (i + 1) + '/' + list.length + '</span><span class="qr">' + (p ? '<em>' + Math.floor(p[0]) + '/' + p[1] + '</em>' : '') + '+' + q.xp + ' XP' + UI.giftHtml(q.gift, 16) + '</span>');
   setTxt('qText' + side, q.text);
@@ -652,10 +657,7 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
     case 'zoomies': return [row('Wizard speed', l => fPct(up * l))];
     case 'hearty': return [row('Wizard max HP', l => '' + (CFG.wizard.hp + up * l))];
     case 'gems': return [row('Gem drop chance', l => 'x' + Math.pow(1 + up, l).toFixed(2)), row('Cinder Imp gem chance', l => Math.min(95, Math.round(CFG.creatures.cinder.gem[1] * 100 * Math.pow(1 + up, l))) + '%'), row('Wild Slime gem chance', l => Math.min(95, Math.round(CFG.enemies.slime.gem[1] * 100 * Math.pow(1 + up, l))) + '%')];
-    case 'magnet': return [row('Pickup range', l => (CFG.world.vacuum + up * l).toFixed(2) + ' tiles'), row('Shard / Core range', l => ((CFG.world.vacuum + up * l) * 2.5).toFixed(2) + ' tiles')];
     case 'crafting': return [row('Craft time', l => '-' + Math.round(up * l * 100) + '%'), row('A 10s Forge craft takes', l => fSec(10 * (1 - up * l))), row('A 20s Nova takes', l => fSec(20 * (1 - up * l)))];
-    case 'remedies': return [row('Health Potion heals', l => Math.round(CFG.pickups.potion.heal * (1 + up * l))), row('Greater Elixir heals', l => Math.round(CFG.pickups.elixir.heal * (1 + up * l)))];
-    case 'wardwoven': return [row('Shield Potion armor', l => Math.round(CFG.pickups.armor.armor * (1 + up * l))), row('Greater Shield Potion armor', l => Math.round(CFG.pickups.plate.armor * (1 + up * l)))];
     case 'slippery': return [row('Roll cooldown', l => fSec(CFG.wizard.rollCd * (1 - up * l)))];
     case 'mighty': return [row('Basic spell damage', l => fPct(up * l)), row('Knockback', l => fPct(up * l)), row('Fireball damage', l => Math.round(CFG.spells.fireball.dmg * (1 + up * l))), row('Boulder damage per bounce', l => Math.round(CFG.spells.boulder.dmg * (1 + up * l)))];
     case 'harvest': return [row('Spell damage to trees, rocks, ore', l => fPct(up * l))];
@@ -729,6 +731,7 @@ UI.buy = function (id) {
   G.xp -= c.xp;
   for (const k in c.pay) G.bank[k] -= c.pay[k];
   G.tree[id] = n.tiers ? UI.nodeLevel(n) + 1 : true;
+  FA.flag('bought_' + id); G.stats.bought = (G.stats.bought || 0) + 1;   // (goals: buy anything in the tree; buy Summoning)
   AU.sfx('buy');
   const label = n.name + (n.tiers ? ' ' + G.tree[id] : '');
   UI.toast('Unlocked: ' + label, 'L', n.icon); UI.toast('Unlocked: ' + label, 'R', n.icon);
@@ -992,7 +995,7 @@ const HOWTO = {
     ['Events', 'Every 10 to 15 minutes of play something happens in the wilds: a <b>Migration</b>, a <b>Stampede</b>, an <b>Elite Hunt</b>, a <b>Mutation Bloom</b>, a <b>Portal Storm</b> or the <b>Chimera\'s Brood</b>, then the cycle starts again, harder. The card under the goal shows what and when from five minutes out, with the elements to stock up on; toasts warn at 5 min, 2 min and 30 s. Clearing one showers XP gems (and a Shard from Cycle 2). Nothing starts while the Chimera is out.'],
     ['The Stronghold', 'One far-off keep, marked on the map. Walk near it to <b>scout</b> it: its guards, <b>the Warden</b> and what the Warden is weak to show up. The keep has a <b>two-step door</b>. First its approach terrain (an island in a lake, scorched ground, a ring of cracked rock or a broken bridge over a chasm, depending on its element), which one garment opens. Then the <b>Warden Key</b>: the Builder forges it at the Armory from 3 Cores of every element, 3 Iron Ore and 3 Aether Shards, and sends it through the Spell Portal while the Wizard stands near the keep. It sails down onto the door and opens it for good (the Portal bounces it back if the Wizard is too far away). Kill the Warden and the guards: lots of Aether Shards and Cores, the Wizard <b>glows</b> for good and gets the <b>held-spell slot</b>, and the <b>Summoning Altar</b> starts taking spells.'],
     ['Augments', 'The Wizard\'s own gear. <b>Augments</b> are garments in four slots (Hat, Robe, Boots, Charm) that give him a new <b>verb</b>, never a number: <b>Tide-Walking Boots</b> walk on water, the <b>Emberward Cloak</b> crosses scorched ground, the <b>Stonefist Charm</b> lets a Gust shove boulders and crack rock open, the <b>Gale Circlet</b> turns the roll into a blink across gaps. The <b>Bogwalker Shroud</b>, <b>Phoenix Feather</b>, <b>Static Cloak</b> and <b>Kilnsight Mask</b> mix two or three elements. The Wizard does not find them: the <b>Builder forges them at the Armory</b> from <b>Cores</b> (Stone, Tide, Ember and Gale Cores dropped by the creatures of that element: rare from normal kills, more from pairs and triples, a sure chunk from elites) plus Iron Ore and an Aether Shard. Cores fly home to the Stockpile like shards; the Collection Book\'s Wardrobe page shows every recipe and where each Core comes from. A finished garment goes through the Spell Portal and drops into the wilds like a creature: the Wizard puts it on by <b>walking onto it</b>. The garment he was wearing pops off and flies home to the <b>Stockpile</b> (a tile of its own), where the Builder can take it and send it back whenever they want to swap.'],
-    ['Pickups', 'Potions and Shield Potions sent through the Spell Portal fall beside the Wizard. Walk over them to use them. They wait if HP or shield is already full.'],
+    ['Potions', 'The <b>Alchemy Cauldron</b> takes ONE spell at a time, like the Spawner, and the better the spell the stronger the potion. <b>F</b> (LT + X) switches it between <b>Health</b> mode (Water makes the best, Earth the weakest) and <b>Armor</b> mode (Earth best, Water weakest); the new flask regrows above it for 7.5 seconds. Send them through the Spell Portal: they fall beside the Wizard, who walks over them. <b>Armor</b> works for as many hits as it has points: while any is left every hit does 70% less (Earth stone makes it 91%), and a small hit costs 2 points, a medium one 3 and a big one 5. The Collection Book\'s INDEX page lists every number.'],
     ['Weaknesses', 'Biome monsters take <b>double damage</b> from one element and half from another: <b>Ember Imps</b> (sand, dirt) hate Water, <b>Bog Lurkers</b> hate Fire, <b>Gale Wisps</b> (far meadows) hate Earth, <b>Stone Golems</b> (far dark woods) hate Air. Combo spells count every element in them. A small diamond over a foe shows its weakness, and yellow numbers with a ! mean a weak hit.'],
     ['Elites', 'Big gold-ringed monsters with a crown. Much tougher, but they drop <b>Aether Shards</b> and lots of XP. Each one is weak to one element.'],
     ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard stands inside their ring for 3 seconds: clear them. <b>Crypts</b> (purple) open when he stands in their bigger ring for 5 seconds, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours) want <b>three Cores</b>, one of each element the Shrine does NOT belong to (an Air Shrine takes Water, Fire and Earth): creatures of those elements drop them now and then (elites always do). Stand near the Shrine and have the Builder send the Cores through the Spell Portal one by one: each sails down onto the Shrine, and the third claims the Shard. A claimed Shrine does nothing until the Wizard <b>wakes</b> it: stand beside it and press <b>Mash</b>, then press Mash again each time a closing ring passes through its target zone, three times (a miss only restarts that ring; walking away cancels it). Awake, it speeds up that element\'s Harnessers by 25% for <b>30 seconds</b>, wherever the Wizard goes, then recharges for <b>2 minutes</b> (it visibly refills). Standing on a Shrine gives nothing, and Shrines never charge the wand.'],
@@ -1034,7 +1037,7 @@ const CONTROLS = [
   ['BUILDER: KEYBOARD & MOUSE', [
     [K('W', 'A', 'S', 'D'), 'Walk'],
     [K('LEFT-CLICK'), 'Pick up one item (hold to keep taking, it walks there first). On a Splitter: open its settings'],
-    [K('RIGHT-CLICK'), 'Throw one item along the dotted line (hold = rapid). While hand-gathering: cancel the gather'],
+    [K('RIGHT-CLICK'), 'Throw one item along the dotted line (hold = rapid). Hand-gathering keeps going: walk away to stop it'],
     [K('SHIFT') + ' + ' + K('RIGHT-CLICK'), 'Throw the whole stack'],
     [K('SPACE') + ' &nbsp;/&nbsp; pad LT + A', 'Builder roll (the Tumble skill, BUILDER branch of the tree): a quick somersault along the way he walks. With a swapped keyboard it is Right Shift'],
     [K('E'), 'Use: hand-gather a Harnesser (tap again and again to fill the meter), turn a belt or machine, switch recipe'],
@@ -1100,7 +1103,7 @@ const CONTROLS = [
   ['GAMEPAD: BUILDER', [
     [K('STICK') + ' ' + K('D-PAD'), 'Walk'],
     [K('A'), 'Pick up (hold to sweep). With a building selected: place in front (hold with Belt to lay belts)'],
-    [K('B') + ' &nbsp;/&nbsp; ' + K('LT') + ' + ' + K('B'), 'Throw (hold = rapid) / throw the whole stack. Cancels hand-gathering'],
+    [K('B') + ' &nbsp;/&nbsp; ' + K('LT') + ' + ' + K('B'), 'Throw (hold = rapid) / throw the whole stack. Hand-gathering is stopped by walking away'],
     [K('X'), 'Use'],
     [K('LT') + ' + ' + K('X'), 'Switch the element of the Harnesser in reach'],
     [K('LT') + ' + ' + K('A'), 'Builder roll (the Tumble skill in the tree)'],

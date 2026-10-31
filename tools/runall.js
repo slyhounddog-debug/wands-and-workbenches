@@ -24,6 +24,7 @@ const CHECKS = [
   { id: 'robotcheck', what: 'Helper Robots: price ladder, own charge, fetching to blueprints, E to finish, napping, saves', file: 'tools/robotcheck/run.js', browser: true },
   { id: 'wandcheck', what: 'the wand, shrines, the four buttons', file: 'tools/wandcheck/run.js', browser: true },
   { id: 'featcheck', what: 'shake cue, allies feel the wand, belt-line chip + link, drag to delete, guest hearing, Altar crater, emotes', file: 'tools/featcheck/run.js', browser: true },
+  { id: 'passcheck', what: 'goals count from when they show, goal gems, shard moment, boulders, lava + thermometer, swimmers, the Cauldron, armor rule, drop rates, removed tracks', file: 'tools/passcheck/run.js', browser: true },
   { id: 'nettest', what: 'online co-op through the real PeerJS cloud (needs the internet)', file: 'tools/nettest/run.js', browser: true, net: true },
 ];
 if (has('--list')) { for (const c of CHECKS) console.log(c.id.padEnd(10), c.what); process.exit(0); }

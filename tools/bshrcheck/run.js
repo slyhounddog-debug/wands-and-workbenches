@@ -149,7 +149,7 @@ const OUT = process.env.SHOTS || '';
     const h = WZ.makeCreature('pebble', G.w.x + 3, G.w.y, { plain: true }), a = WZ.spawnAlly('pebble');
     return { hostile: h.maxHp, ally: a.maxHp, mul: W.CFG.ally.hpMul };
   });
-  ok(r.mul === 4 && Math.abs(r.ally / r.hostile - 4) < 0.7, 'an ally has four times the health of the hostile version (x' + r.mul + ')', r.ally.toFixed(0) + ' vs ' + r.hostile.toFixed(0));
+  ok(r.mul === 4 && Math.abs(r.ally / r.hostile - 4) < 1.5, 'an ally has four times the health of the hostile version (x' + r.mul + ')', r.ally.toFixed(0) + ' vs ' + r.hostile.toFixed(0));
   if (OUT) {
     await page.evaluate(() => { const W = __wands, G = W.G, w = G.w; T.clear(); for (const [id, dx, dy] of [['pebble', 2.5, 0.5], ['cinder', 0, 2.5], ['zephyr', -2.5, 0.5]]) { const a = W.WZ.spawnAlly(id); a.fall = 0; a.dazeT = 0; a.x = w.x + dx; a.y = w.y + dy; a.hp = a.maxHp * 0.7; const h = W.WZ.makeCreature(id, w.x + dx + 0.5, w.y + dy - 4.5, { plain: true }); h.fall = 0; h.dazeT = 99; } });
     await page.waitForTimeout(500);

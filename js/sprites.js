@@ -160,6 +160,25 @@ task(() => {
     x.fillStyle = '#fff'; x.fillRect(4, 3, 1, 3);
     x.fillStyle = c2; x.fillRect(6, 3, 1, 6);
   }), 6, 10);
+  for (const id in ITEMS) {   // the Cauldron's potions: size, colour, rim and sparkle all follow how strong the potion is
+    const it = ITEMS[id];
+    if (!it.potion) continue;
+    const hp = it.potion === 'hp', r = it.rank, k = r < 0.25 ? 0 : r < 0.5 ? 1 : r < 0.78 ? 2 : 3, W = 12 + k * 2, H = 12 + k * 2, cx = W / 2, rad = 3.2 + k * 0.8, by = H - rad - 1;
+    const liquid = it.color, deep = mixHex(liquid, '#000000', 0.3), cork = k >= 2 ? '#ffd23a' : '#c9a26a', glass = 'rgba(230,240,255,0.95)';
+    reg('it_' + id, mk(W, H, x => {
+      if (k === 3) { circ(x, cx, by, rad + 1.6, hp ? 'rgba(255,214,96,0.35)' : 'rgba(150,200,255,0.4)'); }   // the strongest glow
+      x.fillStyle = cork; x.fillRect(cx - 1, 0, 2, 2);
+      x.fillStyle = glass; x.fillRect(cx - 1.5, 2, 3, Math.max(1, by - rad - 1));
+      circ(x, cx, by, rad, glass);
+      circ(x, cx, by + 0.5, rad - 0.9, liquid);
+      x.fillStyle = deep; x.fillRect(cx - rad + 1.2, by + rad - 1.6, rad * 2 - 2.4, 1);
+      x.fillStyle = '#fff'; x.fillRect(cx - rad + 1, by - 1, 1, 2);
+      if (k >= 2) { x.fillStyle = '#ffd23a'; x.fillRect(cx - 2, 2, 4, 1); }   // a gold collar on the strong ones
+      if (!hp && k >= 1) { x.fillStyle = '#ffffff'; x.fillRect(cx, by - 1, 1, 3); x.fillRect(cx - 1, by, 3, 1); }   // a little cross on an Armor Potion
+      if (hp && k >= 1) { x.fillStyle = '#ffffff'; x.fillRect(cx - 1, by - 1, 1, 1); x.fillRect(cx + 1, by - 1, 1, 1); x.fillRect(cx - 1, by, 3, 1); x.fillRect(cx, by + 1, 1, 1); }   // a heart on a Health Potion
+      if (k === 3) { x.fillStyle = '#ffffff'; x.fillRect(1, 2, 1, 1); x.fillRect(W - 2, 4, 1, 1); x.fillRect(W - 3, 1, 1, 1); }   // sparkles
+    }), cx, H - 1);
+  }
   flask('it_armor', '#6a9aff', false);   // the Shield Potion and the Greater Shield Potion: blue flasks
   flask('it_plate', '#3a5aff', true);
   reg('gem', mk(6, 6, x => { poly(x, [[3, 0], [6, 3], [3, 6], [0, 3]], '#7be0ff'); poly(x, [[3, 0], [0, 3], [3, 3]], '#d5f6ff'); }), 3, 3);
@@ -655,6 +674,9 @@ task(() => {
   icon('new', ['...y...', '...y...', '..yyy..', 'yyywyyy', '..yyy..', '...y...', '...y...']);
   icon('sound', ['...o...', '..oo.o.', 'oooo..o', 'oooo..o', 'oooo..o', '..oo.o.', '...o...']);
   icon('music', ['..oooo', '..o..o', '..o..o', '..o..o', 'ooo.oo', 'ooo.oo']);
+  { const tp = { o: '#2b1d3e', w: '#ffffff', r: '#ff3a2a', R: '#ffb030', g: '#c8c8d8' };   // a thermometer: glass tube, red mercury and bulb, ticks on the side
+    reg('ic_thermo', mapSprite(['..ooo..', '.owgwo.', '.owrwoR', '.owrwo.', '.owrwoR', '.owrwo.', '.owrwoR', 'owrrrwo', 'owrrrwo', '.owrwo.', '..ooo..'], tp), 3.5, 11); }
+  icon('emote', ['.yyyyy.', 'yyyyyyy', 'yoyyyoy', 'yyyyyyy', 'yoyyyoy', 'yyooooy', '.yyyyy.']);   // the emote button: a grinning face
   icon('warn', ['...y...', '..yoy..', '..yoy..', '.yyoyy.', '.yyyyy.', 'yyyoyyy', 'yyyyyyy']);
   icon('trophy', ['yyyyyyy', 'yYyyyYy', '.yyyyy.', '..yyy..', '...y...', '..yyy..', '.yyyyy.']);
   icon('wrench', ['aa...aa', 'aaa.aaa', '.aaaaa.', '..aAa..', '..aAa..', '..aAa..', '..aaa..']);

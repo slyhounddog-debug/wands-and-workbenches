@@ -15,7 +15,13 @@ WZ.gemCount = function (sure, chance) {
   return n;
 };
 WZ.dropGems = function (x, y, n) { for (let i = 0; i < n; i++) WZ.drop('xp', x, y, 1); };
-WZ.vacuum = () => CFG.world.vacuum + CFG.upgrade.magnet * lvl('magnet');   // Loot Magnet: pickup range
+// a finished goal's XP flies out of the Wizard as gems (a few chunky ones, never more than CFG.goalGems.max): he collects them like any other
+WZ.goalGems = function (xp) {
+  const w = G.w, k = Math.min(CFG.goalGems.max, xp), each = Math.floor(xp / k), extra = xp - each * k;
+  for (let i = 0; i < k; i++) WZ.drop('xp', w.x, w.y, each + (i < extra ? 1 : 0));
+  AU.sfx('chest');
+};
+WZ.vacuum = () => CFG.world.vacuum;   // how far gems and drops pull toward him
 WZ.gemTier = v => { const T = CFG.bigGem.tiers; let k = 0; for (let i = 0; i < T.length; i++) if (v >= T[i]) k = i; return k; };
 // merge resting gems near each other (called a few times a second); the survivor carries the total
 WZ.mergeGems = function () {
@@ -64,7 +70,7 @@ WZ.mutate = function (e, kind) {
   else if (kind === 'regen') e.regen = M.rate;
   // announced on both halves: an icon over the creature, and one at the Spell Portal (a toast the first time each kind shows)
   WZ.icon(e.x, e.y - 0.5, M.ic);
-  if (e.weak && w.t >= (w.mutThreatT || 0)) { w.mutThreatT = w.t + 6; FA.threat([e.weak], e.type, 'MUTANT'); }   // the Builder reads what it is weak to over the Spell Portal
+  if (e.weak && w.t >= (w.mutThreatT || 0)) { w.mutThreatT = w.t + 6; FA.threat([e.weak], e.type, 'MUTANT SPAWNED'); }   // the Builder reads what it is weak to over the Spell Portal
   if (w.t >= (w.mutPopT || 0)) { w.mutPopT = w.t + 1.5; const p = FA.portal('spell'); FA.ipop(p.x + 0.5, p.y + 1.8, [[M.ic], [e.crafted ? 'egg_' + e.type : 'ic_skull']]); }
   if (!w.seenMut) w.seenMut = {};
   if (!w.seenMut[kind]) {
@@ -88,6 +94,7 @@ WZ.onDeath = function (e) {
   WZ.cur = e;   // (a death blast / splash it leaves behind is still ITS: WZ.src)
   try { WZ.onDeath2(e, w); } finally { WZ.cur = was; }
 };
+WZ.dropMul = e => e.elite ? CFG.drops.eliteMul : e.mut ? CFG.drops.mutMul : 1;
 WZ.onDeath2 = function (e, w) {
   if (e.mut === 'volatile') { const M = CFG.mutations.volatile, x = e.x, y = e.y; WZ.telegraph(x, y, M.r, M.delay, '#ff7a30', () => WZ.strike(x, y, M.r, M.dmg)); }
   if (e.mut === 'splitter') WZ.spawnMini(e);
@@ -97,14 +104,20 @@ WZ.onDeath2 = function (e, w) {
   if (e.crafted) {
     G.stats.craftedKills = (G.stats.craftedKills || 0) + 1;
     // what it was hatched from comes back some of the time: a basic its element packet, a double / triple the combo spell that seeded it (it flies home like a packet)
+  }
+  const mul = WZ.dropMul(e);   // mutants roll twice as often, elites three times
+  if (e.crafted) {
     const cd = CFG.creatures[e.type], tier = cd.order.length;
-    if (tier === 1 ? Math.random() < CFG.crafted.recycle : Math.random() < CFG.crafted.recycleSpell[tier]) WZ.drop(tier === 1 ? cd.order[0] : Object.keys(cd.cost)[0], e.x, e.y, 1);
+    if (Math.random() < (tier === 1 ? CFG.crafted.recycle : CFG.crafted.recycleSpell[tier]) * mul) WZ.drop(tier === 1 ? cd.order[0] : Object.keys(cd.cost)[0], e.x, e.y, 1);
+  } else if (!e.mini && !e.warden && !e.boss) {   // a wild foe carries a packet of its own element now and then
+    const els = WZ.elemsOf(e);
+    if (els.length && Math.random() < CFG.drops.packet * mul) WZ.drop(els[Math.floor(Math.random() * els.length)], e.x, e.y, 1);
   }
   if (e.evt) w.evKills = (w.evKills || 0) + 1;
   if (!e.mini) {   // a common resource now and then (Wood or Stone), and Iron more rarely: any foe, wild or hatched
     const D = CFG.drops;
-    if (Math.random() < D.common) WZ.drop(Math.random() < 0.5 ? 'wood' : 'stone', e.x, e.y, 1);
-    if (Math.random() < D.iron) WZ.drop('iron', e.x, e.y, 1);
+    if (Math.random() < D.common * mul) WZ.drop(Math.random() < 0.5 ? 'wood' : 'stone', e.x, e.y, 1);
+    if (Math.random() < D.iron * mul) WZ.drop('iron', e.x, e.y, 1);
   }
   WZ.lootDrops(e);   // Cores and Ward Keys (augments.js)
 };
@@ -264,7 +277,8 @@ WZ.allyTick = function (dt) {
       if (d < bd) { bd = d; foe = e; }
     }
     const tx = foe ? foe.x : w.x, ty = foe ? foe.y : w.y, ex = tx - a.x, ey = ty - a.y, d = Math.hypot(ex, ey) || 1;
-    const s = a.spd * (1 - a.slow) * (a.stoneT > 0 ? CFG.wand.ally.stoneSpd : 1) * (!a.fly && WZ.tile(a.x, a.y) === T_BOG ? cfg.slowTerrain : 1);
+    if (a.swim === undefined) a.swim = !a.fly && WZ.elemsOf(a).indexOf('water') >= 0;
+    const s = a.spd * (1 - a.slow) * (a.stoneT > 0 ? CFG.wand.ally.stoneSpd : 1) * (!a.fly && !a.swim && WZ.tile(a.x, a.y) === T_BOG ? cfg.slowTerrain : 1);
     let ux = ex / d, uy = ey / d, mx = 0, my = 0;
     if (a.detour > 0) { a.detour -= dt; const px = -uy * a.side, py = ux * a.side; ux = px; uy = py; }   // last-resort sidestep
     if (foe) {
@@ -283,7 +297,7 @@ WZ.allyTick = function (dt) {
       WZ.slide(o, o.x - ox / od * push * dt, o.y - oy / od * push * dt, 0.3);
     }
     if (a.fly) { a.x = Math.max(0.5, Math.min(CFG.WW - 0.5, a.x + (mx + a.kx) * dt)); a.y = Math.max(0.5, Math.min(CFG.WH - 0.5, a.y + (my + a.ky) * dt)); }
-    else if (WZ.slide(a, a.x + (mx + a.kx) * dt, a.y + (my + a.ky) * dt, 0.3) && !(a.detour > 0)) { a.detour = 0.5 + Math.random() * 0.6; a.side = a.side || (Math.random() < 0.5 ? 1 : -1); a.kx = 0; a.ky = 0; }
+    else if (WZ.moveOn(a, a.x + (mx + a.kx) * dt, a.y + (my + a.ky) * dt, 0.3) && !(a.detour > 0)) { a.detour = 0.5 + Math.random() * 0.6; a.side = a.side || (Math.random() < 0.5 ? 1 : -1); a.kx = 0; a.ky = 0; }
     const decay = Math.exp(-6 * dt); a.kx *= decay; a.ky *= decay;
     a.face = (ex - ey) >= 0 ? 1 : -1;
     if (foe && d < a.rad + foe.rad + 0.45 && a.cd <= 0) {   // touch: the hostile takes its half-strength hit
@@ -502,7 +516,7 @@ WZ.evStart = function () {
   if (p.id === 'bloom') w.bloom = CFG.events.bloom.mut + CFG.events.mutAdd * (p.cycle - 1);
   if (p.id === 'storm') w.surge = p.surge;
   UI.toast(msg, 'L', p.el[0] || 'ic_skull'); UI.toast(msg, 'R', p.el[0] || 'ic_skull');
-  FA.threat(p.el, p.types[0] || 'ic_skull', WZ.evName(p).toUpperCase());   // what is coming and what it is weak to, over the Builder's Spell Portal
+  FA.threat(p.el, p.types[0] || 'ic_skull', WZ.evName(p).toUpperCase() + ' STARTED');   // what is coming and what it is weak to, over the Builder's Spell Portal
   AU.sfx('roar'); w.shake = Math.max(w.shake, 0.5);
   FA.pressure(1, '#ffd23a');   // the factory feels it too
   w.fx_.push({ type: 'title', x: w.x, y: w.y, text: WZ.evName(p).toUpperCase() + '!', col: '#ffd23a', t: 0, dur: 1.8 });
@@ -675,7 +689,7 @@ WZ.updKeep = function (m, s, d, dt) {
     e.slam = { every: W.slamEvery, r: W.slamR, dmg: W.slamDmg }; e.slamT = 3; e.vol = { t: 5, every: W.volleyEvery, n: W.volleyN, dmg: W.volleyDmg };
     WZ.ring(m.x, m.y, 6, ELEM[m.el].color, 0.7); w.shake = 0.5; AU.sfx('roar');
     FA.pressure(1.2, ELEM[m.el].color);
-    FA.threat([e.weak], e.type, 'THE WARDEN'); UI.toast('The Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'L', e.weak); UI.toast('The Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'R', e.weak);
+    FA.threat([e.weak], e.type, 'THE WARDEN WAKES'); UI.toast('The Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'L', e.weak); UI.toast('The Warden stirs: weak to ' + ELEM_WORD[e.weak] + '!', 'R', e.weak);
   } else if (s.state === 'active' && !w.enemies.some(e => e.mark === m.id && !e.dead)) WZ.claimKeep(m);
 };
 WZ.claimKeep = function (m) {

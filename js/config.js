@@ -490,6 +490,7 @@ const CFG = {
     outputs: 1.25,  // factory outputs x (Harnesser and crafter speed)
     // (allies are ONE shared team stable: CFG.ally.cap alive and CFG.ally.queue eggs waiting for the whole team, unchanged)
     dupGarments: 2, // the Armory can forge this many copies of each garment (2P: 1)
+    net: { otherEvery: 3 },   // role-scoped snapshots: the world a guest only sees in his small corner picture (a Wizard seat's factory, a Builder seat's wilds) rides every Nth snapshot, in between his machine keeps its last copy (1 = every snapshot carries everything)
     respawnT: 30,   // a fallen Wizard gets up beside his partner after this many seconds (the run only ends when BOTH are down)
     respawnHp: 0.5, // ... with this share of his health
     spellHold: 40,  // a delivered spell nobody walked onto casts for the nearest Wizard after this many seconds

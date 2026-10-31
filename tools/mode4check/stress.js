@@ -124,16 +124,84 @@ const INSTRUMENT = () => {
   for (const p of P) await p.evaluate(() => { __wands.UI.help(false); __wands.G.helpT = 0; });
   await sleep(1500);
   if (!process.env.CALM) { await hp.evaluate(SETUP); await sleep(3000); }
+  if (process.env.AB) {   // AB=1: the same game measured with role-scoped snapshots off (otherEvery 1) and on (3), alternating, so the scene's own noise averages out
+    await thr(T);
+    await P[1].keyboard.down('KeyD'); await P[2].keyboard.down('KeyS');
+    const rows = { 1: [], 3: [] };
+    for (const every of [1, 3, 1, 3, 1, 3]) {
+      await hp.evaluate(e => { const n = __wands.CFG.mode4.net; if (n) n.otherEvery = e; }, every);
+      await sleep(1500);
+      await Promise.all(P.map(p => p.evaluate(INSTRUMENT)));
+      await sleep(SECS * 1000);
+      const r = await Promise.all(P.map(p => p.evaluate(() => window.__rep())));
+      const work = x => Object.entries(x.ms).filter(([k]) => /^(Main.step|drawWorld|drawFactory|drawPip|updateHud|guestFrame)$/.test(k)).reduce((a, [k, v]) => a + (k === 'Main.step' || k === 'guestFrame' ? parseFloat(v) : 0), 0);
+      rows[every].push(r);
+    }
+    await P[1].keyboard.up('KeyD'); await P[2].keyboard.up('KeyS');
+    const avg = (a, g) => a.reduce((x, y) => x + g(y), 0) / a.length;
+    for (const every of [1, 3]) {
+      const R = rows[every], one = i => g => g(R, i);
+      const line = (name, i) => name + ' fps ' + avg(R, r => r[i].fps).toFixed(1) + ' p95gap ' + avg(R, r => r[i].gap_p95).toFixed(0) + ' kbps ' + avg(R, r => r[i].net.kbps).toFixed(0) + ' zipKB ' + avg(R, r => r[i].net.zipKB).toFixed(1) + ' rawKB ' + avg(R, r => r[i].net.rawKB).toFixed(1) + ' parse ' + avg(R, r => parseFloat(r[i].ms['JSON.parse'] || 0)).toFixed(2) + 'ms x' + avg(R, r => parseFloat((r[i].ms['JSON.parse'] || '0 x0').split(' x')[1])).toFixed(0) + ' out ' + avg(R, r => r[i].net.bytesKB / r[i].secs).toFixed(0) + 'KB/s';
+      console.log('otherEvery=' + every + ' (' + R.length + ' windows of ' + SECS + ' s)');
+      for (let i = 0; i < 4; i++) console.log('  ' + line(i ? 'guest' + i : 'host  ', i));
+    }
+    console.log(errs.length ? 'FAIL page errors: ' + errs.slice(0, 4).join(' | ') : 'PASS no page errors');
+    await browser.close(); process.exit(errs.length ? 1 : 0);
+  }
   await thr(T);
   await P[1].keyboard.down('KeyD'); await P[2].keyboard.down('KeyS');   // two guests walk, like players would
+  if (process.env.DEBUGDEC) for (const p of P.slice(1)) await p.evaluate(() => { window.__dbg = []; setInterval(() => { const W = __wands, G = W.G; if (G && G.w && !Array.isArray(G.w.decals) && window.__dbg.length < 3) window.__dbg.push({ keys: Object.keys(G.w).length, hasDecKey: 'decals' in G.w, sv: Object.keys(W.Net.slowVal).join(','), next: !!W.Net.next, nextDec: W.Net.next && Array.isArray(W.Net.next.w && W.Net.next.w.decals), prevDec: W.Net.prev && Array.isArray(W.Net.prev.w && W.Net.prev.w.decals), vi: G.vi, menu: !!G.menu, m4: !!G.m4, lastN: W.Net.lastN }); }, 50); });
   await Promise.all(P.map(p => p.evaluate(INSTRUMENT)));
   await sleep(SECS * 1000);
   await P[1].keyboard.up('KeyD'); await P[2].keyboard.up('KeyS');
   const res = await Promise.all(P.map(p => p.evaluate(() => window.__rep())));
+  if (process.env.DEBUGDEC) for (const p of P.slice(1)) console.log('DBG', JSON.stringify(await p.evaluate(() => window.__dbg)));
   const scene = await hp.evaluate(() => { const w = __wands.G.w; return { foes: w.enemies.filter(e => !e.dead).length, allies: w.allies.length, zones: w.zones.length, proj: w.proj.length, fx: w.fx_.length }; });
   console.log((process.env.CALM ? 'CALM' : 'STRESS') + ' scene ' + JSON.stringify(scene) + (T > 1 ? '  throttle x' + T : ''));
   console.log('host   ' + JSON.stringify(res[0]));
   for (let i = 1; i < 4; i++) console.log('guest' + i + ' ' + JSON.stringify(res[i]));
+  if (process.env.SIZES) {   // SIZES=1: what a snapshot is made of (raw characters and deflated bytes of each part of G, G.w and G.fac)
+    const rows = await hp.evaluate(async () => {
+      const G = __wands.G, out = [];
+      const zip = async str => { const cs = new CompressionStream('deflate'), w = cs.writable.getWriter(); w.write(new TextEncoder().encode(str)); w.close(); return (await new Response(cs.readable).arrayBuffer()).byteLength; };
+      for (const k in G) {
+        const v = G[k];
+        if ((k === 'w' || k === 'fac') && v && typeof v === 'object') { for (const j in v) { const t = JSON.stringify(v[j]); if (t !== undefined) out.push([k + '.' + j, t.length, await zip(t)]); } }
+        else { const t = JSON.stringify(v); if (t !== undefined) out.push([k, t.length, await zip(t)]); }
+      }
+      return out;
+    });
+    const kinds = await hp.evaluate(() => { const h = {}; for (const f of __wands.G.w.fx_) { const k = f.k || f.kind || f.type || '?'; h[k] = (h[k] || 0) + 1; } return Object.entries(h).sort((a, b) => b[1] - a[1]).slice(0, 8).map(e => e.join(':')).join(' '); });
+    console.log('fx_ by kind: ' + kinds);
+    rows.sort((a, b) => b[2] - a[2]);
+    const sum = rows.reduce((a, r) => [a[0] + r[1], a[1] + r[2]], [0, 0]);
+    console.log('SIZES (raw chars / deflated bytes; total ' + sum[0] + ' / ' + sum[1] + '):');
+    for (const r of rows.slice(0, 26)) console.log('  ' + r[0].padEnd(16) + String(r[1]).padStart(8) + String(r[2]).padStart(8));
+  }
+  if (process.env.PROFILE) {   // PROFILE=host|guest: a CPU profile of that page for 5 s: self time by function, then inclusive time of the main phases
+    const pg = process.env.PROFILE === 'host' ? hp : P[1];
+    await P[1].keyboard.down('KeyD');
+    const cdp = await pg.context().newCDPSession(pg);
+    await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 250 }); await cdp.send('Profiler.start');
+    await sleep(5000);
+    const { profile } = await cdp.send('Profiler.stop');
+    await P[1].keyboard.up('KeyD');
+    const nodes = new Map(profile.nodes.map(n => [n.id, n])), par = new Map();
+    for (const n of profile.nodes) for (const c of (n.children || [])) par.set(c, n.id);
+    const nm = n => (n.callFrame.functionName || '(anon)') + ' ' + (n.callFrame.url.split('/').pop() || '') + ':' + (n.callFrame.lineNumber + 1);
+    const self = {}, incl = {}, kids = {}; let tot = 0;
+    const PH = /^(R\.drawWorld|R\.drawFactory|R\.drawPip|Main\.step|Main\.guestFrame|M4\.guestView|UI\.updateHud|wirePacket|wireParts|wireJoin|sendSnap4|Net\.stamp|WZ\.update|WZ\.update2|FA\.update|encode|Main\.hintFor|\(garbage collector\)|\(program\)|\(idle\))$/;
+    profile.samples.forEach((id, i) => {
+      const d = (profile.timeDeltas[i] || 0) / 1000; tot += d; const k = nm(nodes.get(id)); self[k] = (self[k] || 0) + d;
+      const chain = []; for (let x = id; x !== undefined; x = par.get(x)) chain.push(x);
+      const pi = chain.findIndex(x => /^(R.drawWorld|R.drawFactory)$/.test(nodes.get(x).callFrame.functionName));
+      if (pi > 0) { const k = nm(nodes.get(chain[pi - 1])); kids[k] = (kids[k] || 0) + d; }
+      const seen = new Set();
+      for (let x = id; x !== undefined; x = par.get(x)) { const fn = nodes.get(x).callFrame.functionName; if (PH.test(fn) && !seen.has(fn)) { seen.add(fn); incl[fn] = (incl[fn] || 0) + d; } }
+    });
+    const top = (o, n) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => '  ' + v.toFixed(0).padStart(6) + 'ms  ' + k).join(String.fromCharCode(10));
+    console.log('PROFILE ' + process.env.PROFILE + ' (self ms of ' + tot.toFixed(0) + '):' + String.fromCharCode(10) + top(self, 24) + String.fromCharCode(10) + ' inclusive:' + String.fromCharCode(10) +  top(incl, 20) + String.fromCharCode(10) + ' children of drawWorld / drawFactory:' + String.fromCharCode(10) + top(kids, 18));
+  }
   console.log(errs.length ? 'FAIL page errors: ' + errs.slice(0, 4).join(' | ') : 'PASS no page errors');
   await browser.close();
   process.exit(errs.length ? 1 : 0);

@@ -22,7 +22,7 @@
 // toasts) and a second UNRELIABLE, UNORDERED one for the 20 Hz snapshots (a late or lost picture is simply skipped: nothing waits behind it, so one bad packet on a phone
 // hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
-  VERSION: 13,   // 13: 4-player rooms (G.m4 / seats / w2 / bd2 / bs2 / wand2 / aug2 / vi / wi / bi / rdy / over, owner tags pi on timers, projectiles, zones, mines, booms; the pad carries bi; toasts carry their side); 12: the 2026-10-31 pass puts new plain data in the snapshot (G.fac.xpg / shardPrev, G.w boulder motion, drop.up, w.heat, G.stats.fl / built); 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
+  VERSION: 14,   // 14: 4-player snapshots are role-scoped (the other world's bulk parts ride every third picture, "~" lists the ones left out); 13: 4-player rooms (G.m4 / seats / w2 / bd2 / bs2 / wand2 / aug2 / vi / wi / bi / rdy / over, owner tags pi on timers, projectiles, zones, mines, booms; the pad carries bi; toasts carry their side); 12: the 2026-10-31 pass puts new plain data in the snapshot (G.fac.xpg / shardPrev, G.w boulder motion, drop.up, w.heat, G.stats.fl / built); 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
   BUILD: 11,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
@@ -337,31 +337,61 @@ const Net = {
   const SLOW = { 'w.tmod': 1, 'fac.land': 1 }, SLOW_EVERY = 1000;
   // purely cosmetic things that move in tiny steps: two decimals are plenty (0.01 of a tile is a third of a pixel)
   const FINE2 = { 'w.fx_': 1, 'w.decals': 1, 'w.bend': 1 };
-  // the snapshot as one JSON string: JSON.stringify(G), but built part by part (G.w and G.fac one level down) so the slow parts can be left out
-  function wirePacket() {
-    const out = [], elided = [], t = now();
+  // ROLE-SCOPED snapshots (4-player rooms). A Builder seat draws the factory full screen and the wilds only in his corner picture; a Wizard seat the other way round. So the bulk
+  // parts of the OTHER world (OTHER_W for a Builder seat, OTHER_F for a Wizard seat: the foes, spells and effects, or the buildings and particles) ride only every
+  // CFG.mode4.net.otherEvery-th snapshot; in between they are left out ("~", like the slow parts) and the guest's machine puts back its last copy (putSlow). A corner picture is
+  // redrawn a few times a second anyway. Everything a guest's own screen and HUD live on is in every snapshot.
+  const OTHER_W = new Set(['enemies', 'allies', 'proj', 'eproj', 'aproj', 'zones', 'mines', 'booms', 'fx_', 'decals', 'bend', 'boulders', 'drops', 'pickups'].map(j => 'w.' + j));
+  const OTHER_F = new Set(['grid', 'bld', 'belts', 'floor', 'flying', 'parts', 'pops', 'thumps', 'rings', 'waves', 'sucks', 'xpg'].map(j => 'fac.' + j));
+  const KEEP = Object.assign({}, SLOW); for (const p of OTHER_W) KEEP[p] = 1; for (const p of OTHER_F) KEEP[p] = 1;   // (the parts a guest remembers between pictures)
+  // the snapshot as a list of parts: JSON.stringify(G), but built part by part (G.w and G.fac one level down) so parts can be left out. Each part is [top key, inner key | null, path, text].
+  // 'skip' = paths nobody needs this time (they are not even stringified).
+  function wireParts(skip) {
+    const parts = [], t = now(); parts.slow = []; parts.skipped = [];
     for (const k in G) {
       const v = G[k];
       if ((k === 'w' || k === 'fac') && v && typeof v === 'object') {
-        const inner = [];
         for (const j in v) {
           const p = k + '.' + j;
+          if (skip && skip.has(p)) { parts.skipped.push(p); continue; }   // (left out of every picture this time: still named in "~")
           let str = JSON.stringify(v[j]);
           if (str === undefined) continue;
           if (SLOW[p]) {
-            if (Net.slowStr[p] === str && t - Net.slowAt[p] < SLOW_EVERY) { elided.push(p); continue; }
+            if (Net.slowStr[p] === str && t - Net.slowAt[p] < SLOW_EVERY) { parts.slow.push(p); continue; }
             Net.slowStr[p] = str; Net.slowAt[p] = t;
           }
           if (FINE2[p]) str = str.replace(SHORT2, '$1');
-          inner.push('"' + j + '":' + str);   // (keys are plain identifiers)
+          parts.push([k, j, p, str.replace(SHORT, '$1')]);
         }
-        out.push('"' + k + '":{' + inner.join(',') + '}');
-      } else { const str = JSON.stringify(v); if (str !== undefined) out.push('"' + k + '":' + str); }
+      } else { const str = JSON.stringify(v); if (str !== undefined) parts.push([k, null, k, str.replace(SHORT, '$1')]); }
     }
+    return parts;
+  }
+  // the parts as one JSON string; 'omit' = paths left out of THIS picture (listed in "~" with the slow ones)
+  function wireJoin(parts, omit) {
+    const out = [], elided = parts.slow.concat(parts.skipped);
+    let cur = null, inner = [];
+    const flush = () => { if (cur !== null) out.push('"' + cur + '":{' + inner.join(',') + '}'); cur = null; inner = []; };
+    for (const [k, j, p, str] of parts) {
+      if (j === null) { flush(); out.push('"' + k + '":' + str); continue; }
+      if (cur !== k) { flush(); cur = k; }
+      if (omit && omit.has(p)) { elided.push(p); continue; }
+      inner.push('"' + j + '":' + str);   // (keys are plain identifiers)
+    }
+    flush();
     if (elided.length) out.push('"~":' + JSON.stringify(elided));
     return '{' + out.join(',') + '}';
   }
+  function wirePacket() { return wireJoin(wireParts(null), null); }
+  // one string per variant (an omit set, or null = everything); a part every variant leaves out is not stringified at all
+  function wireVariants(variants) {
+    let all = null;
+    if (variants.every(o => o)) { all = new Set(variants[0]); for (const o of variants) for (const p of all) if (!o.has(p)) all.delete(p); }
+    const parts = wireParts(all);
+    return variants.map(o => wireJoin(parts, o));
+  }
   Net.wirePacket = wirePacket;   // (tests)
+  Net.wireVariants = wireVariants; Net.OTHER_W = OTHER_W; Net.OTHER_F = OTHER_F;
   // how much is already waiting to go out on the data channel (bytes). Every snapshot is a whole picture, so a late one is worth nothing: when the link is slower than the
   // stream, snapshots are DROPPED (the stream slows to what the link carries) instead of queued (which made every message, the ping included, arrive seconds late).
   const backlog = conn => (conn.dataChannel ? conn.dataChannel.bufferedAmount : 0) + (conn.bufferSize > 3 ? 1e6 : 0) + (lossyOf(conn) ? lossyOf(conn).bufferedAmount : 0);
@@ -431,7 +461,7 @@ const Net = {
       s.conn = conn; s.state = 'live'; s.lastRx = now(); s.lostAt = 0; s.gseq = 0;
       snapChannel(conn);
       send(conn, { t: 'welcome', v: Net.VERSION, seed: Net.SEED, sig: Net.sig(), mode: 4, you: s.id, runMeta: { slot: G ? G.slot : 0, time: G && G.stats ? G.stats.time : 0 } });
-      Net.slowStr = {}; Net.snapAcc = 1; Net.busy = false; Net.state = 'live';
+      Net.slowStr = {}; Net.snapAcc = 1; Net.busy = false; Net.state = 'live'; s.fresh = true;   // (his first picture carries everything)
       if (fresh) { if (Net.hooks4.joined) Net.hooks4.joined(s); } else if (Net.hooks4.back) Net.hooks4.back(s);
       return;
     }
@@ -498,18 +528,26 @@ const Net = {
     if (Net.busy || !live.length || !G) return;
     const ready = live.filter(s => backlog(s.conn) <= Net.BACKLOG);
     if (!ready.length) { Net.stats.skipped++; return; }
-    let str;
-    try { Net.stamp(); str = wirePacket().replace(SHORT, '$1'); } catch (e) { UI.err(e); return; }
-    const n = ++Net.snapN;
+    // role-scoped: on most pictures a guest gets his own world in full and the other one (his corner picture) left out; every Nth picture, and the first one a guest gets, carries everything
+    const every = Math.max(1, ((CFG.mode4.net && CFG.mode4.net.otherEvery) | 0) || 1), n = Net.snapN + 1;
+    if (Net.scopeG !== G || Net.scopeW !== G.w || Net.scopeF !== G.fac) { Net.scopeG = G; Net.scopeW = G.w; Net.scopeF = G.fac; for (const s of Net.gs) s.fresh = true; }   // (a new state - the game after the lobby, a restart: what the guests remember is of the old one)
+    const scoped = every > 1 && G.m4 && G.seats && n % every !== 0 && !ready.some(s => s.fresh);
+    const omitOf = s => { if (!scoped) return null; const i = G.seats.findIndex(q => q.who === s.id); return i < 0 ? null : M4.ROLE[i] === 'B' ? OTHER_W : OTHER_F; };
+    const sets = ready.map(omitOf), variants = [...new Set(sets)];
+    let strs;
+    try { Net.stamp(); strs = wireVariants(variants); } catch (e) { UI.err(e); return; }
+    Net.snapN = n;
+    for (const s of ready) if (!scoped) s.fresh = false;
     Net.busy = true;
-    encode(str).then(z => {
+    Promise.all(strs.map(str => encode(str))).then(zs => {
       Net.busy = false;
-      const zk = typeof z === 'string' ? z.length : z.byteLength, st = Net.stats;
-      st.rawKB = str.length / 1024; st.zipKB = zk / 1024; if (st.zipKB > st.maxZip) st.maxZip = st.zipKB;
-      for (const s of ready) {
-        if (s.state !== 'live' || !s.conn || !s.conn.open || backlog(s.conn) > Net.BACKLOG) { st.skipped++; continue; }
-        if (snapOut(s.conn, n, z)) { st.snapsOut++; st.bytesOut += zk; st._b += zk; st.total += zk; }
-      }
+      const st = Net.stats; let zsum = 0, rsum = 0, cnt = 0;
+      ready.forEach((s, i) => {
+        const vi = variants.indexOf(sets[i]), z = zs[vi], zk = typeof z === 'string' ? z.length : z.byteLength;
+        if (s.state !== 'live' || !s.conn || !s.conn.open || backlog(s.conn) > Net.BACKLOG) { st.skipped++; return; }
+        if (snapOut(s.conn, n, z)) { st.snapsOut++; st.bytesOut += zk; st._b += zk; st.total += zk; zsum += zk; rsum += strs[vi].length; cnt++; if (zk / 1024 > st.maxZip) st.maxZip = zk / 1024; }
+      });
+      if (cnt) { st.zipKB = zsum / cnt / 1024; st.rawKB = rsum / cnt / 1024; }   // (what one guest gets, on average)
       st._n++;
     }).catch(e => { Net.busy = false; UI.err(e); });
   }
@@ -675,7 +713,7 @@ const Net = {
   // the slow parts: remember the ones this picture carries, put back the ones it left out ("~"). False when one is missing and was never received.
   function putSlow(o) {
     const sv = Net.slowVal, at = (p) => { const i = p.indexOf('.'); return [o[p.slice(0, i)], p.slice(i + 1)]; };
-    for (const p in SLOW) { const [c, j] = at(p); if (c && c[j] !== undefined) sv[p] = c[j]; }
+    for (const p in KEEP) { const [c, j] = at(p); if (c && c[j] !== undefined) sv[p] = c[j]; }
     if (o['~']) {
       for (const p of o['~']) { const [c, j] = at(p); if (sv[p] === undefined || !c) return false; c[j] = sv[p]; }
       delete o['~'];
@@ -690,6 +728,7 @@ const Net = {
       Net.lastN = n;
       const st = Net.stats; st.chan = via; st.zipKB = (typeof z === 'string' ? z.length : z.byteLength) / 1024; st.rawKB = txt.length / 1024; st._n++; st._b += st.zipKB * 1024;
       const snap = JSON.parse(txt);
+      st.pics = (st.pics || 0) + 1; if (snap['~'] && (snap['~'].includes('w.enemies') || snap['~'].includes('fac.grid'))) st.scoped = (st.scoped || 0) + 1;   // (role-scoped pictures)
       if (!putSlow(snap)) return;   // (a slow part left out that we never got: wait for the host's next full copy)
       Net.prev = Net.next; Net.next = snap;   // the newest two are kept; the frame loop takes the newest whole one
       const t = performance.now();

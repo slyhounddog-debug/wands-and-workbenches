@@ -224,6 +224,39 @@ const OUT = process.env.SHOTS || '';
   ok(r.att === '["fire","water"]["air","earth"]', 'the attunements are fixed for the save', r.att);
   ok(r.refused, 'the 2P loader will not open a 4P save');
 
+  // ================= 12. role-scoped snapshots (the wire's content; the live run is in net.js) =================
+  r = await run(() => {
+    const W = __wands, Net = W.Net, o = {};
+    W.start4(1, {}); const G = W.G, WZ = W.WZ;
+    for (let i = 0; i < 6; i++) { const e = WZ.makeEnemy('slime', G.w.x + 3 + i, G.w.y + 2, false); G.w.enemies.push(e); }
+    G.fac.parts.push({ x: 5, y: 5, vx: 1, vy: 1, t: 0, dur: 1, col: '#fff' });
+    Net.stamp();
+    const full = Net.wireVariants([null])[0];
+    const [vb, vw] = Net.wireVariants([Net.OTHER_W, Net.OTHER_F]);   // a Builder seat's picture, a Wizard seat's picture
+    const F = JSON.parse(full), B = JSON.parse(vb), Z = JSON.parse(vw);
+    o.fullHas = Array.isArray(F.w.enemies) && F.w.enemies.length >= 6 && Array.isArray(F.fac.parts) && !F['~'];
+    o.b = !('enemies' in B.w) && !('fx_' in B.w) && !('decals' in B.w) && Array.isArray(B.fac.grid) && Array.isArray(B.fac.parts) && B.w.hp === F.w.hp && B.w.x === F.w.x;
+    o.bTilde = [...Net.OTHER_W].every(p => B['~'].includes(p)) && ![...Net.OTHER_F].some(p => B['~'].includes(p));
+    o.z = Array.isArray(Z.w.enemies) && Array.isArray(Z.w.fx_) && !('grid' in Z.fac) && !('parts' in Z.fac) && Z.fac.working === F.fac.working;
+    o.zTilde = [...Net.OTHER_F].every(p => Z['~'].includes(p)) && ![...Net.OTHER_W].some(p => Z['~'].includes(p));
+    o.smaller = vb.length < full.length && vw.length < full.length;
+    // every guest the same role: the parts nobody gets are not even built, but the picture still names them (a guest that was not told would draw a world with a hole in it)
+    const only = JSON.parse(Net.wireVariants([Net.OTHER_W])[0]);
+    o.only = [...Net.OTHER_W].every(p => only['~'].includes(p)) && !('enemies' in only.w) && Array.isArray(only.fac.grid);
+    // a part named in "~" has to exist in the full picture, or a guest that never saw it would throw the picture away
+    o.exist = [...Net.OTHER_W, ...Net.OTHER_F].filter(p => { const [k, j] = p.split('.'); return !(F[k] && F[k][j] !== undefined); });
+    // a 2P state is never scoped
+    o.k = W.CFG.mode4.net.otherEvery;
+    return o;
+  });
+  ok(r.fullHas, 'the full picture carries everything and names nothing left out', JSON.stringify(r));
+  ok(r.b && r.bTilde, 'a Builder seat\'s picture leaves out the wilds\' bulk (and names it) and keeps the factory and the Wizard\'s own numbers', JSON.stringify(r));
+  ok(r.z && r.zTilde, 'a Wizard seat\'s picture leaves out the factory\'s bulk (and names it) and keeps the wilds', JSON.stringify(r));
+  ok(r.smaller, 'scoped pictures are smaller than the full one');
+  ok(r.only, 'when every guest has the same role the omitted parts are still named');
+  ok(r.exist.length === 0, 'every part a scoped picture can leave out exists in G (so a guest can always put it back)', r.exist.join(','));
+  ok(r.k === 3, 'the scoping knob is CFG.mode4.net.otherEvery (3)');
+
   ok(errs.length === 0, 'no page errors', errs.slice(0, 5).join(' | '));
   await browser.close();
   console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASS');

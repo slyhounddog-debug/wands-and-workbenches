@@ -820,8 +820,15 @@ Main.hintFor = function (q) {
     const w = G.w;
     let best = null, bd = 1e9;
     const near = o => { const d = Math.hypot(o.x - w.x, o.y - w.y); if (d < bd) { bd = d; best = o; } };
-    if (h.harv) for (const o of WZ.harv) { if (!o.broken && o.kind === 'tree') near(o); }
-    else if (h.forage) for (const o of WZ.forage) { if (!o.broken && WZ.forageSeen(o)) near(o); }
+    if (h.harv || h.forage) {   // thousands of nodes: scan when he steps onto a new tile, or when the one found has been used up (this ran every frame, twice, on both goal cards)
+      const key = h.harv ? 'h' : 'f', c = Main.hc, tx = Math.floor(w.x), ty = Math.floor(w.y);
+      if (c && c.wr === w && c.key === key && c.tx === tx && c.ty === ty && (!c.best || (!c.best.broken && (key === 'h' || WZ.forageSeen(c.best))))) best = c.best;
+      else {
+        if (h.harv) for (const o of WZ.harv) { if (!o.broken && o.kind === 'tree') near(o); }
+        else for (const o of WZ.forage) { if (!o.broken && WZ.forageSeen(o)) near(o); }
+        Main.hc = { wr: w, key, tx, ty, best };
+      }
+    }
     else {
       for (const m of WZ.marks) {
         const done = w.lm[m.id].state === 'done';

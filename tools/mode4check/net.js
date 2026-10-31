@@ -153,6 +153,15 @@ async function boot(browser, name) {
   ok(/VIOLET/.test(hud[0]) && /COPPER/.test(hud[1]), 'every screen says whose it is (a coloured seat chip)', hud.join(' | '));
   if (SHOTS) for (let i = 0; i < 4; i++) await P[i].page.screenshot({ path: path.join(SHOTS, 'play_' + i + '.png') });
 
+  // ---- role-scoped pictures: most pictures leave the other world out, every machine still holds both worlds, and a new state starts with a full picture
+  await sleep(1500);
+  const sc0 = await Promise.all(P.slice(1).map(G_ => G_.page.evaluate(() => ({ p: __wands.Net.stats.pics || 0, s: __wands.Net.stats.scoped || 0 }))));
+  await sleep(3000);
+  const sc1 = await Promise.all(P.slice(1).map(G_ => G_.page.evaluate(() => { const G = __wands.G; return { p: __wands.Net.stats.pics || 0, s: __wands.Net.stats.scoped || 0, w: Array.isArray(G.w.enemies) && Array.isArray(G.w.decals) && Array.isArray(G.w.fx_), f: Array.isArray(G.fac.grid) && Array.isArray(G.fac.parts) && Array.isArray(G.fac.bld) }; })));
+  const fr = sc1.map((a, i) => (a.s - sc0[i].s) / Math.max(1, a.p - sc0[i].p));
+  ok(fr.every(f => f > 0.5 && f < 0.8), 'about two pictures in three leave the other world out (role-scoped)', fr.map(f => f.toFixed(2)).join(','));
+  ok(sc1.every(a => a.w && a.f), 'and every guest still holds both worlds (the last copy is put back)', JSON.stringify(sc1));
+
   const errs = P.flatMap(p => p.errs);
   ok(errs.length === 0, 'no page errors on any of the four machines', errs.slice(0, 5).join(' | '));
   await browser.close();

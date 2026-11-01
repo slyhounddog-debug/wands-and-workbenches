@@ -423,6 +423,9 @@ WZ.hurtE = function (e, d, kx, ky, quiet) {
   if (c && e._c !== c) { e._c = c; c.hits++; if (m > 1) { c.weak++; G.w.run.weak++; } }
   if (m > 1 && !quiet && G.w.t - (G.w.weakSfxT || -1) > 0.08) { G.w.weakSfxT = G.w.t; AU.sfx('hitw', e.x, e.y); }   // a weakness hit lands heavier (a zone ticking on a crowd would otherwise chatter)
   if (!quiet) {
+    const J = CFG.juice, wt = G.w.t;   // sound: a plain hit ticks (a weakness hit has its own heavier one above), a BIG one adds the layered thump; each held back a moment so a crowd does not chatter
+    if (d >= (e.boss || e.elite ? J.bigHitBoss : J.bigHit) && wt - (G.w.thumpT === undefined ? -9 : G.w.thumpT) > J.thumpGap) { G.w.thumpT = wt; AU.sfx('thump', e.x, e.y); }
+    else if (m <= 1 && d >= J.hitMin && wt - (G.w.hitSfxT === undefined ? -9 : G.w.hitSfxT) > J.hitGap) { G.w.hitSfxT = wt; AU.sfx('hit', e.x, e.y); }
     e.flash = 0.12;
     const kb = e.kb !== undefined ? e.kb : e.boss ? 0.08 : e.elite ? 0.4 : 1;
     if (kx || ky) { e.kx += kx * kb; e.ky += ky * kb; }
@@ -490,7 +493,7 @@ WZ.damage = function (d, soft, src) {   // armor soaks damage first. soft = burn
   }
   if (d > 0) { w.hp -= d; WZ.num(w.x, w.y, '-' + Math.round(d), soft ? '#ff9a3a' : '#ff6a6a'); }
   if (!soft && d > 0 && w.hp > 0 && soak === 0) FA.shakeLoose(w.hp / WZ.maxHp());   // health lost: the factory may drop something (armor soaking the hit keeps it still)
-  if (!soft) { w.hurtT = 0.35; w.shake = Math.max(w.shake, 0.35); AU.sfx(soak > 0 ? 'clank' : 'hurt'); }
+  if (!soft) { w.hurtT = 0.35; w.shake = Math.max(w.shake, 0.35); AU.sfx(soak > 0 ? 'clank' : 'hurt'); if (d0 >= CFG.juice.bigHitHp * WZ.maxHp()) AU.sfx('thump'); }   // (a hit of a fifth of his health or more also thumps)
   if (w.hp <= 0) {
     if (WZ.phoenixSave()) return;   // the Phoenix Feather cancels death
     w.hp = 0; w.dead = true; AU.sfx('die'); WZ.puff(w.x, w.y, '#b58cff', 20);

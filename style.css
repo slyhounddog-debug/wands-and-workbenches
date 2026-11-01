@@ -476,6 +476,9 @@ button.big.warn { background: #ff7a5a; color: #fff; box-shadow: 0 -4px 0 0 var(-
 @keyframes andPop { 0% { transform: scale(1.8); opacity: 0; } 20% { transform: scale(1); opacity: 1; } 80% { opacity: 1; } 100% { transform: scale(1.1); opacity: 0; } }
 
 /* ===== error badge ===== */
+#skipHint { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 95; padding: 8px 14px 12px; background: rgba(26, 15, 40, 0.85); pointer-events: none; }
+#skipHint span { display: block; font: 10px var(--display); color: var(--cream); letter-spacing: 1px; }
+#skipHint i { display: block; height: 4px; width: 0; margin-top: 6px; background: var(--gold); }
 #errBadge { position: absolute; left: 16px; top: 250px; z-index: 90; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #5a1a2a; cursor: pointer; }
 #errBadge span { font: 16px var(--display); color: var(--gold); }
 #errBadge b { font: 12px var(--display); color: var(--cream); }

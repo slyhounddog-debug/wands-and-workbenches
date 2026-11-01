@@ -735,7 +735,7 @@ R.drawBuilding = function (ctx, v, b, t) {
   if (d.kind === 'crafter') {
     if (b.type === 'forge' && b.prog > 0 && b.powered) R.flames(ctx, p[0] - 12, p[1] - 22, t);
     if (b.type === 'cauldron') {
-      // the potion above it shows the MODE (red flask = Health, blue = Armor) and regrows for 7.5 s after a switch; while a spell is brewing it is that spell's potion, growing in steps
+      // the potion above it shows the MODE (red flask = Health, blue = Armor) and regrows for 5 s after a switch; while a spell is brewing it is that spell's potion, growing in steps
       const hp = b.mode === 'hp', grow = Math.min(1, b.grow / CFG.harness.growT), growing = grow < 1, R2 = b.recipe ? CFG.recipes[b.recipe] : null, fr = R2 ? Math.min(1, b.prog / R2.time) : 1;
       const key = R2 ? R2.out : hp ? 'potion' : 'armor', ks = growing ? Math.max(0.1, Math.round(grow * 8) / 8) : R2 ? Math.max(0.4, Math.round(fr * 8) / 8) : 1, bob2 = Math.round(Math.sin(b.anim * 2) * 1.2) * 4;
       const wob = !growing && R2 && fr > 0.85 && b.powered !== false && Math.floor(t * 20) % 2 ? 4 : 0;
@@ -1041,9 +1041,9 @@ R.drawPortal = function (ctx, v, t, which) {
   if (q) txt(ctx, q + ' queued', base[0], base[1] - 146, 12, '#ffe36b', 'center', 'd');
 };
 
-// What happens to something the Spell Portal accepts: (1) it is slurped in, spiralling toward the heart of the ring, stretching thin and
-// leaving a trail while a ring closes on the spot it came from; (2) the portal gulps and a column of light with the item riding it fires
-// straight up out of the factory, as long as the spell's own drop-in over the Wizard (the matching portal opening above his head).
+// What happens to something the Spell Portal accepts (kept small and themed): (1) it flies straight at the ring, speeding up and stretching, and SMACKS it (CFG.suck.baseT):
+// it splats flat against the portal, which swallows it with one soft ring and a few sparks of its colour; (2) it pops back out of the portal's top and arcs up and away over the
+// factory's top-right corner toward the wilds (CFG.arc.outT; they pick it up at their top-left: R.drawArc). A pure function of s.t, so the photo test sees it.
 R.drawSuck = function (ctx, v, s, base) {
   const P = R.px, T = CFG.suck.baseT, spr = itemSprite(s.kind), el = ELEM[s.kind] ? s.kind : null, col = s.col, sd = s.seed;
   const cx = base[0], cy = base[1] - 72;   // the heart of the ring
@@ -1061,43 +1061,44 @@ R.drawSuck = function (ctx, v, s, base) {
     ctx.restore(); ctx.globalAlpha = 1;
   };
   if (s.t < T) {
-    const u = s.t / T;
-    // the spot it came from: a dashed ring closing in
-    ctx.globalAlpha = 0.9 - u * 0.4; ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.setLineDash([12, 8]);
-    const rr = 0.9 * (1 - Math.floor(u * 5) / 5);
-    if (rr > 0) { diamond(ctx, st[0], st[1], rr * v.hw * 1.414, rr * v.hh * 1.414); ctx.stroke(); }
-    ctx.setLineDash([]); ctx.globalAlpha = 1;
-    const at = k => {   // where the item is at progress k (accelerating, spiralling in)
-      const e = k * k, a = sd + k * 7;
-      return [x0 + (cx - x0) * e + Math.sin(a) * 26 * (1 - e), y0 + (cy - y0) * e + Math.cos(a) * 12 * (1 - e) - Math.sin(k * Math.PI) * 30];
-    };
-    for (let i = 5; i >= 1; i--) {   // trail
-      const k = u - i * 0.075; if (k <= 0) continue;
-      const q = at(k); blk(q[0], q[1] + 12, 24 - i * 3, i % 2 ? col : '#ffffff', 0.85 - i * 0.14);
+    const u = s.t / T, k = u * u;   // it speeds up all the way in
+    const at = kk => [x0 + (cx - x0) * kk, y0 + (cy - y0) * kk - Math.sin(kk * Math.PI) * 14];
+    for (let i = 3; i >= 1; i--) {   // a short streak behind it
+      const kk = k - i * 0.1; if (kk <= 0) continue;
+      const q = at(kk); blk(q[0], q[1] + 14, 22 - i * 4, i % 2 ? col : '#ffffff', 0.7 - i * 0.18);
     }
-    const q = at(u), e = u * u;
-    blk(q[0], q[1] + 4, 44 * (1 - 0.4 * e), col, 0.5);
-    if (spr) dsprSq(ctx, spr, q[0], q[1] + 20, 4, 1 - 0.5 * e, 1 + 0.6 * e, 1);
-    ring(1.2 - 0.3 * Math.ceil(u * 4) / 4, col, 0.35 + u * 0.6, 0.09);   // the ring leans in to swallow it
+    const q = at(k);
+    blk(q[0], q[1] + 6, 40 * (1 - 0.3 * k), col, 0.4);
+    if (spr) dsprSq(ctx, spr, q[0], q[1] + 20, 4, 1 - 0.25 * k, 1 + 0.55 * k, 1);   // stretched along the flight
+    ring(1.15 - 0.25 * Math.ceil(u * 3) / 3, col, 0.3 + u * 0.45, 0.08);   // the ring leans in to meet it
   } else {
-    const k = Math.min(1, (s.t - T) / Math.max(0.05, s.dur - T));
-    // the gulp: a shock ring rolling out of the portal's plane
-    const kk = Math.min(1, k * 2.2);
-    if (kk < 1) { ring(0.45 + 0.85 * Math.ceil(kk * 4) / 4, '#ffffff', 1 - kk, 0.12); ring(0.3 + 0.7 * Math.ceil(kk * 4) / 4, col, 1 - kk, 0.16); }
-    // then it shoots up and out over the top-right corner of the factory, toward the wilds (they pick it up at their top-left: R.drawArc)
-    const ex = R.rect.w + 70, ey = -90;
-    const at = u => [cx + (ex - cx) * u * u, cy + (ey - cy) * u - Math.sin(u * Math.PI) * CFG.arc.h];
-    if (k < 0.3) { const w0 = Math.round(30 * (1 - k / 0.3) / P) * P; if (w0 > 0) { ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.6; ctx.fillRect(snap(cx - w0 / 2), cy - 90, w0, 90); ctx.globalAlpha = 1; } }   // the launch flash
-    for (let i = 6; i >= 1; i--) {   // its trail
-      const u = k - i * 0.06; if (u <= 0) continue;
-      const q = at(u); blk(q[0], q[1], 26 - i * 3, i % 2 ? col : '#ffffff', 0.9 - i * 0.12);
+    const ti = s.t - T, k = Math.min(1, ti / Math.max(0.05, s.dur - T));
+    // the smack: one soft ring rolls out of the portal's plane, a few sparks of its colour fly out round the heart
+    const kk = Math.min(1, k * 2.4);
+    if (kk < 1) {
+      ring(0.4 + 0.7 * Math.ceil(kk * 4) / 4, col, 0.85 * (1 - kk), 0.14);
+      ring(0.3 + 0.35 * Math.ceil(kk * 4) / 4, '#ffffff', 0.6 * (1 - kk), 0.08);
+      for (let i = 0; i < 6; i++) {
+        const a = sd + i * 1.05, r = 14 + kk * 38;
+        blk(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.5 - kk * 14, 8 * (1 - kk * 0.6), i % 2 ? col : '#ffffff', 1 - kk);
+      }
     }
-    const q = at(k), q2 = at(Math.min(1, k + 0.05)), ang = Math.atan2(q2[1] - q[1], q2[0] - q[0]);
-    blk(q[0], q[1], 40, col, 0.55);
-    if (spr) { ctx.save(); ctx.translate(snap(q[0]), Math.round(q[1] / P) * P); ctx.rotate(Math.round((ang + Math.PI / 2) / 0.39) * 0.39); ctx.scale(0.85, 1.4); ctx.drawImage(spr.c, -spr.ax * 4, -spr.ay * 4 / 2, spr.c.width * 4, spr.c.height * 4); ctx.restore(); }
-    for (let i = 0; i < 6; i++) {   // sparks peeling off
-      const u = Math.max(0, k - (i % 3) * 0.08), qq = at(u), a = sd + i * 2.4 + k * 9;
-      blk(qq[0] + Math.cos(a) * (12 + i * 4), qq[1] + Math.sin(a) * (8 + i * 3), 8, i % 2 ? col : '#ffffff', 1 - k * 0.5);
+    // the item: flat against the portal for a beat (splat), then it pops out of the top and arcs away toward the wilds
+    const ex = R.rect.w + 70, ey = -90, k0 = 0.18, kl = Math.max(0, (k - k0) / (1 - k0));
+    if (k < k0 && spr) { const sq = k / k0; dsprSq(ctx, spr, cx, cy + 20 - sq * 8, 4, 1.5 - 0.5 * sq, 0.45 + 0.55 * sq, 1); }
+    else {
+      const at = u => [cx + (ex - cx) * u * u, cy + (ey - cy) * (1 - (1 - u) * (1 - u)) - Math.sin(u * Math.PI) * CFG.arc.h * 0.8];   // pops up first, then sweeps over
+      for (let i = 5; i >= 1; i--) {   // its trail
+        const u = kl - i * 0.06; if (u <= 0) continue;
+        const q = at(u); blk(q[0], q[1], 24 - i * 3, i % 2 ? col : '#ffffff', 0.85 - i * 0.14);
+      }
+      const q = at(kl), q2 = at(Math.min(1, kl + 0.05)), ang = Math.atan2(q2[1] - q[1], q2[0] - q[0]);
+      blk(q[0], q[1], 36, col, 0.5);
+      if (spr) { ctx.save(); ctx.translate(snap(q[0]), Math.round(q[1] / P) * P); ctx.rotate(Math.round((ang + Math.PI / 2) / 0.39) * 0.39); ctx.scale(0.85, 1.3); ctx.drawImage(spr.c, -spr.ax * 4, -spr.ay * 4 / 2, spr.c.width * 4, spr.c.height * 4); ctx.restore(); }
+      for (let i = 0; i < 4; i++) {   // sparks peeling off
+        const u = Math.max(0, kl - (i % 3) * 0.08), qq = at(u), a = sd + i * 2.4 + kl * 9;
+        blk(qq[0] + Math.cos(a) * (10 + i * 4), qq[1] + Math.sin(a) * (7 + i * 3), 8, i % 2 ? col : '#ffffff', 1 - kl * 0.5);
+      }
     }
   }
 };

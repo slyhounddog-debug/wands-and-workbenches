@@ -7,10 +7,25 @@ const AU = (() => {
   // audio hierarchy: important cues go to hiG and duck everything on loG (hum, pickups, clicks) and the music;
   // midG is everything else. cur = where tone() / noise() send by default while a sfx is being built
   let hiG = null, midG = null, loG = null, duckG = null, cur = null;
-  const HI = new Set(['deliver', 'portalDrop', 'incoming', 'incoming_big', 'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'weak', 'warn', 'heart', 'hurt', 'die', 'roar', 'slam', 'volley', 'alert', 'dodge', 'victory', 'evwarn']);
+  const HI = new Set(['deliver', 'portalDrop', 'incoming', 'incoming_big', 'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'weak', 'warn', 'heart', 'hurt', 'die', 'roar', 'slam', 'volley', 'alert', 'dodge', 'victory', 'evwarn', 'thump']);
   const LO = new Set(['pickup', 'drop', 'blip', 'crank', 'gem', 'place', 'throw', 'thud', 'boing', 'whoosh', 'dig', 'rustle', 'step_b', 'step_w', 'menu_open', 'menu_close', 'tab', 'craft', 'bank', 'shard',
     'st_work', 'st_missing', 'st_starve', 'st_jam', 'st_full', 'st_off']);
   const reps = {};   // name -> { t, n }: rapid repeats of a low sound get quieter
+  // Variation: the sounds that repeat a lot drift a little in pitch and volume each time (CFG.juice.vary), never the same way twice running, so a crowd of hits or a string of rolls
+  // does not drone. VARY[name] = how much of the pitch drift it takes (0 = volume only: the roll already picks its own pitch). pk / vk are read by tone() / noise() while it plays.
+  const VARY = { hit: 1, hitw: 1, kill: 1, hurt: 0.6, thud: 1, throw: 1, pickup: 1, drop: 1, place: 1, craft: 0.8, bank: 0.8, boing: 0.8, dodge: 1, roll: 0, thump: 0.7, smack: 1, slam: 0.5, zap_air: 0.8, zap_fire: 0.8, zap_water: 0.8, zap_earth: 0.8, deliver: 0.6 };
+  let pk = 1, vk = 1;
+  const lastVar = {};
+  function vary(name) {
+    const V = CFG.juice.vary, k = VARY[name];
+    if (k === undefined) { pk = vk = 1; return; }
+    const prev = lastVar[name] || [0, 0];
+    let a = Math.random() * 2 - 1;
+    const b = Math.random() * 2 - 1;
+    if (Math.abs(a - prev[0]) < 0.35) a = a > 0 ? a - 0.8 : a + 0.8;   // (never the same pitch as last time)
+    lastVar[name] = [a, b];
+    pk = 1 + a * V.pitch * k; vk = 1 + b * V.vol;
+  }
   function duck(depth) {
     if (!ctx) return;
     const t = ctx.currentTime, g = duckG.gain;
@@ -113,11 +128,11 @@ const AU = (() => {
     if (!ctx) return;
     const t0 = ctx.currentTime + (delay || 0);
     const o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = type || 'sine';
+    o.type = type || 'sine'; f *= pk; vol = (vol || 0.15) * vk;
     o.frequency.setValueAtTime(f, t0);
     if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, f * slide), t0 + dur);
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(vol || 0.15, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     o.connect(g); g.connect(dest || cur || sfxG);
     o.start(t0); o.stop(t0 + dur + 0.05);
@@ -128,8 +143,8 @@ const AU = (() => {
     if (!noiseBuf) { const n = ctx.sampleRate, d = (noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate)).getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; }
     const t0 = ctx.currentTime + (delay || 0), s = ctx.createBufferSource();
     s.buffer = noiseBuf;
-    const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp || 800;
-    const g = ctx.createGain(); g.gain.setValueAtTime(vol || 0.1, t0); g.gain.linearRampToValueAtTime(0, t0 + dur);
+    const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = (hp || 800) * (0.5 + pk / 2);
+    const g = ctx.createGain(); g.gain.setValueAtTime((vol || 0.1) * vk, t0); g.gain.linearRampToValueAtTime(0, t0 + dur);
     s.connect(f); f.connect(g); g.connect(dest || cur || sfxG);
     s.start(t0, Math.random() * Math.max(0, noiseBuf.duration - dur), dur);
   }
@@ -144,6 +159,12 @@ const AU = (() => {
     if (!ear || x == null || y == null) return 1;
     const H = CFG.hear, d = Math.hypot(x - ear.x, y - ear.y);
     return d <= H.full ? 1 : Math.max(H.floor, 1 - (d - H.full) / (H.far - H.full));
+  }
+  // stereo position of a sound at (x, y) as heard from the ear: iso screen x grows with x - y, so that is the left-right axis (-CFG.hear.pan .. CFG.hear.pan)
+  function panK(x, y) {
+    if (!ear || x == null || y == null) return 0;
+    const H = CFG.hear;
+    return Math.max(-1, Math.min(1, ((x - ear.x) - (y - ear.y)) / H.panRange)) * H.pan;
   }
   function sfx(name, x, y) {
     if (tapFn) tapFn(name, x, y);
@@ -160,16 +181,19 @@ const AU = (() => {
       const a = attn();
       if (a >= 2) { const g = ctx.createGain(); g.gain.value = a >= 3 ? 0.3 : 0.55; g.connect(bus); bus = g; }
     }
-    const fk = farK(x, y);
-    if (fk < 1) {   // far away: quieter and duller (a low-pass that closes with distance), and it no longer ducks the music
-      const g = ctx.createGain(), lp = ctx.createBiquadFilter();
-      g.gain.value = fk; lp.type = 'lowpass'; lp.frequency.value = CFG.hear.lp + (18000 - CFG.hear.lp) * fk * fk;
-      g.connect(lp); lp.connect(bus); bus = g;
-    } else if (HI.has(name)) duck(name === 'heart' || name === 'dodge' ? 0.6 : 0.35);
+    const fk = farK(x, y), pn = panK(x, y);
+    if (fk < 1 || (pn && ctx.createStereoPanner)) {   // heard from his Wizard: to a side of him (stereo); far away is quieter and duller (a low-pass that closes with distance) and no longer ducks the music
+      const g = ctx.createGain();
+      g.gain.value = fk; let tail = g;
+      if (pn && ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = pn; tail.connect(sp); tail = sp; }
+      if (fk < 1) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = CFG.hear.lp + (18000 - CFG.hear.lp) * fk * fk; tail.connect(lp); tail = lp; }
+      tail.connect(bus); bus = g;
+    }
+    if (fk >= 1 && HI.has(name)) duck(name === 'heart' || name === 'dodge' ? 0.6 : 0.35);
     const c = clip(name);
     if (c) { OV.playClip(ctx, c, c.p, bus); return; }
-    cur = bus;
-    try { play(name); } finally { cur = midG; }
+    cur = bus; vary(name);
+    try { play(name); } finally { cur = midG; pk = vk = 1; }
   }
   function play(name) {
     switch (name) {
@@ -191,6 +215,8 @@ const AU = (() => {
       case 'hitw': tone(110, 0.16, 'square', 0.09, 0.45); tone(58, 0.2, 'sine', 0.15, 0.5); noise(0.08, 0.07, 450); tone(N(19), 0.08, 'triangle', 0.05, 0, 0.03); break;   // a weakness hit: low thump + crunch + a bright ping
       case 'kill': tone(400, 0.1, 'triangle', 0.07, 1.8); break;
       case 'hurt': tone(140, 0.25, 'sawtooth', 0.14, 0.5); break;
+      case 'thump': tone(78, 0.3, 'sine', 0.22, 0.45); tone(190, 0.09, 'triangle', 0.1, 0.35); noise(0.09, 0.09, 140); tone(46, 0.22, 'sine', 0.14, 0.7, 0.045); break;   // a big hit: a sub boom, a body knock, a crack of noise and a late low tail, layered
+      case 'smack': noise(0.05, 0.05, 1800); tone(320, 0.07, 'triangle', 0.08, 0.4); tone(1200, 0.05, 'sine', 0.035, 1.5, 0.02); break;   // an item hits the Spell Portal: a soft thwap
       case 'roll': {   // a quick whoosh, pitch-shifted a little each time so repeated rolls don't drone
         const f = 480 + Math.random() * 240;
         tone(f, 0.15, 'triangle', 0.07, 2.6); tone(f * 1.5, 0.09, 'sine', 0.04, 2.2, 0.04); noise(0.16, 0.05, 2600);
@@ -408,7 +434,7 @@ const AU = (() => {
   // every sfx() name, read off play()'s switch so the dev tool's list can never miss one
   const SFX_NAMES = (play + '').match(/case '\w+'/g).map(s => s.slice(6, -1));
   return {
-    settings, init, sfx, setTap(fn) { tapFn = fn; }, setAttn(fn) { attn = fn; }, setEar(x, y) { ear = x == null ? null : { x, y }; }, farK, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep, muffle,
+    settings, init, sfx, setTap(fn) { tapFn = fn; }, setAttn(fn) { attn = fn; }, setEar(x, y) { ear = x == null ? null : { x, y }; }, farK, panK, variation: n => lastVar[n] || null, music, jingleNote, jingleEnd, hum: setHum, mix, hold, sleep, muffle,
     layerMix(act) { layerAct = act; },   // { air, water, fire, earth } 0..1 (G.fac.weather), or null for the title-screen mix
     layerInfo() { return { ready: layersReady(), playing: !!layers, lowpassHz: ctx ? Math.round(musLP.frequency.value) : null, goal: Object.fromEntries(LAYER_EL.map(el => [el, +layerGoal(el, bossOn).toFixed(3)])) }; },
     names: { sfx: SFX_NAMES, loops: ['music', 'music_boss', 'hum'] },

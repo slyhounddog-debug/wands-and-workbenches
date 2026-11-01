@@ -116,6 +116,7 @@ WZ.wandFire = function (ctx) {
   // ONE trail zone owns every segment (pts), so overlapping segments never stack their damage; it lives until the last segment has burnt out
   WZ.zone({ kind: 'ftrail', x: w.x, y: w.y, r: F.r, t: F.t + F.life, pts: [{ x: w.x, y: w.y, a: 0 }], col: '#ff7a30', ctx });
   WZ.ring(w.x, w.y, 1.6, '#ff7a30', 0.4); WZ.epuff(w.x, w.y, 'fire', 12);
+  w.shake = Math.max(w.shake, 0.12);
   AU.sfx('zap_fire');
 };
 // the trail zone (called from WZ.zoneSpecial with WZ.ctx = its own ctx): lay segments while he runs, age them, burn what stands in them
@@ -153,6 +154,7 @@ WZ.wandAir = function (ctx) {
   WZ.eachAlly(x, y, A.r, a => { a.invT = CFG.wand.ally.inv; WZ.puff(a.x, a.y, '#e6f8ff', 8); });   // allies in the burst vanish too
   w.invisT = A.t;
   WZ.epuff(x, y, 'air', 14);
+  w.shake = Math.max(w.shake, 0.15);
   AU.sfx('zap_air');
 };
 
@@ -163,6 +165,7 @@ WZ.wandWater = function (ctx) {
   w.ride = { dx: a[0], dy: a[1], t: 0, hit: [], ctx };
   w.vx = 0; w.vy = 0; w.roll = 0; w.target = null;   // (the ride eases in from a standstill: WZ.rideSet)
   WZ.ring(w.x, w.y, 1.5, '#4aa8ff', 0.35); WZ.epuff(w.x, w.y, 'water', 12);
+  w.shake = Math.max(w.shake, 0.14);
   AU.sfx('zap_water');
 };
 WZ.rideEnd = function (why) {

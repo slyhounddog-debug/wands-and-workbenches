@@ -108,6 +108,7 @@ M4.draw = function (ctx, dt) {
   M4.asSeat(s, () => {
     if (M4.ROLE[s] === 'B') R.drawFactory(ctx, dt, { x0: 0, w: CFG.W }); else R.drawWorld(ctx, dt, { x0: 0, w: CFG.W });
     R.drawPip(ctx, dt);
+    if (G.w) AU.setEar(G.w.x, G.w.y);   // (heard from this seat's Wizard, or his buddy's when this seat is a Builder)
   });
 };
 M4.guestSeat = () => { const i = G.seats.findIndex(q => q.who === Net.me); return i < 0 ? 0 : i; };

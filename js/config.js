@@ -51,7 +51,7 @@ const CFG = {
   portalGap: 0.22,
   portalCatch: 1.35,         // a throw that lands within this many tiles of a portal that takes it is pulled in, so nothing piles up on the floor beside it
   catchR: 0.7,               // the same grace for every building and blueprint that is taking the item: a throw that lands within this many tiles of its tile goes in instead of onto the floor
-  suck: { baseT: 0.3 },       // Spell Portal intake animation: seconds the item spends being slurped in (then it arcs out of the factory: arc.outT)
+  suck: { baseT: 0.17 },      // Spell Portal intake: seconds the item takes to fly in and smack the portal (it squashes, the portal swallows it with a small burst, then it pops out and arcs out of the factory: arc.outT)
   arc: { outT: 0.24, inT: 0.42, h: 90 },   // deliveries cross the split: seconds rising out of the factory's top-right corner, seconds sailing in from the wilds' top-left onto the Wizard, extra arc height (px)
   thump: 0.36,                // a Forge / Cauldron that finishes a craft thumps (squash and stretch) this long and puffs exhaust in its elements' colours
   boing: { T: 0.55, h: 2.6, back: 0.55, min: 1.2, max: 2.8 },   // a rejected throw springs back toward the Builder: flight time, arc height, share of the way back (clamped to min..max tiles)
@@ -119,7 +119,10 @@ const CFG = {
   questCelebrate: { swap: 1.95 },   // seconds into the completed-goal animation (2.6 s, style.css qcel) at which the next goal replaces it
   needChipTouch: 0.9,   // a blueprint's need chips show only for the one under the mouse or within this many tiles of the Builder (touching it)
   emote: { beat: 0.8, sticker: 3.2, stickerScale: 0.7, centerGrace: 0.15 },   // the Wizard's dances (js/emote.js): seconds a beat lasts (dust, ripples, a stomp); seconds the sticker stays on the Builder's side
-  hear: { full: 9, far: 34, floor: 0.12, lp: 700 },
+  hear: { full: 9, far: 34, floor: 0.12, lp: 700, pan: 0.7, panRange: 14 },   // pan / panRange: a sound panRange tiles to a side of the Wizard sits `pan` (0..1) of the way to that speaker
+  // juice: `vary` = how far repeated sounds drift in pitch / volume (+- fraction); a hit under `hitMin` damage makes no sound, the same sound is held back `hitGap` s;
+  // `bigHit` / `bigHitBoss` = damage that gets the layered thump (a boss or elite counts the lower one), `bigHitHp` = the same for the Wizard as a fraction of his max HP; `skipHold` = seconds a held button skips the start sequence
+  juice: { vary: { pitch: 0.09, vol: 0.14 }, hitGap: 0.07, hitMin: 4, bigHit: 30, bigHitBoss: 18, bigHitHp: 0.2, thumpGap: 0.12, skipHold: 0.6 },
   world: {
     respawn: 120, vacuum: 2, minSpawnDist: 8,
     spawnStart: 21, spawnMul: 0.96, spawnFloor: 5.5, cap: 160,   // wild spawns are a trickle: the factory's creatures are the real fight
@@ -219,9 +222,9 @@ const CFG = {
   // costs were 50% up on the original, then cut ~30% (belts stay 1 Wood; the Splitter is 2 Wood + 1 Stone)
   buildings: {
     harness:  { name: 'Harnesser', kind: 'harness', cost: { wood: 6, stone: 4 }, unlock: null,
-                desc: 'Makes element packets: Air, Water, Fire or Earth, whichever crystal it carries. F (LT + X on a pad) switches the element at any time: the old crystal bursts and the new one takes 7.5 seconds to grow, and nothing is made meanwhile. Draws 2 power (hand-gathering is free, so the factory can always restart). Stand beside it and press E to hand-gather.' },
+                desc: 'Makes element packets: Air, Water, Fire or Earth, whichever crystal it carries. F (LT + X on a pad) switches the element at any time: the old crystal bursts and the new one takes 5 seconds to grow, and nothing is made meanwhile. Draws 2 power (hand-gathering is free, so the factory can always restart). Stand beside it and press E to hand-gather.' },
     cauldron: { name: 'Alchemy Cauldron', kind: 'crafter', cost: { wood: 9, stone: 9 }, unlock: null,
-                desc: 'Feed it ONE element spell or combo spell at a time: the better the spell, the stronger the potion. Health mode (default) brews Health Potions, Armor mode brews Armor Potions; F (LT + X on a pad) switches the mode and the new potion regrows above it for 7.5 seconds. No power. Send them through the Spell Portal: they land beside the Wizard.' },
+                desc: 'Feed it ONE element spell or combo spell at a time: the better the spell, the stronger the potion. Health mode (default) brews Health Potions, Armor mode brews Armor Potions; F (LT + X on a pad) switches the mode and the new potion regrows above it for 5 seconds. No power. Send them through the Spell Portal: they land beside the Wizard.' },
     forge:    { name: 'Elemental Forge', kind: 'crafter', cost: { wood: 20, stone: 15, iron: 6 }, unlock: null,
                 desc: 'Fuses element spells into combo spells. Press E at it to switch recipe.' },
     anvil:    { name: 'Armory', kind: 'crafter', cost: { wood: 10, stone: 12, iron: 6 }, unlock: null,
@@ -244,7 +247,7 @@ const CFG = {
                 desc: 'Hatches a creature Egg from ONE thing fed into it: an element spell = that element\'s basic creature; a Flamethrower, Tempest Tear, Magma Bomb, Mud Shield, Meteor Shower, Thunderstorm or Geyser Eruption spell = the pair or triple creature of its elements. Steam Burst, Sandstorm and Blizzard are not seeds: they bounce back. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. Costs an Aether Shard to build (the starting one is free).' },
   },
   // the one Harnesser carries any of the four elements (a crystal grows growT seconds after every switch, then shakes shakeT seconds before it starts making packets)
-  harness: { growT: 7.5, shakeT: 1.2, order: ['air', 'water', 'fire', 'earth'], air: { cycle: 3.41, power: 2 }, water: { cycle: 5.11, power: 2 }, fire: { cycle: 5.11, power: 2 }, earth: { cycle: 6.25, power: 2 } },
+  harness: { growT: 5, shakeT: 1.2, order: ['air', 'water', 'fire', 'earth'], air: { cycle: 3.41, power: 2 }, water: { cycle: 5.11, power: 2 }, fire: { cycle: 5.11, power: 2 }, earth: { cycle: 6.25, power: 2 } },
   // hotbar slots: 'hand', 'belt' or a family (members cycle with Q / the wheel over the slot / pad right-trigger)
   families: {
     craft:   { name: 'Crafters',   members: ['cauldron', 'forge', 'anvil'] },
@@ -322,13 +325,13 @@ const CFG = {
   // trail = the smaller mark a moving spell leaves behind it every trailGap s (same fields as dec)
   spells: {
     // Cyclone Gust: three spinning pulses grow out of him (r x 1/3, 2/3, 1, gap s apart); foes thrown into each other bonk for bonk dmg
-    gust:         { drop: 0.45, r: 6, dmg: 1.4, push: 6.5, pulses: 3, gap: 0.12, bonk: 9, dec: { k: 'swirl', r: 0.5, t: 3.2, a: 0.45 } },
+    gust:         { drop: 0.28, r: 6, dmg: 1.4, push: 6.5, pulses: 3, gap: 0.12, bonk: 9, dec: { k: 'swirl', r: 0.5, t: 3.2, a: 0.45 } },
     // Seeker Fireball: twice as fast as the old one, half the damage, and it homes: turns up to turn rad/s toward the nearest foe within seek tiles
-    fireball:     { drop: 0.55, speed: 25.6, life: 1.1, dmg: 15, splash: 7.5, sr: 1.3, turn: 18, seek: 14, behind: -0.94, nearBias: 0.04, dec: { k: 'burn', r: 0.6, t: 3, a: 0.55 }, trail: { k: 'ember', r: 0.25, t: 1.4, a: 0.6 }, trailGap: 0.05 },
+    fireball:     { drop: 0.32, speed: 25.6, life: 1.1, dmg: 15, splash: 7.5, sr: 1.3, turn: 18, seek: 14, behind: -0.94, nearBias: 0.04, dec: { k: 'burn', r: 0.6, t: 3, a: 0.55 }, trail: { k: 'ember', r: 0.25, t: 1.4, a: 0.6 }, trailGap: 0.05 },
     // Tidal Wave: a crescent of water w tiles wide rolls out; it carries every foe it catches (push), slows them and heals the Wizard a little
-    spray:        { drop: 0.5, speed: 10, life: 0.85, w: 3.4, dmg: 10, push: 10, slow: 0.45, slowT: 2.2, heal: 3, dec: { k: 'wet', r: 0.5, t: 3, a: 0.4 }, trail: { k: 'wet', r: 0.6, t: 2.6, a: 0.35 }, trailGap: 0.08 },
+    spray:        { drop: 0.3, speed: 10, life: 0.85, w: 3.4, dmg: 10, push: 10, slow: 0.45, slowT: 2.2, heal: 3, dec: { k: 'wet', r: 0.5, t: 3, a: 0.4 }, trail: { k: 'wet', r: 0.6, t: 2.6, a: 0.35 }, trailGap: 0.08 },
     // Bouncing Boulder: hops hops times along the aim (hop s per hop, a little shorter each time), crushing everything around each landing
-    boulder:      { drop: 0.6, speed: 7.5, hops: 4, hop: 0.42, dmg: 24, sr: 1.6, push: 7, dec: { k: 'crack', r: 0.8, t: 4.5, a: 0.8 } },
+    boulder:      { drop: 0.36, speed: 7.5, hops: 4, hop: 0.42, dmg: 24, sr: 1.6, push: 7, dec: { k: 'crack', r: 0.8, t: 4.5, a: 0.8 } },
     // Flamethrower: a stream of fire blown out in front of him for t s (it follows his aim): dps to everything in a cone range tiles long, half rad wide
     flamethrower: { drop: 0.5, t: 2.2, range: 5.5, half: 0.42, dps: 30, dec: { k: 'scorch', r: 0.45, t: 3.2, a: 0.5 }, trailGap: 0.09 },
     // Gale Boomerang (Air + Earth; the recipe id stays 'sandstorm'): a heavy stone-edged boomerang thrown along the aim. It curves out (reach tiles ahead, curve tiles to the side, out s),
@@ -396,6 +399,7 @@ const CFG = {
     titan:       { name: 'Kiln Titan',      tier: 3, order: ['fire', 'water', 'earth'], hp: 280, speed: 0.9, dmg: 20, rad: 0.75, gem: [2, 0.50], ai: 'titan', col: '#c8704a', n: 1, cost: { geyser: 1 },  time: 42, power: 6, cracks: [0.75, 0.5, 0.25], dr: [0.35, 0.5, 0.7, 0.9], vent: { r: 3, delay: 1.0, dmg: 18 } },
   },
   crafted: {
+    eggTimeMul: 0.87,         // hostile Eggs grow this much of a creature's listed `time` (13% faster); the friendly Core eggs keep the listed time
     cap: 25,                  // crafted creatures alive at once (inside world.cap); extra Eggs wait in the portal queue
     queue: 12,                // Eggs the Spell Portal holds back while the cap is full (more than that and it stops taking Eggs)
     dropGap: 0.7,             // seconds between any two creatures dropping in (even from the same Egg)
@@ -576,7 +580,7 @@ const WEAK_TO = { fire: 'water', water: 'earth', earth: 'air', air: 'fire' };
     c.weak = WEAK_TO[c.order[0]]; c.resist = c.order[c.order.length - 1];
     if (c.weak === c.resist) console.warn('creature ' + id + ' resists what it is weak to');
     CFG.enemies[id] = { name: c.name, hp: c.hp, speed: c.speed, dmg: c.dmg, gem: c.gem, w: 0, col: c.col, weak: c.weak, resist: c.resist, rad: c.rad, crafted: true, creature: id };
-    CFG.recipes['egg_' + id] = { machine: 'spawner', in: c.cost, out: 'egg_' + id, time: c.time, power: c.power,
+    CFG.recipes['egg_' + id] = { machine: 'spawner', in: c.cost, out: 'egg_' + id, time: Math.round(c.time * CFG.crafted.eggTimeMul * 10) / 10, power: c.power,
       use: 'Hatches a ' + c.name + ' beside the Wizard' };
     // the friendly version: one Core of each of its elements (a Gale Core is Air, Tide Water, Ember Fire, Stone Earth); a triple needs the same parent pairs MADE as the hostile seed spell
     const seed = Object.keys(c.cost)[0], par = c.order.length > 1 && CFG.recipes[seed] ? CFG.recipes[seed].parents : null, cin = {};
@@ -814,11 +818,11 @@ const QUESTS = {
     { from: 2,  v5: 1,  icon: 'air',   text: 'Stand by the Harnesser: press E to hand-gather Air, then keep tapping E to fill the meter', xp: 3, stat: g => flN(g, 'gathered'), n: 1, hint: { use: 'harness' } },
     { from: 3,  v5: 2,  icon: 'ic_portal', text: 'Throw (right-click / pad B) a spell into the Spell Portal', xp: 3, stat: g => flN(g, 'portalHand'), n: 1, hint: { portal: 'spell' } },
     { from: 5,  v5: 3,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, stat: g => Object.values(g.stats.banked || {}).reduce((a, n) => a + n, 0), n: 5, hint: { portal: 'skill' } },
-    { icon: 'b:water', text: 'Switch the Harnesser to another element: press F beside it (the new crystal grows for 7.5 seconds)', xp: 4, stat: g => flN(g, 'switched'), n: 1, hint: { use: 'harness' } },
+    { icon: 'b:water', text: 'Switch the Harnesser to another element: press F beside it (the new crystal grows for 5 seconds)', xp: 4, stat: g => flN(g, 'switched'), n: 1, hint: { use: 'harness' } },
     { from: 6,  v5: 4,  icon: 'b:air', text: 'Build a second Harnesser: press 3, click a tile, then throw Wood & Stone at it', xp: 8, stat: g => builtN(g, 'harness'), n: 1, hint: { build: 'harness' } },
     { from: 7,  v5: 5,  icon: 'battery', text: 'Feed the Battery: grab an Air spell and throw it at the Battery (Wood or Stone work too)', xp: 10, stat: g => flN(g, 'fed'), n: 1, hint: { make: 'battery' } },
     { icon: 'egg_zephyr', text: 'Hatch Air creatures: send 3 Zephyr Wisp Eggs through the Spell Portal', xp: 8, stat: g => (g.stats.sent || {}).egg_zephyr || 0, n: 3, hint: { make: 'spawner' } },
-    { v5: 6,  icon: 'b:water', text: 'Switch a Harnesser to Water: press F beside it. The new crystal grows for 7.5 seconds', xp: 8, gift: { bank: { water: 4 } }, stat: g => (g.stats.elSet || {}).water || 0, n: 1, also: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
+    { v5: 6,  icon: 'b:water', text: 'Switch a Harnesser to Water: press F beside it. The new crystal grows for 5 seconds', xp: 8, gift: { bank: { water: 4 } }, stat: g => (g.stats.elSet || {}).water || 0, n: 1, also: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
     { from: 11, v5: 8,  icon: 'hp_water', text: 'Build an Alchemy Cauldron, feed it ONE Water spell and send the Health Potion through the Spell Portal', xp: 12, stat: g => potionN(g, 'hp'), n: 1, hint: { make: 'cauldron' } },
     { v5: 9,  icon: 'hp_flamethrower', text: 'Keep the Wizard healthy: send 3 more Health Potions (a stronger spell makes a stronger potion)', xp: 10, gift: { stock: { wood: 12, stone: 9, iron: 6 } }, stat: g => potionN(g, 'hp'), n: 3, hint: { make: 'cauldron' } },
     { icon: 'egg_puddle', text: 'Hatch a Puddle Slime: feed Water to a Spawner, then send the Egg', xp: 10, stat: g => (g.stats.sent || {}).egg_puddle || 0, n: 1, hint: { make: 'spawner' } },

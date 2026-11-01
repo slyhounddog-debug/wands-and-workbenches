@@ -198,7 +198,7 @@ const OUT = process.env.SHOTS || '';
     // the values
     o.vals = ['earth', 'fire', 'air', 'water', 'flamethrower', 'nova'].map(k => ITEMS['hp_' + k].val);
     o.avals = ['water', 'air', 'fire', 'earth'].map(k => ITEMS['ap_' + k].val);
-    // switching the mode: the potion regrows for 7.5 s and nothing brews meanwhile
+    // switching the mode: the potion regrows for 5 s and nothing brews meanwhile
     FA.cycleElem(b, 1); o.mode1 = b.mode; o.regrow = b.grow === 0;
     FA.insert(b, 'earth', true); o.recipe2 = b.recipe;
     for (let i = 0; i < 4; i++) FA.update(0.5); o.waiting = b.out.length === 0;

@@ -15,7 +15,7 @@ function bookIndexEntries() {
   // ---------------- buildings ----------------
   bld('harness', 'build', 'b:harness', 'Makes element packets (spells): Air, Water, Fire or Earth, whichever crystal it carries. A packet is the basic spell and the raw ingredient of everything else.',
     'Pick it in the hotbar (3), click a floor tile and throw the materials at the blueprint. One stands ready at the start; stand beside any Harnesser and tap the use key to hand-gather a packet for free.',
-    'Nothing runs without packets: they are the Wizard\'s attacks, the Battery\'s fuel, the input of every machine and the Skill Tree\'s money. F switches its element (the new crystal grows for 7.5 seconds).');
+    'Nothing runs without packets: they are the Wizard\'s attacks, the Battery\'s fuel, the input of every machine and the Skill Tree\'s money. F switches its element (the new crystal grows for 5 seconds).');
   E('belt', 'build', 'Belt', 'ic_fast', 'Carries spells, potions, Eggs and garments from machine to machine, one tile at a time, the way its chevrons point.',
     'Pick the Belt tool (2) and click-drag a line from one tile to another; it turns the corner by itself. R turns the piece you aim at. It costs 1 Wood a tile.',
     'It automates the loop (Harnesser -> Splitter -> Spell Portal) so the Builder is free to build. Belts never carry raw Wood, Stone, Iron, Shards or Cores: those are thrown or carried.', costRow({ wood: 1 }));
@@ -29,7 +29,7 @@ function bookIndexEntries() {
     'Hotbar family 4 (Crafters). Press the use key at it to choose a recipe. Draws 5 power; a charged Battery beside it makes it 15% faster (Overdrive).',
     'Combo spells are stronger, hit more weaknesses and are the seeds for the bigger creatures. Triples need their parent pairs made first. Browse them on the Spells page.');
   bld('cauldron', 'build', 'b:cauldron', 'Brews potions from ONE spell at a time, like the Creature Spawner: the better the spell, the stronger the potion. Health mode brews Health Potions, Armor mode brews Armor Potions.',
-    'Hotbar family 4. Throw or belt in a single element spell or any combo spell; it absorbs it and brews. F (LT + X) switches the mode; the new potion regrows above it for 7.5 s. Needs no power.',
+    'Hotbar family 4. Throw or belt in a single element spell or any combo spell; it absorbs it and brews. F (LT + X) switches the mode; the new potion regrows above it for 5 s. Needs no power.',
     'Health Potions keep the Wizard alive; Armor Potions give him a 70% cut on every hit. A Nova makes the strongest of either. Send them through the Spell Portal. See the POTIONS entries for the numbers.');
   bld('anvil', 'build', 'b:anvil', 'The Armory: forges the Wizard\'s garments (augments) and the Warden Key from Cores, Iron and Shards.',
     'Hotbar family 4. Throw the ingredients at it by hand (belts refuse resources), pick a recipe with the use key. Draws 2 power.',
@@ -96,7 +96,7 @@ function bookIndexEntries() {
     'Alchemy Cauldron in Health mode (default). Feed it ONE spell, send the potion through the Spell Portal; it lands beside the Wizard and waits if he is already full.',
     'Healing without waiting. A strong one (' + P.overVal + '+) also overcharges a Battery. The table shows what a spell of each element mix heals.', table('hp'));
   E('ap', 'potion', 'Armor Potions', 'ap_earth', 'Gives the Wizard armor points. While he has any, EVERY hit is cut by ' + pc(CFG.armorRule.cut) + ' (with the Earth wand attack on top, ' + pc(1 - (1 - CFG.armorRule.cut) * CFG.wand.earth.take) + '), and each hit takes points off: ' + CFG.armorRule.small + ' for a small hit (up to ' + CFG.armorRule.smallMax + '), ' + CFG.armorRule.medium + ' for a medium one (up to ' + CFG.armorRule.mediumMax + '), ' + CFG.armorRule.big + ' for a big one. Earth makes the best (' + P.ap.earth + '), then Fire (' + P.ap.fire + '), Air (' + P.ap.air + '), Water (' + P.ap.water + ').',
-    'Alchemy Cauldron in Armor mode: press F beside it, wait 7.5 s for the new flask to regrow, then feed it ONE spell and send the potion through the Spell Portal.',
+    'Alchemy Cauldron in Armor mode: press F beside it, wait 5 s for the new flask to regrow, then feed it ONE spell and send the potion through the Spell Portal.',
     'Armor is not a second health bar: it is a shield that works for as many hits as it has points, so a big stack of points is a long stretch of 70% less damage.', table('ap'));
 
   // ---------------- the wilds ----------------

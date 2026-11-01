@@ -667,6 +667,7 @@ function seqTick(dt) {
   if (!q) return;
   q.t += dt;
   if (q.k !== 'start') return;
+  if (Main.skipNow && q.ph < 4) { Main.skipNow = false; Main.skipAll = true; q.ph = 4; m.hideB = true; Main.launch(m.pend, G); return; }   // Esc / a held button: straight to the game (Main.skipPoll)
   if (q.ph === 0 && q.t >= SEQ.out) {
     q.ph = 1; q.t1 = m.t; m.sx = { t0: m.t };
     sfx('whoosh');

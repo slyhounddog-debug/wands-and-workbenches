@@ -647,7 +647,7 @@ Main.remoteB = function (dt, p) {
 // ---------- the wilds' sound effects for the online guest ----------
 // The guest never runs the sim, so the sounds the host makes in the wilds ride along in the snapshots: G.snd = { n: how many so far, list: the last 24 { n, s: name, f: step } }.
 // The guest plays the new ones when it shows that picture (Main.playSnd, online.js). Builder-side sounds (belts, machines, pickups, the factory's thuds) are left out.
-const WORLD_SFX = new Set(['hit', 'hitw', 'kill', 'hurt', 'clank', 'die', 'roll', 'dodge', 'weak', 'warn', 'heart', 'evwarn', 'alert', 'roar', 'slam', 'volley', 'victory', 'shrine', 'chest', 'shard', 'gem', 'gemBig', 'dig', 'rustle',
+const WORLD_SFX = new Set(['hit', 'hitw', 'thump', 'kill', 'hurt', 'clank', 'die', 'roll', 'dodge', 'weak', 'warn', 'heart', 'evwarn', 'alert', 'roar', 'slam', 'volley', 'victory', 'shrine', 'chest', 'shard', 'gem', 'gemBig', 'dig', 'rustle',
   'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'incoming', 'incoming_big', 'portalDrop', 'whoosh', 'pressure', 'wall', 'freeze', 'launch', 'powerup', 'step_w']);
 Main.stepN = 0;
 Main.tapSfx = function (name, x, y) {
@@ -988,10 +988,11 @@ function frame(ts) {
   IN.pollPads();
   if (DevBot.on) DevBot.drive(dt);   // dev-only Wizard bot: writes the Wizard's pad state, nothing else
   if (Net.role === 'host') Net.drive(ts);   // online: the guest's pad becomes the Wizard's pad, the same seam
+  Main.skipPoll(dt);
   if (STATE === 'guest') {
     try { Main.guestFrame(dt, ts); } catch (e) { R.defer = null; UI.err(e); }
   } else if (STATE === 'menu' && G && G.menu) {
-    AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true);   // the front door: all four music layers, muffled
+    AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); AU.setEar(null);   // the front door: all four music layers, muffled
     try { Menu.frame(dt, ts); } catch (e) { R.defer = null; UI.err(e); }
   } else if (STATE === 'exit' && Main.xs) {
     AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true);
@@ -1004,6 +1005,7 @@ function frame(ts) {
       Book.tick(dt);   // the Collection Book's keys and pad while it is open
       if (Snap.mode !== 'off') { AU.hum(0); Snap.draw(ctx, ts); Main.still = 0; }   // a snapshot view is up: the simulation is frozen and the cached frame shows
       else {
+      if (G.w && !G.m4) AU.setEar(G.w.x, G.w.y);   // the wilds are heard from his Wizard (CFG.hear): to a side of him, quieter and duller with distance (the 4P host does it in M4.draw)
       if (!G.paused && !(Net.role === 'host' && Net.state !== 'live')) Main.step(dt);   // (online, the host waits while the guest is away)
       else AU.hum(0);
       if (Net.role === 'host') { Net.hostTick(dt); Main.netBannerTick(); Main.pausedBanner(); }
@@ -1160,7 +1162,26 @@ Main.introStep = function (dt) {
   }
 };
 const smooth = k => k * k * (3 - 2 * k);
+// ---------- skipping the start sequence (the plates popping out, the Builder and belts sucked away, the factory dropping in) ----------
+// Esc, or any of Space / Enter / the left mouse button / a pad's A or B HELD for CFG.juice.skipHold s, jumps to the finished game: Menu.seqTick (the menu half) and Main.introFrame (the factory half)
+// look at Main.skipNow; skipping from the first half (skipAll) skips the second too. A small hint with a filling bar shows while the sequence runs.
+Main.skipNow = false; Main.skipAll = false; Main.skipHold = 0;
+Main.skipPoll = function (dt) {
+  const on = (STATE === 'menu' && G && G.menu && G.menu.seq && G.menu.seq.k === 'start') || (STATE === 'play' && G && G.intro && !G.paused);
+  const el = $('skipHint');
+  if (!on) { Main.skipNow = false; Main.skipHold = 0; if (!(STATE === 'play' && G && G.intro)) Main.skipAll = false; if (el && !el.classList.contains('hidden')) el.classList.add('hidden'); return; }
+  const held = IN.down('Space') || IN.down('Enter') || IN.mouse.l || IN.pad.some(p => p && (p.aHeld || p.bHeld));
+  Main.skipHold = held ? Main.skipHold + dt : 0;
+  Main.skipNow = IN.hit('Escape') || Main.skipHold >= CFG.juice.skipHold;
+  if (el) { el.classList.remove('hidden'); el.lastElementChild.style.width = Math.min(100, Main.skipHold / CFG.juice.skipHold * 100) + '%'; }
+};
+Main.skipIntro = function () {
+  for (const o of G.fac.bld.concat(G.fac.belts, [G.bd])) { if (o.fallAt !== undefined && o.type && o.type !== 'belt') o.pop = 0.35; delete o.fallAt; }
+  AU.sfx('whoosh');
+  Main.introEnd();
+};
 Main.introFrame = function (dt, ts) {
+  if (Main.skipNow || Main.skipAll) { Main.skipNow = Main.skipAll = false; Main.skipIntro(); return; }
   const rdt = dt;
   dt *= Main.CINE;
   Main.introStep(dt);

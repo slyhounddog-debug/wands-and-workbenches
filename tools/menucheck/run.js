@@ -253,6 +253,22 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok(Math.hypot(wp[0] - 100.5, wp[1] - 100.5) < 8, 'the Wizard is back at the start of the world', wp.map(v => v.toFixed(1)).join(','));
   await shot('14_back');
 
+  // ---- 9. skipping the start sequence: a short tap of a button does nothing, Esc or a held button jumps to the game (and skips the factory's drop-in too)
+  const startSeq = () => ev(() => { const m = __wands.G.menu; m.pend = { kind: 'new', slot: 2, online: false }; m.seq = { k: 'start', t: 0, ph: 0, belts: 0 }; });
+  const inGame = () => page.waitForFunction(() => __wands.G && !__wands.G.menu && !__wands.G.intro, null, { timeout: 8000 });
+  await startSeq(); await sleep(300);
+  ok(await ev(() => !document.getElementById('skipHint').classList.contains('hidden')), 'the skip hint shows while the start sequence runs');
+  await page.keyboard.down('Space'); await sleep(200); await page.keyboard.up('Space'); await sleep(200);
+  ok(await ev(() => !!__wands.G.menu && !!__wands.G.menu.seq), 'a short tap of a button does not skip it');
+  let ts = Date.now(); await key('Escape'); await inGame();
+  ok(Date.now() - ts < 3000 && await ev(() => !__wands.G.intro && !!__wands.G.fac && !__wands.G.fac.bld.some(b => b.fallAt !== undefined)), 'Esc skips the whole start sequence: menu half and the factory drop-in', (Date.now() - ts) + ' ms');
+  ok(await ev(() => document.getElementById('skipHint').classList.contains('hidden')), 'the skip hint goes away with the sequence');
+  await ev(() => __wands.Main.toTitle(true));
+  await page.waitForFunction(() => { const m = __wands.G && __wands.G.menu; return m && !m.ret && m.page === 'main' && m.plates.length >= 6; }, null, { timeout: 20000 });
+  await startSeq(); await sleep(300); ts = Date.now();
+  await page.keyboard.down('Space'); await inGame(); await page.keyboard.up('Space');
+  ok(Date.now() - ts < 4000, 'a held button (Space) skips the start sequence too', (Date.now() - ts) + ' ms');
+
   ok(errs.length === 0, 'no page errors', errs.slice(0, 4).join(' // '));
   ok(await ev(() => __wands.UI.errs.length === 0), 'nothing in the error badge');
   await browser.close();

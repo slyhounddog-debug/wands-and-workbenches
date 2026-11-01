@@ -146,7 +146,7 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     const c = CFG.creatures[id], rows = [elStrip(c.order)];
     rows.push(main([badge('potion', c.hp, 'Health', 72), badge('ic_flame', c.dmg, 'Touch damage', 72)]));
     rows.push(sub([badge('ic_fast', c.speed, 'Speed, tiles per second' + (c.fly ? ' (flies)' : ''), 48), badge('gem', gemPct(c.gem), 'XP Gems', 48),
-      badge('egg_' + id, c.time + 's', 'Hatch time at a Creature Spawner' + ((c.n || 1) > 1 ? ', ' + c.n + ' creatures per Egg' : ''), 48, (c.n || 1) > 1 ? 'x' + c.n : ''), badge('ic_bolt', c.power, 'Power the Spawner draws', 48),
+      badge('egg_' + id, (CFG.recipes['egg_' + id] ? CFG.recipes['egg_' + id].time : c.time) + 's', 'Hatch time at a Creature Spawner' + ((c.n || 1) > 1 ? ', ' + c.n + ' creatures per Egg' : ''), 48, (c.n || 1) > 1 ? 'x' + c.n : ''), badge('ic_bolt', c.power, 'Power the Spawner draws', 48),
       badge(c.weak, 'x2', 'Weak to', 48, 'WEAK', 'weak'), badge(c.resist, 'x.5', 'Resists', 48, 'RESIST', 'res')]));
     rows.push(bigRec('egg_' + id, 32));
     rows.push('<div class="bkAlly" title="Throw Cores at a Spawner for a FRIENDLY ' + c.name + ': ' + CFG.ally.hpMul + 'x health, half damage">' + bigRec('aegg_' + id, 24) + '<small>FRIENDLY</small></div>');

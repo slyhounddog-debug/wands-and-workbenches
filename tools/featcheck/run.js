@@ -487,6 +487,97 @@ const OUT = process.env.SHOTS || '';
   ok(missing4.length === 0, 'every 4-player row of the feedback ledger has a cue that fires', 'missing: ' + missing4.join(' ') + ' (have ' + r.fb4.join(' ') + ')');
   ok(ledger4.length >= 8, 'FEEDBACK.md lists the 4-player rows', ledger4.join(' '));
 
+  // ================= the juice ledger (JUICE.md): every verb has a sound, a burst and a kick; a row with no probe is a FAIL =================
+  // (a probe runs the verb for real and reads three things: the sounds it asked for, the particles / rings it added, and whether anything moved: camera shake, nudge or the Builder's squash)
+  const juiceText = require('fs').readFileSync(path.resolve(__dirname, '../../JUICE.md'), 'utf8');
+  const juiceIds = ids(juiceText), JUICE_ROWS = ['wand', 'throw', 'pick', 'build', 'deliver', 'hit'];
+  r = await run(() => {
+    const W = __wands, G = W.G, WZ = W.WZ, FA = W.FA, CFG = W.CFG, o = { probes: {}, flat: [] };
+    T.clear(); G.hands.length = 0; G.fac.parts.length = 0;
+    const w = () => G.w, f = () => G.fac;
+    const sfxLog = [], orig = AU.sfx;
+    AU.sfx = function (n) { sfxLog.push(n); return orig.apply(AU, arguments); };
+    // one probe: reset the three meters, run the verb, read them
+    const probe = (label, fn) => {
+      sfxLog.length = 0; w().shake = 0; f().bumpAmp = 0; f().bump = 0; G.bd.squash = 0;
+      const p0 = f().parts.length + f().rings.length + f().thumps.length + w().fx_.length;
+      fn();
+      const p1 = f().parts.length + f().rings.length + f().thumps.length + w().fx_.length;
+      const res = { sfx: sfxLog.slice(), burst: p1 - p0, kick: w().shake > 0 || f().bumpAmp > 0 || G.bd.squash > 0 };
+      const lack = [!res.sfx.length && 'sound', res.burst <= 0 && 'burst', !res.kick && 'kick'].filter(Boolean);
+      if (lack.length) o.flat.push(label + ' (no ' + lack.join(', ') + ')');
+      return res;
+    };
+    const free = type => { for (let y = 0; y < f().h; y++) for (let x = 0; x < f().w; x++) if (FA.canPut(type, x, y)) return [x, y]; return null; };
+    // -- wand: every element in CFG.wand.need
+    o.probes.wand = [];
+    for (const el of Object.keys(CFG.wand.need)) {
+      T.clear(); w().ride = null; w().statT = 0; w().blink = null; G.wand.full[el] = true; G.wand.ord = [el]; G.wand.armed = el; G.wand.m[el] = CFG.wand.need[el];
+      probe('wand ' + el, () => { if (!WZ.wandCast()) throw new Error('wand ' + el + ' did not cast'); });
+      o.probes.wand.push(el);
+      T.clear(); w().ride = null; w().statT = 0; w().fireT = 0; w().invisT = 0; w().shake = 0;
+    }
+    // -- throw
+    T.clear(); G.hands.length = 0; FA.addHands('wood', 1); G.bd.throwCd = 0;
+    o.probes.throw = probe('throw', () => { FA.throwOne(G.bd.x + 2, G.bd.y); });
+    // -- pick: a Stockpile tile, a floor item, a machine's output, a crate
+    o.probes.pick = [];
+    G.hands.length = 0; G.stock.wood = Math.max(5, G.stock.wood || 0);
+    probe('pick pile', () => FA.takePile('wood')); o.probes.pick.push('pile');
+    G.hands.length = 0; const it = { kind: 'stone', x: G.bd.x + 0.5, y: G.bd.y, z: 0, vz: 0, t: 1 }; f().floor.push(it);
+    probe('pick floor', () => FA.pickFloor(it)); o.probes.pick.push('floor');
+    G.hands.length = 0; const hs = free('harness'), hb = FA.makeBuilding('harness', hs[0], hs[1], true, true); hb.out.length = 0; hb.out.push({ kind: 'air' });
+    probe('pick machine', () => FA.takeOut(hb)); o.probes.pick.push('machine');
+    G.hands.length = 0; const sp = free('crate'), cr = FA.makeBuilding('crate', sp[0], sp[1], true, true); cr.ck = 'air'; cr.cn = 2;
+    probe('pick crate', () => FA.takeOut(cr)); o.probes.pick.push('crate');
+    G.hands.length = 0;
+    // -- build: every building type, finished by the Builder (not quiet)
+    o.probes.build = [];
+    for (const type of Object.keys(CFG.buildings)) {
+      const at = free(type);
+      if (!at) { o.flat.push('build ' + type + ' (no free spot for the probe)'); continue; }
+      const b = FA.makeBuilding(type, at[0], at[1], false, true);
+      probe('build ' + type, () => FA.onComplete(b, false));
+      o.probes.build.push(type);
+    }
+    // -- deliver: the item smacks the Spell Portal (CFG.suck.baseT s after the throw)
+    T.clear(); f().sucks.length = 0;
+    o.probes.deliver = probe('deliver', () => { FA.suck('air', FA.portal('spell').x + 0.5, FA.portal('spell').y + 1); f().sucks[0].t = CFG.suck.baseT - 0.01; FA.update(0.05); });
+    // -- hit: a plain tick, a weakness hit, a big one, a scratch
+    T.clear();
+    const kind = Object.keys(CFG.enemies).find(k => CFG.enemies[k].weak);
+    const hurt = (dmg, el) => {
+      const e = WZ.makeEnemy(kind, w().x + 6, w().y, false); e.hp = e.maxHp = 9999; e.weak = 'fire'; e.resist = 'water'; e.dr = 1;
+      w().hitSfxT = -9; w().weakSfxT = -9; w().thumpT = -9; WZ.ctx = { spell: 'x', el: [el], hits: 0, kills: 0, weak: 0 };
+      sfxLog.length = 0; WZ.hurtE(e, dmg, 0, 0); WZ.ctx = null;
+      return sfxLog.slice();
+    };
+    o.probes.hit = { plain: hurt(8, 'air'), weak: hurt(8, 'fire'), big: hurt(CFG.juice.bigHit + 5, 'air'), tiny: hurt(1, 'air') };
+    // -- variation: the same sound twice never plays the same way (AU.variation holds the last drift of each name; audio may be asleep in a headless page)
+    sfxLog.length = 0;
+    const names = ['hit', 'throw', 'pickup', 'roll', 'dodge', 'thump'];
+    for (const n of names) for (let i = 0; i < 4; i++) orig.call(AU, n);
+    o.vary = names.map(n => !!AU.variation(n));
+    // -- position: a sound to the right on screen pans right, to the left pans left, none at the ear; far is quieter
+    AU.setEar(100, 100);
+    o.pan = [AU.panK(107, 93), AU.panK(93, 107), AU.panK(100, 100), AU.panK(undefined, undefined)];
+    o.far = [AU.farK(100, 105), AU.farK(100, 160)];
+    AU.setEar(null);
+    AU.sfx = orig;
+    return o;
+  });
+  ok(r.flat.length === 0, 'every verb has a sound, a burst and a kick', r.flat.join('; '));
+  ok(r.probes.wand.length === 4, 'juice: all four wand attacks probed', r.probes.wand.join(' '));
+  ok(r.probes.build.length >= 10, 'juice: every building type probed', r.probes.build.join(' '));
+  ok(r.probes.pick.length === 4 && r.probes.throw.sfx.indexOf('throw') >= 0, 'juice: throw + four kinds of pick probed');
+  ok(r.probes.deliver.sfx.indexOf('smack') >= 0, 'juice: the Spell Portal smack sounds when the item arrives', r.probes.deliver.sfx.join(' '));
+  ok(r.probes.hit.plain.indexOf('hit') >= 0 && r.probes.hit.weak.indexOf('hitw') >= 0 && r.probes.hit.big.indexOf('thump') >= 0 && r.probes.hit.tiny.length === 0, 'juice: a plain hit ticks, a weakness hit is heavier, a big hit thumps, a scratch is silent', JSON.stringify(r.probes.hit));
+  ok(r.vary.every(Boolean), 'juice: the busy sounds carry a pitch / volume drift', JSON.stringify(r.vary));
+  ok(r.pan[0] > 0 && r.pan[1] < 0 && r.pan[2] === 0 && r.pan[3] === 0, 'juice: a sound pans to its side of the Wizard', JSON.stringify(r.pan));
+  ok(r.far[0] === 1 && r.far[1] < 0.5, 'juice: a far sound is quieter', JSON.stringify(r.far));
+  const noProbe = juiceIds.filter(id => JUICE_ROWS.indexOf(id) < 0), noRow = JUICE_ROWS.filter(id => juiceIds.indexOf(id) < 0);
+  ok(noProbe.length === 0 && noRow.length === 0, 'JUICE.md and the probes list the same verbs (a new row needs a probe, a probe needs a row)', 'rows without a probe: ' + noProbe.join(' ') + ' / probes without a row: ' + noRow.join(' '));
+
   ok(errs.length === 0, 'no page errors', errs.slice(0, 5).join(' | '));
   await browser.close();
   console.log(fails ? 'FEATCHECK FAILED: ' + fails : 'FEATCHECK PASSED');

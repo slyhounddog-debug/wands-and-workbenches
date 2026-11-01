@@ -282,7 +282,7 @@ FA.finishTile = function (b) {   // the blueprint is paid for: the tile(s) becom
   if (pile) G.stats.pileTiles = (G.stats.pileTiles || 0) + 1; else G.stats.tiles = (G.stats.tiles || 0) + 1;   // a Floor Tile is one 2 x 2 block
   const mx = b.x + (pile ? 0.5 : n / 2), my = b.y + (pile ? 0.5 : n / 2);
   FA.burst(mx, my, pile ? '#f4d898' : '#8ee06a', pile ? 20 : 34); FA.ipop(mx, my, [['ic_check']]);
-  AU.sfx('complete'); UI.changed();
+  FA.nudge(4); AU.sfx('complete'); UI.changed();
 };
 // Demolishing with no building on the tile takes the tile itself: a Stockpile tile turns back into floor, a floor tile into empty ground. Both are refunded.
 // What lay on it bounces to the nearest Stockpile tile with room for it / the nearest floor (and, when the factory is full, through the portal into the wilds).
@@ -350,7 +350,7 @@ FA.onComplete = function (b, quiet) {
   if (!quiet) {
     FA.burst(b.x + 0.5, b.y + 0.5, '#ffe36b', 22);
     AU.sfx('complete');
-    b.pop = 0.5;
+    b.pop = 0.5; FA.nudge(5);
     FA.landPuff(b.x + 0.5, b.y + 0.5);   // a finished building lands with the same small puff of dust the starting buildings drop in with
   }
 };
@@ -621,12 +621,18 @@ FA.stash = function () {       // what the Stockpile can hold goes back into it 
   G.hands = G.hands.filter(h => { const s = FA.storable(h.kind); if (s) G.stock[h.kind] = (G.stock[h.kind] || 0) + 1; return !s; });
   FA.dropHands(); AU.sfx('drop');
 };
+// what picking something up does: a pop of sparks in its colour where it was, the Builder's squash and the pickup sound (x, y = where it was; the Builder's own spot when not given)
+FA.pickJuice = function (kind, x, y) {
+  const bd = G.bd;
+  FA.burst(x === undefined ? bd.x : x, y === undefined ? bd.y : y, ITEMS[kind] && ITEMS[kind].color || '#ffffff', 4);
+  bd.squash = 0.2; AU.sfx('pickup');
+};
 FA.pickFloor = function (it) {   // one item per press (hold to keep grabbing)
   const f = G.fac, i = f.floor.indexOf(it);
   if (i < 0 || !FA.canHold(it.kind)) return;
   FA.addHands(it.kind, 1);
   f.floor.splice(i, 1);
-  AU.sfx('pickup'); G.bd.squash = 0.2;
+  FA.pickJuice(it.kind, it.x, it.y);
 };
 
 // ---------- placement / demolish ----------
@@ -941,11 +947,11 @@ FA.overcharge = function (b, k) {
   AU.sfx('overcharge'); UI.changed();
 };
 FA.takeOut = function (b) {   // one item per press
-  if (b.cn > 0 && FA.canHold()) { FA.addHands(b.ck, 1); if (--b.cn <= 0) { b.cn = 0; b.ck = null; } AU.sfx('pickup'); G.bd.squash = 0.2; return; }   // a crate
+  if (b.cn > 0 && FA.canHold()) { const k = b.ck; FA.addHands(b.ck, 1); if (--b.cn <= 0) { b.cn = 0; b.ck = null; } FA.pickJuice(k, b.x + 0.5, b.y + 0.5); return; }   // a crate
   if (!b.out.length || !FA.canHold(b.out[0].kind)) return;
   const o = b.out.shift();
   FA.addHands(o.kind, 1);
-  AU.sfx('pickup'); G.bd.squash = 0.2;
+  FA.pickJuice(o.kind, b.x + 0.5, b.y + 0.5);
 };
 // a Battery burns element packets, Wood and Stone alike (the same seconds per item)
 FA.isFuel = k => !!ELEM[k] || k === 'wood' || k === 'stone';
@@ -992,7 +998,6 @@ FA.deliver = function (kind, x, y) {
   G.w.run.deliveries++;
   G.w.run.spells[kind] = (G.w.run.spells[kind] || 0) + 1;
   f.flash = 0.5; f.flashCol = ITEMS[kind].color || '#fff';
-  if (ELEM[kind]) FA.eburst(p.x + 0.5, p.y + 1, kind, 8);
   f.log.spell.push(f.t);
   FA.flag('sent_' + kind);
   if (ITEMS[kind].aug) FA.flag('sent_aug');
@@ -1016,7 +1021,20 @@ FA.deliver = function (kind, x, y) {
 // the Spell Portal's intake show: the item is slurped into the ring, then it shoots up and out of the factory's top-right corner
 // (CFG.arc.outT) to come sailing into the wilds from their top-left (G.w.arcs, WZ.send). Drawn by R.drawSuck from G.fac.sucks
 FA.suck = function (kind, x, y) {
-  G.fac.sucks.push({ kind, x, y, t: 0, dur: CFG.suck.baseT + CFG.arc.outT, col: ITEMS[kind].color || '#ffffff', seed: Math.random() * 6.283 });
+  G.fac.sucks.push({ kind, x, y, t: 0, dur: CFG.suck.baseT + CFG.arc.outT, col: ITEMS[kind].color || '#ffffff', seed: Math.random() * 6.283, hit: false });
+};
+// the moment the item smacks the Spell Portal (CFG.suck.baseT s after it was thrown in): a small themed burst out of the portal, a soft thwap and a tiny camera nudge
+FA.smack = function (s) {
+  const p = FA.portal('spell');
+  if (ELEM[s.kind]) FA.eburst(p.x + 0.5, p.y + 1, s.kind, 7); else FA.burst(p.x + 0.5, p.y + 1, s.col, 6);
+  FA.nudge(2.5);
+  AU.sfx('smack');
+};
+// a tiny camera bump on the Builder's side (px): the same bump a landing spell gives, only ever raised, never cut short
+FA.nudge = function (amp) {
+  const f = G.fac;
+  if (!f || !(amp > 0)) return;
+  if (amp >= f.bumpAmp * (1 - f.bump / 0.4)) { f.bump = 0; f.bumpAmp = amp; }
 };
 // a shockwave out of the Spell Portal when something big happens in the wilds (a heavy hit on the Wizard, an event, a Warden waking, the
 // Chimera): rings across the floor, and belts / machines jitter as the front passes them (FA.quake)
@@ -1254,7 +1272,12 @@ FA.update = function (dt) {
   if (f.threat && (f.threat.t += dt) > f.threat.dur) f.threat = null;
   if (f.focusT > 0) f.focusT -= dt;   // after a goal celebration: the new goal's pointer is the only blinking thing (UI.updateHud, R.drawFlags)
   if (f.bumpAmp > 0) { f.bump += dt; if (f.bump > 0.4) f.bumpAmp = 0; }
-  for (let i = f.sucks.length - 1; i >= 0; i--) { f.sucks[i].t += dt; if (f.sucks[i].t > f.sucks[i].dur) f.sucks.splice(i, 1); }
+  for (let i = f.sucks.length - 1; i >= 0; i--) {
+    const s = f.sucks[i];
+    s.t += dt;
+    if (!s.hit && s.t >= CFG.suck.baseT) { s.hit = true; FA.smack(s); }
+    if (s.t > s.dur) f.sucks.splice(i, 1);
+  }
   for (let i = f.thumps.length - 1; i >= 0; i--) { f.thumps[i].t += dt; if (f.thumps[i].t > 0.5 + f.thumps[i].tier * 0.12) f.thumps.splice(i, 1); }
   for (let i = f.rings.length - 1; i >= 0; i--) { f.rings[i].t += dt; if (f.rings[i].t > 0.3) f.rings.splice(i, 1); }
   for (let i = f.waves.length - 1; i >= 0; i--) { f.waves[i].t += dt; if (f.waves[i].t > CFG.pressure.life) f.waves.splice(i, 1); }
@@ -1675,6 +1698,7 @@ FA.throwOne = function (aimX, aimY, cd) {
   G.fac.flying.push({ kind: it.kind, sx: bd.x, sy: bd.y, x: bd.x, y: bd.y, z: 0.8, tx: tg.x, ty: tg.y, t: 0, T: 0.28 + d * 0.045, h: 0.9 + d * 0.22, fromBuilder: true });
   bd.throwCd = FA.throwGap(cd || CFG.throwRepeat); bd.squash = 0.18;
   bd.fx = tg.x - bd.x || bd.fx; bd.fy = tg.y - bd.y || bd.fy;
+  FA.burst(bd.x + (tg.x - bd.x) / (d || 1) * 0.35, bd.y + (tg.y - bd.y) / (d || 1) * 0.35, ITEMS[it.kind].color || '#ffffff', 3);   // a few sparks of its colour off the hands
   AU.sfx('throw');
   return true;
 };
@@ -1940,7 +1964,7 @@ FA.actionFor = function (t, mode) {
       const b = t.o;
       if (!pick) return A('Rotate belt', () => { b.dir = (b.dir + 1) % 4; AU.sfx('blip'); }, false, ['ic_rotate']);
       if (!b.item) return NONE;
-      if (FA.canHold(b.item.kind)) return A('Grab ' + itemName(b.item.kind), () => { if (b.item && FA.canHold(b.item.kind)) { FA.addHands(b.item.kind, 1); b.item = null; AU.sfx('pickup'); } }, true, [b.item.kind]);
+      if (FA.canHold(b.item.kind)) return A('Grab ' + itemName(b.item.kind), () => { if (b.item && FA.canHold(b.item.kind)) { const k = b.item.kind; FA.addHands(k, 1); b.item = null; FA.pickJuice(k, b.x + 0.5, b.y + 0.5); } }, true, [b.item.kind]);
       return FULL;
     }
     case 'portal':
@@ -1984,7 +2008,7 @@ FA.bldAction = function (b, pick) {
   return NONE;
 };
 // Switching a Harnesser's element (F / LT + X): the old crystal bursts into particles, the new one grows from nothing for CFG.harness.growT seconds
-// (switching again while it grows starts the 7.5 seconds over), and nothing is harnessed until it has grown and shaken.
+// (switching again while it grows starts the 5 seconds over), and nothing is harnessed until it has grown and shaken.
 FA.setElem = function (b, el) {
   if (!ELEM[el] || b.el === el) return false;
   const cx = b.x + 0.5, cy = b.y + 0.5;
@@ -2041,8 +2065,7 @@ FA.takePile = function (r) {   // one item per press (hold to keep grabbing)
   G.stock[r]--;
   FA.addHands(r, 1);
   FA.flag('tookPile');
-  G.bd.squash = 0.2;
-  AU.sfx('pickup');
+  FA.pickJuice(r);
 };
 // quiet: don't complain when there's nothing to do (the input buffer retries for a moment first)
 FA.interact = function (mode, quiet) {

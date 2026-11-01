@@ -95,6 +95,7 @@ WZ.onDeath = function (e) {
   try { WZ.onDeath2(e, w); } finally { WZ.cur = was; }
 };
 WZ.dropMul = e => e.elite ? CFG.drops.eliteMul : e.mut ? CFG.drops.mutMul : 1;
+WZ.resMul = e => e.elite ? CFG.drops.resEliteMul : e.mut ? CFG.drops.resMutMul : 1;   // Wood / Stone / Iron have gentler multipliers than the spell drops
 WZ.onDeath2 = function (e, w) {
   if (e.mut === 'volatile') { const M = CFG.mutations.volatile, x = e.x, y = e.y; WZ.telegraph(x, y, M.r, M.delay, '#ff7a30', () => WZ.strike(x, y, M.r, M.dmg)); }
   if (e.mut === 'splitter') WZ.spawnMini(e);
@@ -114,10 +115,9 @@ WZ.onDeath2 = function (e, w) {
     if (els.length && Math.random() < CFG.drops.packet * mul) WZ.drop(els[Math.floor(Math.random() * els.length)], e.x, e.y, 1);
   }
   if (e.evt) w.evKills = (w.evKills || 0) + 1;
-  if (!e.mini) {   // a common resource now and then (Wood or Stone), and Iron more rarely: any foe, wild or hatched
-    const D = CFG.drops;
-    if (Math.random() < D.common * mul) WZ.drop(Math.random() < 0.5 ? 'wood' : 'stone', e.x, e.y, 1);
-    if (Math.random() < D.iron * mul) WZ.drop('iron', e.x, e.y, 1);
+  if (!e.mini) {   // Wood, Stone and Iron each roll their own chance: any foe, wild or hatched
+    const D = CFG.drops, rm = WZ.resMul(e);
+    for (const k of ['wood', 'stone', 'iron']) if (Math.random() < D[k] * rm) WZ.drop(k, e.x, e.y, 1);
   }
   WZ.lootDrops(e);   // Cores and Ward Keys (augments.js)
 };
@@ -596,7 +596,7 @@ WZ.evRun = function (dt) {
       if (a.t >= E.bloom.dur) { w.bloom = 0; WZ.evClear(); }
       break;
     }
-    case 'storm': {   // spawn bursts of the surging element's foes, and its harnessers run boosted
+    case 'storm': {   // spawn bursts of the surging element's foes, and its harvesters run boosted
       const S = E.storm;
       if (a.t < S.dur && a.cd <= 0) {
         a.cd = S.gap;

@@ -45,9 +45,9 @@ const OUT = process.env.SHOTS || '';
     const FA = __wands.FA;
     return [0, 1, 2].map(n => FA.robotCost(n));
   });
-  ok(JSON.stringify(r[0]) === '{"wood":12,"stone":8,"iron":4,"shard":1}', 'the first robot costs 12 Wood, 8 Stone, 4 Iron, 1 Shard', JSON.stringify(r[0]));
-  ok(JSON.stringify(r[1]) === '{"wood":18,"stone":12,"iron":6,"shard":2}', 'the second costs 50% more Wood / Stone / Iron and double the Shards', JSON.stringify(r[1]));
-  ok(JSON.stringify(r[2]) === '{"wood":27,"stone":18,"iron":9,"shard":4}', 'the third costs 50% more again and double again', JSON.stringify(r[2]));
+  ok(JSON.stringify(r[0]) === '{"wood":6,"stone":8,"iron":4,"shard":1}', 'the first robot costs 6 Wood, 8 Stone, 4 Iron, 1 Shard', JSON.stringify(r[0]));
+  ok(JSON.stringify(r[1]) === '{"wood":6,"stone":8,"iron":8,"shard":4}', 'the second costs the same Wood / Stone, 8 Iron and 4 Shards', JSON.stringify(r[1]));
+  ok(JSON.stringify(r[2]) === '{"wood":6,"stone":8,"iron":12,"shard":8}', 'the third costs 12 Iron and 8 Shards', JSON.stringify(r[2]));
 
   // ================= 2. build one like any building; it adds no power =================
   r = await run(() => {
@@ -69,7 +69,7 @@ const OUT = process.env.SHOTS || '';
     return o;
   });
   ok(r.hot === 8 && r.keys === 'Digit9' && r.famMember === 'robot', 'the robot is on the toolbar (slot 9)', JSON.stringify([r.hot, r.keys, r.famMember]));
-  ok(r.bp && JSON.stringify(r.cost) === '{"wood":12,"stone":8,"iron":4,"shard":1}', 'placing it makes a blueprint at the first price', JSON.stringify(r.cost));
+  ok(r.bp && JSON.stringify(r.cost) === '{"wood":6,"stone":8,"iron":4,"shard":1}', 'placing it makes a blueprint at the first price', JSON.stringify(r.cost));
   ok(r.done && r.count === 1, 'throwing its materials in builds it (like any building)');
   ok(r.nap && r.bat === 0, 'a new robot starts flat and napping until it is charged');
   ok(r.genAfter === r.genBefore && r.genCharged === r.genBefore && !r.nobld, 'a robot adds nothing to the factory power, charged or not', JSON.stringify([r.genBefore, r.genAfter, r.genCharged]));
@@ -90,7 +90,7 @@ const OUT = process.env.SHOTS || '';
     const W = __wands, G = W.G, FA = W.FA, b = R1, o = {};
     b.bat = W.CFG.batteryMax;
     const far = T.free(1, b.x + 4, b.y - 2, 1)[0];
-    const bp = FA.place('crate', far[0], far[1], 0);   // 12 Wood + 6 Stone
+    const bp = FA.place('crate', far[0], far[1], 0);   // 6 Wood + 2 Stone
     const need = FA.costOf(bp), tot0 = T.acct();
     window.BP = bp; o.need = need; o.tot0 = tot0;
     const seen = { carry: false, away: false, maxCarry: 0 };
@@ -167,7 +167,7 @@ const OUT = process.env.SHOTS || '';
     window.R2 = b2; window.R3 = b3;
     return o;
   });
-  ok(JSON.stringify(r.costs) === '[{"wood":18,"stone":12,"iron":6,"shard":2},{"wood":27,"stone":18,"iron":9,"shard":4}]', 'the second and third robots cost 18/12/6/2 and 27/18/9/4', JSON.stringify(r.costs));
+  ok(JSON.stringify(r.costs) === '[{"wood":6,"stone":8,"iron":8,"shard":4},{"wood":6,"stone":8,"iron":12,"shard":8}]', 'the second and third robots cost 6/8/8/4 and 6/8/12/8', JSON.stringify(r.costs));
   ok(r.fourth === false && r.canPut === false && r.count === 3, 'a fourth robot cannot be placed (3 at most)', JSON.stringify([r.fourth, r.canPut, r.count]));
   r = await run(() => {
     const W = __wands, G = W.G, FA = W.FA, o = {};
@@ -200,7 +200,7 @@ const OUT = process.env.SHOTS || '';
     return o;
   });
   ok(r.iron === r.cost.iron + 1 && r.diff.wood === r.cost.wood && r.diff.shard === r.cost.shard, 'demolishing refunds the price it was paid at and its load goes back to the Stockpile', JSON.stringify(r.diff));
-  ok(r.count === 2 && JSON.stringify(r.next) === '{"wood":27,"stone":18,"iron":9,"shard":4}', 'then the next one is priced as the third again', JSON.stringify(r.next));
+  ok(r.count === 2 && JSON.stringify(r.next) === '{"wood":6,"stone":8,"iron":12,"shard":8}', 'then the next one is priced as the third again', JSON.stringify(r.next));
 
   // ================= 9. save and load =================
   r = await run(() => {

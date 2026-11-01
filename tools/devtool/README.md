@@ -95,7 +95,7 @@ exist in `CFG` are reported and ignored.
 
 ## Formulas tab
 
-Nine sections (spawn pressure, spells vs foes and the Chimera, harnessers / belts / machine planner, power and chargers, XP gems,
+Nine sections (spawn pressure, spells vs foes and the Chimera, harvesters / belts / machine planner, power and chargers, XP gems,
 skill-tree cost and time to afford, creature Eggs, scheduled events, Wizard survival). Each one copies the game's real formula
 (named in its blurb) and plots it with hover tooltips plus a table, so a mechanic can be tested without building the situation in game.
 Sliders with a solid orange edge when changed are real `CFG` variables: they are the same store as the Variables tab (same

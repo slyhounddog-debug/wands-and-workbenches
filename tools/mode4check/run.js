@@ -116,8 +116,8 @@ const OUT = process.env.SHOTS || '';
     G.m4 = false; G.stock.aug_tide = 1; o.ok2p = FA.recipeOk('aug_tide'); G.m4 = true; G.stock.aug_tide = 0;
     return o;
   });
-  ok(r.harn.length === 2 && r.adjacent, 'the starting factory has a second Harnesser right beside the first', JSON.stringify(r.harn));
-  ok(r.harn[0].endsWith(':fire') && r.harn[1].endsWith(':air'), 'each Harnesser starts on an element of one Wizard (W1 fire / water -> fire, W2 air / earth -> air)', JSON.stringify(r.harn));
+  ok(r.harn.length === 2 && r.adjacent, 'the starting factory has a second Harvester right beside the first', JSON.stringify(r.harn));
+  ok(r.harn[0].endsWith(':fire') && r.harn[1].endsWith(':air'), 'each Harvester starts on an element of one Wizard (W1 fire / water -> fire, W2 air / earth -> air)', JSON.stringify(r.harn));
   ok(Math.abs(r.hpK - 1.6) < 0.01 && Math.abs(r.out - 1.25) < 0.01, 'the 4P balance block: foe health x1.6, factory outputs x1.25', 'hp x' + r.hpK.toFixed(2) + ' out x' + r.out.toFixed(2));
   ok(r.ok1 === true && r.ok2 === false && r.ok2p === false, 'the Armory forges a SECOND copy of a garment in 4P (not a third), and only one in 2P', JSON.stringify([r.ok1, r.ok2, r.ok2p]));
 

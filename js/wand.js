@@ -347,7 +347,7 @@ WZ.shrineActivate = function (m, s) {
   WZ.ring(m.x, m.y, 5, ELEM[m.el].color, 0.7); WZ.puff(m.x, m.y, ELEM[m.el].color, 20); WZ.epuff(m.x, m.y, m.el, 18);
   w.shake = Math.max(w.shake, 0.3);
   AU.sfx('chest'); AU.sfx('el_' + m.el);
-  UI.toast('The ' + ELEM_WORD[m.el] + ' Shrine wakes: ' + ELEM_WORD[m.el] + ' Harnessers +' + Math.round(M.shrineBoost * 100) + '% for ' + M.buffT + ' seconds', 'R', 'cr_' + m.el);
-  UI.toast('The ' + ELEM_WORD[m.el] + ' Shrine is awake: ' + ELEM_WORD[m.el] + ' Harnessers +' + Math.round(M.shrineBoost * 100) + '% for ' + M.buffT + ' seconds', 'L', m.el);
+  UI.toast('The ' + ELEM_WORD[m.el] + ' Shrine wakes: ' + ELEM_WORD[m.el] + ' Harvesters +' + Math.round(M.shrineBoost * 100) + '% for ' + M.buffT + ' seconds', 'R', 'cr_' + m.el);
+  UI.toast('The ' + ELEM_WORD[m.el] + ' Shrine is awake: ' + ELEM_WORD[m.el] + ' Harvesters +' + Math.round(M.shrineBoost * 100) + '% for ' + M.buffT + ' seconds', 'L', m.el);
   UI.changed();
 };

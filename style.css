@@ -367,16 +367,17 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 #swapRing span { font: 10px var(--display); }
 .panel { padding: 24px 30px; text-align: center; }
 .panel h2 { font: 18px var(--display); color: var(--gold); margin: 0 0 16px; }
-#results { position: absolute; left: 980px; top: 150px; width: 440px; z-index: 45; animation: tin .3s steps(3); }
-#results h2 { color: var(--rose); font-size: 14px; line-height: 1.5; }
+#results, #resultsB { position: absolute; left: 980px; top: 150px; width: 440px; z-index: 45; animation: tin .3s steps(3); }
+#resultsB { left: 160px; }   /* the Builder's own game over screen, over the factory */
+#results h2, #resultsB h2 { color: var(--rose); font-size: 14px; line-height: 1.5; }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
 .stats div { background: var(--panel-lo); padding: 6px 8px; font-size: 16px; display: flex; align-items: center; gap: 6px; text-align: left; }
 .stats div span { flex: 1; }
 .stats b { font: 12px var(--display); color: var(--gold); }
 .best { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 17px; margin-bottom: 8px; }
 .best b { color: var(--gold); }
-#results p { font-size: 17px; }
-#results button.big { min-width: 0; }
+#results p, #resultsB p { font-size: 17px; }
+#results button.big, #resultsB button.big { min-width: 0; }
 #victory { background: rgba(10, 4, 20, 0.7); z-index: 75; }
 #victory .panel { width: 640px; animation: tin .3s steps(3); }
 #victory h2 { font-size: 24px; line-height: 1.4; }
@@ -418,6 +419,16 @@ button.big.warn { background: #ff7a5a; color: #fff; box-shadow: 0 -4px 0 0 var(-
 .ctlSec.dbg { box-shadow: inset 0 0 0 4px #5a3a78; }
 #pauseSet .ctlSec h3 { margin: 0 0 8px; font: 11px var(--display); color: var(--gold); text-align: left; }
 .ctlSec p.note { font-size: 16px; color: var(--muted); margin: 0 0 6px; }
+.keyNote { font-size: 16px; color: var(--muted); margin: 0 0 8px; text-align: left; }
+.keyNote b { color: var(--gold); }
+.keyRow { display: grid; grid-template-columns: 1fr 120px 34px; gap: 8px; align-items: center; margin: 5px 0; font-size: 16px; line-height: 1.05; text-align: left; }
+.keyBtn { font: 10px var(--display); padding: 8px 6px 6px; background: var(--panel-2); color: var(--cream); border: 3px solid var(--panel-hi); }
+.keyBtn.on { color: var(--gold); border-color: var(--gold); }
+.keyBtn.wait { background: var(--gold); color: #3a2410; border-color: var(--gold-2); animation: blinkk 0.6s steps(2) infinite; }
+.keyBtn:hover { border-color: var(--sky); }
+.keyRst { padding: 4px; background: var(--panel-lo); border: 3px solid var(--panel-hi); }
+.keyRst:disabled { opacity: 0.25; cursor: default; }
+@keyframes blinkk { 50% { opacity: 0.6; } }
 .ctlRow { display: grid; grid-template-columns: 200px 1fr; gap: 12px; align-items: center; margin: 7px 0; font-size: 17px; line-height: 1.05; }
 .ctlSec.wide .ctlRow { grid-template-columns: 360px 1fr; }
 .ctlRow .k { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -680,3 +691,5 @@ button.big.warn { background: #ff7a5a; color: #fff; box-shadow: 0 -4px 0 0 var(-
 .bkM4 b { font-family: var(--display); font-size: 10px; letter-spacing: 1px; }
 .bkM4 span { color: #e8e0f8; }
 .bkTr { margin-top: 4px; color: #cfc4e8; font-size: 12px; }
+.bkTot { margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 6px; color: #cfc4e8; font: 8px var(--display); opacity: 0.85; }
+#inspect img { vertical-align: middle; margin: -3px 0; }

@@ -753,12 +753,14 @@ const Net = {
     const L = Net.latch || (Net.latch = {}), gp = IN.pad[0] || null;
     if (Net.seatRole() === 'B') { collectB(L, gp); return; }   // (4P: a Builder seat has the Builder's keys)
     // the Wizard's four buttons (see Main.wizBtns): Space / . dodge = a, left click / / mash = x, right click / , cast = b, Q / M cycle = y; T (the tree) goes as Back
-    if (IN.hit('Space') || IN.hit('Period') || (gp && gp.a)) L.a = true;
-    if (IN.mouse.lp || IN.hit('Slash') || (gp && gp.x)) L.x = true;
-    if (IN.mouse.rp || IN.hit('Comma') || (gp && gp.b)) L.b = true;
-    if (IN.hit('KeyQ') || IN.hit('KeyM') || (gp && gp.y)) L.y = true;
-    if (IN.hit('KeyT') || (gp && gp.back)) L.back = true;
-    if (IN.hit('KeyN') || Main.takeEmoteClick()) L.rb = true;   // the emote wheel (the Wizard's pad RB)
+    // (the keys are the Keys actions, so the guest's own remaps apply: js/keys.js)
+    if (Keys.hit('wDodge') || (gp && gp.a)) L.a = true;
+    if (IN.mouse.lp || Keys.hit('wMash') || (gp && gp.x)) L.x = true;
+    if (IN.mouse.rp || Keys.hit('wCast') || (gp && gp.b)) L.b = true;
+    if (Keys.hit('wCycle') || (gp && gp.y)) L.y = true;
+    if (Keys.hit('treeB') || Keys.hit('treeW') || (gp && gp.back)) L.back = true;
+    if (Keys.hit('wEmote') || Main.takeEmoteClick()) L.rb = true;   // the emote wheel (the Wizard's pad RB)
+    if (Keys.hit('wMap') || Main.takeMapClick()) L.lb = true;   // the big map (the Wizard's pad LB)
     if (gp) { if (gp.lb) L.lb = true; if (gp.rb) L.rb = true; if (gp.rt) L.rt = true; if (gp.l3) L.l3 = true; if (gp.back) L.back = true; if (gp.cyc) L.cyc = gp.cyc; }
   };
   // a press made on the guest's own UI that has to reach the host as a button (the re-enter button on the results screen is the roll button)
@@ -766,42 +768,44 @@ const Net = {
   Net.padNow = function () {
     if (Net.mute) return { ix: 0, iy: 0, rx: 0, ry: 0, cyc: 0, a: false, b: false, x: false, y: false, lb: false, rb: false, rt: false, l3: false, back: false, xHeld: false, aHeld: false, bHeld: false, ltHeld: false, startHeld: false, any: false };
     const L = Net.latch || (Net.latch = {}), gp = IN.pad[0] || null;
-    let ix = (IN.down('KeyD') ? 1 : 0) - (IN.down('KeyA') ? 1 : 0), iy = (IN.down('KeyS') ? 1 : 0) - (IN.down('KeyW') ? 1 : 0);
+    const mv = Keys.move(Net.seatRole() === 'B' ? 'B' : 'W');
+    let ix = mv[0], iy = mv[1];
     if (!ix && gp) ix = gp.ix;
     if (!iy && gp) iy = gp.iy;
     const out = {
       ix, iy, rx: gp ? gp.rx || 0 : 0, ry: gp ? gp.ry || 0 : 0, cyc: L.cyc || 0,
-      xHeld: IN.mouse.l || IN.down('Slash') || !!(gp && gp.xHeld), aHeld: IN.down('Space') || IN.down('Period') || !!(gp && gp.aHeld), bHeld: !!(gp && gp.bHeld), ltHeld: !!(gp && gp.ltHeld), startHeld: false,
+      xHeld: IN.mouse.l || Keys.down('wMash') || !!(gp && gp.xHeld), aHeld: Keys.down('wDodge') || !!(gp && gp.aHeld), bHeld: !!(gp && gp.bHeld), ltHeld: !!(gp && gp.ltHeld), startHeld: false,
     };
     for (const k of EDGES) out[k] = !!L[k];
-    if (Net.seatRole() === 'B') { out.aHeld = IN.down('Space') || IN.down('Period') || IN.mouse.l || !!(gp && gp.aHeld); out.xHeld = false; out.bHeld = IN.mouse.r || IN.down('Comma') || !!(gp && gp.bHeld); out.ltHeld = IN.shift() || !!(gp && gp.ltHeld); out.bi = L.bi || null; }
+    if (Net.seatRole() === 'B') { out.aHeld = Keys.down('tumble') || Keys.down('pick') || IN.mouse.l || !!(gp && gp.aHeld); out.xHeld = false; out.bHeld = IN.mouse.r || Keys.down('throw') || !!(gp && gp.bHeld); out.ltHeld = IN.shift() || !!(gp && gp.ltHeld); out.bi = L.bi || null; }
     out.any = ix !== 0 || iy !== 0 || out.aHeld || out.xHeld || EDGES.some(k => out[k]);
     return out;
   };
   // a Builder seat's keys (4P): Space / left click pick (A), E use (X), right click / comma throw (B), [ ] hotbar (LB RB), Q family (RT), B / Delete demolish (Back), Tab target lock,
-  // 1-9 pick a hotbar slot, R rotate, F switch a Harnesser's element (these three ride in the pad's bi list), Shift + throw = the whole pile, Shift + Space = tumble
+  // 1-9 pick a hotbar slot, R rotate, F switch a Harvester's element (these three ride in the pad's bi list), Shift + throw = the whole pile, Shift + Space = tumble
   function collectB(L, gp) {
-    if (IN.hit('Space') || IN.hit('Period') || IN.mouse.lp || (gp && gp.a)) L.a = true;
-    if (IN.hit('KeyE') || IN.hit('Slash') || (gp && gp.x)) L.x = true;
-    if (IN.mouse.rp || IN.hit('Comma') || (gp && gp.b)) L.b = true;
-    if (IN.hit('BracketLeft') || (gp && gp.lb)) L.lb = true;
-    if (IN.hit('BracketRight') || (gp && gp.rb)) L.rb = true;
-    if (IN.hit('KeyQ') || (gp && gp.rt)) L.rt = true;
-    if (IN.hit('KeyB') || IN.hit('Delete') || (gp && gp.back)) L.back = true;
-    if (IN.hit('Tab')) L.cyc = IN.shift() ? -1 : 1; else if (gp && gp.cyc) L.cyc = gp.cyc;
+    if (Keys.hit('tumble') || Keys.hit('pick') || IN.mouse.lp || (gp && gp.a)) L.a = true;
+    if (Keys.hit('use') || (gp && gp.x)) L.x = true;
+    if (IN.mouse.rp || Keys.hit('throw') || (gp && gp.b)) L.b = true;
+    if (Keys.hit('hotPrev') || (gp && gp.lb)) L.lb = true;
+    if (Keys.hit('hotNext') || (gp && gp.rb)) L.rb = true;
+    if (Keys.hit('family') || (gp && gp.rt)) L.rt = true;
+    if (Keys.hit('demolish') || (gp && gp.back)) L.back = true;
+    if (Keys.hit('lock')) L.cyc = IN.shift() ? -1 : 1; else if (gp && gp.cyc) L.cyc = gp.cyc;
     const bi = L.bi || (L.bi = []);
-    for (let i = 1; i <= 9; i++) if (IN.hit('Digit' + i)) bi.push('sel' + i);
-    if (IN.hit('KeyR')) bi.push('rot');
-    if (IN.hit('KeyF')) bi.push('el');
+    for (let i = 1; i <= 9; i++) if (Keys.hit('slot' + i)) bi.push('sel' + i);
+    if (Keys.hit('rotate')) bi.push('rot');
+    if (Keys.hit('element')) bi.push('el');
   }
   // the input of this very frame (the same sources padNow reads): what the prediction steps with
   Net.liveInput = function () {
     if (Net.mute) return { ix: 0, iy: 0, a: false };
     const gp = IN.pad[0] || null;
-    let ix = (IN.down('KeyD') ? 1 : 0) - (IN.down('KeyA') ? 1 : 0), iy = (IN.down('KeyS') ? 1 : 0) - (IN.down('KeyW') ? 1 : 0);
+    const mv = Keys.move('W');
+    let ix = mv[0], iy = mv[1];
     if (!ix && gp) ix = gp.ix;
     if (!iy && gp) iy = gp.iy;
-    return { ix, iy, a: IN.hit('Space') || IN.hit('Period') || !!(gp && gp.a) };
+    return { ix, iy, a: Keys.hit('wDodge') || !!(gp && gp.a) };
   };
   // every guest frame: collect presses, and send the pad at PAD_HZ (also the heartbeat the host watches), and AT ONCE when the held input changes or a button is pressed
   // (waiting for the next tick would add up to 1 / PAD_HZ of delay to every key press)

@@ -13,7 +13,7 @@ const AU = (() => {
   const reps = {};   // name -> { t, n }: rapid repeats of a low sound get quieter
   // Variation: the sounds that repeat a lot drift a little in pitch and volume each time (CFG.juice.vary), never the same way twice running, so a crowd of hits or a string of rolls
   // does not drone. VARY[name] = how much of the pitch drift it takes (0 = volume only: the roll already picks its own pitch). pk / vk are read by tone() / noise() while it plays.
-  const VARY = { hit: 1, hitw: 1, kill: 1, hurt: 0.6, thud: 1, throw: 1, pickup: 1, drop: 1, place: 1, craft: 0.8, bank: 0.8, boing: 0.8, dodge: 1, roll: 0, thump: 0.7, smack: 1, slam: 0.5, zap_air: 0.8, zap_fire: 0.8, zap_water: 0.8, zap_earth: 0.8, deliver: 0.6 };
+  const VARY = { hit: 1, hitw: 1, kill: 1, hurt: 0.6, thud: 1, throw: 1, pickup: 1, drop: 1, place: 1, craft: 0.8, bank: 0.8, boing: 0.8, dodge: 1, roll: 0, thump: 0.7, smack: 1, crank: 0.9, dig: 1, rustle: 0.8, gem: 0.7, slam: 0.5, zap_air: 0.8, zap_fire: 0.8, zap_water: 0.8, zap_earth: 0.8, deliver: 0.6 };
   let pk = 1, vk = 1;
   const lastVar = {};
   function vary(name) {
@@ -176,8 +176,9 @@ const AU = (() => {
     let bus = HI.has(name) ? hiG : LO.has(name) ? loG : midG;
     if (bus === loG) {
       const r = reps[name] || (reps[name] = { t: 0, n: 0 });
-      r.n = now - r.t < 0.35 ? Math.min(6, r.n + 1) : 0; r.t = now;
-      if (r.n) { const g = ctx.createGain(); g.gain.value = Math.max(0.3, 1 - r.n * 0.13); g.connect(loG); bus = g; }
+      const RP = CFG.juice.repeat, mashy = RP.mash.names.indexOf(name) >= 0;
+      r.n = now - r.t < RP.window ? Math.min(60, r.n + 1) : 0; r.t = now;
+      if (r.n) { const g = ctx.createGain(); g.gain.value = Math.max(mashy ? RP.mash.floor : RP.floor, 1 - r.n * (mashy ? RP.mash.step : RP.step)); g.connect(loG); bus = g; }
       const a = attn();
       if (a >= 2) { const g = ctx.createGain(); g.gain.value = a >= 3 ? 0.3 : 0.55; g.connect(bus); bus = g; }
     }

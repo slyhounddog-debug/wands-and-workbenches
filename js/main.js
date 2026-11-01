@@ -29,7 +29,7 @@ function blankState(slot) {
     stats: { deliveries: 0, kills: 0, harvested: 0, xpEarned: 0, packets: 0, banked: {}, time: 0, elites: 0, shards: 0, landmarks: 0, wins: 0, crafted: 0, craftedKills: 0, events: 0, eventsFailed: 0, keeps: 0, sent: {}, made: {} },
     flags: {}, quest: { B: 0, W: 0 }, qbase: { B: null, W: null }, bankLog: [], pins: { L: null, R: null }, lock: null,
     bshr: [], altar: WZ.altarFresh(), aug: WZ.augFresh(), wand: WZ.wandFresh(),   // the Summoning Altar (where it stands, which sockets are lit), what he wears and which keeps are open, the staff's four charge meters
-    hands: [], carry: null, carryHold: null, autoPick: !!AU.settings.autoPick, swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
+    hands: [], carry: null, carryHold: null, lastSel: null, autoPick: !!AU.settings.autoPick, swapped: false, ctl: Object.assign({}, Players.ctl), selected: 'hand', demolish: false, placeDir: 0, paused: false,
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
 }
@@ -116,7 +116,7 @@ const REMOVED_NODES = {
   nova: [147, { air: 25, fire: 25, water: 25, earth: 30, meteor: 1, thunder: 1, blizzard: 1, geyser: 1 }],
   cr_phoenix: [30, { fire: 6, air: 6 }], cr_thunderhead: [30, { air: 6, water: 6 }], cr_lavagolem: [30, { fire: 6, earth: 6 }], cr_shambler: [30, { water: 6, earth: 6 }],
   cr_dragon: [60, { air: 8, fire: 8, earth: 8 }], cr_leviathan: [60, { air: 8, fire: 8, water: 8 }], cr_titan: [60, { fire: 8, water: 8, earth: 8 }],
-  // nodes removed in earlier passes (the Harnesser unlocks and Factory Expansion) that older saves may still carry
+  // nodes removed in earlier passes (the Harvester unlocks and Factory Expansion) that older saves may still carry
   water: [14, { air: 4 }], fire: [21, { air: 8, water: 8 }], earth: [31, { air: 5, water: 5, fire: 5 }],
 };
 const REMOVED_EXPAND = [[21, { air: 8 }], [31, { air: 11, water: 11 }], [46, { air: 11, water: 11, fire: 11 }], [59, { air: 14, fire: 14, earth: 14, sandstorm: 1 }],
@@ -276,29 +276,33 @@ Main.padW = () => (G.ctl.pw >= 0 ? IN.pad[G.ctl.pw] : null);
 //   alone on it: Q (or M) cycle, right click (or ,) cast, Space (or .) dodge, left click (or /) mash
 //   shared, Wizard on the arrows: M cycle, , cast, . dodge, / mash          shared and swapped (Wizard on WASD + the mouse): V cycle, Z / right click cast, Space dodge, E / left click mash
 // These write the same fields the pad does, so the online guest's keyboard (Net.collect) fills the same four actions. hit = the keyboard edge test (the menu world gates it while typing).
-Main.WKEYS = {
-  solo: { cycle: ['KeyQ', 'KeyM'], cast: ['Comma'], dodge: ['Space', 'Period'], mash: ['Slash'] },
-  duo: { cycle: ['KeyM'], cast: ['Comma'], dodge: ['Period'], mash: ['Slash'] },
-  swap: { cycle: ['KeyV'], cast: ['KeyZ'], dodge: ['Space'], mash: ['KeyE'] },
-};
+// (the keys themselves are the Keys actions wCycle / wCast / wDodge / wMash / wEmote / wMap: js/keys.js has the defaults per scheme and the remap page changes them)
 // what the four buttons are called for whoever plays him (the HUD chips, the prompts over a shrine or a dig spot)
 Main.wizKeyNames = function () {
   const guest = Net.role === 'guest', pad = guest ? !!IN.pad[0] : !!Main.padW();
-  if (pad) return { cycle: 'Y', cast: 'B', dodge: 'A', mash: 'X', emote: 'RB' };
-  if (guest || !Main.kbShared()) return { cycle: 'Q', cast: 'RMB', dodge: 'SPACE', mash: 'LMB', emote: 'N' };
-  return G.swapped ? { cycle: 'V', cast: 'Z', dodge: 'SPACE', mash: 'E', emote: 'N' } : { cycle: 'M', cast: ',', dodge: '.', mash: '/', emote: 'N' };
+  if (pad) return { cycle: 'Y', cast: 'B', dodge: 'A', mash: 'X', emote: 'RB', map: 'LB' };
+  const L = Keys.label, mouse = guest || !Main.kbShared();   // alone on the keyboard the Wizard also has the mouse: right click casts, left click mashes
+  return { cycle: L('wCycle'), cast: mouse ? 'RMB' : L('wCast'), dodge: L('wDodge'), mash: mouse ? 'LMB' : L('wMash'), emote: L('wEmote'), map: L('wMap') };
 };
 Main.emoteClick = false;
 Main.takeEmoteClick = function () { const c = Main.emoteClick; Main.emoteClick = false; return c; };
+Main.mapClick = false;   // the HUD map button: the same press as the map key / pad LB
+Main.takeMapClick = function () { const c = Main.mapClick; Main.mapClick = false; return c; };
+// the Wizard's big map (G.w.mapBig; R.drawMinimap flies the map to the middle of his half while G.w.mapK climbs to 1)
+Main.mapToggle = function () {
+  if (!G || !G.w || G.menu || G.w.dead) return;
+  G.w.mapBig = !G.w.mapBig; AU.sfx(G.w.mapBig ? 'menu_open' : 'menu_close');
+};
 Main.wizBtns = function (hit, p1, noMouse) {
-  const c = G.ctl, sh = Main.kbShared(), K = c.kbW ? Main.WKEYS[sh ? (G.swapped ? 'swap' : 'duo') : 'solo'] : null, mouse = Main.mouseW() && !noMouse;
-  const key = list => !!K && list.some(code => hit(code));
+  const c = G.ctl, mouse = Main.mouseW() && !noMouse;
+  const key = id => !!c.kbW && Keys.hit(id, hit);
   return {
-    cycle: key(K ? K.cycle : []) || !!(p1 && p1.y),
-    cast: key(K ? K.cast : []) || (mouse && IN.mouse.rp) || !!(p1 && p1.b),
-    roll: key(K ? K.dodge : []) || !!(p1 && p1.a),
-    mash: key(K ? K.mash : []) || (mouse && IN.mouse.lp) || !!(p1 && p1.x),
-    emote: (!!K && hit('KeyN')) || !!(p1 && p1.rb) || Main.takeEmoteClick(),   // the emote wheel (js/emote.js): N on the keyboard, RB on his pad
+    cycle: key('wCycle') || !!(p1 && p1.y),
+    cast: key('wCast') || (mouse && IN.mouse.rp) || !!(p1 && p1.b),
+    roll: key('wDodge') || !!(p1 && p1.a),
+    mash: key('wMash') || (mouse && IN.mouse.lp) || !!(p1 && p1.x),
+    emote: key('wEmote') || !!(p1 && p1.rb) || Main.takeEmoteClick(),   // the emote wheel (js/emote.js): N on the keyboard, RB on his pad
+    map: key('wMap') || !!(p1 && p1.lb) || Main.takeMapClick(),   // the big map (see Main.mapTick)
   };
 };
 const useMouseAim = () => G.lastInput === 'mouse' && mouseInFactory() && Main.mouseB();
@@ -406,9 +410,8 @@ function rotateTile() {
 Main.splitNav = { dx: 0, t: 0 };
 Main.controls = function (dt) {
   const p0 = Main.padB(), p1 = Main.padW(), c = G.ctl, sh = Main.kbShared(), altB = Main.altB();
-  const wasd = KV('KeyA', 'KeyD', 'KeyW', 'KeyS'), arrows = KV('ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown');
-  const either = [clampv(wasd[0] + arrows[0]), clampv(wasd[1] + arrows[1])], none = [0, 0];
-  const bk = !c.kbB ? none : sh ? (G.swapped ? arrows : wasd) : either, wk = !c.kbW ? none : sh ? (G.swapped ? wasd : arrows) : either;
+  if (G.demolish) G.lastSel = 'demolish'; else if (G.selected !== 'hand') G.lastSel = G.selected;   // (what Q brings back)
+  const none = [0, 0], bk = !c.kbB ? none : Keys.move('B'), wk = !c.kbW ? none : Keys.move('W');   // (the walking keys per scheme and the player's remaps: js/keys.js)
   let bix = clampv(bk[0] + (p0 ? p0.ix : 0)), biy = clampv(bk[1] + (p0 ? p0.iy : 0));
   let wix = clampv(wk[0] + (p1 ? p1.ix : 0)), wiy = clampv(wk[1] + (p1 ? p1.iy : 0));
   let wrx = p1 ? p1.rx || 0 : 0, wry = p1 ? p1.ry || 0 : 0;   // the Wizard's right stick: where a Tempest Tear aims
@@ -418,54 +421,61 @@ Main.controls = function (dt) {
   R.padMode = G.lastInput === 'pad';
 
   // Builder: left-click / A picks up, right-click / B throws, E / X uses (swapped keyboard: . pick, , throw, / use)
-  // F (Shift + F = backwards) / LT + X on a pad switches the element of the Harnesser in reach
-  const swapEl = (c.kbB && IN.hit('KeyF')) || (p0 && p0.x && p0.ltHeld);
-  // carry (move a building): hold Shift + E (Shift + / on a swapped keyboard) or LT + RB on a pad on a finished building
-  const carryKey = (c.kbB && IN.shift() && IN.down('KeyE')) || (altB && IN.shift() && IN.down('Slash')) || !!(p0 && p0.ltHeld && p0.rbHeld);
-  const apTog = (c.kbB && IN.hit('KeyG')) || (p0 && p0.y && p0.ltHeld);   // G / LT + Y: the slight pickup range on or off
-  let use = (c.kbB && !(sh && G.swapped) && !IN.shift() && IN.hit('KeyE')) || (altB && !IN.shift() && IN.hit('Slash')) || (p0 && p0.x && !p0.ltHeld);
-  let pick = (altB && IN.hit('Period')) || (p0 && p0.a && !p0.ltHeld);
-  const pickHeld = (altB && IN.down('Period')) || (p0 && p0.aHeld && !p0.ltHeld);
-  // Tumble (a skill-tree track): the Builder's dodge roll, in the Wizard's input language: Space (Right Shift when the keyboard is swapped, Space is the Wizard's then), LT + A on a pad
-  let broll = (c.kbB && ((sh && !G.swapped) || !c.kbW) && IN.hit('Space')) || (c.kbB && sh && G.swapped && IN.hit('ShiftRight')) || (p0 && p0.a && p0.ltHeld);
-  const throwHeld = (altB && IN.down('Comma')) || (p0 && p0.bHeld);
+  // F (Shift + F = backwards) / LT + X on a pad switches the element of the Harvester in reach
+  const swapEl = (c.kbB && Keys.hit('element')) || (p0 && p0.x && p0.ltHeld);
+  const apTog = (c.kbB && Keys.hit('autopick')) || (p0 && p0.y && p0.ltHeld);   // G / LT + Y: the slight pickup range on or off
+  let use = (c.kbB && Keys.hit('use')) || (p0 && p0.x && !p0.ltHeld);
+  let pick = (c.kbB && Keys.hit('pick')) || (p0 && p0.a && !p0.ltHeld);   // (the keyboard Builder normally picks with the mouse: 'pick' has a key only on the keyboard-only layouts)
+  const pickHeld = (c.kbB && Keys.down('pick')) || (p0 && p0.aHeld && !p0.ltHeld);
+  // Tumble (a skill-tree track): the Builder's dodge roll, in the Wizard's input language (Space; Right Shift when the keyboard is swapped), LT + A on a pad
+  let broll = (c.kbB && Keys.hit('tumble')) || (p0 && p0.a && p0.ltHeld);
+  const throwHeld = (c.kbB && Keys.down('throw')) || (p0 && p0.bHeld);
+  // carry (move a building): HOLD the throw button (right-click, the keyboard throw key, pad B) with nothing in hand over a finished building, or LT + RB on a pad.
+  // The hold only counts when it began with an empty hand and the plain hand tool (otherwise the press threw something or cancelled a tool).
+  const throwDown = (Main.mouseB() && mouseInFactory() && IN.mouse.r) || throwHeld;
+  if (IN.mouse.rp || (c.kbB && Keys.hit('throw')) || (p0 && p0.b)) Main.carryOk = G.selected === 'hand' && !G.demolish && !G.hands.length;
+  if (!throwDown) Main.carryOk = false;
+  const carryKey = (Main.carryOk && throwDown && !G.hands.length) || !!(p0 && p0.ltHeld && p0.rbHeld);
   // a Wizard keyboard: arrows + . when it is shared and not swapped, WASD + Space when swapped; alone on the keyboard it takes both
   const wb = Main.wizBtns(IN.hit, p1);
   let roll = wb.roll, act = { mash: wb.mash, cast: wb.cast, cycle: wb.cycle, emote: wb.emote };
+  if (wb.map && !frozenNow() && !G.menu) Main.mapToggle();
   // throw the whole stack: Shift + right-click (Shift + , when swapped), or LT + B on a pad
-  const stackThrow = (IN.shift() && ((IN.mouse.rp && mouseInFactory() && Main.mouseB()) || (altB && IN.hit('Comma')))) || (p0 && p0.b && p0.ltHeld);
+  const stackThrow = (IN.shift() && ((IN.mouse.rp && mouseInFactory() && Main.mouseB()) || (c.kbB && Keys.hit('throw')))) || (p0 && p0.b && p0.ltHeld);
   // pick a target on purpose: right stick / R3 on a pad, Tab / Shift+Tab on the keyboard
-  const cyc = (p0 && p0.cyc) || (IN.hit('Tab') ? (IN.shift() ? -1 : 1) : 0);
+  const cyc = (p0 && p0.cyc) || (Keys.hit('lock') ? (IN.shift() ? -1 : 1) : 0);
 
   if (IN.hit('Escape')) {
     if (UI.askB) UI.askClose(false);
     else if (UI.splitB) UI.closeSplit();
     else if (UI.treeOpen.L || UI.treeOpen.R) { UI.openTree('L', false); UI.openTree('R', false); }
+    else if (G.w.mapBig) G.w.mapBig = false;
     else if (G.demolish) G.demolish = false;
     else if (G.selected !== 'hand') UI.select('hand');
     else Main.pause(true);
   }
-  if (IN.hit('KeyT') || (p0 && p0.y && !p0.ltHeld && !UI.splitB)) UI.openTree('L');
-  if ((!Net.on || G.m4) && (IN.hit('KeyY') || (p1 && p1.back))) UI.openTree('R');   // (online the Wizard's tree is on the guest's screen) Back / Select on his pad: Y is the wand's Cycle now
-  if (IN.hit('KeyH')) { UI.help(); G.helpT = 0; }
-  if (IN.hit('KeyC') && !frozenNow() && !UI.splitB && !UI.askB) Book.open();   // the Collection Book: every spell and creature
-  if ((IN.hit('KeyP') || (p0 && p0.l3)) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
+  if (Keys.hit('treeB') || (p0 && p0.y && !p0.ltHeld && !UI.splitB)) UI.openTree('L');
+  if ((!Net.on || G.m4) && (Keys.hit('treeW') || (p1 && p1.back))) UI.openTree('R');   // (online the Wizard's tree is on the guest's screen) Back / Select on his pad: Y is the wand's Cycle now
+  if (Keys.hit('help')) { UI.help(); G.helpT = 0; }
+  if (Keys.hit('book') && !frozenNow() && !UI.splitB && !UI.askB) Book.open();   // the Collection Book: every spell and creature
+  if ((Keys.hit('pin') || (p0 && p0.l3)) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
   if (IN.hit('F3') || IN.hit('Backquote')) { UI.debugOn = !UI.debugOn; AU.sfx('blip'); }
   if (IN.hit('F4') && UI.debugOn) DevBot.toggle();   // dev-only: only while the F3 overlay is open
   if (G.helpT > 0) { G.helpT -= dt; if (G.helpT <= 0) UI.help(false); }
-  if (!UI.splitB) CFG.hotkeys.forEach((k, i) => { if (IN.hit(k)) UI.select(CFG.hotbar[i]); });   // 1-4 toggle a Splitter output's filters while its settings are open
+  if (!UI.splitB) CFG.hotbar.forEach((slot, i) => { if (Keys.hit('slot' + (i + 1))) UI.select(slot); });   // 1-4 toggle a Splitter output's filters while its settings are open
   let rot = 0;
-  if (IN.hit('BracketLeft') || (p0 && p0.lb)) rot = -1;
-  if (IN.hit('BracketRight') || (p0 && p0.rb && !p0.ltHeld)) rot = 1;
+  if (Keys.hit('hotPrev') || (p0 && p0.lb)) rot = -1;
+  if (Keys.hit('hotNext') || (p0 && p0.rb && !p0.ltHeld)) rot = 1;
   if (IN.wheel && IN.mouse.x < Main.viewW() && !UI.treeOpen.L) rot = IN.wheel > 0 ? 1 : -1;
   if (rot && !(UI.treeOpen.L || UI.treeOpen.R)) UI.cycle(rot);
   // Q (Shift + Q back), pad RT, or Shift + the mouse wheel over the factory: the next member of the family slot he has selected (or the one the mouse is over in the hotbar)
   if (!(UI.treeOpen.L || UI.treeOpen.R) && Main.graceT <= 0) {
-    const fq = ((c.kbB || !p0) && IN.hit('KeyQ')) || (p0 && p0.rt), fw = IN.wheelS && IN.mouse.x < Main.viewW();
+    const fq = ((c.kbB || !p0) && Keys.hit('family')) || (p0 && p0.rt), fw = IN.wheelS && IN.mouse.x < Main.viewW();
     if (fq || fw) UI.cycleFam(fw ? (IN.wheelS > 0 ? 1 : -1) : IN.shift() ? -1 : 1, UI.hovSlot && UI.isFam(UI.hovSlot) ? UI.hovSlot : undefined);
+    if (c.kbB && Keys.hit('pipette')) Main.pipette();
   }
-  if (IN.hit('KeyB') || IN.hit('Delete') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt, or an empty tile to lift it (full refund). Esc cancels.', 'L', 'ic_bomb'); }
-  if (IN.hit('KeyR') && !frozenNow()) {
+  if (Keys.hit('demolish') || (p0 && p0.back)) { G.demolish = !G.demolish; AU.sfx('blip'); if (G.demolish) UI.toast('Demolish armed: click a building or belt, or an empty tile to lift it (full refund). Esc cancels.', 'L', 'ic_bomb'); }
+  if (Keys.hit('rotate') && !frozenNow()) {
     // R turns whatever is already placed under the cursor (or in front / in reach); only with nothing there does it turn the next placement
     const at = rotateTile(), cb = G.carry && FA.byId(G.carry.id);
     if (cb) { if (FA.def(cb).kind !== 'splitter' && FA.def(cb).kind !== 'bot' && !FA.isCell(cb)) { cb.dir = (cb.dir + 1) % 4; cb.pop = 0.2; AU.sfx('blip'); } }   // carrying one: R turns its output
@@ -474,7 +484,7 @@ Main.controls = function (dt) {
   }
 
   // swap roles: hold X (keyboard) or Start (either pad)
-  const holding = !Net.on && (IN.down('KeyX') || (p0 && p0.startHeld) || (p1 && p1.startHeld));   // either pad, or X on the keyboard (no job swap online: the roles are fixed)
+  const holding = !Net.on && (Keys.down('swapHold') || (p0 && p0.startHeld) || (p1 && p1.startHeld));   // either pad, or X on the keyboard (no job swap online: the roles are fixed)
   if (G.swapCd > 0) G.swapCd -= dt;
   if (holding && G.swapCd <= 0) {
     G.swapHold += dt;
@@ -497,7 +507,7 @@ Main.controls = function (dt) {
 
   // an open skill tree (either side) freezes both halves, so nobody acts until it closes (and for the "And..." beat after)
   const inTree = UI.treeOpen.L || UI.treeOpen.R, frozen = inTree || Main.graceT > 0;
-  if (inTree && (IN.hit('KeyQ') || (p0 && p0.x) || (!Net.on && p1 && p1.x))) UI.undoBank();   // Q / pad X: take the last deposit back out
+  if (inTree && (Keys.hit('pipette') || (p0 && p0.x) || (!Net.on && p1 && p1.x))) UI.undoBank();   // Q / pad X: take the last deposit back out
   if (inTree) Main.treePads(dt, p0, Net.on ? null : p1);
   if (frozen) { bix = 0; biy = 0; use = false; pick = false; broll = false; if (!Net.on) { wix = 0; wiy = 0; wrx = 0; wry = 0; roll = false; act = {}; } }   // (online a tree only holds ITS player still: the sim and the other player carry on)
   // a demolish question is open: E / Enter / A confirms, Esc / B backs out
@@ -515,7 +525,7 @@ Main.controls = function (dt) {
     else {
       if (p0 && p0.x) { UI.splitPad = true; F.col = (F.col + 1) % 4; UI.splitSync(); AU.sfx('tab'); }
       if (p0 && p0.y) { UI.splitPad = true; UI.splitToggle(F.row, ELEMS[F.col]); }
-      for (let i = 0; i < 4; i++) if (IN.hit('Digit' + (i + 1))) UI.splitToggle(F.row, ELEMS[i]);
+      for (let i = 0; i < 4; i++) if (Keys.hit('slot' + (i + 1))) UI.splitToggle(F.row, ELEMS[i]);
       const n = Main.splitNav, dx = Math.abs(bix) > 0.5 ? Math.sign(bix) : 0, dy = !dx && Math.abs(biy) > 0.5 ? Math.sign(biy) : 0, k = dx ? 'x' + dx : dy ? 'y' + dy : '';
       const go = () => { if (dx) UI.splitNudge(b.outs.length === 2 ? 0 : F.row, dx * 5); else if (dy) { F.row = Math.max(0, Math.min(b.outs.length - 1, F.row + dy)); UI.splitSync(); AU.sfx('tab'); } };
       if (!k) { n.dx = ''; n.t = 0; }
@@ -524,7 +534,7 @@ Main.controls = function (dt) {
     }
     bix = 0; biy = 0; use = false; pick = false;
   }
-  // right-click / B / swapped , only ever throws what is held: hand-gathering is never cancelled by it (the Builder just walks away from a Harnesser to stop)
+  // right-click / B / swapped , only ever throws what is held: hand-gathering is never cancelled by it (the Builder just walks away from a Harvester to stop)
   if (!IN.mouse.r && !throwHeld) G.noThrow = false;
 
   if (!frozen) handleMouseFactory(dt);   // (the Wizard's mouse is two buttons now: left click = Mash, right click = Cast; there is no click-to-walk)
@@ -562,7 +572,7 @@ Main.controls = function (dt) {
       }
     }
     if (use) press('use');
-    Main.carryTick(dt, carryKey, (IN.mouse.rp && Main.mouseB()) || (altB && IN.hit('Comma')) || !!(p0 && p0.b));
+    Main.carryTick(dt, carryKey, (IN.mouse.lp && Main.mouseB()) || IN.hit('Escape') || !!(p0 && p0.a));   // (carrying: the button is still held, so left click / Esc / A cancels and letting go sets it down)
     if (apTog) Main.toggleAutoPick();
     if (swapEl) { const hb = FA.harnessNear(); if (hb) FA.cycleElem(hb, IN.shift() ? -1 : 1); else AU.sfx('error'); }
     // A / . picks up one item (holding keeps grabbing); with a building selected it places in front instead
@@ -711,6 +721,8 @@ Main.step = function (dt, ctl) {
     if (rd.B && rd.W) { WZ.reenter(); R.wcam.x = G.w.x; R.wcam.y = G.w.y; AU.sfx('buy'); UI.show('results', false); }
     else UI.resultsSync();
   }
+  { const ww = G.w, mt = ww.mapBig && !ww.dead ? 1 : 0, mk = ww.mapK || 0; ww.mapK = mk < mt ? Math.min(mt, mk + dt * 4) : Math.max(mt, mk - dt * 4); if (mt === 0) ww.mapBig = false; }   // the big map's flight
+  if (!G.w.run.b0) G.w.run.b0 = FA.bSnap();   // the Builder's counters when this run began (his game over screen shows the difference)
   if (!frozen) { G.stats.time += dt; Main.sample(dt); }
   // the soundtrack follows the game: factory activity, monsters crowding the Wizard, the Chimera
   const w = G.w;
@@ -775,6 +787,25 @@ Main.carryTick = function (dt, held, cancel) {
   if (!FA.canCarry(b)) { G.carryHold = null; return; }
   if (!G.carryHold || G.carryHold.id !== b.id) G.carryHold = { id: b.id, t: 0 };
   if ((G.carryHold.t += dt) >= CFG.carry.holdT) { G.carry = { id: b.id }; G.carryHold = null; AU.sfx('pickup'); if (G.bd.gather && G.bd.gather.b === b) G.bd.gather = null; }
+};
+// Q, the pipette: a tool is active (a building, belts, demolish) -> put it away, like right-click. Nothing active -> take the building / belt under the cursor as the tool (its type, and its
+// direction for belts and machines); nothing under the cursor -> bring back the last tool. G.lastSel remembers what was active (the string 'demolish' for demolish mode).
+Main.pipette = function () {
+  if (frozenNow() || UI.splitB || UI.askB || G.carry) return;
+  if (G.demolish || G.selected !== 'hand') { G.demolish = false; UI.select('hand'); return; }
+  const t = rotateTile(), ok = t && FA.inb(t[0], t[1]), c = ok ? FA.cell(t[0], t[1]) : null;
+  let pick = null;
+  if (c && c.type === 'belt') { pick = 'belt'; G.placeDir = c.dir; }
+  else if (c && c.type !== 'portal' && CFG.buildings[c.type]) {
+    pick = c.type;
+    const k = FA.def(c).kind;
+    if (c.dir !== undefined && k !== 'splitter' && k !== 'bot' && k !== 'cell' && k !== 'expand') G.placeDir = c.dir;
+  } else if (ok && FA.isPile(t[0], t[1])) pick = 'stockpile';
+  if (pick) { UI.select(pick); return; }
+  const last = G.lastSel;
+  if (last === 'demolish') { G.demolish = true; AU.sfx('blip'); }
+  else if (last && last !== 'hand') UI.select(last);
+  else AU.sfx('error');
 };
 Main.treeClosed = function () {
   if (!G) return;
@@ -878,7 +909,7 @@ Main.updateFocus = function () {
   if (ap && ap.fn) list.push({ t: tp, a: ap, key: 'pick' });
   if (au && au.fn) list.push({ t, a: au, key: 'use' });
   if (!list.length) { if (ap && ap.label) list.push({ t: tp, a: ap }); else if (au && au.label) list.push({ t, a: au }); }
-  const hn = G.selected === 'hand' && !G.demolish ? FA.harnessNear() : null;   // a third prompt: switch the Harnesser's element
+  const hn = G.selected === 'hand' && !G.demolish ? FA.harnessNear() : null;   // a third prompt: switch the Harvester's element
   if (hn && hn.type === 'cauldron') list.push({ t: { kind: 'bld', o: hn, x: hn.x + 0.5, y: hn.y + 0.5 }, a: { label: 'Change mode', fn: null, ic: [hn.mode === 'hp' ? 'potion' : 'armor', 'ic_swap', hn.mode === 'hp' ? 'armor' : 'potion'] }, key: 'cycle' });
   else if (hn) { const o = CFG.harness.order; list.push({ t: { kind: 'bld', o: hn, x: hn.x + 0.5, y: hn.y + 0.5 }, a: { label: 'Change element', fn: null, ic: [hn.el, 'ic_swap', o[(o.indexOf(hn.el) + 1) % o.length]] }, key: 'cycle' }); }
   R.focus = list.length ? { list } : null;
@@ -1047,6 +1078,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btnTree').onclick = () => UI.openTree('L');
   $('btnTreeR').onclick = () => UI.openTree('R');
   $('btnBook').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB) Book.open(); };
+  $('btnMap').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB && !Main.menuUp) Main.mapClick = true; };
   $('btnEmote').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB && !Main.menuUp) Main.emoteClick = true; };   // the emote wheel's own button: the same press as N / RB
   $('btnBookR').onclick = () => { if (!UI.treeOpen.L && !UI.treeOpen.R && !UI.splitB) Book.open(); };
   $('pBook').onclick = () => Book.open(true);

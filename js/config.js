@@ -58,7 +58,7 @@ const CFG = {
   // ---- the attention-and-causality layer (CLAUDE.md > "What / why / what next"; the events and where each cue shows are in FEEDBACK.md) ----
   fullBounce: { dur: 0.7 },   // a pickup the full Stockpile can't take comes out of the Spell Portal, bounces off it for this long (red flash, the "full" icon), then goes back into the sky
   threat: { dur: 9 },         // seconds the Spell Portal shows what a new danger (an event, a Warden, a mutation, an elite) is weak to
-  boost: { plusT: 1.2 },      // seconds a Battery keeps pulsing with its bouncing "+" after its Battery Shrine charged it (a shrine-boosted Harnesser pulses for as long as the boost lasts)
+  boost: { plusT: 1.2 },      // seconds a Battery keeps pulsing with its bouncing "+" after its Battery Shrine charged it (a shrine-boosted Harvester pulses for as long as the boost lasts)
   hurt: { dur: 1, edge: 0.55 },   // the "where did that hit come from" cue on the Wizard: seconds it stays up, strength of the red edge flash toward the attacker
   cue: { danger: 3, goal: 2, loss: 1, ambient: 0, hold: { danger: 2.5, goal: 1.8, loss: 1.2 }, spread: 0.6 },   // cue priorities (danger > goal > resource loss > ambient): a higher one holds lower toasts back for `hold` s (they appear after it, `spread` s apart) and dims the edge bubbles
   shardUp: { rise: 1.0, shake: 0.6, h: 2.4 },   // a picked-up Aether Shard rises h tiles over the spot and hovers (rise s), shakes with confetti (shake s), then flies into his portal; the Builder's Spell Portal shows a preview icon meanwhile
@@ -122,7 +122,9 @@ const CFG = {
   hear: { full: 9, far: 34, floor: 0.12, lp: 700, pan: 0.7, panRange: 14 },   // pan / panRange: a sound panRange tiles to a side of the Wizard sits `pan` (0..1) of the way to that speaker
   // juice: `vary` = how far repeated sounds drift in pitch / volume (+- fraction); a hit under `hitMin` damage makes no sound, the same sound is held back `hitGap` s;
   // `bigHit` / `bigHitBoss` = damage that gets the layered thump (a boss or elite counts the lower one), `bigHitHp` = the same for the Wizard as a fraction of his max HP; `skipHold` = seconds a held button skips the start sequence
-  juice: { vary: { pitch: 0.09, vol: 0.14 }, hitGap: 0.07, hitMin: 4, bigHit: 30, bigHitBoss: 18, bigHitHp: 0.2, thumpGap: 0.12, skipHold: 0.6 },
+  // repeat: how fast a LOW sound (pickups, clicks, cranks) gets quieter when it repeats within `window` s of itself: each repeat takes `step` off its volume, never below `floor` (the pitch variation
+  // in VARY layers the repeats instead). The mashing sounds (names) decay even more slowly and keep a much higher floor.
+  juice: { repeat: { window: 0.45, step: 0.045, floor: 0.62, mash: { names: ['crank', 'pickup', 'dig', 'rustle', 'gem'], step: 0.015, floor: 0.9 } }, vary: { pitch: 0.09, vol: 0.14 }, hitGap: 0.07, hitMin: 4, bigHit: 30, bigHitBoss: 18, bigHitHp: 0.2, thumpGap: 0.12, skipHold: 0.6 },
   world: {
     respawn: 120, vacuum: 2, minSpawnDist: 8,
     spawnStart: 21, spawnMul: 0.96, spawnFloor: 5.5, cap: 160,   // wild spawns are a trickle: the factory's creatures are the real fight
@@ -132,8 +134,8 @@ const CFG = {
     slowTerrain: 0.55,        // speed multiplier on bog tiles (wizard + monsters); water can't be entered at all
   },
   harvest: {      // node counts are 50% up on the original 60/35/25, then +10% (broken nodes grow back after world.respawn seconds)
-    tree: { hp: 20, drop: 'wood', n: 3, count: 99 },
-    rock: { hp: 30, drop: 'stone', n: 3, count: 58, bonus: { iron: 0.75 } },   // bonus = chance of one more of that kind
+    tree: { hp: 20, drop: 'wood', n: 2, count: 99 },
+    rock: { hp: 30, drop: 'stone', n: 2, count: 58, bonus: { iron: 0.25 } },   // bonus = chance of one more of that kind
     ore:  { hp: 40, drop: 'iron', n: 2, count: 41 },
   },
   enemies: {      // gem = [guaranteed XP gems, chance of one more] (1 gem = 1 XP, never fractional). w = spawn weight anywhere; biome foes (w: 0) spawn by terrain
@@ -151,7 +153,7 @@ const CFG = {
   // shard: chance an elite drops its ONE shard (no bonus shard, no pity); max caps the spawn odds (wild spawns are further scaled by world.wildElite, so the real wild cap is max x 0.2 = 2%)
   elite: { hp: 5, speed: 0.85, dmg: 1.5, gems: 3, shard: 0.20, spawn: 0.03, minTime: 90, base: 0.015, perMin: 0.004, perDist: 0.02, max: 0.10 },   // spawn: the flat chance a wild spawn is an elite (after minTime); shard: the chance an elite drops its ONE Aether Shard
   // what an ordinary kill drops besides gems / packets / Cores: a common resource (Wood or Stone) and, separately, Iron. A spell packet's chance is 15% now (crafted.recycle), so these follow it: the common drop about the same, Iron a quarter of the old 30%
-  drops: { common: 0.20, iron: 0.10, packet: 0.25, mutMul: 2, eliteMul: 3 },   // every kill (not minis): Wood / Stone, Iron, and a spell packet of its element (crafted doubles / triples drop their seed spell). Mutants roll x2, elites x3.
+  drops: { wood: 0.10, stone: 0.07, iron: 0.05, resMutMul: 1.5, resEliteMul: 2, packet: 0.25, mutMul: 2, eliteMul: 3 },   // every kill (not minis): Wood, Stone and Iron each roll their own chance (mutants x resMutMul, elites x resEliteMul), and a spell packet of its element (crafted doubles / triples drop their seed spell; mutants x mutMul, elites x eliteMul).
   boss: {
     weakMul: 1.6, otherMul: 0.4,            // the Chimera shrugs off everything except its current weakness
     slamEvery: 4.5, slamDelay: 1.0, slamR: 2.4, slamDmg: 24,
@@ -162,7 +164,7 @@ const CFG = {
   marks: {        // landmarks in the wilds: the only source of Aether Shards besides elites
     camps: 9, shrines: 8, crypts: 4, spacing: 16,
     campFoes: 6, campShards: 1,
-    shrineR: 2.6, shrineBoost: 0.25,   // an ACTIVATED shrine speeds up that element's harnessers (shrineBoost) for buffT seconds, wherever the Wizard goes; then it recharges for cdT s
+    shrineR: 2.6, shrineBoost: 0.25,   // an ACTIVATED shrine speeds up that element's harvesters (shrineBoost) for buffT seconds, wherever the Wizard goes; then it recharges for cdT s
     // claiming a shrine: the Builder sends that element's Core (dropped by its creatures) through the Spell Portal while the Wizard is within CFG.unlockR of it; the Core flies down onto the shrine.
     // shrineShards = Aether Shards paid out when it is claimed (unchanged from the mini-game days)
     shrineShards: 1,
@@ -176,8 +178,8 @@ const CFG = {
   // forage spots in the wilds: the Wizard stands still at one and mashes the roll button to dig / search it.
   // drop = resources always found, bonus = chance of one more of that kind; a bush gives one pickup (potion or armor)
   forage: {
-    mound:  { count: 50, taps: 10, drop: { stone: 2 }, bonus: { iron: 0.75 } },
-    sticks: { count: 55, taps: 8,  drop: { wood: 3 },  bonus: { wood: 0.5 } },
+    mound:  { count: 50, taps: 10, drop: { stone: 1, iron: 1 }, bonus: {} },
+    sticks: { count: 55, taps: 8,  drop: { wood: 2 },  bonus: {} },
     bush:   { count: 40, taps: 4,  potion: 0.6 },   // otherwise Armor Plate
     // buried caches are invisible until the Wizard wears the Kilnsight Mask (they glint through the grass); dug like a mound
     cache:  { count: 28, taps: 10, drop: { iron: 2, stone: 2 }, bonus: { iron: 0.5 }, pickup: 0.5 },   // pickup = chance of an Elixir (else a Heavy Plate) on top
@@ -205,9 +207,9 @@ const CFG = {
   overdrive: 0.15,           // a charged Battery right beside a Forge or Cauldron: +15% crafting speed
   heavyBattery: 0.5,          // a Heavy Battery drains this much slower than a Battery, so it lasts 50% longer
   // Helper robots: each carries Wood / Stone / Iron / Shards from the Stockpile to blueprints, one item at a time. Its charge is its own (it adds nothing to the factory's
-  // power): it burns fuel like a Battery and drains like one Harnesser pulling from it (power 10 = 60 s a charge, like a Battery under a 10-power load) only while it has a job; flat, it naps where it stands.
-  // The Nth robot costs the base x costMul^N (Wood / Stone / Iron) and x shardMul^N Shards (N = robots already owned or planned); the Builder still finishes a robot-fed blueprint with E.
-  robot: { max: 3, cost: { wood: 12, stone: 8, iron: 4, shard: 1 }, costMul: 1.5, shardMul: 2, speed: 3.4, power: 10, look: 0.5, giveUp: 2.5 },   // look = s between job searches while idle; giveUp = s it waits after finding nothing/no path
+  // power): it burns fuel like a Battery and drains like one Harvester pulling from it (power 10 = 60 s a charge, like a Battery under a 10-power load) only while it has a job; flat, it naps where it stands.
+  // The Nth robot (N = robots already owned or planned) costs the base Wood / Stone plus ladder[kind][N] of Iron and Shards (6 Wood + 8 Stone each; Iron 4 / 8 / 12, Shards 1 / 4 / 8); the Builder still finishes a robot-fed blueprint with E.
+  robot: { max: 3, cost: { wood: 6, stone: 8, iron: 4, shard: 1 }, ladder: { iron: [4, 8, 12], shard: [1, 4, 8] }, speed: 3.4, power: 10, look: 0.5, giveUp: 2.5 },   // look = s between job searches while idle; giveUp = s it waits after finding nothing/no path
   // Alchemy Cauldron: ONE spell in (like the Creature Spawner), a potion out. The better the spell, the better the potion. hp / ap = what a single element gives (a Health Potion
   // prefers Water, Air, Fire, Earth; an Armor Potion the reverse); a pair / triple / the Nova adds up its elements and `extra[n elements]` more for the work of making the spell.
   // time[n elements] = brew seconds. A Health Potion of `overVal` or more also overcharges a Battery like the old Elixir.
@@ -221,32 +223,32 @@ const CFG = {
   },
   // costs were 50% up on the original, then cut ~30% (belts stay 1 Wood; the Splitter is 2 Wood + 1 Stone)
   buildings: {
-    harness:  { name: 'Harnesser', kind: 'harness', cost: { wood: 6, stone: 4 }, unlock: null,
+    harness:  { name: 'Harvester', kind: 'harness', cost: { wood: 4, stone: 3 }, unlock: null,
                 desc: 'Makes element packets: Air, Water, Fire or Earth, whichever crystal it carries. F (LT + X on a pad) switches the element at any time: the old crystal bursts and the new one takes 5 seconds to grow, and nothing is made meanwhile. Draws 2 power (hand-gathering is free, so the factory can always restart). Stand beside it and press E to hand-gather.' },
-    cauldron: { name: 'Alchemy Cauldron', kind: 'crafter', cost: { wood: 9, stone: 9 }, unlock: null,
+    cauldron: { name: 'Alchemy Cauldron', kind: 'crafter', cost: { wood: 6, stone: 4 }, unlock: null,
                 desc: 'Feed it ONE element spell or combo spell at a time: the better the spell, the stronger the potion. Health mode (default) brews Health Potions, Armor mode brews Armor Potions; F (LT + X on a pad) switches the mode and the new potion regrows above it for 5 seconds. No power. Send them through the Spell Portal: they land beside the Wizard.' },
-    forge:    { name: 'Elemental Forge', kind: 'crafter', cost: { wood: 20, stone: 15, iron: 6 }, unlock: null,
+    forge:    { name: 'Elemental Forge', kind: 'crafter', cost: { wood: 10, stone: 8, iron: 2 }, unlock: null,
                 desc: 'Fuses element spells into combo spells. Press E at it to switch recipe.' },
     anvil:    { name: 'Armory', kind: 'crafter', cost: { wood: 10, stone: 12, iron: 6 }, unlock: null,
                 desc: 'Forges the Wizard\'s garments (augments) and the Warden Key that opens the Stronghold, from the Cores he hunts, plus Iron Ore and Aether Shards: throw them in, E picks the recipe. Send the finished garment through the Spell Portal: it lands in the wilds and he wears it by walking onto it. Each garment is made once; the one he takes off flies home to the Stockpile.' },
-    battery:  { name: 'Battery', kind: 'cell', cost: { wood: 8, stone: 6, iron: 4 }, unlock: null,
+    battery:  { name: 'Battery', kind: 'cell', cost: { wood: 2, stone: 4, iron: 4 }, unlock: null,
                 desc: 'Gives +10 power to the whole factory while it has charge, and drains while anything needs power. Feed it element spells, Wood or Stone (belt or throw) and it burns them to charge itself (16.5s each, 19.5s when thrown in by hand; more kinds at once = faster). Charged and right beside a Forge or Cauldron, it overdrives it: +15% crafting speed. Throw a combo spell or an Elixir in to overcharge it (extra charge, +5 power for a while).' },
-    heavybat: { name: 'Heavy Battery', kind: 'cell', cost: { wood: 20, stone: 15, iron: 12 }, unlock: null,
+    heavybat: { name: 'Heavy Battery', kind: 'cell', cost: { wood: 4, stone: 10, iron: 8 }, unlock: null,
                 desc: 'A Battery with a heavy core: the same power and the same charging, but it drains 33% slower, so a charge lasts 50% longer.' },
-    robot:    { name: 'Helper Robot', kind: 'bot', cost: { wood: 12, stone: 8, iron: 4, shard: 1 }, unlock: null,
-                desc: 'Fetches Wood, Stone, Iron and Shards from the Stockpile and carries them to blueprints, one at a time. It has its own charge: throw it element spells, Wood or Stone (it adds no power to the factory) and it works about a minute a charge, then naps where it stands. You still finish a robot-fed blueprint with E (Floor Tiles finish themselves). Each robot costs 50% more Wood, Stone and Iron and double the Shards; 3 at most.' },
+    robot:    { name: 'Helper Robot', kind: 'bot', cost: { wood: 6, stone: 8, iron: 4, shard: 1 }, unlock: null,
+                desc: 'Fetches Wood, Stone, Iron and Shards from the Stockpile and carries them to blueprints, one at a time. It has its own charge: throw it element spells, Wood or Stone (it adds no power to the factory) and it works about a minute a charge, then naps where it stands. You still finish a robot-fed blueprint with E (Floor Tiles finish themselves). Each robot costs more Iron and Shards than the last; 3 at most.' },
     expand:   { name: 'Floor Tile', kind: 'expand', cost: { wood: 2, stone: 2 }, unlock: null,
                 desc: 'Place it on the edge of the floor (it covers a 2 x 2 block) and throw its Wood and Stone at it (from the 13th block on, 1 Iron too): when it is finished the block becomes factory floor. A floor tile holds 3 loose items. Demolish an empty tile to take it back.' },
-    stockpile: { name: 'Stockpile Tile', kind: 'expand', cost: { wood: 4, stone: 2, iron: 1 }, unlock: null,
-                desc: 'Place it on an empty floor tile and throw its Wood, Stone and Iron at it: it becomes a Stockpile tile that holds 50 of ONE kind (resources, Cores, spells, garments). The Wizard can only send home what the Stockpile has room for. Demolish it to turn it back into floor (what it held bounces to the next tile).' },
-    splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 3, stone: 2 }, unlock: null,
+    stockpile: { name: 'Stockpile Tile', kind: 'expand', cost: { stone: 2, iron: 1 }, unlock: null,
+                desc: 'Place it on an empty floor tile and throw its Stone and Iron at it: it becomes a Stockpile tile that holds 50 of ONE kind (resources, Cores, spells, garments). The Wizard can only send home what the Stockpile has room for. Demolish it to turn it back into floor (what it held bounces to the next tile).' },
+    splitter: { name: 'Splitter', kind: 'splitter', cost: { wood: 2, stone: 2 }, unlock: null,
                 desc: 'Routes what comes in to up to 3 outputs: every side that has something to feed (the side items arrive from is the input). Share them out by %, or give an output element filters (Fire + Earth left, Water + Air right). Click it to set it up.' },
-    crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 12, stone: 6 }, unlock: null,
+    crate:    { name: 'Storage Crate', kind: 'crate', cost: { wood: 6, stone: 2 }, unlock: null,
                 desc: 'Holds any number of ONE kind of element spell or Egg. Belt them in (or throw them) and it feeds them out of its arrow side, one at a time; point it at nothing and it just stores.' },
-    spawner:  { name: 'Creature Spawner', kind: 'crafter', cost: { wood: 10, stone: 8, iron: 3, shard: 1 }, unlock: null,
+    spawner:  { name: 'Creature Spawner', kind: 'crafter', cost: { wood: 6, stone: 6, iron: 4, shard: 1 }, unlock: null,
                 desc: 'Hatches a creature Egg from ONE thing fed into it: an element spell = that element\'s basic creature; a Flamethrower, Tempest Tear, Magma Bomb, Mud Shield, Meteor Shower, Thunderstorm or Geyser Eruption spell = the pair or triple creature of its elements. Steam Burst, Sandstorm and Blizzard are not seeds: they bounce back. Send the Egg through the Spell Portal and the creature drops in beside the Wizard, to be fought for XP. Costs an Aether Shard to build (the starting one is free).' },
   },
-  // the one Harnesser carries any of the four elements (a crystal grows growT seconds after every switch, then shakes shakeT seconds before it starts making packets)
+  // the one Harvester carries any of the four elements (a crystal grows growT seconds after every switch, then shakes shakeT seconds before it starts making packets)
   harness: { growT: 5, shakeT: 1.2, order: ['air', 'water', 'fire', 'earth'], air: { cycle: 3.41, power: 2 }, water: { cycle: 5.11, power: 2 }, fire: { cycle: 5.11, power: 2 }, earth: { cycle: 6.25, power: 2 } },
   // hotbar slots: 'hand', 'belt' or a family (members cycle with Q / the wheel over the slot / pad right-trigger)
   families: {
@@ -286,7 +288,7 @@ const CFG = {
     { id: 'heavy',     col: 0, br: 'bld', icon: 'battery',    name: 'Heavy Batteries', xp: 120, req: [], pay: { air: 25, water: 25, fire: 30, earth: 30, magma: 2 }, desc: 'Unlock the Heavy Battery: a Battery building that drains 33% slower, so each charge lasts 50% longer.' },
     { id: 'summon',   col: 0, br: 'bld', icon: 'b:altar',    name: 'Summoning',       xp: 150, req: [], pay: { air: 40, water: 40, fire: 40, earth: 40 }, desc: 'The Summoning Altar falls from the sky into the wilds beside the Wizard. Once the Warden is dead, hit it with a Single, a Pair, a Triple and the Nova and the Primal Chimera rises. Costs 6 Aether Shards (send them into the Skill Portal).' },
     // col 2: Upgrades — many small tiers, cheap first, steep last
-    { id: 'swift',   col: 2, br: 'bld', icon: 'ic_fast', name: 'Swift Harnessing', per: '+12.5% harnesser speed',
+    { id: 'swift',   col: 2, br: 'bld', icon: 'ic_fast', name: 'Swift Harvesting', per: '+12.5% harvester speed',
       tiers: [12, 18, 25, 33, 43, 54, 65, 80],
       kinds: [['air'], ['fire', 'earth'], ['air', 'fire'], ['water', 'earth'], ['air', 'earth'], ['water', 'fire'], ['water', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']],
       combos: {} },
@@ -491,7 +493,7 @@ const CFG = {
     spawn: 1.5,     // foe counts x (the world cap and the wild spawn rate)
     dmg: 1.0,       // spell damage x
     drops: 1.25,    // every drop chance x (gems, resources, packets, Cores, shards)
-    outputs: 1.25,  // factory outputs x (Harnesser and crafter speed)
+    outputs: 1.25,  // factory outputs x (Harvester and crafter speed)
     // (allies are ONE shared team stable: CFG.ally.cap alive and CFG.ally.queue eggs waiting for the whole team, unchanged)
     dupGarments: 2, // the Armory can forge this many copies of each garment (2P: 1)
     net: { otherEvery: 3 },   // role-scoped snapshots: the world a guest only sees in his small corner picture (a Wizard seat's factory, a Builder seat's wilds) rides every Nth snapshot, in between his machine keeps its last copy (1 = every snapshot carries everything)
@@ -815,18 +817,18 @@ const QUESTS = {
   B: [
     // v5: the goal's index in the previous list (saves from before QUEST_VERSION 6 resume at the first goal with v5 >= their old index)
     { from: 0,  v5: 0,  icon: 'wood',  text: 'Walk to the Stockpile and left-click (pad A) to grab some Wood', xp: 2, stat: g => flN(g, 'tookPile'), n: 1, hint: { pile: 'wood' } },
-    { from: 2,  v5: 1,  icon: 'air',   text: 'Stand by the Harnesser: press E to hand-gather Air, then keep tapping E to fill the meter', xp: 3, stat: g => flN(g, 'gathered'), n: 1, hint: { use: 'harness' } },
+    { from: 2,  v5: 1,  icon: 'air',   text: 'Stand by the Harvester: press E to hand-gather Air, then keep tapping E to fill the meter', xp: 3, stat: g => flN(g, 'gathered'), n: 1, hint: { use: 'harness' } },
     { from: 3,  v5: 2,  icon: 'ic_portal', text: 'Throw (right-click / pad B) a spell into the Spell Portal', xp: 3, stat: g => flN(g, 'portalHand'), n: 1, hint: { portal: 'spell' } },
     { from: 5,  v5: 3,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, stat: g => Object.values(g.stats.banked || {}).reduce((a, n) => a + n, 0), n: 5, hint: { portal: 'skill' } },
-    { icon: 'b:water', text: 'Switch the Harnesser to another element: press F beside it (the new crystal grows for 5 seconds)', xp: 4, stat: g => flN(g, 'switched'), n: 1, hint: { use: 'harness' } },
-    { from: 6,  v5: 4,  icon: 'b:air', text: 'Build a second Harnesser: press 3, click a tile, then throw Wood & Stone at it', xp: 8, stat: g => builtN(g, 'harness'), n: 1, hint: { build: 'harness' } },
+    { icon: 'b:water', text: 'Switch the Harvester to another element: press F beside it (the new crystal grows for 5 seconds)', xp: 4, stat: g => flN(g, 'switched'), n: 1, hint: { use: 'harness' } },
+    { from: 6,  v5: 4,  icon: 'b:air', text: 'Build a second Harvester: press 3, click a tile, then throw Wood & Stone at it', xp: 8, stat: g => builtN(g, 'harness'), n: 1, hint: { build: 'harness' } },
     { from: 7,  v5: 5,  icon: 'battery', text: 'Feed the Battery: grab an Air spell and throw it at the Battery (Wood or Stone work too)', xp: 10, stat: g => flN(g, 'fed'), n: 1, hint: { make: 'battery' } },
     { icon: 'egg_zephyr', text: 'Hatch Air creatures: send 3 Zephyr Wisp Eggs through the Spell Portal', xp: 8, stat: g => (g.stats.sent || {}).egg_zephyr || 0, n: 3, hint: { make: 'spawner' } },
-    { v5: 6,  icon: 'b:water', text: 'Switch a Harnesser to Water: press F beside it. The new crystal grows for 5 seconds', xp: 8, gift: { bank: { water: 4 } }, stat: g => (g.stats.elSet || {}).water || 0, n: 1, also: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
+    { v5: 6,  icon: 'b:water', text: 'Switch a Harvester to Water: press F beside it. The new crystal grows for 5 seconds', xp: 8, gift: { bank: { water: 4 } }, stat: g => (g.stats.elSet || {}).water || 0, n: 1, also: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
     { from: 11, v5: 8,  icon: 'hp_water', text: 'Build an Alchemy Cauldron, feed it ONE Water spell and send the Health Potion through the Spell Portal', xp: 12, stat: g => potionN(g, 'hp'), n: 1, hint: { make: 'cauldron' } },
     { v5: 9,  icon: 'hp_flamethrower', text: 'Keep the Wizard healthy: send 3 more Health Potions (a stronger spell makes a stronger potion)', xp: 10, gift: { stock: { wood: 12, stone: 9, iron: 6 } }, stat: g => potionN(g, 'hp'), n: 3, hint: { make: 'cauldron' } },
     { icon: 'egg_puddle', text: 'Hatch a Puddle Slime: feed Water to a Spawner, then send the Egg', xp: 10, stat: g => (g.stats.sent || {}).egg_puddle || 0, n: 1, hint: { make: 'spawner' } },
-    { icon: 'egg_cinder', text: 'Hatch a Cinder Imp: set a Harnesser to Fire, feed a Spawner, send the Egg', xp: 10, gift: { bank: { fire: 4 } }, stat: g => (g.stats.sent || {}).egg_cinder || 0, n: 1, hint: { make: 'spawner' } },
+    { icon: 'egg_cinder', text: 'Hatch a Cinder Imp: set a Harvester to Fire, feed a Spawner, send the Egg', xp: 10, gift: { bank: { fire: 4 } }, stat: g => (g.stats.sent || {}).egg_cinder || 0, n: 1, hint: { make: 'spawner' } },
     { from: 12, v5: 10, icon: 'b:forge', text: 'Build the Elemental Forge: it fuses element spells into combo spells', xp: 12, stat: g => builtN(g, 'forge'), n: 1, hint: { make: 'forge' } },
     { v5: 11, icon: 'battery', text: 'Build a second Battery: press 5, click a tile, then throw Wood, Stone & Iron at it', xp: 8, stat: g => builtN(g, 'battery', 'heavybat'), n: 1, hint: { build: 'battery' } },
     { v5: 12, icon: 'ic_bolt', text: 'Keep the power on: top a Battery up to full 3 times with spells, Wood or Stone', xp: 15, gift: { credit: { battery: 1 } }, stat: g => g.stats.charged || 0, n: 3, hint: { make: 'battery' } },
@@ -836,7 +838,7 @@ const QUESTS = {
     { from: 15, v5: 16, icon: 'b:splitter', text: 'Build a Splitter (it routes spells to up to 3 outputs)', xp: 15, stat: g => builtN(g, 'splitter'), n: 1, hint: { make: 'splitter' } },
     { from: 16, v5: 17, icon: 'ap_earth', text: 'Switch the Cauldron to Armor mode (F beside it), feed it an Earth spell and send the Armor Potion', xp: 15, stat: g => potionN(g, 'ap'), n: 1, hint: { make: 'cauldron' } },
     { v5: 18, icon: 'plate', text: 'Build the Armory: forge a garment from Cores, send it', xp: 20, gift: { stock: { iron: 6 } }, stat: g => flN(g, 'sent_aug'), n: 1, hint: { make: 'anvil' } },
-    { icon: 'egg_pebble', text: 'Hatch a Pebble Golem: set a Harnesser to Earth, feed a Spawner, send the Egg', xp: 12, stat: g => (g.stats.sent || {}).egg_pebble || 0, n: 1, hint: { make: 'spawner' } },
+    { icon: 'egg_pebble', text: 'Hatch a Pebble Golem: set a Harvester to Earth, feed a Spawner, send the Egg', xp: 12, stat: g => (g.stats.sent || {}).egg_pebble || 0, n: 1, hint: { make: 'spawner' } },
     { from: 17, v5: 19, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 8) and throw 2 Wood + 2 Stone at it', xp: 15, stat: g => g.stats.tiles || 0, n: 1, hint: { make: 'expand' } },
     { v5: 20, icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner' } },
     { from: 19, v5: 21, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, stat: g => flN(g, 'triple'), n: 1, hint: { combo: 3 } },

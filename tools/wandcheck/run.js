@@ -434,7 +434,7 @@ const OUT = process.env.SHOTS || '';
   ok(r.boost0 === 1 && r.boostStand === 1 && r.shrinesStand === '{}', 'standing on a claimed shrine grants nothing', 'boost ' + r.boostStand);
   ok(r.started && r.missRestarts[0] && r.missRestarts[1], 'Mash at a ready shrine starts the ring game; a miss restarts that ring only', JSON.stringify(r.missRestarts));
   ok(r.active[0] && r.active[1] && r.active[2] === 1, '3 good rings activate the shrine', JSON.stringify(r.active));
-  ok(Math.abs(r.boostOn - 1.25) < 1e-6 && Math.abs(r.boostFar - 1.25) < 1e-6, 'the +25% harnesser buff runs, and persists after he leaves', 'at the shrine x' + r.boostOn + ', 60 tiles away x' + r.boostFar);
+  ok(Math.abs(r.boostOn - 1.25) < 1e-6 && Math.abs(r.boostFar - 1.25) < 1e-6, 'the +25% harvester buff runs, and persists after he leaves', 'at the shrine x' + r.boostOn + ', 60 tiles away x' + r.boostFar);
   ok(r.buffLeft > 29.5 && Math.abs(r.buffSecs - 30) < 3.2 && r.boostEnd === 1 && r.cdAfter > 119, 'the buff lasts 30 s, then a 120 s cooldown starts', 'buff ' + r.buffLeft.toFixed(1) + ' at wake, ended after ~' + r.buffSecs.toFixed(1) + ' s, cooldown ' + r.cdAfter.toFixed(1));
   ok(r.refused && r.cdFalls > 9.5 && r.refill > 0.07 && r.refill < 0.12, 'reactivation is refused during the cooldown while the refill climbs', 'cooldown fell ' + r.cdFalls.toFixed(1) + ' s, refill ' + (r.refill * 100).toFixed(0) + '%');
   ok(r.wandAfterClaim === r.wandEnd && JSON.parse(r.wandEnd).m.air + JSON.parse(r.wandEnd).m.water + JSON.parse(r.wandEnd).m.fire + JSON.parse(r.wandEnd).m.earth === 0, 'a shrine grants zero wand charge (claim, wake, buff, cooldown)', r.wandEnd);

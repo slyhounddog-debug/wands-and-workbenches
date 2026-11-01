@@ -18,6 +18,7 @@ const CHECKS = [
   { id: 'syntax', what: 'every script parses (js/, api/, tools/)', inline: true },
   { id: 'qolcheck', what: 'headless playthrough with no page errors + the edge bubbles, hit-stop, belt lines, no-power chip, guest sounds', file: 'tools/qolcheck/run.js', browser: true },
   { id: 'spawncheck', what: 'the F3 overlay SPAWN tab: enemies / allies / spells / resources by real clicks', file: 'tools/spawncheck/run.js', browser: true },
+  { id: 'keycheck', what: 'remappable keys, the Q pipette, hold right-click to move a building, the big map, the Builder game over screen, Book damage numbers, prices / yields / drop rates', file: 'tools/keycheck/run.js', browser: true },
   { id: 'menucheck', what: 'the front door: the living menu world', file: 'tools/menucheck/run.js', browser: true },
   { id: 'snapcheck', what: 'the snapshot photo test (no leaks, frames match)', file: 'tools/snapcheck/run.js', browser: true },
   { id: 'allycheck', what: 'Core-grown allies', file: 'tools/allycheck/run.js', browser: true },

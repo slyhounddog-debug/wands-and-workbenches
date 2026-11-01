@@ -75,7 +75,7 @@ Main.netUi = function (mode) {
   if (mode === 'host' && Net.role === 'guest') {   // 4P: a Builder seat on a guest's machine (no mouse: auto-aimed throws)
     help.innerHTML = '<div class="hcol"><h3>' + UI.img('ic_wrench', 16) + 'YOU ARE A BUILDER</h3>' +
       '<div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk &nbsp; <kbd>SPACE</kbd> or <kbd>LEFT CLICK</kbd> pick up / place &nbsp; <kbd>RIGHT CLICK</kbd> throw (auto-aimed) &nbsp; <kbd>E</kbd> use / crank</div>' +
-      '<div><kbd>1</kbd>-<kbd>9</kbd> or <kbd>[</kbd><kbd>]</kbd> hotbar &nbsp; <kbd>Q</kbd> next in the family &nbsp; <kbd>R</kbd> rotate &nbsp; <kbd>F</kbd> switch a Harnesser &nbsp; <kbd>B</kbd> demolish &nbsp; <kbd>T</kbd> skill tree &nbsp; <kbd>ESC</kbd> menu</div>' +
+      '<div><kbd>1</kbd>-<kbd>9</kbd> or <kbd>[</kbd><kbd>]</kbd> hotbar &nbsp; <kbd>Q</kbd> next in the family &nbsp; <kbd>R</kbd> rotate &nbsp; <kbd>F</kbd> switch a Harvester &nbsp; <kbd>B</kbd> demolish &nbsp; <kbd>T</kbd> skill tree &nbsp; <kbd>ESC</kbd> menu</div>' +
       '<div>Two Builders share one factory. A gamepad works too (A pick, B throw, X use, LB / RB hotbar, RT family).</div></div>' +
       '<div class="hfoot"><kbd>H</kbd> hides this.</div>';
   } else if (mode === 'guest') {
@@ -171,9 +171,9 @@ Main.guestKeys = function (dt) {
   const p = IN.pad[0];
   const bs = G.m4 && M4.ROLE[M4.me()] === 'B';   // 4P: a Builder seat has the Builder's tree (left) and the Builder's keys
   if (IN.hit('Escape')) { if (UI.treeOpen.R) UI.openTree('R', false); else if (UI.treeOpen.L) UI.openTree('L', false); else if (!Book.isOpen) Main.pause(!Main.menuUp); }
-  if (!Main.menuUp && !Book.isOpen && (IN.hit('KeyT') || (!bs && (IN.hit('KeyY') || (p && p.back))))) UI.openTree(bs ? 'L' : 'R');
-  if (IN.hit('KeyC') && !UI.treeOpen.R && !Main.menuUp && !Book.isOpen) Book.open();
-  if (IN.hit('KeyH')) UI.help();
+  if (!Main.menuUp && !Book.isOpen && (Keys.hit('treeB') || (!bs && (Keys.hit('treeW') || (p && p.back))))) UI.openTree(bs ? 'L' : 'R');
+  if (Keys.hit('book') && !UI.treeOpen.R && !Main.menuUp && !Book.isOpen) Book.open();
+  if (Keys.hit('help')) UI.help();
   if (Net.helpT > 0) { Net.helpT -= dt; if (Net.helpT <= 0) UI.help(false); }
   if (UI.treeOpen.R && !Main.menuUp) Main.treePads(dt, null, p);
   if (UI.treeOpen.L && !Main.menuUp && bs) Main.treePads(dt, p, null);

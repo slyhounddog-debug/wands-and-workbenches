@@ -230,8 +230,8 @@ const OUT = process.env.SHOTS || '';
     o.n = rate(make()); o.m = rate(make(true)); o.e = rate(make(false, true));
     return o;
   });
-  ok(Math.abs(r.n.common - 0.2) < 0.03 && Math.abs(r.n.iron - 0.1) < 0.025 && Math.abs(r.n.pk - 0.25) < 0.035, 'a kill drops Wood / Stone 20%, Iron 10%, a spell 25%', JSON.stringify(r.n));
-  ok(Math.abs(r.m.common - 0.4) < 0.04 && Math.abs(r.m.iron - 0.2) < 0.035 && Math.abs(r.e.common - 0.6) < 0.045 && Math.abs(r.e.iron - 0.3) < 0.04, 'mutants roll twice as often, elites three times', JSON.stringify([r.m, r.e]));
+  ok(Math.abs(r.n.common - 0.17) < 0.025 && Math.abs(r.n.iron - 0.05) < 0.02 && Math.abs(r.n.pk - 0.25) < 0.035, 'a kill drops Wood 10% + Stone 7%, Iron 5%, a spell 25%', JSON.stringify(r.n));
+  ok(Math.abs(r.m.common - 0.255) < 0.03 && Math.abs(r.m.iron - 0.075) < 0.02 && Math.abs(r.e.common - 0.34) < 0.035 && Math.abs(r.e.iron - 0.1) < 0.025, 'mutants roll the resource drops x1.5, elites x2', JSON.stringify([r.m, r.e]));
 
   // ================= 11. the tree, forage, the emote button, blueprints =================
   r = await run(() => {

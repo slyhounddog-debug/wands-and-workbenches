@@ -5,7 +5,7 @@
 //   R.drawTether    a rare drop's dotted line back to the kill that made it (drop.fx / fy / tet)
 //   R.drawThreat    at the Spell Portal: what the Wizard just met and what it is weak to (G.fac.threat)
 //   R.drawRej       a pickup the full Stockpile refused bouncing off the Spell Portal (G.fac.rejs)
-//   R.drawBoost     a boosted Harnesser / a Battery its shrine charged: a slow pulse and a small bouncing "+"
+//   R.drawBoost     a boosted Harvester / a Battery its shrine charged: a slow pulse and a small bouncing "+"
 //   R.drawFoeStatus slowed / frozen / dazed icons on a foe
 //   R.drawWandFill  a wand slot (or a shrine) became ready: element particles swirl into the staff before it starts to blink (G.wand.fx)
 
@@ -142,7 +142,7 @@ R.drawRej = function (ctx, v, r, base) {
   if (u > 0.3 && u < 0.85 && Math.floor(r.t * 14) % 2) dspr(ctx, SP.ic_x, x, y - 40, 4);
 };
 
-// ---------- a boost the Wizard made happen: the Harnesser / Battery pulses gently and a small "+" bounces over it ----------
+// ---------- a boost the Wizard made happen: the Harvester / Battery pulses gently and a small "+" bounces over it ----------
 R.drawBoost = function (ctx, v, p, base, t, col, seed) {
   ctx.globalAlpha = 0.1 + 0.07 * Math.sin(t * 5 + seed); ctx.fillStyle = col; diamond(ctx, p[0], p[1], v.hw * 0.9, v.hh * 0.9); ctx.fill(); ctx.globalAlpha = 1;
   const k = Math.abs(Math.sin(t * 4 + seed)), bounce = Math.round(k * 12 / 4) * 4, S2 = Math.sin(t * 8 + seed) > 0 ? 4 : 3;

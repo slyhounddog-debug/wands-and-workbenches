@@ -14,11 +14,11 @@ function bookIndexEntries() {
 
   // ---------------- buildings ----------------
   bld('harness', 'build', 'b:harness', 'Makes element packets (spells): Air, Water, Fire or Earth, whichever crystal it carries. A packet is the basic spell and the raw ingredient of everything else.',
-    'Pick it in the hotbar (3), click a floor tile and throw the materials at the blueprint. One stands ready at the start; stand beside any Harnesser and tap the use key to hand-gather a packet for free.',
+    'Pick it in the hotbar (3), click a floor tile and throw the materials at the blueprint. One stands ready at the start; stand beside any Harvester and tap the use key to hand-gather a packet for free.',
     'Nothing runs without packets: they are the Wizard\'s attacks, the Battery\'s fuel, the input of every machine and the Skill Tree\'s money. F switches its element (the new crystal grows for 5 seconds).');
   E('belt', 'build', 'Belt', 'ic_fast', 'Carries spells, potions, Eggs and garments from machine to machine, one tile at a time, the way its chevrons point.',
     'Pick the Belt tool (2) and click-drag a line from one tile to another; it turns the corner by itself. R turns the piece you aim at. It costs 1 Wood a tile.',
-    'It automates the loop (Harnesser -> Splitter -> Spell Portal) so the Builder is free to build. Belts never carry raw Wood, Stone, Iron, Shards or Cores: those are thrown or carried.', costRow({ wood: 1 }));
+    'It automates the loop (Harvester -> Splitter -> Spell Portal) so the Builder is free to build. Belts never carry raw Wood, Stone, Iron, Shards or Cores: those are thrown or carried.', costRow({ wood: 1 }));
   bld('splitter', 'build', 'b:splitter', 'A router with up to three outputs: every side that has a belt, machine or portal beside it is an output. You set what share goes where and which element each output takes.',
     'Place it where belts meet (hotbar family 6, Q switches member); click it to set the shares and the element filters.',
     'It is how the Builder aims the factory: Fire to the Spell Portal, Water to the Skill Portal, spare Air to a Battery. In the Chimera fight it is how you change which element goes up when its weakness changes.');
@@ -39,7 +39,7 @@ function bookIndexEntries() {
     'Creatures are the Wizard\'s XP, drops and Cores, and a friendly one fights beside him. The Creatures page shows each one\'s Egg recipe.');
   bld('battery', 'build', 'b:battery', 'Stores power: a charged Battery gives ' + CFG.stationGen + ' power to the whole factory and runs flat in about a minute at that load. It is charged by throwing it packets, Wood or Stone.',
     'Hotbar family 5. Throw spells (or Wood / Stone) at it. A combo spell or a strong Health Potion overcharges it past full.',
-    'Harnessers, the Forge and the Armory stop without power. Each finished Battery also raises a numbered Battery Shrine in the wilds: spells that hit it recharge it.');
+    'Harvesters, the Forge and the Armory stop without power. Each finished Battery also raises a numbered Battery Shrine in the wilds: spells that hit it recharge it.');
   bld('heavybat', 'build', 'b:heavybat', 'A Battery that drains 50% slower, so a charge lasts half as long again. Charging takes the same time.',
     'Hotbar family 5, Q switches member. Charge it like a Battery.',
     'The same power for less feeding: good for a big factory the Builder cannot babysit.');
@@ -66,12 +66,12 @@ function bookIndexEntries() {
 
   // ---------------- resources and items ----------------
   E('packet', 'stuff', 'Element Spells', 'fire', 'The four basic spells (Air, Water, Fire, Earth), also called packets. Each is an attack for the Wizard when it arrives, and the ingredient of nearly everything.',
-    'A Harnesser makes them; creatures drop them 25% of the time; the Wizard recycles loose ones home.',
+    'A Harvester makes them; creatures drop them 25% of the time; the Wizard recycles loose ones home.',
     'They are the Wizard\'s attacks, power for Batteries, input for Forge / Cauldron / Spawner, and Skill Tree money. Each element has its own wand attack too.');
-  E('wood', 'stuff', 'Wood', 'wood', 'Building material. It also burns in a Battery like a packet.', 'Trees give it when spells hit them; kills drop it ' + pc(CFG.drops.common) + ' of the time (x2 mutants, x3 elites); dirt mounds and stick piles hold some.',
+  E('wood', 'stuff', 'Wood', 'wood', 'Building material. It also burns in a Battery like a packet.', 'Trees give it when spells hit them; kills drop it ' + pc(CFG.drops.wood) + ' of the time (x' + CFG.drops.resMutMul + ' mutants, x' + CFG.drops.resEliteMul + ' elites); stick piles hold some.',
     'Every building, every belt (1 a tile) and every Floor Tile needs it.');
-  E('stone', 'stuff', 'Stone', 'stone', 'Building material. It also burns in a Battery.', 'Rocks give it when spells hit them; kills drop it ' + pc(CFG.drops.common) + ' of the time; dirt mounds hold some.', 'Needed by almost every building and tile.');
-  E('iron', 'stuff', 'Iron Ore', 'iron', 'A rarer metal for the bigger machines.', 'Rocks hold an Ore ' + pc(CFG.harvest.rock.bonus ? (CFG.harvest.rock.bonus.iron || 0.75) : 0.75) + ' of the time; kills drop it ' + pc(CFG.drops.iron) + ' of the time (x2 mutants, x3 elites).',
+  E('stone', 'stuff', 'Stone', 'stone', 'Building material. It also burns in a Battery.', 'Rocks give it when spells hit them; kills drop it ' + pc(CFG.drops.stone) + ' of the time (x' + CFG.drops.resMutMul + ' mutants, x' + CFG.drops.resEliteMul + ' elites); dirt mounds hold some.', 'Needed by almost every building and tile.');
+  E('iron', 'stuff', 'Iron Ore', 'iron', 'A rarer metal for the bigger machines.', 'Rocks hold an Ore ' + pc(CFG.harvest.rock.bonus ? (CFG.harvest.rock.bonus.iron || 0.25) : 0.25) + ' of the time; kills drop it ' + pc(CFG.drops.iron) + ' of the time (x' + CFG.drops.resMutMul + ' mutants, x' + CFG.drops.resEliteMul + ' elites); dirt mounds hold some.',
     'Batteries, Forges, the Armory, Spawners, garments and the Warden Key all need it.');
   E('shard', 'stuff', 'Aether Shard', 'shard', 'The rare resource. When the Wizard picks one up it rises, shakes with confetti and flies home; the Builder sees a preview over the Spell Portal first.',
     'Camps give ' + CFG.marks.campShards + ', crypts ' + CFG.marks.cryptShards + ', the Warden ' + CFG.strong.shards + ', the Chimera ' + CFG.boss.shards + '; an elite drops one ' + pc(CFG.elite.shard) + ' of the time.',
@@ -102,11 +102,11 @@ function bookIndexEntries() {
   // ---------------- the wilds ----------------
   E('trees', 'wild', 'Trees, Rocks and Ore', 'tree', 'Wood, Stone and Iron growing in the wilds. Any spell that reaches them chops or breaks them; they grow back after ' + CFG.world.respawn + ' seconds.',
     'Just stand near them while the Builder\'s spells land (the Wizard has no attack of his own). Harvest Strength in the Skill Tree makes spells hit them harder.', 'The factory runs on Wood, Stone and Iron, and this is where they come from.');
-  E('forage', 'wild', 'Dig Spots', 'mound', 'Dirt mounds (Stone, sometimes Iron), stick piles (Wood), berry bushes (a potion) and, with the Kilnsight Mask, buried caches.',
+  E('forage', 'wild', 'Dig Spots', 'mound', 'Dirt mounds (one Stone and one Iron), stick piles (Wood), berry bushes (a potion) and, with the Kilnsight Mask, buried caches.',
     'Stand next to one and mash the Mash button (X, left click or /). Progress is never lost: leave and come back and the pile remembers.', 'A way to find building materials and potions without waiting for a spell to chop a tree.');
   E('camp', 'wild', 'Monster Camps and Crypts', 'lm_camp', 'Marked spots on the map guarded by foes (a crypt by one elite guard). Standing inside the ring for a few seconds wakes them; clearing them claims the spot.',
     'Walk into the ring and hold your ground (it fills while you stay and drains if you leave). Kill every guard.', 'The main source of Aether Shards (a camp pays ' + CFG.marks.campShards + ', a crypt ' + CFG.marks.cryptShards + ') and a pile of XP.');
-  E('shrine', 'wild', 'Element Shrines', 'lm_shrine', 'Claimed by the Builder sending the three Cores of the OTHER elements through the Spell Portal while the Wizard stands near it. Then the Wizard can wake it with a ring-timing game for a 30 s boost to every Harnesser of its element.',
+  E('shrine', 'wild', 'Element Shrines', 'lm_shrine', 'Claimed by the Builder sending the three Cores of the OTHER elements through the Spell Portal while the Wizard stands near it. Then the Wizard can wake it with a ring-timing game for a 30 s boost to every Harvester of its element.',
     'Find one on the map (Core drops come from creatures of the other elements).', 'A big production boost, and a goal on the Wizard\'s list.');
   E('keep', 'wild', 'The Stronghold', 'lm_keep', 'One far-off keep with a Warden inside. Its approach is hazardous ground (an island in a lake, a lava field, cracked rock, a chasm) that needs the right garment, and its door needs the Warden Key.',
     'Scout it by walking near; wear the garment that crosses its ground; have the Builder send the key; beat the Warden.', 'Killing the Warden opens the Summoning Altar to spells. Without it the game cannot be won.');
@@ -121,7 +121,7 @@ function bookIndexEntries() {
   E('events', 'wild', 'Wilds Events', 'ic_trophy', 'Every 10-15 minutes something big happens: a Migration, a Stampede, an Elite Hunt, a Mutation Bloom, a Portal Storm or the Chimera\'s Brood. The card under the goals counts down and names the weakness to stock.',
     'They start by themselves. Clear the foes to win the reward.', 'A shower of XP and (from cycle 2) a Shard, and a warning to the Builder about what to send.');
   E('elites', 'wild', 'Elites and Mutants', 'ic_crown', 'A gold-ringed elite (' + pc(CFG.elite.spawn) + ' of wild spawns) has ' + CFG.elite.hp + 'x health and drops ' + CFG.elite.gems + ' gems and its Cores; a mutant carries one twist (Swift, Armored, Volatile, Splitter, Regenerating). The Builder\'s Spell Portal shows "ELITE SPAWNED" or "MUTANT SPAWNED" with what it is weak to.',
-    'They turn up on their own.', 'They pay x3 (elites) and x2 (mutants) on Wood, Stone, Iron and spell drops. Send the element on the panel.');
+    'They turn up on their own.', 'They pay x' + CFG.drops.resEliteMul + ' (elites) and x' + CFG.drops.resMutMul + ' (mutants) on Wood, Stone and Iron drops, and x' + CFG.drops.eliteMul + ' / x' + CFG.drops.mutMul + ' on spell drops. Send the element on the panel.');
   E('weakness', 'wild', 'Weakness', 'ic_bolt', 'Every foe is weak to one element (double damage, a yellow !) and resists another (half). The Builder\'s Spell Portal shows "WEAK TO" with the element when a new danger appears.',
     'Read the panel at the Spell Portal or the weakness pip on the foe.', 'Matching the element is the fastest way to win a fight, and it is the Builder\'s main job.');
 

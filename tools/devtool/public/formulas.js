@@ -25,7 +25,7 @@ const F = {
   hpMul: m => 1 + V('world.hpPerMin') * m,
   pElite: (m, d) => (m * 60 < V('elite.minTime') ? 0 : Math.min(V('elite.max'), V('elite.base') + V('elite.perMin') * m + V('elite.perDist') * d / 100)),
   swift: t => 1 + V('upgrade.swift') * t,
-  rate: (el, tier, boost) => 60 / (V('harness.' + el + '.cycle') / F.swift(tier) / boost),   // packets / min of one Harnesser
+  rate: (el, tier, boost) => 60 / (V('harness.' + el + '.cycle') / F.swift(tier) / boost),   // packets / min of one Harvester
   gemMul: t => Math.pow(1 + V('upgrade.gems'), t),
   gemExp: (sure, chance, t) => sure + Math.min(V('gemCap'), chance * F.gemMul(t)),
   drainK: heavy => V('batteryMax') / (V('batteryLife') * V('stationGen')) / (heavy ? 1 + V('heavyBattery') : 1),
@@ -145,15 +145,15 @@ add({
   },
 });
 
-// 3 ---- harnessers, belts, crafting
+// 3 ---- harvesters, belts, crafting
 add({
-  id: 'harness', title: 'Factory: harnessers, belts & machine planning', blurb: 'FA.cycle (cycle / Swift Harnessing / Shrine + Portal Storm boost), FA.beltTime, Adjacency Overdrive. Includes a planner: how many Harnessers does one machine need to run flat out?',
+  id: 'harness', title: 'Factory: harvesters, belts & machine planning', blurb: 'FA.cycle (cycle / Swift Harvesting / Shrine + Portal Storm boost), FA.beltTime, Adjacency Overdrive. Includes a planner: how many Harvesters does one machine need to run flat out?',
   params: () => {
     const rec = Object.keys(CFG.recipes).filter(k => Object.keys(CFG.recipes[k].in).some(i => ELEMS.includes(i))).map(k => [k, CFG.recipes[k].out + ' (' + CFG.recipes[k].machine + ')']);
-    return [{ head: 'Harnessers' }, ...ELEMS.map(e => ({ cfg: 'harness.' + e + '.cycle', label: cap1(e) + ' cycle (s)' })), { cfg: 'upgrade.swift', label: 'Swift Harnessing per tier' },
+    return [{ head: 'Harvesters' }, ...ELEMS.map(e => ({ cfg: 'harness.' + e + '.cycle', label: cap1(e) + ' cycle (s)' })), { cfg: 'upgrade.swift', label: 'Swift Harvesting per tier' },
       { cfg: 'marks.shrineBoost', label: 'Shrine boost' }, { cfg: 'events.storm.boost', label: 'Portal Storm boost' }, { cfg: 'overdrive', label: 'Adjacency Overdrive' },
       { head: 'Belts' }, { cfg: 'beltTime', label: 'Seconds per tile' }, { cfg: 'upgrade.belts', label: 'Swift Belts per tier' },
-      { head: 'Test' }, { key: 'tier', label: 'Swift Harnessing tier', min: 0, max: 8, step: 1, def: 0 }, { key: 'boost', type: 'select', label: 'Boost', options: [['0', 'none'], ['1', 'Shrine'], ['2', 'Portal Storm'], ['3', 'Shrine + Storm']], def: '0' },
+      { head: 'Test' }, { key: 'tier', label: 'Swift Harvesting tier', min: 0, max: 8, step: 1, def: 0 }, { key: 'boost', type: 'select', label: 'Boost', options: [['0', 'none'], ['1', 'Shrine'], ['2', 'Portal Storm'], ['3', 'Shrine + Storm']], def: '0' },
       { key: 'belt', label: 'Belt tier', min: 0, max: 6, step: 1, def: 0 }, { key: 'len', label: 'Belt length (tiles)', min: 1, max: 40, step: 1, def: 12 },
       { head: 'Machine planner' }, { key: 'rec', type: 'select', label: 'Recipe', options: rec, def: 'flamethrower' }, { key: 'od', type: 'check', label: 'Battery beside it (Overdrive)', def: false }];
   },
@@ -163,12 +163,12 @@ add({
     const rid = S.rec && CFG.recipes[S.rec] ? S.rec : 'flamethrower', R = CFG.recipes[rid], od = S.od && /forge|cauldron/.test(R.machine) ? 1 + V('overdrive') : 1;
     const time = R.time, perMin = 60 / (time / od);
     const planRows = Object.keys(R.in).filter(i => ELEMS.includes(i)).map(el => { const need = R.in[el] * perMin, per = F.rate(el, tier, boost); return [cap1(el), R.in[el], need, per, need / per, Math.ceil(need / per - 1e-9)]; });
-    out.append(stats([['Belt speed', 1 / bt(num('belt', 0)), 'tiles / s'], ['Belt crossing', bt(num('belt', 0)) * num('len', 12), 'seconds for ' + num('len', 12) + ' tiles'], ['Boost multiplier', boost, 'x on harnessers'], ['Machine rate', perMin, R.out + ' / min' + (od > 1 ? ' with Overdrive' : '')]]),
-      grid(chart({ title: 'Packets per minute, one Harnesser', yl: 'per min', xl: 'Swift tier', series: ELEMS.map(el => ({ name: cap1(el), color: COL[el], pts: tiers.map(t => [t, F.rate(el, t, boost)]) })) }),
+    out.append(stats([['Belt speed', 1 / bt(num('belt', 0)), 'tiles / s'], ['Belt crossing', bt(num('belt', 0)) * num('len', 12), 'seconds for ' + num('len', 12) + ' tiles'], ['Boost multiplier', boost, 'x on harvesters'], ['Machine rate', perMin, R.out + ' / min' + (od > 1 ? ' with Overdrive' : '')]]),
+      grid(chart({ title: 'Packets per minute, one Harvester', yl: 'per min', xl: 'Swift tier', series: ELEMS.map(el => ({ name: cap1(el), color: COL[el], pts: tiers.map(t => [t, F.rate(el, t, boost)]) })) }),
         chart({ title: 'Seconds per belt tile', xl: 'Swift Belts tier', series: [{ name: 's / tile', color: COL.acc, pts: range(0, 6, 1).map(t => [t, bt(t)]) }] })),
       h('h3', {}, 'Planner: ' + R.out + ' at ' + R.machine + ' (' + fmt(time) + 's' + (od > 1 ? ', ' + fmt(time / od) + 's with Overdrive' : '') + ')'),
-      table(['Element', 'Per craft', 'Needed / min', 'One Harnesser / min', 'Harnessers (exact)', 'Harnessers (whole)'], planRows,
-        'Assumes the machine never waits. Packets from the Stockpile or Harnessers hand-gathered do not count. Power is not modelled here (see the Power tab).'));
+      table(['Element', 'Per craft', 'Needed / min', 'One Harvester / min', 'Harvesters (exact)', 'Harvesters (whole)'], planRows,
+        'Assumes the machine never waits. Packets from the Stockpile or Harvesters hand-gathered do not count. Power is not modelled here (see the Power tab).'));
   },
 });
 
@@ -246,9 +246,9 @@ add({
 
 // 7 ---- creature eggs
 add({
-  id: 'eggs', title: 'Creatures: Eggs, spawners & production', blurb: 'CFG.creatures: one Egg (1 packet per element) hatches n creatures. Edit n, the craft time and the packet costs straight in the table. HP per packet is the value you get out of the factory; the Harnesser count says how many it takes to keep one Spawner running.',
+  id: 'eggs', title: 'Creatures: Eggs, spawners & production', blurb: 'CFG.creatures: one Egg (1 packet per element) hatches n creatures. Edit n, the craft time and the packet costs straight in the table. HP per packet is the value you get out of the factory; the Harvester count says how many it takes to keep one Spawner running.',
   params: () => [{ head: 'Limits' }, { cfg: 'crafted.cap', label: 'Crafted creatures alive at once' }, { cfg: 'crafted.queue', label: 'Eggs the Portal holds back' },
-    { head: 'Test' }, { key: 'tier', label: 'Swift Harnessing tier', min: 0, max: 8, step: 1, def: 0 }, { key: 'sp', label: 'Spawners of one kind', min: 1, max: 8, step: 1, def: 1 }],
+    { head: 'Test' }, { key: 'tier', label: 'Swift Harvesting tier', min: 0, max: 8, step: 1, def: 0 }, { key: 'sp', label: 'Spawners of one kind', min: 1, max: 8, step: 1, def: 1 }],
   draw(out) {
     const tier = num('tier', 0), sp = num('sp', 1), ids = Object.keys(CFG.creatures);
     const cell = (path, step) => { const i = h('input', { type: 'number', step: step || 1, class: 'cell' }); i.value = plain(V(path)); i.addEventListener('change', () => { setValue(path, +i.value); this.refresh(); }); return i; };
@@ -261,9 +261,9 @@ add({
     out.append(stats([['Cap', V('crafted.cap'), 'alive at once'], ['Best HP per packet', Math.max(...rows.map(r => r.hpPk)), rows.reduce((a, r) => (r.hpPk > a.hpPk ? r : a)).c.name], ['Best gems per packet', Math.max(...rows.map(r => r.gemPk)), rows.reduce((a, r) => (r.gemPk > a.gemPk ? r : a)).c.name]]),
       grid(chart({ title: 'Creature HP per element packet', yl: 'HP', bars: true, labels: rows.map(r => r.c.name), series: [{ name: 'HP / packet', color: COL.ok, vals: rows.map(r => r.hpPk) }] }, 230),
         chart({ title: 'Creatures per minute, one Spawner', yl: 'per min', bars: true, labels: rows.map(r => r.c.name), series: [{ name: 'creatures / min', color: COL.acc, vals: rows.map(r => r.n * r.perMin) }] }, 230)),
-      table(['Creature', 'Tier', 'Creatures / Egg', 'Craft time (s)', 'Packets / Egg', ...ELEMS.map(cap1), 'HP each', 'HP / packet', 'Gems / packet', 'Creatures / min', 'Harnessers to feed it', 'Minutes to fill cap (' + sp + ' spawner' + (sp > 1 ? 's' : '') + ')'],
+      table(['Creature', 'Tier', 'Creatures / Egg', 'Craft time (s)', 'Packets / Egg', ...ELEMS.map(cap1), 'HP each', 'HP / packet', 'Gems / packet', 'Creatures / min', 'Harvesters to feed it', 'Minutes to fill cap (' + sp + ' spawner' + (sp > 1 ? 's' : '') + ')'],
         rows.map(r => [r.c.name, r.c.tier, cell('creatures.' + r.id + '.n'), cell('creatures.' + r.id + '.time'), r.cost, ...ELEMS.map(el => (el in r.c.cost ? cell('creatures.' + r.id + '.cost.' + el) : '')), r.hp, r.hpPk, r.gemPk, r.n * r.perMin, r.harn, r.fill]),
-        'Cells with an input are Variables (creatures.<id>.n / time / cost.<element>), saved like any other variable. Harnessers are counted at the Swift tier above with no boost.'));
+        'Cells with an input are Variables (creatures.<id>.n / time / cost.<element>), saved like any other variable. Harvesters are counted at the Swift tier above with no boost.'));
   },
 });
 

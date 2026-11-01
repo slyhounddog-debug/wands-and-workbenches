@@ -438,7 +438,7 @@ R.drawBuilderOut = function (ctx, v, bd, t) {
   ctx.restore();
 };
 
-// while a shrine is awake (its ring game won, 30 s), its element streams out of the Spell Portal into every boosted harnesser
+// while a shrine is awake (its ring game won, 30 s), its element streams out of the Spell Portal into every boosted harvester
 R.drawShrineStreams = function (ctx, v, t) {
   for (const el of ELEMS) if (G.w.shrines && G.w.shrines[el] > 0) R.drawShrineStream(ctx, v, t, el);
 };
@@ -669,7 +669,7 @@ R.drawBuilding = function (ctx, v, b, t) {
   const p = R.toScreen(v, b.x + 0.5, b.y + 0.5), S = 4, d = FA.def(b);
   const qk = FA.quake(b.x, b.y);   // a shockwave from the Spell Portal passing through: it rattles sideways and flickers
   p[0] += qk;
-  if (d.kind === 'harness' && b.shake > 0) p[0] += Math.floor(t * 30) % 2 ? 4 : -4;   // a grown crystal makes the whole Harnesser shake before it starts
+  if (d.kind === 'harness' && b.shake > 0) p[0] += Math.floor(t * 30) % 2 ? 4 : -4;   // a grown crystal makes the whole Harvester shake before it starts
   const spr = R.bldSprite(b);
   const base = p[1] + v.hh * 0.9 - 2;
   const pop = Math.max(0, b.pop);
@@ -724,7 +724,7 @@ R.drawBuilding = function (ctx, v, b, t) {
     if (b.out.length) R.pips(ctx, p[0], base - 20, b.out.map(o => ({ col: R.kcol(o.kind), on: true })), t);   // the packets it has made wait as lit lamps on its front until they are taken
     if (growing) R.rim(ctx, v, p, grow, ELEM[el].color, 0.88);   // the crystal growing back
     else if (b.shake <= 0 && b.out.length < CFG.buffer) R.rim(ctx, v, p, b.timer / FA.cycle(b), ELEM[el].color, 0.88);
-    // a half-cranked packet stays on the Harnesser when the Builder walks away: a second, white-edged bar keeps what he put in
+    // a half-cranked packet stays on the Harvester when the Builder walks away: a second, white-edged bar keeps what he put in
     if (b.hand > 0 && !(G.bd.gather && G.bd.gather.b === b)) R.rim(ctx, v, p, b.hand, '#ffffff', 0.68);
     if (!b.powered && b.draw > 0) R.noPower(ctx, p[0], top + 20, t);
     else if (FA.shrineBoost(b) > 1 && Math.sin(t * 6) > -0.3) {   // shrine boost: a pulsing rim (the stream from the portal is drawn in R.drawShrineStreams)
@@ -764,7 +764,7 @@ R.drawBuilding = function (ctx, v, b, t) {
       if (hit > 0.45 && hit < 0.6) for (let i = 0; i < 6; i++) { ctx.fillStyle = '#ffd23a'; ctx.fillRect(Math.round((p[0] + 8 + Math.cos(i) * 28) / 4) * 4, Math.round((base - 52 - Math.abs(Math.sin(i * 2)) * 24) / 4) * 4, 4, 4); }
     }
     if (b.type === 'spawner') {
-      // the egg it is growing rises out of the nest on top, like the Harnesser's crystal: it takes the creature's colours, grows in steps with the craft, and
+      // the egg it is growing rises out of the nest on top, like the Harvester's crystal: it takes the creature's colours, grows in steps with the craft, and
       // turns into the bigger creature's egg (keeping its growth) when another element is absorbed. Lamps on the front show which elements are inside.
       const have = FA.spawnerHave(b);
       if (b.recipe) {
@@ -1427,7 +1427,7 @@ R.drawLock = function (ctx, v, t) {
   if (l.n > 1) { const p = R.toScreen(v, l.thr ? l.x : l.c.x, l.thr ? l.y : l.c.y); R.iprompt(ctx, p[0], p[1] + 44, R.padMode ? 'RS' : 'TAB', ['ic_swap']); }
 };
 // the button label for the Builder's pick (take one item) and use (crank / rotate / switch) actions
-R.key = which => { const alt = Main.kbShared() && G.swapped; if (which === 'cycle') return R.padMode ? 'LT+X' : 'F'; return which === 'pick' ? (R.padMode ? 'A' : alt ? '.' : 'LMB') : (R.padMode ? 'X' : alt ? '/' : 'E'); };
+R.key = which => { const alt = Main.kbShared() && G.swapped; if (which === 'cycle') return R.padMode ? 'LT+X' : Keys.label('element'); return which === 'pick' ? (R.padMode ? 'A' : alt ? Keys.label('pick') : 'LMB') : (R.padMode ? 'X' : Keys.label('use')); };
 // f.list: up to two prompts ({t, a, key}); a second prompt over the same target stacks above the first
 // the Builder's button prompts live in a stack at the bottom-left, just above the hotbar (the first one lowest); the target itself only gets a ring
 R.drawFocus = function (ctx, v, f, t) {
@@ -1869,7 +1869,7 @@ R.drawShrineGame = function (ctx, v, m, sg, p, t) {
   if (sg.failT > 0) ell(R0 * 0.5, 9, '#ff5a6e', Math.min(1, sg.failT / 0.4), false);
   for (let i = 0; i < M.rings; i++) { ctx.fillStyle = i < sg.n ? '#6aff8a' : '#2b1d3e'; ctx.fillRect(snap(p[0] - (M.rings - 1) * 12 + i * 24 - 6), Math.round((p[1] - 108) / 3) * 3, 12, 12); }   // the rings won so far
 };
-// landmarks: camps wake when the Wizard walks up, shrines wake with the Mash button (a ring game) and then boost harnessers for a while, crypts open if he waits at the door
+// landmarks: camps wake when the Wizard walks up, shrines wake with the Mash button (a ring game) and then boost harvesters for a while, crypts open if he waits at the door
 R.drawMark = function (ctx, v, m) {
   const w = G.w, s = w.lm[m.id], p = R.toScreen(v, m.x, m.y), S = CFG.WT.S, t = w.t, done = s.state === 'done', M = CFG.marks;
   const d = Math.hypot(w.x - m.x, w.y - m.y);
@@ -1990,35 +1990,72 @@ R.buildMap = function () {
   x.putImageData(img, 0, 0);
   R.mapC = c;
 };
+// every kind of thing on the map has its own SHAPE (so it reads without its colour): camp = tent (triangle), crypt = diamond, element shrine = round, Stronghold = castle,
+// Battery Shrine = bolt, Altar = four-point star, Chimera = X, goal = pulsing ring, the Wizard = an arrow that points the way he faces. A claimed one is a small grey copy of its shape.
+R.mapShape = function (c, kind, x, y, r, col, face) {
+  c.beginPath();
+  if (kind === 'camp') { c.moveTo(x, y - r); c.lineTo(x + r, y + r * 0.8); c.lineTo(x - r, y + r * 0.8); c.closePath(); }
+  else if (kind === 'crypt') { c.moveTo(x, y - r); c.lineTo(x + r * 0.85, y); c.lineTo(x, y + r); c.lineTo(x - r * 0.85, y); c.closePath(); }
+  else if (kind === 'shrine') c.arc(x, y, r * 0.85, 0, 6.2832);
+  else if (kind === 'keep') { const w = r, h = r * 0.8, m = r * 0.45; c.moveTo(x - w, y + h); c.lineTo(x - w, y - h - m); c.lineTo(x - w * 0.5, y - h - m); c.lineTo(x - w * 0.5, y - h); c.lineTo(x - w * 0.2, y - h); c.lineTo(x - w * 0.2, y - h - m); c.lineTo(x + w * 0.2, y - h - m); c.lineTo(x + w * 0.2, y - h); c.lineTo(x + w * 0.5, y - h); c.lineTo(x + w * 0.5, y - h - m); c.lineTo(x + w, y - h - m); c.lineTo(x + w, y + h); c.closePath(); }
+  else if (kind === 'bshr') { c.moveTo(x + r * 0.2, y - r); c.lineTo(x - r * 0.6, y + r * 0.1); c.lineTo(x - r * 0.05, y + r * 0.1); c.lineTo(x - r * 0.3, y + r); c.lineTo(x + r * 0.6, y - r * 0.2); c.lineTo(x + r * 0.05, y - r * 0.2); c.closePath(); }
+  else if (kind === 'altar') { const q = r * 0.3; c.moveTo(x, y - r); c.lineTo(x + q, y - q); c.lineTo(x + r, y); c.lineTo(x + q, y + q); c.lineTo(x, y + r); c.lineTo(x - q, y + q); c.lineTo(x - r, y); c.lineTo(x - q, y - q); c.closePath(); }
+  else if (kind === 'boss') { c.moveTo(x - r, y - r); c.lineTo(x + r, y + r); c.moveTo(x + r, y - r); c.lineTo(x - r, y + r); c.lineCap = 'butt'; c.lineWidth = Math.max(4, r * 0.7) + 4; c.strokeStyle = '#1a0f28'; c.stroke(); c.lineWidth = Math.max(4, r * 0.7); c.strokeStyle = col; c.stroke(); return; }
+  else if (kind === 'goal') { c.arc(x, y, r, 0, 6.2832); c.lineWidth = Math.max(3, r * 0.4) + 4; c.strokeStyle = '#1a0f28'; c.stroke(); c.lineWidth = Math.max(3, r * 0.4); c.strokeStyle = col; c.stroke(); return; }
+  else { const fx = face ? face[0] : 0, fy = face ? face[1] : 1, nx = -fy, ny = fx;   // the Wizard: a pointer toward where he faces
+    c.moveTo(x + fx * r * 1.1, y + fy * r * 1.1); c.lineTo(x - fx * r * 0.7 + nx * r * 0.8, y - fy * r * 0.7 + ny * r * 0.8); c.lineTo(x - fx * r * 0.25, y - fy * r * 0.25); c.lineTo(x - fx * r * 0.7 - nx * r * 0.8, y - fy * r * 0.7 - ny * r * 0.8); c.closePath(); }
+  c.lineJoin = 'miter'; c.lineWidth = 4; c.strokeStyle = '#1a0f28'; c.stroke(); c.fillStyle = col; c.fill();
+};
+// the map: a little iso diamond in the corner, and (the Wizard's big-map key) it flies to the middle of his half and grows into a big one with a legend. G.w.mapK (0..1) is the flight.
 R.drawMinimap = function (c) {
-  const w = G.w, cx = R.rect.x0 + R.rect.w - 124, cy = Net.role === 'guest' ? 76 : CFG.H - 74, t = w.t;   // (the guest's picture-in-picture takes the bottom-right corner, so there it sits at the top)
-  const at = (x, y) => [Math.round(cx + (x - y) * 0.5), Math.round(cy + (x + y - CFG.WW) * 0.25)];
+  const w = G.w, t = w.t, K = Math.max(0, Math.min(1, w.mapK || 0)), e = K * K * (3 - 2 * K), RR = R.rect;
+  const cx0 = RR.x0 + RR.w - 124, cy0 = Net.role === 'guest' ? 76 : CFG.H - 74;   // (the guest's picture-in-picture takes the bottom-right corner, so there it sits at the top)
+  const sBig = Math.max(1, (RR.w - 28) / 216), cx1 = RR.x0 + RR.w / 2, cy1 = CFG.H / 2 + 14;
+  const sc = 1 + (sBig - 1) * e, cx = Math.round(cx0 + (cx1 - cx0) * e), cy = Math.round(cy0 + (cy1 - cy0) * e), ms = 1 + 1.3 * e;   // ms: markers grow less than the map
+  const at = (x, y) => [Math.round(cx + (x - y) * 0.5 * sc), Math.round(cy + (x + y - CFG.WW) * 0.25 * sc)];
   c.save();
+  if (e > 0) { c.fillStyle = 'rgba(14,6,28,' + (0.62 * e).toFixed(3) + ')'; c.fillRect(RR.x0, 0, RR.w, CFG.H); }   // the wilds dim behind the big map
   c.fillStyle = '#1a0f28';
-  c.beginPath(); c.moveTo(cx, cy - 58); c.lineTo(cx + 108, cy); c.lineTo(cx, cy + 58); c.lineTo(cx - 108, cy); c.closePath(); c.fill();
+  c.beginPath(); c.moveTo(cx, cy - 58 * sc); c.lineTo(cx + 108 * sc, cy); c.lineTo(cx, cy + 58 * sc); c.lineTo(cx - 108 * sc, cy); c.closePath(); c.fill();
   c.imageSmoothingEnabled = false;
   c.globalAlpha = 0.9;
-  c.transform(0.5, 0.25, -0.5, 0.25, cx, cy - CFG.WW * 0.25);
+  c.transform(0.5 * sc, 0.25 * sc, -0.5 * sc, 0.25 * sc, cx, cy - CFG.WW * 0.25 * sc);
   c.drawImage(R.mapC, 0, 0);
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalAlpha = 1;
-  const dot = (x, y, s, col) => { const q = at(x, y); c.fillStyle = '#1a0f28'; c.fillRect(q[0] - s / 2 - 2, q[1] - s / 2 - 2, s + 4, s + 4); c.fillStyle = col; c.fillRect(q[0] - s / 2, q[1] - s / 2, s, s); };
+  const mk = (kind, x, y, r, col, face) => { const q = at(x, y); R.mapShape(c, kind, q[0], q[1], r * ms, col, face); };
   for (const m of WZ.marks) {
     const done = w.lm[m.id].state === 'done';
-    dot(m.x, m.y, done ? 4 : m.type === 'stronghold' ? 9 : 6, done ? '#6a6a7a' : m.type === 'camp' ? '#ff5a4a' : m.type === 'crypt' ? '#b07aff' : ELEM[m.el].color);
-    if (m.type === 'stronghold' && !done) { const q = at(m.x, m.y); c.fillStyle = '#ffe36b'; c.fillRect(q[0] - 1, q[1] - 11, 2, 5); }   // a flag over the keep
+    if (m.type === 'stronghold') mk('keep', m.x, m.y, done ? 4 : 7, done ? '#6a6a7a' : '#ffe36b');
+    else mk(m.type === 'camp' ? 'camp' : m.type === 'crypt' ? 'crypt' : 'shrine', m.x, m.y, done ? 3 : 5, done ? '#6a6a7a' : m.type === 'camp' ? '#ff5a4a' : m.type === 'crypt' ? '#b07aff' : ELEM[m.el].color);
   }
   // the nearest scouted Stronghold: its guards, a crown for the Warden and what the Warden fears, as icons above the map
   let kp = null, kd = 1e9;
   for (const m of WZ.marks) if (m.type === 'stronghold' && w.lm[m.id].seen && w.lm[m.id].state !== 'done') { const dd = Math.hypot(m.x - w.x, m.y - w.y); if (dd < kd) { kd = dd; kp = m; } }
-  if (kp) { const g = CFG.strong.guards[kp.el]; R.iconRow(c, cx, cy - 72, Object.keys(g).map(k => ['egg_' + k, g[k]]).concat([['ic_crown'], ['wk_' + WZ.WARDEN_WEAK(kp.el)]])); }
-  if (WZ.altarOn()) dot(G.altar.x, G.altar.y, 8, WZ.altarLitN() >= 4 ? (Math.sin(t * 6) > 0 ? '#ffe36b' : '#ff6ae0') : '#c890ff');   // the Summoning Altar
-  for (const s of G.bshr) dot(s.x, s.y, 6, CFG.bshr.col);   // the Battery Shrines
-  if (w.boss && Math.sin(t * 10) > 0) dot(w.boss.x, w.boss.y, 10, '#ff4a8a');
-  if (R.whint) dot(R.whint.x, R.whint.y, 6, Math.sin(t * 8) > 0 ? '#ffd23a' : '#ffffff');
-  dot(w.x, w.y, 6, Math.sin(t * 6) > -0.5 ? '#ffffff' : '#7be0ff');
-  c.font = '8px ' + FONT_D; c.textAlign = 'center'; c.fillStyle = '#c8b8e8'; c.fillText('MAP', cx, cy - 64);
+  if (kp) { const g = CFG.strong.guards[kp.el]; R.iconRow(c, cx, cy - 58 * sc - 14, Object.keys(g).map(k => ['egg_' + k, g[k]]).concat([['ic_crown'], ['wk_' + WZ.WARDEN_WEAK(kp.el)]])); }
+  if (WZ.altarOn()) mk('altar', G.altar.x, G.altar.y, 7, WZ.altarLitN() >= 4 ? (Math.sin(t * 6) > 0 ? '#ffe36b' : '#ff6ae0') : '#c890ff');   // the Summoning Altar
+  for (const s of G.bshr) mk('bshr', s.x, s.y, 5, CFG.bshr.col);   // the Battery Shrines
+  if (w.boss && Math.sin(t * 10) > 0) mk('boss', w.boss.x, w.boss.y, 6, '#ff4a8a');
+  if (R.whint) mk('goal', R.whint.x, R.whint.y, 5, Math.sin(t * 8) > 0 ? '#ffd23a' : '#ffffff');
+  const fl = Math.hypot(w.fx - w.fy, (w.fx + w.fy) * 0.5) || 1;
+  mk('you', w.x, w.y, 5, Math.sin(t * 6) > -0.5 ? '#ffffff' : '#7be0ff', [(w.fx - w.fy) / fl, (w.fx + w.fy) * 0.5 / fl]);
+  c.font = '8px ' + FONT_D; c.textAlign = 'center'; c.fillStyle = '#c8b8e8'; c.fillText('MAP', cx, Math.round(cy - 64 * sc));
+  if (e > 0.95) R.mapLegend(c, RR.x0 + 28, CFG.H - 28);
   c.restore();
+};
+// the big map's legend: each marker's shape and what it is (the four element shrines share the round one, one colour each)
+R.mapLegend = function (c, x, bottom) {
+  const rows = [['you', 'YOU (the arrow points where you face)', '#ffffff'], ['goal', 'YOUR GOAL', '#ffd23a'], ['camp', 'MONSTER CAMP', '#ff5a4a'], ['crypt', 'CRYPT (an elite guards it)', '#b07aff'], ['shrine', 'ELEMENT SHRINE', null],
+    ['keep', 'THE STRONGHOLD (the Warden)', '#ffe36b'], ['bshr', 'BATTERY SHRINE', CFG.bshr.col], ['altar', 'SUMMONING ALTAR', '#c890ff'], ['boss', 'THE CHIMERA', '#ff4a8a']];
+  const h = rows.length * 26 + 34, w = 372, y0 = bottom - h;
+  c.fillStyle = 'rgba(26,15,40,0.92)'; c.fillRect(x, y0, w, h); c.strokeStyle = '#f4d898'; c.lineWidth = 3; c.strokeRect(x + 1.5, y0 + 1.5, w - 3, h - 3);
+  c.font = '10px ' + FONT_D; c.textAlign = 'left'; c.fillStyle = '#ffd23a'; c.fillText('LEGEND', x + 14, y0 + 24);
+  rows.forEach((r, i) => {
+    const y = y0 + 48 + i * 26;
+    if (r[0] === 'shrine') ELEMS.forEach((el, j) => R.mapShape(c, 'shrine', x + 14 + j * 12, y - 4, 5, ELEM[el].color));
+    else R.mapShape(c, r[0], x + 30, y - 4, 7, r[2], [1, 0]);
+    c.font = '9px ' + FONT_D; c.textAlign = 'left'; c.fillStyle = '#e8e0f8'; c.fillText(r[1], x + 60, y);
+  });
 };
 // ---------- Battery Shrines (G.bshr, js/bshrine.js) ----------
 // the pillar glows with its Battery's charge; the number over it is the number on the Battery in the factory, the bar its charge (a check mark when the Battery is full)

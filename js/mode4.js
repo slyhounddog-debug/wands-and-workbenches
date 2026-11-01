@@ -89,9 +89,9 @@ WZ.eachW = function (fn) {
 };
 
 // ---------- the second Builder ----------
-FA.BPERS = ['hands', 'carry', 'carryHold', 'selected', 'demolish', 'placeDir', 'lock', 'drag', 'lastFeet', 'pRepeat', 'mRepeat', 'ibuf', 'noThrow', 'fam', 'swapHold'];
+FA.BPERS = ['hands', 'carry', 'carryHold', 'selected', 'demolish', 'placeDir', 'lock', 'drag', 'lastFeet', 'pRepeat', 'mRepeat', 'ibuf', 'noThrow', 'fam', 'swapHold', 'lastSel'];
 FA.bIdx = 0;
-FA.bsFresh = () => ({ hands: [], carry: null, carryHold: null, selected: 'hand', demolish: false, placeDir: 0, lock: null, drag: null, lastFeet: null, pRepeat: 0, mRepeat: 0, ibuf: null, noThrow: false, fam: {}, swapHold: 0 });
+FA.bsFresh = () => ({ hands: [], carry: null, carryHold: null, selected: 'hand', demolish: false, placeDir: 0, lock: null, drag: null, lastFeet: null, pRepeat: 0, mRepeat: 0, ibuf: null, noThrow: false, fam: {}, swapHold: 0, lastSel: null });
 FA.swapB = function () {
   const t = G.bd; G.bd = G.bd2; G.bd2 = t;
   const P = FA.BPERS, s = G.bs2;
@@ -224,7 +224,7 @@ for (const [obj, fn, mode] of [[WZ, 'dropMul', 'drops'], [WZ, 'gemMul', 'drops']
   const f0 = obj[fn];
   obj[fn] = function () { return f0.apply(null, arguments) * (G && G.m4 ? CFG.mode4[mode] : 1); };
 }
-{ const cycle0 = FA.cycle; FA.cycle = b => cycle0(b) / (G && G.m4 ? CFG.mode4.outputs : 1); }       // Harnessers: x outputs faster
+{ const cycle0 = FA.cycle; FA.cycle = b => cycle0(b) / (G && G.m4 ? CFG.mode4.outputs : 1); }       // Harvesters: x outputs faster
 { const craft0 = FA.craftMul; FA.craftMul = () => craft0() * (G && G.m4 ? CFG.mode4.outputs : 1); }  // crafters: x outputs faster
 
 // ---------- garments: a second copy of each can be forged in 4P ----------
@@ -239,7 +239,7 @@ FA.augCopies = function (id) {
 };
 
 // ---------- the starting factory in 4P ----------
-// a second Harnesser right beside the first, feeding the same belt; each Harnesser starts on an element of one Wizard's attunement (W1's -> the first, W2's -> the second)
+// a second Harvester right beside the first, feeding the same belt; each Harvester starts on an element of one Wizard's attunement (W1's -> the first, W2's -> the second)
 M4.setupFactory = function () {
   const f = G.fac, hs = f.bld.filter(b => b.type === 'harness');
   if (!hs.length) return;
@@ -249,7 +249,7 @@ M4.setupFactory = function () {
     const x = h1.x, y = h1.y + 1;
     if (FA.owned(x, y) && !f.grid[y * f.w + x]) {
       h2 = FA.makeBuilding('harness', x, y, true, false, 0);
-      if (!f.grid[y * f.w + x + 1]) FA.addBelt(x + 1, y, 3);   // one belt north, onto the first Harnesser's line
+      if (!f.grid[y * f.w + x + 1]) FA.addBelt(x + 1, y, 3);   // one belt north, onto the first Harvester's line
     }
   }
   const a = (G.seats[2] && G.seats[2].att) || ['air', 'water'], b = (G.seats[3] && G.seats[3].att) || ['fire', 'earth'];

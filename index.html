@@ -83,7 +83,7 @@
       </div>
       <!-- the Wizard's worn garments (hat, robe, boots, charm): just a readout, he changes clothes by walking onto garments the Builder sends -->
       <div class="card px" id="gearCard" title="What the Wizard is wearing. Garments the Builder forges land in the wilds: walk onto one to put it on"></div>
-      <div class="iconbtns right"><button id="btnEmote" class="px" title="Emotes: open the emote wheel and dance (Float, Blaze, Rain, Stomp)"><i data-ic="ic_emote" data-s="28"></i><kbd id="emoteKey">N</kbd></button><button id="btnBookR" class="px" title="Collection Book: every spell and creature"><i data-ic="ic_book" data-s="28"></i><kbd>C</kbd></button><button id="btnTreeR" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>Y</kbd></button></div>
+      <div class="iconbtns right"><button id="btnMap" class="px" title="Big map: the map flies to the middle of the Wizard's screen with a legend (press again to close)"><i data-ic="ic_map" data-s="28"></i><kbd id="mapKey">L</kbd></button><button id="btnEmote" class="px" title="Emotes: open the emote wheel and dance (Float, Blaze, Rain, Stomp)"><i data-ic="ic_emote" data-s="28"></i><kbd id="emoteKey">N</kbd></button><button id="btnBookR" class="px" title="Collection Book: every spell and creature"><i data-ic="ic_book" data-s="28"></i><kbd>C</kbd></button><button id="btnTreeR" class="px" title="Skill Tree"><i data-ic="ic_tree" data-s="28"></i><kbd>Y</kbd></button></div>
       <div class="card px pin hidden" id="pinR"></div>
     </div>
     <div id="eggQ" class="px hidden"></div>
@@ -143,6 +143,7 @@
 
     <div id="swapRing" class="px hidden"><div id="swapFill"></div><i data-ic="ic_swap" data-s="36"></i><span>SWAP</span></div>
 
+    <div id="resultsB" class="panel px hidden"></div>
     <div id="results" class="panel px hidden"></div>
     <div id="victory" class="overlay hidden"></div>
     <!-- the Collection Book: every spell and creature, with live demos (opens over the paused game) -->
@@ -192,6 +193,7 @@
 <script src="js/audio.js"></script>
 <script src="js/sprites.js"></script>
 <script src="js/input.js"></script>
+<script src="js/keys.js"></script>
 <script src="js/factory.js"></script>
 <script src="js/wizard.js"></script>
 <script src="js/creatures.js"></script>

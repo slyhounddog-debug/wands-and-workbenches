@@ -52,7 +52,18 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     geyser: s => ({ total: s.waves * s.n * (s.dmg + s.land), text: s.waves + ' waves of geysers, ' + s.waveGap + 's apart: the ' + s.n + ' nearest foes, then ' + s.n + ' random ones. Each is thrown up for ' + s.dmg + ', takes ' + s.land + ' more when it lands, then is slowed ' + pct(s.slow) + ' for ' + s.slowT + 's.' }),
     nova: s => { const zaps = Math.floor(s.pullT / s.zapEvery); return { total: zaps * s.zapDmg + s.dmg + s.bits * 4 * s.bitDmg, text: 'Foes within ' + s.pullR + ' tiles are hauled in for ' + s.pullT + 's while everyone within ' + s.r + ' tiles is zapped for ' + s.zapDmg + ' every ' + s.zapEvery + 's (' + zaps + ' zaps). Then ' + s.bits * 4 + ' bits of magma, water, air and rock burst out for ' + s.bitDmg + ' each, with a ' + s.dmg + ' damage burst that shoves everything away.' }; },
   };
-  const spellBook = id => { const b = SPELL_BOOK[id](CFG.spells[id]), t = Math.round(b.total); return { total: t, text: b.text + ' Most it can deal: ' + t + '.' }; };
+  // the headline number is ONE part of the spell (a pulse, a bolt, a mine, a second of burning...), so a spell built from many small parts is not mistaken for a harder hitter;
+  // the total of every part landing on one foe is a separate, smaller note
+  const SPELL_PART = {
+    gust: [s => s.dmg, 'PULSE'], fireball: [s => s.dmg, 'HIT'], spray: [s => s.dmg, 'HIT'], boulder: [s => s.dmg, 'LANDING'],
+    flamethrower: [s => s.dps, 'PER SEC'], tempest: [s => s.dps, 'PER SEC'], steam: [s => s.dmg, 'MINE'], sandstorm: [s => s.dmg, 'PASS'],
+    magma: [s => s.dmg, 'BLAST'], mud: [s => s.dmg, 'ORB'], meteor: [s => s.dmg, 'METEOR'], thunder: [s => s.dmg, 'BOLT'],
+    blizzard: [s => s.dps, 'PER SEC'], geyser: [s => s.dmg, 'GEYSER'], nova: [s => s.dmg, 'BURST'],
+  };
+  const spellBook = id => {
+    const S = CFG.spells[id], b = SPELL_BOOK[id](S), t = Math.round(b.total), P = SPELL_PART[id];
+    return { total: t, hit: fmt(P[0](S)), unit: P[1], text: b.text + ' One ' + P[1].toLowerCase().replace('per sec', 'second of it') + ' does ' + fmt(P[0](S)) + '; every part together: ' + t + '.' };
+  };
   // 4P: what this spell does in each Wizard's hands (his attunement shapes it: M4.bookRows) and what each element in it adds
   const TRAIT = { fire: 'burn + seeking', water: 'slow + sustain', air: 'push + speed', earth: 'crush + lasting ground' };
   function m4Rows(id) {
@@ -68,7 +79,9 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
     const r = CFG.recipes[id], rows = [elStrip(spellEls(id))];
     if (G.m4 && G.seats) rows.push(m4Rows(id));
     if (r && r.parents) rows.push('<div class="bkNeed">' + r.parents.map(p => { const ok = ((G.stats.made || {})[p] || 0) > 0; return '<span class="bkp ' + (ok ? 'ok' : '') + '" title="Make this first">' + UI.img(p, 24) + UI.img(ok ? 'ic_check' : 'ic_lock', 12) + '</span>'; }).join('') + '</div>');
-    rows.push(main([badge('ic_flame', spellBook(id).total, 'Most damage it can deal', 96, '', 'dmg')]));
+    const sb = spellBook(id);
+    rows.push(main([badge('ic_flame', sb.hit, 'Damage of one part of the spell (one ' + sb.unit.toLowerCase() + ')', 96, sb.unit, 'dmg')]));
+    rows.push('<div class="bkTot" title="Every part of the spell landing on one foe">' + UI.img('ic_flame', 14) + ' <span>TOTAL IF EVERYTHING HITS: ' + sb.total + '</span></div>');
     if (r) rows.push(sub([badge('ic_clock', r.time + 's', 'Craft time at the Forge', 48), badge('ic_bolt', r.power, 'Power the Forge draws', 48)]));
     return rows.join('');
   }
@@ -90,26 +103,26 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   function dropsHtml(id) {
     const I = WZ.dropInfo(id), D = CFG.enemies[id], E = CFG.elite, C = CFG.cores, kind = kindOf(id);
     const line = (ic, text, state) => '<div class="bkd">' + ic + '<span>' + text + '</span>' + (state || '') + '</div>';
-    const eliteShard = ' + ' + pct(E.shard) + ' chance of a Shard';
+    const shardLine = line(UI.img('shard', 16), pct(E.shard) + ' chance of an Aether Shard');
     const coreIcons = els => els.map(e => UI.img('core_' + e, 16)).join('');
     let s = '<div class="bkdc"><h4>NORMAL DROPS</h4>';
     if (id === 'boss') s += line(UI.img('gem', 16), D.gem[0] + ' XP Gems') + line(UI.img('shard', 16), CFG.boss.shards + ' Aether Shards') + line(coreIcons(ELEMS), C.boss + ' of every Core');
     else if (id === 'warden') s += line(UI.img('shard', 16), 'keep claimed: ' + CFG.strong.shards + ' Shards, ' + CFG.strong.gems + ' XP Gems') + line(coreIcons(ELEMS), C.warden + ' Cores of every element') + line(UI.img('b:altar', 16), 'its death opens the Summoning Altar to spells') + line(UI.img('ic_crown', 16), 'the glow-up (it leaves a faint aura round the Wizard for good)');
     else {
       s += line(UI.img('gem', 16), 'XP Gems: ' + gemPct(D.gem, kind === 'wild' ? CFG.world.wildGem : 1));
-      s += line(UI.img('wood', 16) + UI.img('stone', 16), pct(CFG.drops.common) + ' chance of Wood or Stone') + line(UI.img('iron', 16), pct(CFG.drops.iron) + ' chance of Iron Ore');
+      s += line(UI.img('wood', 16), pct(CFG.drops.wood) + ' chance of Wood') + line(UI.img('stone', 16), pct(CFG.drops.stone) + ' chance of Stone') + line(UI.img('iron', 16), pct(CFG.drops.iron) + ' chance of Iron Ore');
       if (I.els.length) s += line(coreIcons(I.els), pct(I.core) + ' chance of a ' + I.els.map(e => CORE_NAME[e]).join(' or ') + ' (rides home to the Stockpile)');
       else s += line(UI.img('ic_x', 16), 'no element: no Cores');
       if (kind !== 'crafted' && I.els.length) s += line(I.els.map(e => UI.img(e, 16)).join(''), pct(CFG.drops.packet) + ' chance of a ' + I.els.map(e => ELEM_WORD[e]).join(' or ') + ' spell (rides home)');
       if (kind === 'crafted') { const cd = CFG.creatures[id], tier = cd.order.length; s += tier === 1 ? line(UI.img(cd.order[0], 16), pct(CFG.crafted.recycle) + ' chance of a ' + ELEM_WORD[cd.order[0]] + ' spell (rides home)') : line(UI.img(Object.keys(cd.cost)[0], 16), pct(CFG.crafted.recycleSpell[tier]) + ' chance of a ' + itemName(Object.keys(cd.cost)[0]) + ' (the spell it hatched from; rides home)'); }
     }
-    if (id !== 'boss' && id !== 'warden') s += line(UI.img('ic_skull', 16), 'Mutants roll the Wood, Iron and spell drops x' + CFG.drops.mutMul + '; elites x' + CFG.drops.eliteMul);
+    if (id !== 'boss' && id !== 'warden') s += line(UI.img('ic_skull', 16), 'Mutants roll the Wood, Stone and Iron drops x' + CFG.drops.resMutMul + '; elites x' + CFG.drops.resEliteMul + ' (spell drops x' + CFG.drops.mutMul + ' / x' + CFG.drops.eliteMul + ')');
     s += '</div>';
     if (id !== 'boss') {
       s += '<div class="bkdc"><h4>ELITE DROPS</h4>';
-      if (id === 'warden') s += line(UI.img('ic_crown', 16), 'an elite: ' + E.gems + ' XP Gems' + eliteShard);
+      if (id === 'warden') s += line(UI.img('ic_crown', 16), 'an elite: ' + E.gems + ' XP Gems') + shardLine;
       else {
-        s += line(UI.img('gem', 16), E.gems + ' XP Gems' + (kind === 'crafted' && !CFG.crafted.eliteShards ? '' : eliteShard));
+        s += line(UI.img('gem', 16), E.gems + ' XP Gems') + (kind === 'crafted' && !CFG.crafted.eliteShards ? '' : shardLine);
         if (I.els.length) {
           s += line(coreIcons(I.els), 'always ' + (C.elite[0] === C.elite[1] ? C.elite[0] : C.elite[0] + '-' + C.elite[1]) + ' Core' + (C.elite[1] > 1 ? 's' : '') + (I.els.length > 1 ? ' of each element' : ''));
         } else s += line(UI.img('ic_x', 16), 'no element: no Cores');
@@ -354,9 +367,9 @@ const Book = { isOpen: false, page: 'spells', sel: { spells: 'gust', creatures: 
   Book.tick = function (dt) {
     if (!Book.isOpen) return;
     const p0 = IN.pad[0], p1 = Net.on ? null : IN.pad[1], pad = (f) => (p0 && p0[f]) || (p1 && p1[f]);
-    if (IN.hit('Escape') || IN.hit('KeyC') || pad('b') || pad('back')) {
+    if (IN.hit('Escape') || Keys.hit('book') || pad('b') || pad('back')) {
       Book.close();
-      IN.pressed.delete('Escape'); IN.pressed.delete('KeyC');   // the same press must not also pause (Esc) or reopen (C) in this frame's controls
+      IN.pressed.delete('Escape'); Keys.codes('book').forEach(c => IN.pressed.delete(c));   // the same press must not also pause (Esc) or reopen (C) in this frame's controls
       for (const q of [p0, p1]) if (q) { q.b = false; q.back = false; }
       return;
     }

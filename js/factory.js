@@ -163,14 +163,14 @@ FA.throwGap = base => base * (1 - CFG.upgrade.rapid * lvl('rapid'));   // Rapid 
 FA.builderSpeed = () => CFG.builder.speed * (1 + CFG.upgrade.hustle * lvl('hustle'));   // Hustle
 FA.hasRoll = () => lvl('tumble') >= 1;
 FA.rollCd = () => CFG.builder.roll.cd * (1 - CFG.upgrade.tumble * Math.max(0, lvl('tumble') - 1));   // Tumble: tier 1 is the roll, tiers 2-4 shorten its cooldown
-// an ACTIVATED shrine (its ring game won, WZ.shrineTick: G.w.shrines = element -> seconds of buff left) speeds up that element's harnessers wherever the Wizard is
+// an ACTIVATED shrine (its ring game won, WZ.shrineTick: G.w.shrines = element -> seconds of buff left) speeds up that element's harvesters wherever the Wizard is
 FA.shrineBoost = b => {
   const el = b.el, w = G.w;
   if (!w || !el) return 1;
   return (w.shrines && w.shrines[el] > 0 ? 1 + CFG.marks.shrineBoost : 1) * (w.surge && w.surge === el ? 1 + CFG.events.storm.boost : 1);   // a claimed shrine, and the Portal Storm's surging element
 };
 FA.cycle = b => CFG.harness[b.el].cycle / (1 + CFG.upgrade.swift * lvl('swift')) / FA.shrineBoost(b);
-// a Harnesser makes nothing while its crystal grows (CFG.harness.growT s after every switch) or shakes (shakeT s once it is grown)
+// a Harvester makes nothing while its crystal grows (CFG.harness.growT s after every switch) or shakes (shakeT s once it is grown)
 FA.growing = b => b.grow < CFG.harness.growT || b.shake > 0;
 // a Battery holds batteryLife seconds at stationGen power; a Heavy Battery drains slower and lasts 50% longer. pw = the power this one battery carries
 FA.drain = (pw, b) => pw * CFG.batteryMax / (CFG.batteryLife * CFG.stationGen) / (b && b.type === 'heavybat' ? 1 + CFG.heavyBattery : 1);
@@ -223,8 +223,9 @@ FA.initial = function () {
   for (let y = oy + B.h - S.h; y < oy + B.h; y++) for (let x = ox; x < ox + S.w; x++) G.fac.land[y * G.fac.w + x] = 2;
   G.fac.qp = { x: ox - 1, y: oy + B.h - S.h };   // the ? station sits off the Stockpile's top-left edge
   FA.makeBuilding('battery', ox + S.w + 1, oy + B.h - S.h, true, false, 0).bat = CFG.batteryMax;   // the one Battery: just east of the Stockpile, full
-  // one Air Harnesser, 3 belts, then a free Splitter, 3 belts east straight into the Spell Portal's top cell (pink output), and south (cyan output) one belt
-  // down into a Creature Spawner (Zephyr Wisps), whose Eggs ride up one belt and east into the portal's lower cell
+  // one Air Harvester, 3 belts, then a free Splitter, 3 belts east straight into the Spell Portal's top cell (pink output), and south (cyan output, the down-left side on screen) ONE belt
+  // straight down into a Creature Spawner (Zephyr Wisps). The Spawner's Eggs leave its east side, turn north one tile further out and run east into the portal's lower cell: the egg belts
+  // never touch the belt that feeds the Spawner (the old route ran right beside it and read as one line)
   const sx = ox + B.w - 5;
   FA.makeBuilding('harness', sx - 4, sy, true, false, 0);
   FA.addBelt(sx - 3, sy, 0); FA.addBelt(sx - 2, sy, 0); FA.addBelt(sx - 1, sy, 0);
@@ -232,7 +233,7 @@ FA.initial = function () {
   FA.addBelt(sx + 1, sy, 0); FA.addBelt(sx + 2, sy, 0); FA.addBelt(sx + 3, sy, 0);
   FA.addBelt(sx, sy + 1, 1);
   FA.makeBuilding('spawner', sx, sy + 2, true, false, 0);
-  FA.addBelt(sx + 1, sy + 2, 3); FA.addBelt(sx + 1, sy + 1, 0); FA.addBelt(sx + 2, sy + 1, 0); FA.addBelt(sx + 3, sy + 1, 0);
+  FA.addBelt(sx + 1, sy + 2, 0); FA.addBelt(sx + 2, sy + 2, 3); FA.addBelt(sx + 2, sy + 1, 0); FA.addBelt(sx + 3, sy + 1, 0);
   FA.splitConn(sp); sp.pct = { 0: CFG.starterSplit, 1: 100 - CFG.starterSplit };   // its outputs are east (the portal belts) and south (the Spawner)
   G.bd = FA.freshBuilder();
 };
@@ -267,12 +268,18 @@ FA.canPileTile = (x, y) => FA.owned(x, y) && !FA.isPile(x, y) && !G.fac.grid[y *
 FA.isTile = type => type === 'expand' || type === 'stockpile';
 FA.canPut = (type, x, y) => (type === 'expand' ? FA.canExpand(x, y) : type === 'stockpile' ? FA.canPileTile(x, y) : type === 'robot' ? FA.robotRoom() && FA.canPlace(x, y) : FA.canPlace(x, y));
 FA.costOf = b => b.cost || FA.def(b).cost;   // a Floor Tile's / robot's cost depends on how many came before it
-// ----- helper robots: the Nth costs more (50% more Wood / Stone / Iron, double the Shards), at most CFG.robot.max -----
+// ----- helper robots: the Nth costs more Iron and Shards, at most CFG.robot.max -----
+// the Builder's half of a run, for his game over screen: the counters that only grow, copied when the expedition starts (G.w.run.b0) so the screen can show this run's difference
+FA.bSnap = function () {
+  const s = G.stats, sum = o => Object.values(o || {}).reduce((a, n) => a + n, 0);
+  const spells = o => Object.keys(o || {}).reduce((a, k) => a + (ITEMS[k] && ITEMS[k].spell ? o[k] : 0), 0);
+  return { packets: s.packets || 0, charged: s.charged || 0, spent: s.spent || 0, built: sum(s.built), tiles: (s.tiles || 0) + (s.pileTiles || 0), eggs: s.eggs || 0, made: spells(s.made), potions: Object.keys(s.made || {}).reduce((a, k) => a + (/^(hp|ap)_/.test(k) ? s.made[k] : 0), 0), banked: sum(s.banked) };
+};
 FA.robotCount = () => G.fac.bld.filter(b => b.type === 'robot').length;   // built or still a blueprint
 FA.robotRoom = () => FA.robotCount() < CFG.robot.max;
 FA.robotCost = function (n) {
   const R = CFG.robot, k = n === undefined ? FA.robotCount() : n, c = {};
-  for (const r in R.cost) c[r] = Math.max(1, Math.round(R.cost[r] * Math.pow(r === 'shard' ? R.shardMul : R.costMul, k)));
+  for (const r in R.cost) { const l = R.ladder && R.ladder[r]; c[r] = l ? l[Math.min(k, l.length - 1)] : R.cost[r]; }
   return c;
 };
 FA.finishTile = function (b) {   // the blueprint is paid for: the tile(s) become floor (or Stockpile) and the blueprint goes away
@@ -341,7 +348,7 @@ FA.flag = function (k) { G.flags[k] = true; const f = G.stats.fl || (G.stats.fl 
 FA.onComplete = function (b, quiet) {
   b.done = true;
   if (!quiet) { const bt = G.stats.built || (G.stats.built = {}); bt[b.type] = (bt[b.type] || 0) + 1; }   // (goals: buildings the player finished, not the starting ones)
-  if (FA.def(b).kind === 'harness' && !quiet) { b.grow = 0; b.shake = 0; }   // a new Harnesser grows its crystal first
+  if (FA.def(b).kind === 'harness' && !quiet) { b.grow = 0; b.shake = 0; }   // a new Harvester grows its crystal first
   if (FA.def(b).kind === 'expand') { FA.finishTile(b); return; }
   if (FA.def(b).kind === 'crafter' && !b.recipe && b.type !== 'spawner' && b.type !== 'cauldron') b.recipe = FA.recipesFor(b.type)[0] || null;
   if (!quiet && FA.def(b).kind === 'cell') WZ.bshrAdd(b, true);   // a finished Battery: its shrine arrives in the wilds with a shockwave
@@ -827,7 +834,7 @@ FA.spawnerFix = function (b) {
 // what it would take now (an empty Spawner takes any of the four packets): shown as blinking lamps on its front
 FA.spawnerCan = b => ELEMS.filter(k => FA.spawnerTakes(b, k) || FA.spawnerTakes(b, 'core_' + k));
 // The Alchemy Cauldron works like the Spawner: it takes ONE element spell or combo spell at a time (only while it is empty), absorbs it at once and brews the potion that spell
-// makes in its current mode (Health or Armor): the better the spell, the stronger the potion. F (the Harnesser's key) switches the mode; the new potion regrows above it for
+// makes in its current mode (Health or Armor): the better the spell, the stronger the potion. F (the Harvester's key) switches the mode; the new potion regrows above it for
 // CFG.harness.growT seconds, during which nothing is brewed.
 FA.cauldronHave = b => Object.keys(b.inv).filter(k => b.inv[k] > 0);
 FA.cauldronPick = b => { const have = FA.cauldronHave(b); return have.length === 1 && CFG.recipes[b.mode + '_' + have[0]] ? b.mode + '_' + have[0] : null; };
@@ -890,6 +897,7 @@ FA.insert = function (b, kind, thrown, byBot) {
   b.pop = 0.22;
   if (!b.done) {
     b.got[kind] = (b.got[kind] || 0) + 1;
+    G.stats.spent = (G.stats.spent || 0) + 1;   // (the Builder's game over screen: materials put into blueprints)
     if (!Object.keys(FA.needOf(b)).length) {
       if (byBot && !FA.isTile(b.type)) FA.paidByBot(b);   // a robot paid the last of it: the Builder still finishes the building with E (Floor / Stockpile Tiles finish themselves)
       else FA.onComplete(b);
@@ -1301,7 +1309,7 @@ FA.update = function (dt) {
     b.anim += dt * (b.st === undefined || b.st === null ? 1 : FA.stateSpeed[b.st]);
     if (d.kind === 'harness') {
       const H = CFG.harness;
-      if (b.grow < H.growT) {   // the crystal is growing: nothing is made; when it is full the Harnesser shakes and sparkles for a moment
+      if (b.grow < H.growT) {   // the crystal is growing: nothing is made; when it is full the Harvester shakes and sparkles for a moment
         b.grow = Math.min(H.growT, b.grow + dt);
         if (b.grow >= H.growT) { b.shake = H.shakeT; b.timer = 0; b.pop = 0.5; FA.eburst(b.x + 0.5, b.y + 0.5, b.el, 18); AU.sfx('el_' + b.el); AU.sfx('complete'); }
       } else if (b.shake > 0) {
@@ -1491,7 +1499,7 @@ FA.updCell = function (b, dt) {
 
 // ---------- helper robots ----------
 // A robot (building 'robot', kind 'bot') sits on its dock tile; its BODY (b.rx / b.ry) rolls over the floor. Its fuel burns into its own charge like a Battery's
-// (FA.burnFuel) but it gives the factory no power: while it has something to do it drains like one Harnesser pulling from a Battery (CFG.robot.power), and
+// (FA.burnFuel) but it gives the factory no power: while it has something to do it drains like one Harvester pulling from a Battery (CFG.robot.power), and
 // flat it naps where it stands. It fetches ONE item at a time (b.carry) from the Stockpile (G.stock, the same count the Builder takes from) and puts it into a
 // blueprint (FA.insert with byBot: the Builder still finishes a robot-paid building with E, only Floor / Stockpile Tiles finish themselves).
 // b.job = { ph: 'pile' | 'bp' | 'stash' | 'home', kind, bp: blueprint id }; b.path = the tiles still to cross (null = work it out). Run state (a save keeps only the load and the body's spot).
@@ -2007,14 +2015,14 @@ FA.bldAction = function (b, pick) {
   if (FA.isLogi(b)) return turn;
   return NONE;
 };
-// Switching a Harnesser's element (F / LT + X): the old crystal bursts into particles, the new one grows from nothing for CFG.harness.growT seconds
+// Switching a Harvester's element (F / LT + X): the old crystal bursts into particles, the new one grows from nothing for CFG.harness.growT seconds
 // (switching again while it grows starts the 5 seconds over), and nothing is harnessed until it has grown and shaken.
 FA.setElem = function (b, el) {
   if (!ELEM[el] || b.el === el) return false;
   const cx = b.x + 0.5, cy = b.y + 0.5;
   if (b.done) { FA.eburst(cx, cy, b.el, 22); FA.burst(cx, cy, '#ffffff', 8); AU.sfx('el_' + el); b.pop = 0.4; }
   b.el = el; b.timer = 0; b.hand = 0; b.shake = 0;
-  if (b.done) { b.grow = 0; FA.flag('switched'); const es = G.stats.elSet || (G.stats.elSet = {}); es[el] = (es[el] || 0) + 1; }   // (goal: switch the Harnesser to another element)
+  if (b.done) { b.grow = 0; FA.flag('switched'); const es = G.stats.elSet || (G.stats.elSet = {}); es[el] = (es[el] || 0) + 1; }   // (goal: switch the Harvester to another element)
   if (G.bd.gather && G.bd.gather.b === b) G.bd.gather = null;
   UI.changed();
   return true;
@@ -2024,7 +2032,7 @@ FA.cycleElem = function (b, dir) {
   const o = CFG.harness.order;
   return FA.setElem(b, o[(o.indexOf(b.el) + (dir || 1) + o.length) % o.length]);
 };
-// the Harnesser the cycle key acts on: the one the use button is aimed at, else the nearest in reach
+// the Harvester the cycle key acts on: the one the use button is aimed at, else the nearest in reach
 FA.harnessNear = function () {
   const bd = G.bd;
   let best = null, bs = 1e9;
@@ -2090,11 +2098,11 @@ FA.thingAt = function (tx, ty, fx, fy) {
 };
 
 // ---------- inspector text ----------
-// shorthand power use for the note: what a Harnesser / crafter is drawing right now (0 while idle, "0/n" when it wants power and has none)
+// shorthand power use for the note ({pwr} becomes the bolt icon in UI.setInspect): what a Harvester / crafter is drawing right now (0 while idle, "0/n" when it wants power and has none)
 FA.powerNote = function (b) {
   const k = FA.def(b).kind;
   if (!b.done || (k !== 'harness' && k !== 'crafter')) return '';
-  return ' | PWR ' + (b.draw > 0 && !b.powered ? '0/' + b.draw : b.draw > 0 ? b.draw : 0);
+  return ' | {pwr} ' + (b.draw > 0 && !b.powered ? '0/' + b.draw : b.draw > 0 ? b.draw : 0);
 };
 FA.status = b => FA.statusText(b) + FA.powerNote(b);
 FA.statusText = function (b) {
@@ -2228,7 +2236,7 @@ FA.fromJSON = function (j) {
     }
     if (o.type === 'station' || o.type === 'charger') o = Object.assign({}, o, { type: 'battery', bat: o.bat > 0 ? o.bat : 0 });   // both became the one Battery building
     if (/^spawner[123]$/.test(o.type)) o = Object.assign({}, o, { type: 'spawner' });   // the three Spawner tiers became one
-    if (ELEM[o.type]) o = Object.assign({}, o, { type: 'harness', el: o.type, grow: CFG.harness.growT });   // the four Harnessers became one that switches element
+    if (ELEM[o.type]) o = Object.assign({}, o, { type: 'harness', el: o.type, grow: CFG.harness.growT });   // the four Harvesters became one that switches element
     if (!CFG.buildings[o.type] || !FA.inb(o.x, o.y) || G.fac.grid[o.y * G.fac.w + o.x]) return;
     let old1 = false;
     if (o.type === 'expand') {   // a Floor Tile blueprint is a block now: an older single-cell one moves to a block that fits (or is refunded)
@@ -2251,7 +2259,7 @@ FA.fromJSON = function (j) {
     }
     if (b.bat !== undefined) { b.bat = o.bat > 0 ? Math.min(+o.bat, CFG.batteryMax * CFG.overcharge.max) : 0; b.top = b.bat >= CFG.batteryMax; }
     if (b.fuel) { b.fuel = Object.assign(b.fuel, o.fuel || {}); b.types = o.types || []; }
-    if (b.hand !== undefined && o.hand > 0) b.hand = Math.min(0.999, +o.hand);   // a Harnesser's half-cranked packet
+    if (b.hand !== undefined && o.hand > 0) b.hand = Math.min(0.999, +o.hand);   // a Harvester's half-cranked packet
     if (b.pct && o.pct && typeof o.pct === 'object') {
       for (const k in o.pct) if (+k >= 0 && +k < 4) b.pct[k] = Math.max(0, Math.min(100, Math.round(+o.pct[k] || 0)));
       for (const k in o.filt || {}) if (Array.isArray(o.filt[k])) b.filt[k] = o.filt[k].filter(x => ITEMS[x]);

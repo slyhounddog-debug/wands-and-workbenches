@@ -375,6 +375,7 @@ WZ.fresh = function () {
     time: 0, spawnT: 1.5, kills: 0, dead: false, deadHandled: false, ready: { B: false, W: false }, boss: null, seen: {}, surge: null, bloom: 0, eggT: 0, mergeT: 0, zSlow: 0, slowT: 0, slowAmt: 0,
     fireT: 0, invisT: 0, statT: 0, statHits: 0, ride: null, sg: null, shrines: {},   // the wand's clocks (js/wand.js): Flame Trail speed, Vanishing Puff, Statue (and the hits it took), Riding Wave; the shrine ring game and the shrine buffs running
     bsw: [],   // the shockwaves of Battery Shrines arriving (js/bshrine.js)
+    mapBig: false, mapK: 0,   // the big map: wanted open, and how far its flight to the middle of his screen has got (0..1)
     wheel: null, emote: null, stk: null,   // the emote wheel while it is up, the dance he is doing, the sticker the Builder sees (js/emote.js)
     cine: null, rit: 0, quake: 0, altarFlash: 0,   // the Altar's landing cinematic, the Chimera ritual countdown, the world shake after the impact, the flash when a spell hits it
     hv: {}, fg: {},   // harvestable / forage node state (see WZ.nodeProps)

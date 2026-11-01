@@ -267,7 +267,7 @@ const OUT = process.env.SHOTS || '';
     o.eShard = w.drops.filter(d => d.kind === 'shard').length / 3000;
     return o;
   });
-  ok(Math.abs(r.common - 0.2) < 0.03 && Math.abs(r.iron - 0.1) < 0.025 && Math.abs(r.eShard - 0.2) < 0.03, 'foes drop Wood / Stone about 20% and Iron about 10%; an elite drops a shard 20% of the time', JSON.stringify(r));
+  ok(Math.abs(r.common - 0.17) < 0.025 && Math.abs(r.iron - 0.05) < 0.02 && Math.abs(r.eShard - 0.2) < 0.03, 'foes drop Wood 10% + Stone 7% (17% of a kill gives one of them) and Iron about 5%; an elite drops a shard 20% of the time', JSON.stringify(r));
   r = await run(() => {
     const W = __wands, G = W.G, UI = W.UI, o = {};
     UI.updateQuest(0); G.quest.B++; UI.updateQuest(0);
@@ -336,7 +336,7 @@ const OUT = process.env.SHOTS || '';
     [CFG.crafted.cap, CFG.crafted.queue, CFG.ally.cap, CFG.ally.queue] = cc;
     o.b4 = land('core_air', pc.x + 0.5, pc.y + 0.5);
     o.bounces = fb('bounce');
-    // -- boost: a Battery Shrine charges a Battery (it pulses with a "+"), a surging element speeds a Harnesser
+    // -- boost: a Battery Shrine charges a Battery (it pulses with a "+"), a surging element speeds a Harvester
     const bat = G.fac.bld.find(q => FA.isCell(q) && q.done); T.step(2);
     const sh = G.bshr.find(q => q.id === bat.id); bat.bat = 10;
     WZ.ctx = { spell: 'air', el: ['air'], hits: 0, kills: 0, weak: 0 }; WZ.bshrHurt(sh, 20); WZ.ctx = null;
@@ -389,7 +389,7 @@ const OUT = process.env.SHOTS || '';
   ok(/^[a-z]+:MUTANT SPAWNED$/.test(r.mutThreat || '') && /^[a-z]+:ELITE SPAWNED$/.test(r.eliteThreat || '') && r.threatGone, 'a mutation and an elite sighting show their weakness over the Spell Portal, which clears by itself', JSON.stringify([r.mutThreat, r.eliteThreat, r.threatGone]));
   ok(r.rw.reject > 0 && r.rw.full > 0 && r.rw.rej === 1 && r.rw.arc >= 1 && r.rw.home && r.rw.mn === 1 && r.rw.mx === 1, 'a pickup the Stockpile refuses bounces off the Spell Portal (visible to the Builder), goes back up and lands beside him, and is never lost', JSON.stringify(r.rw));
   ok(r.b1 === '[["wood"],["ic_x"]]' && r.b2 === '[["ic_skull","0/0"],["ic_clock","0/0"]]' && r.b3 === '[["ic_heart","0/0"],["ic_clock","0/0"]]' && r.b4 === '[["core_air"],["ic_lock"]]' && r.bounces >= 4, 'every bounce shows one reason row: wrong item, creature cap / queue counters, ally caps, locked Core', JSON.stringify([r.b1, r.b2, r.b3, r.b4]));
-  ok(r.plus && r.hboost, 'a Battery Shrine charge makes its Battery pulse with a "+" and a surging element boosts its Harnesser', JSON.stringify([r.plus, r.hboost]));
+  ok(r.plus && r.hboost, 'a Battery Shrine charge makes its Battery pulse with a "+" and a surging element boosts its Harvester', JSON.stringify([r.plus, r.hboost]));
   ok(r.tether > 0 && r.tetherFb > 0, 'a rare drop from a kill is tied to its corpse (fx / fy / tet)', JSON.stringify([r.tether, r.tetherFb]));
   ok(r.wfx === 'air:wand' && r.grow && r.fxGone && r.armedLater && r.shrineFx === 'shrine', 'a wand slot that fills grows and swirls first and only blinks after; a shrine ready cue exists', JSON.stringify([r.wfx, r.grow, r.fxGone, r.armedLater, r.shrineFx]));
   ok(r.focus.t && r.focus.cls && r.focus.att === 2 && r.attDanger === 3 && r.quiet && r.focusEnds.t && r.focusEnds.cls && r.focusEnds.att === 0, 'a finished goal gives its new pointer the stage for a moment; danger outranks it (the card only pulses); it ends', JSON.stringify([r.focus, r.attDanger, r.focusEnds]));

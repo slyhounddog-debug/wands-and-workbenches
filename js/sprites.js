@@ -236,7 +236,7 @@ task(() => {
       if (k === 'earth') { x.fillStyle = '#e8d0a0'; x.fillRect(3, 8, 2, 2); x.fillRect(6, 10, 2, 1); }
     }), 5, 17);
   });
-  bsprite('b_harness', (x, cx, cy) => {   // the one Harnesser: a stone base with a neutral steel plate (the crystal on top is drawn per element)
+  bsprite('b_harness', (x, cx, cy) => {   // the one Harvester: a stone base with a neutral steel plate (the crystal on top is drawn per element)
     isoBox(x, cx, cy, 9, 5, stoneT, stoneL, stoneR);
     isoBox(x, cx, cy - 5, 5, 2, '#a8b0c0', '#7a8294', '#626a7c');
     x.fillStyle = '#626a7c'; x.fillRect(cx - 8, cy - 3, 1, 2); x.fillRect(cx + 7, cy - 3, 1, 2);
@@ -706,6 +706,7 @@ task(() => {
   icon('pause', ['ooo.ooo', 'owo.owo', 'owo.owo', 'owo.owo', 'owo.owo', 'ooo.ooo']);
   icon('rotate', ['..www.w', '.w...ww', 'w...www', 'w......', 'w.....w', '.w...w.', '..www..']);
   icon('chart', ['o......', 'o....g.', 'o...gg.', 'o.g.gg.', 'o.gggg.', 'ogggggg', 'ooooooo']);
+  icon('map', ['ooooooo', 'obgwgbo', 'ogggBgo', 'owgrgwo', 'ogBggbo', 'obgwgbo', 'ooooooo']);   // the Wizard's big-map button
   icon('globe', ['.ooooo.', 'obwgbBo', 'ogggbBo', 'obggBBo', 'oBbbgBo', 'obbgggo', '.ooooo.']);   // (Online: the world)
   // tiny element-weakness pips shown over foes
   // (same shapes as the packets: ring / drop / flame / block)

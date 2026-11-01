@@ -8,8 +8,8 @@ const iconCache = {};
 UI.iconCanvas = function (key) {
   if (iconCache[key]) return iconCache[key];
   let c;
-  if (key.startsWith('b:')) {   // building: base + floating crystal for harnessers (ids like 'air' also name items, hence the prefix)
-    const id = key.slice(2), el = ELEM[id] ? id : id === 'harness' ? 'air' : null, s = SP['b_' + (el ? 'harness' : id)];   // 'b:water' = the Harnesser carrying a Water crystal
+  if (key.startsWith('b:')) {   // building: base + floating crystal for harvesters (ids like 'air' also name items, hence the prefix)
+    const id = key.slice(2), el = ELEM[id] ? id : id === 'harness' ? 'air' : null, s = SP['b_' + (el ? 'harness' : id)];   // 'b:water' = the Harvester carrying a Water crystal
     c = document.createElement('canvas'); c.width = 20; c.height = 32;
     const x = c.getContext('2d');
     x.drawImage(s.c, 0, -2);
@@ -132,8 +132,36 @@ UI.seatHud = function () {   // 4P: whose screen this is (a coloured name chip),
   const wn = M4.name(M4.ROLE[s] === 'W' ? s : M4.seatW(M4.pairW(s)));
   if ($('wizName').textContent !== wn) $('wizName').textContent = wn;
 };
+// the key chips on the HUD buttons, the hotbar numbers and the controls card follow the player's key bindings (Keys, js/keys.js); redone only when a binding or the layout changes
+UI.keyChips = function (force) {
+  const sig = JSON.stringify(Keys.map) + Keys.scheme() + (G && G.ctl ? G.ctl.kbB + '' + G.ctl.kbW : '');
+  if (!force && cache.keySig === sig) return;
+  cache.keySig = sig;
+  const L = Keys.label, kb = (id, t) => { const e = $(id); if (e) { const k = e.querySelector('kbd'); if (k) k.textContent = t; } };
+  kb('btnTree', L('treeB')); kb('btnBook', L('book')); kb('btnDemo', L('demolish')); kb('btnSwap', L('swapHold')); kb('btnHelp', L('help')); kb('btnBookR', L('book')); kb('btnTreeR', L('treeW'));
+  const hb = $('hotbar'); if (hb) [...hb.children].forEach((s, i) => { const k = s.querySelector('kbd'); if (k) k.textContent = L('slot' + (i + 1)); });
+  const k = id => '<kbd>' + Keys.labels(id).replace(/ \/ /g, '</kbd> <kbd>') + '</kbd>', mv = r => ['Up', 'Left', 'Down', 'Right'].map(d => L(r + d)).map(x => '<kbd>' + x + '</kbd>').join('');
+  const h = $('help'); if (!h) return;
+  h.innerHTML = '<div class="hcol"><h3>' + UI.img('ic_wrench', 16) + 'BUILDER</h3>' +
+    '<div>' + mv('B') + ' walk &nbsp; <kbd>CLICK</kbd> pick up (hold for more)</div>' +
+    '<div>' + k('use') + ' use / rotate / tap to harness &nbsp; ' + k('element') + ' switch element</div>' +
+    '<div><kbd>RIGHT-CLICK</kbd> throw (hold = rapid, <kbd>SHIFT</kbd> = whole stack); <b>hold it on a building</b> to move it</div>' +
+    '<div>' + k('slot1') + '-' + k('slot9') + ' or wheel: pick a slot &nbsp; ' + k('family') + ' next in a family</div>' +
+    '<div>' + k('pipette') + ' pipette: put the tool away / copy what is under the cursor / bring back the last tool</div>' +
+    '<div>' + k('rotate') + ' rotate &nbsp; <kbd>ENTER</kbd> place in front &nbsp; ' + k('pin') + ' pin blueprints</div>' +
+    '<div>' + k('demolish') + ' demolish &nbsp; ' + k('lock') + ' cycle targets &nbsp; <kbd>ESC</kbd> cancel</div></div>' +
+    '<div class="hcol"><h3>' + UI.img('ic_hat', 16) + 'WIZARD</h3>' +
+    '<div>' + mv('W') + ' walk &nbsp; ' + k('wDodge') + ' dodge &nbsp; ' + k('wMash') + ' mash (dig, wake a shrine)</div>' +
+    '<div>' + k('wCast') + ' cast the wand &nbsp; ' + k('wCycle') + ' cycle it &nbsp; ' + k('wEmote') + ' emotes</div>' +
+    '<div>' + k('wMap') + ' big map: it flies to the middle of the screen, with a legend</div>' +
+    '<div>Spells fire by themselves when the factory delivers them. Walk onto a garment the Builder sends to wear it.</div>' +
+    '<div>Water blocks you. Bog slows you. The map shows landmarks.</div>' +
+    '<div>' + k('treeW') + ' skill tree (pauses the game) &nbsp; hold ' + k('swapHold') + ' swap</div></div>' +
+    '<div class="hfoot">' + UI.img('ic_pad', 16) + ' Pad 1 = Builder (A pick up / place, B throw (hold on a building = move it), X use, LB/RB slot, RT next in a family, Back demolish). Pad 2 = Wizard (A dodge, X mash, B cast the wand, Y cycle it, LB map, RB emotes, Back tree). ' + k('help') + ' hides this. Every key can be changed in the pause menu: Settings, Keys.</div>';
+};
 UI.updateHud = function (dt) {
   const f = G.fac, w = G.w;
+  UI.keyChips();
   UI.seatHud();
   const pulse = (id, v) => { if (cache['v' + id] !== undefined && v > cache['v' + id]) { const el = $(id); el.classList.remove('gain'); void el.offsetWidth; el.classList.add('gain'); } cache['v' + id] = v; };
   for (const k of ['wood', 'stone', 'iron', 'shard']) {
@@ -248,14 +276,18 @@ UI.updateWand = function () {
   }
   s += '<span class="wk" title="Cycle the armed wand attack / Cast it"><kbd>' + kn.cycle + '</kbd><kbd>' + kn.cast + '</kbd></span>';
   setHtml('wandRow', s);
-  setTxt('emoteKey', kn.emote);   // (the emote wheel has its own button beside the Book, not a chip on the wand)
+  setTxt('emoteKey', kn.emote); setTxt('mapKey', kn.map);   // (the emote wheel has its own button beside the Book, not a chip on the wand)
 };// The building note sits right above the hotbar and the button prompts (drawn by R.drawFocus) stack above it; UI.inspectH is how tall the note is, so they can clear it.
 UI.inspectH = 0;
 UI.setInspect = function (s) {
   const el = $('inspect');
   if (!s) { el.classList.add('hidden'); UI.inspectH = 0; return; }
   el.classList.remove('hidden');
-  if (cache.inspect !== s || !UI.inspectH) { setTxt('inspect', s); UI.inspectH = el.offsetHeight; }
+  if (cache.inspect !== s || !UI.inspectH) {
+    cache.inspect = s;
+    el.innerHTML = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace('{pwr}', UI.img('ic_bolt', 18));   // {pwr} = the bolt icon (power drawn)
+    UI.inspectH = el.offsetHeight;
+  }
 };
 
 // ---------- goals: one card per player, the two tracks run at the same time ----------
@@ -479,7 +511,7 @@ UI.netHtml = function () {
   return '<div>NET <b>' + Net.role + '</b> ' + Net.state + ' room <b>' + (Net.code || '-') + '</b></div><div>Snapshot <b>' + s.rawKB.toFixed(0) + ' KB</b> raw, <b>' + s.zipKB.toFixed(1) + ' KB</b> sent (max ' + s.maxZip.toFixed(1) + '), <b>' + s.fps + '</b>/s, <b>' + s.kbps + ' KB/s</b>' + (Net.role === 'guest' ? ', ping <b>' + s.rtt + ' ms</b>' : '') + '</div>';
 };
 
-// ---------- hotbar: single slots plus families (Harnessers, Crafters, Power, Logistics, Spawners) whose member cycles ----------
+// ---------- hotbar: single slots plus families (Harvesters, Crafters, Power, Logistics, Spawners) whose member cycles ----------
 UI.tipT = 0; UI.tipHover = false;
 const KEYLBL = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 UI.isFam = id => !!CFG.families[id];
@@ -498,7 +530,7 @@ UI.buildHotbar = function () {
   CFG.hotbar.forEach((id, i) => {
     const s = document.createElement('div');
     s.className = 'slot'; s.dataset.id = id;
-    s.innerHTML = '<kbd>' + KEYLBL[i] + '</kbd><span class="ic"></span><span class="pips"></span><i class="lock">' + UI.img('ic_lock', 16) + '</i><i class="free">FREE</i>';
+    s.innerHTML = '<kbd>' + Keys.label('slot' + (i + 1)) + '</kbd><span class="ic"></span><span class="pips"></span><i class="lock">' + UI.img('ic_lock', 16) + '</i><i class="free">FREE</i>';
     s.onclick = () => UI.select(id);
     s.onmouseenter = () => { UI.tipHover = true; UI.hovSlot = id; UI.showTip(id); };
     s.onmouseleave = () => { UI.tipHover = false; UI.hovSlot = null; UI.tipT = 0.6; };
@@ -682,7 +714,7 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
   const L = UI.nodeLevel(n), up = CFG.upgrade[n.id], nx = L < UI.nodeMax(n) ? L + 1 : null;
   const row = (label, f) => [label, f(L), nx === null ? null : f(nx)];
   switch (n.id) {
-    case 'swift': return [row('Harnesser speed', l => fPct(up * l)), row('Air Pocket every', l => fSec(CFG.harness.air.cycle / (1 + up * l))), row('Water Drop every', l => fSec(CFG.harness.water.cycle / (1 + up * l)))];
+    case 'swift': return [row('Harvester speed', l => fPct(up * l)), row('Air Pocket every', l => fSec(CFG.harness.air.cycle / (1 + up * l))), row('Water Drop every', l => fSec(CFG.harness.water.cycle / (1 + up * l)))];
     case 'manual': return [row('Hand-harnessing speed', l => fPct(up * l)), row('Taps to fill the meter', l => (CFG.manual.taps / (1 + up * l)).toFixed(1))];
     case 'belts': return [row('Belt speed', l => fPct(up * l)), row('Time per tile', l => fSec(CFG.beltTime / (1 + up * l)))];
     case 'satchel': return [row('Items carried (any mix)', l => '' + (CFG.satchel + up * l))];
@@ -854,7 +886,7 @@ UI.pinHtml = function (side, id) {
     const worst = short.reduce((a, x) => (x.t > a.t ? x : a));
     if (worst.k === 'ic_xp') act = [UI.img('ic_hat', 16), UI.img('ic_skull', 16)];   // the Wizard fights for XP
 
-    else if (ELEM[worst.k] && !G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === worst.k)) act = [UI.img('b:' + worst.k, 16)];   // set a Harnesser to that element first
+    else if (ELEM[worst.k] && !G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === worst.k)) act = [UI.img('b:' + worst.k, 16)];   // set a Harvester to that element first
     else if (ITEMS[worst.k].spell && !(G.fac.bld.some(b => b.type === 'forge' && b.recipe === worst.k))) act = [UI.img('b:forge', 16), UI.img('ic_swap', 14), UI.img(worst.k, 16)];   // set a Forge to it
     else act = [UI.img(worst.k, 16), '<em>&gt;</em>', UI.img('ic_skill', 16)];   // send it into the Skill Portal
   }
@@ -943,12 +975,28 @@ UI.killerHtml = function () {
   const el = k.el && ELEM[k.el] ? k.el : null;
   return '<div class="killer">' + UI.img(k.ic, 40) + '<div><b>KILLED BY ' + k.n.toUpperCase() + '</b>' + (el ? '<span>weak to ' + UI.img(el, 18) + '<em style="color:' + ELEM[el].color + '">' + ELEM_WORD[el].toUpperCase() + '</em>: Builder, send ' + ELEM_WORD[el] + ' spells</span>' : '') + '</div></div>';
 };
+// the Builder's own game over screen (over the factory): what he made and spent this run; the numbers that only grow are measured against G.w.run.b0
+UI.builderStatsHtml = function () {
+  const r = G.w.run, n = FA.bSnap(), b0 = r.b0 || n, d = k => Math.max(0, n[k] - (b0[k] || 0));
+  const rows = [
+    ['ic_clock', 'Survived', fmtTime(G.w.time)], ['ic_portal', 'Sent to Wizard', r.deliveries],
+    ['steam', 'Spells crafted', d('made')], ['potion', 'Potions brewed', d('potions')],
+    ['air', 'Spells harvested', d('packets')], ['ic_bolt', 'Batteries charged', d('charged')],
+    ['wood', 'Resources spent', d('spent')], ['b:forge', 'Buildings built', d('built')],
+    ['egg_zephyr', 'Eggs sent', d('eggs')], ['ic_skill', 'Banked for skills', d('banked')],
+  ];
+  const sp = Object.keys(r.spells).filter(k => ITEMS[k].spell || ITEMS[k].elem).sort((a, b) => (ITEMS[b].spell ? 1e6 : 0) + r.spells[b] - (ITEMS[a].spell ? 1e6 : 0) - r.spells[a])[0];
+  const best = sp ? '<div class="best">' + UI.img(sp, 24) + 'Star spell: <b>' + (ELEM[sp] ? SPELLS[BASIC_SPELL[sp]] : itemName(sp)) + ' x' + r.spells[sp] + '</b></div>' : '';
+  return '<div class="stats">' + rows.map(s => '<div>' + UI.img(s[0], 16) + '<span>' + s[1] + '</span><b>' + s[2] + '</b></div>').join('') + '</div>' + best;
+};
 UI.showResults = function () {
   if (G && G.m4) return UI.showResults4();
-  const el = $('results');
-  el.innerHTML = '<div class="rIcon">' + UI.img('ic_skull', 48) + '</div><h2>GAME OVER</h2>' + UI.killerHtml() + UI.statsHtml() + '<p>The factory, stockpile, XP, bank and skill tree are all safe. Both players press RESTART to go again.</p>' +
-    '<button class="big" id="rReB">BUILDER</button><button class="big" id="rReW">WIZARD</button><button class="big ghost" id="rTitle">TITLE</button>';
-  el.classList.remove('hidden');
+  const el = $('results'), eb = $('resultsB');
+  el.innerHTML = '<div class="rIcon">' + UI.img('ic_skull', 48) + '</div><h2>WIZARD: GAME OVER</h2>' + UI.killerHtml() + UI.statsHtml() + '<p>Everything in the factory is safe. Press RESTART when you are ready.</p>' +
+    '<button class="big" id="rReW">WIZARD</button><button class="big ghost" id="rTitle">TITLE</button>';
+  eb.innerHTML = '<div class="rIcon">' + UI.img('b:forge', 48) + '</div><h2>BUILDER: GAME OVER</h2>' + UI.builderStatsHtml() + '<p>Your factory, stockpile, XP, bank and skill tree are all safe. Press RESTART when you are ready.</p>' +
+    '<button class="big" id="rReB">BUILDER</button><button class="big ghost" id="rTitleB">TITLE</button>';
+  el.classList.remove('hidden'); eb.classList.remove('hidden');
   UI.resSig = '';
   $('rReB').onclick = () => {
     if (Net.role === 'guest' || !G.w.dead) return;
@@ -959,7 +1007,7 @@ UI.showResults = function () {
     if (Net.role === 'guest') { Net.latchPress('a'); AU.sfx('buy'); return; }   // the roll button readies him; the panel shows it when the next snapshot says so
     G.w.ready.W = !G.w.ready.W; AU.sfx(G.w.ready.W ? 'buy' : 'blip');
   };
-  $('rTitle').onclick = () => { el.classList.add('hidden'); Main.toTitle(); };
+  $('rTitle').onclick = $('rTitleB').onclick = () => { el.classList.add('hidden'); eb.classList.add('hidden'); Main.toTitle(); };
   UI.resultsSync();
 };
 // the two RESTART buttons follow G.w.ready; the whole panel goes once the Wizard is alive again
@@ -967,7 +1015,7 @@ UI.resultsSync = function () {
   const el = $('results');
   if (!el || el.classList.contains('hidden') || !G) return;
   if (G.m4) return UI.resultsSync4();
-  if (!G.w.dead) { el.classList.add('hidden'); return; }
+  if (!G.w.dead) { el.classList.add('hidden'); $('resultsB').classList.add('hidden'); return; }
   const r = G.w.ready || {}, sig = (r.B ? 1 : 0) + '' + (r.W ? 1 : 0) + Net.role;
   if (sig === UI.resSig) return;
   UI.resSig = sig;
@@ -989,7 +1037,7 @@ UI.showVictory = function () {
 };
 
 // ---------- menu ----------
-UI.show = (id, on) => $(id).classList.toggle('hidden', !on);
+UI.show = (id, on) => { $(id).classList.toggle('hidden', !on); if (id === 'results' && !on) $('resultsB').classList.add('hidden'); };
 UI.slotInfo = function (i, useBak) {
   const read = key => { try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return undefined; } };   // undefined = unreadable
   const key = 'wands2_save_slot' + i, bak = () => { const b = read(key + '_bak'); return b && Main.saveOk(b) ? Object.assign(b, { fromBak: true }) : null; };
@@ -1010,8 +1058,8 @@ const HOWTO = {
   'FACTORY': [
     ['Hands', 'The Builder carries one stack (5 at first). <b>Left-click</b> (pad <b>A</b>) picks up <b>one item at a time</b>: hold it to keep grabbing. <b>Right-click</b> (pad <b>B</b>) throws one item along the dotted lead line: it aims at machines, blueprints, belts, portals or the Stockpile. Throwing is the only way to put things in. Nothing ever vanishes.'],
     ['Building', 'Pick a slot (keys <b>1</b> to <b>8</b> or the wheel; slot 8 is Floor Tiles). Slots with a pip row are <b>families</b> (Crafters, Power, Logistics, Creature Spawners): <b>Q</b>, the wheel over the slot or <b>RT</b> on a pad cycles the member (locked ones are skipped). <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
-    ['Machines', 'The <b>Harnesser</b> carries one of four element crystals: <b>F</b> (<b>LT + X</b> on a pad) switches it to the next element at any time. The old crystal bursts, the new one grows for 5 seconds, then the Harnesser shakes and starts making spells (nothing is made while it grows, and switching again restarts the 5 seconds). Every building shows what it holds as real items stacked on it: inputs, what it has made, a blueprint materials (faint copies = still missing), Battery fuel. Harnessers make spells by themselves, or stand next to one and press <b>E</b>, then <b>keep tapping E</b> to fill the meter and crank one out by hand (it never fills by itself; no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
-    ['Power', 'Harnessers (Air too) and the Forge use power. The factory starts with one charged <b>Battery</b> just south of the Stockpile. A Battery is a building: it gives +10 power while it has charge and drains by itself while anything needs power. To refill it, throw element spells, Wood or Stone at it (or belt them in): it burns them into charge, more kinds at once = faster (hand-gathered spells are free). Every spell charges 10% more than its base, and a spell you throw in by hand adds another 20%. Build more Batteries like any building (place the blueprint, throw its materials at it). A charged Battery right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, the <b>Heavy Batteries</b> node unlocks the <b>Heavy Battery</b>, which drains slower so its charge lasts 50% longer.'],
+    ['Machines', 'The <b>Harvester</b> carries one of four element crystals: <b>F</b> (<b>LT + X</b> on a pad) switches it to the next element at any time. The old crystal bursts, the new one grows for 5 seconds, then the Harvester shakes and starts making spells (nothing is made while it grows, and switching again restarts the 5 seconds). Every building shows what it holds as real items stacked on it: inputs, what it has made, a blueprint materials (faint copies = still missing), Battery fuel. Harvesters make spells by themselves, or stand next to one and press <b>E</b>, then <b>keep tapping E</b> to fill the meter and crank one out by hand (it never fills by itself; no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
+    ['Power', 'Harvesters (Air too) and the Forge use power. The factory starts with one charged <b>Battery</b> just south of the Stockpile. A Battery is a building: it gives +10 power while it has charge and drains by itself while anything needs power. To refill it, throw element spells, Wood or Stone at it (or belt them in): it burns them into charge, more kinds at once = faster (hand-gathered spells are free). Every spell charges 10% more than its base, and a spell you throw in by hand adds another 20%. Build more Batteries like any building (place the blueprint, throw its materials at it). A charged Battery right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, the <b>Heavy Batteries</b> node unlocks the <b>Heavy Battery</b>, which drains slower so its charge lasts 50% longer.'],
     ['Creatures', 'The <b>Creature Spawner</b> turns element spells into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. There is only one Spawner and nothing to unlock: feed it ONE thing at a time. An element spell hatches the basic creature of its element. A forged combo spell hatches the pair or triple creature of its elements: Flamethrower (Cinder Phoenix), Tempest Tear (Thunderhead), Magma Bomb (Lava Golem), Mud Shield (Swamp Shambler), Meteor Shower (Ember Dragon), Thunderstorm (Storm Leviathan), Geyser Eruption (Kiln Titan). Steam Mine, Gale Boomerang and Blizzard are no seeds: the Spawner bounces them back. <b>Allies:</b> throw an Element <b>Core</b> (by hand) at an idle Spawner and it grows a <b>friendly</b> version of the creature instead: Gale = Zephyr Wisp, Tide = Puddle Slime, Ember = Cinder Imp, Stone = Pebble Golem. While it grows, throw a Core of a different element to make it the pair creature, then a third for the triple (each Core adds growing time). A Core thrown at a hostile grow, a repeated element, a mix with no creature, a fourth Core, or a spell during an ally grow all bounce back. Send the green-tinted Egg through the Spell Portal: the ally hatches 2-4 tiles from the Wizard with double health and half damage, and hostiles go for it before him. Up to 10 allies, 3 eggs waiting; a spent ally pays nothing. A small icon shows which creature it is hatching; when one dies it sometimes gives back what it was hatched from. At most 25 factory creatures live at once: extra Eggs wait beside the portal. Every creature is in the <b>Collection Book</b> (C) with a live demo. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
     ['Growing', 'The floor starts small (12 x 8). Place <b>Floor Tiles</b> (slot 8) on empty ground beside it (each covers a 2 x 2 block) and throw them Wood and Stone (and Iron after the 12th) to turn them into floor. A floor tile holds <b>5</b> loose items; more bounce on to the next tile.'],
     ['Stockpile', 'The <b>Stockpile</b> is a real inventory: it starts as 3 x 2 wooden tiles, and every tile holds <b>50 of ONE kind</b> (Wood, Stone, Iron, Shards, Cores, the Warden Key, element spells, garments). Slot 8 swaps (<b>Q</b>) to the <b>Stockpile Tile</b> (4 Wood, 2 Stone, 1 Iron), placed on an empty floor tile. When the Stockpile has no room for something, the Wizard cannot send it home: the portal over his head spits it back out. <b>Demolish</b> takes a building first; on an empty tile it lifts the Stockpile tile (back to floor) or the floor tile itself, refunded, and whatever lay there bounces to the next tile with room. When the whole factory is full the extras go through the Spell Portal into the wilds.'],
@@ -1032,7 +1080,7 @@ const HOWTO = {
     ['Potions', 'The <b>Alchemy Cauldron</b> takes ONE spell at a time, like the Spawner, and the better the spell the stronger the potion. <b>F</b> (LT + X) switches it between <b>Health</b> mode (Water makes the best, Earth the weakest) and <b>Armor</b> mode (Earth best, Water weakest); the new flask regrows above it for 5 seconds. Send them through the Spell Portal: they fall beside the Wizard, who walks over them. <b>Armor</b> works for as many hits as it has points: while any is left every hit does 70% less (Earth stone makes it 91%), and a small hit costs 2 points, a medium one 3 and a big one 5. The Collection Book\'s INDEX page lists every number.'],
     ['Weaknesses', 'Biome monsters take <b>double damage</b> from one element and half from another: <b>Ember Imps</b> (sand, dirt) hate Water, <b>Bog Lurkers</b> hate Fire, <b>Gale Wisps</b> (far meadows) hate Earth, <b>Stone Golems</b> (far dark woods) hate Air. Combo spells count every element in them. A small diamond over a foe shows its weakness, and yellow numbers with a ! mean a weak hit.'],
     ['Elites', 'Big gold-ringed monsters with a crown. Much tougher, but they drop <b>Aether Shards</b> and lots of XP. Each one is weak to one element.'],
-    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard stands inside their ring for 3 seconds: clear them. <b>Crypts</b> (purple) open when he stands in their bigger ring for 5 seconds, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours) want <b>three Cores</b>, one of each element the Shrine does NOT belong to (an Air Shrine takes Water, Fire and Earth): creatures of those elements drop them now and then (elites always do). Stand near the Shrine and have the Builder send the Cores through the Spell Portal one by one: each sails down onto the Shrine, and the third claims the Shard. A claimed Shrine does nothing until the Wizard <b>wakes</b> it: stand beside it and press <b>Mash</b>, then press Mash again each time a closing ring passes through its target zone, three times (a miss only restarts that ring; walking away cancels it). Awake, it speeds up that element\'s Harnessers by 25% for <b>30 seconds</b>, wherever the Wizard goes, then recharges for <b>2 minutes</b> (it visibly refills). Standing on a Shrine gives nothing, and Shrines never charge the wand.'],
+    ['Landmarks', 'The map (bottom right) shows them. <b>Monster Camps</b> (red) wake when the Wizard stands inside their ring for 3 seconds: clear them. <b>Crypts</b> (purple) open when he stands in their bigger ring for 5 seconds, and their Guardian must fall. Both pay Aether Shards, the rare resource for the Summoning Altar. <b>Shrines</b> (element colours) want <b>three Cores</b>, one of each element the Shrine does NOT belong to (an Air Shrine takes Water, Fire and Earth): creatures of those elements drop them now and then (elites always do). Stand near the Shrine and have the Builder send the Cores through the Spell Portal one by one: each sails down onto the Shrine, and the third claims the Shard. A claimed Shrine does nothing until the Wizard <b>wakes</b> it: stand beside it and press <b>Mash</b>, then press Mash again each time a closing ring passes through its target zone, three times (a miss only restarts that ring; walking away cancels it). Awake, it speeds up that element\'s Harvesters by 25% for <b>30 seconds</b>, wherever the Wizard goes, then recharges for <b>2 minutes</b> (it visibly refills). Standing on a Shrine gives nothing, and Shrines never charge the wand.'],
     ['Foraging', '<b>Dirt Mounds</b>, <b>Stick Piles</b> and <b>Berry Bushes</b> are scattered everywhere. Stand at one and <b>mash the Mash button</b> (pad <b>X</b>, left-click, <kbd>/</kbd> on a shared keyboard) to dig out Stone (sometimes Iron Ore) or Wood, or shake a Health Potion or Armor Plate out of a bush. Mash is its own button: the roll never digs. They grow back after a while. Wearing the Kilnsight Mask also shows <b>buried caches</b> glinting in the grass: dig those the same way.'],
     ['The Wand', 'The Wizard\'s staff holds <b>four wand attacks</b>, one per element, and they are charged by <b>the spells the Builder sends</b>: every spell adds one tick to each element it carries (a Gust ticks Air, a Flamethrower Air and Fire, the Nova all four). A slot is READY after <b>8 Air, 7 Water, 6 Fire or 5 Earth</b> ticks and holds exactly one attack (ticks for a full slot are lost). The four slots sit under his health bar. <b>Cycle</b> (pad <b>Y</b>) picks which ready slot is armed; <b>Cast</b> (pad <b>B</b>) fires it. <b>Flame Trail</b> (Fire): +15% speed for 3 seconds and a trail of fire that burns for 5 seconds. <b>Vanishing Puff</b> (Air): a burst of air that shoves and hurts, then for 4 seconds nothing hostile can target him (mashing or casting ends it early). <b>Riding Wave</b> (Water): he rides a wave in a straight line, about 8 tiles in a second, parting foes to the sides; it stops dead at walls and water. <b>Statue</b> (Earth): 4 seconds of stone, slower but taking only 30% damage, then it bursts, harder for every hit he took.'],
     ['Dodging', 'The roll (<b>Dodge</b>: pad <b>A</b>, <kbd>Space</kbd>, <kbd>.</kbd>) makes the Wizard <b>invulnerable</b> while he flickers white. A hit he rolls through pops <b>DODGE!</b>.'],
@@ -1052,7 +1100,7 @@ UI.settingsPage = function (box, back) {
   box.innerHTML = '<h2>SETTINGS</h2>' + row('sfx', 'ic_sound', 'SOUND') + row('music', 'ic_music', 'MUSIC') +
     '<label title="Online only: how big your partner\'s world is in the corner of your screen. 0% hides it. Only you see this setting.">' + UI.img('ic_portal', 24) + 'PARTNER VIEW <b>' + (s.pip ? s.pip + '%' : 'OFF') + '</b><input data-k="pip" type="range" min="0" max="45" value="' + s.pip + '"></label>' +
     '<button class="big ghost ap">' + UI.img('ic_hand', 20) + 'AUTO-PICKUP: ' + (G && G.autoPick ? 'ON' : 'OFF') + '</button>' +
-    '<button class="big ghost ctl">' + UI.img('ic_pad', 20) + 'CONTROLS</button><button class="big ghost back">BACK</button>';
+    '<button class="big ghost keys">' + UI.img('ic_gear', 20) + 'KEYS: REMAP</button><button class="big ghost ctl">' + UI.img('ic_pad', 20) + 'CONTROLS</button><button class="big ghost back">BACK</button>';
   box.querySelectorAll('input').forEach(inp => {
     inp.oninput = () => {
       if (inp.dataset.k === 'pip') { AU.setPip(+inp.value); inp.previousElementSibling.textContent = +inp.value ? inp.value + '%' : 'OFF'; return; }
@@ -1062,6 +1110,7 @@ UI.settingsPage = function (box, back) {
   box.querySelector('[data-k="sfx"]').onchange = () => AU.sfx('pickup');
   box.querySelector('.ap').onclick = e => { Main.toggleAutoPick(); e.currentTarget.lastChild.textContent = 'AUTO-PICKUP: ' + (G.autoPick ? 'ON' : 'OFF'); };
   box.querySelector('.ctl').onclick = () => { AU.sfx('blip'); UI.controlsPage(box, () => UI.settingsPage(box, back)); };
+  box.querySelector('.keys').onclick = () => { AU.sfx('blip'); UI.keysPage(box, () => UI.settingsPage(box, back)); };
   box.querySelector('.back').onclick = back;
 };
 
@@ -1074,13 +1123,14 @@ const CONTROLS = [
     [K('RIGHT-CLICK'), 'Throw one item along the dotted line (hold = rapid). Hand-gathering keeps going: walk away to stop it'],
     [K('SHIFT') + ' + ' + K('RIGHT-CLICK'), 'Throw the whole stack'],
     [K('SPACE') + ' &nbsp;/&nbsp; pad LT + A', 'Builder roll (the Tumble skill, BUILDER branch of the tree): a quick somersault along the way he walks. With a swapped keyboard it is Right Shift'],
-    [K('E'), 'Use: hand-gather a Harnesser (tap again and again to fill the meter), turn a belt or machine, switch recipe'],
-    [K('F') + ' &nbsp;(' + K('SHIFT') + ' + ' + K('F') + ' = back)', 'Switch the element of the Harnesser in reach (the new crystal grows for 5 seconds)'],
-    [K('SHIFT') + ' + ' + K('E') + ' (hold) &nbsp;/&nbsp; pad LT + RB (hold)', 'Move a finished building: it lifts after a moment, the ghost follows you, let go to set it down (R turns its output, right-click / B cancels)'],
+    [K('E'), 'Use: hand-gather a Harvester (tap again and again to fill the meter), turn a belt or machine, switch recipe'],
+    [K('F') + ' &nbsp;(' + K('SHIFT') + ' + ' + K('F') + ' = back)', 'Switch the element of the Harvester in reach (the new crystal grows for 5 seconds)'],
+    [K('RIGHT-CLICK') + ' (hold, empty hands) &nbsp;/&nbsp; pad B (hold) or LT + RB', 'Move a finished building: hold the button on it and it lifts after a moment, the ghost follows you, let go to set it down (R turns its output, left-click / Esc / A cancels)'],
     [K('G') + ' &nbsp;/&nbsp; pad LT + Y', 'Auto-pickup on / off (off by default): loose items that settle within a tile of you hop into your hands'],
     [K('1') + ' - ' + K('9') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, the building families, Floor Tiles, then the Helper Robot)'],
     [K('[') + ' ' + K(']'), 'Previous / next hotbar slot'],
-    [K('Q') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot, or Shift + the wheel in the factory; Q over a hotbar slot swaps that slot)'],
+    [K('Q'), 'PIPETTE. A tool is active (a building, belts or demolish): put it away, like right-click. Nothing active: take the building or belt under the cursor as the tool (with its direction); nothing under the cursor: bring back the last tool'],
+    [K('O') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot, or Shift + the wheel in the factory; the key over a hotbar slot swaps that slot)'],
     [K('R'), 'Turn the belt or building under the cursor (in front of you on a pad: X), or the one you are about to place. A Splitter never needs turning: it finds its input and outputs itself'],
     [K('CLICK') + ' &nbsp;/&nbsp; ' + K('ENTER'), 'Place the selected building / belt (Enter: on the tile in front). Drag to lay belts'],
     [K('B') + ' &nbsp;/&nbsp; ' + K('DELETE'), 'Demolish mode (full refund)'],
@@ -1095,7 +1145,9 @@ const CONTROLS = [
     [K('LEFT-CLICK') + ' &nbsp;/&nbsp; ' + K('/'), 'MASH: dig a mound, stick pile, bush or buried cache; wake a claimed shrine (press again as its ring closes). Mash is never the roll. Sharing the keyboard: ' + K('/')],
     [K('RIGHT-CLICK') + ' &nbsp;/&nbsp; ' + K(','), 'CAST the armed wand attack (it needs a ready slot). Sharing the keyboard: ' + K(',')],
     [K('Q') + ' &nbsp;/&nbsp; ' + K('M'), 'CYCLE the wand: the next ready slot becomes the armed one (a slot that just filled is armed at once). Sharing the keyboard: ' + K('M')],
+    [K('L') + ' &nbsp;/&nbsp; pad LB', 'BIG MAP: the map flies to the middle of the Wizard\'s screen and grows, with a legend of every marker (press again or Esc to close). Only the Wizard\'s screen changes'],
     [K('Y'), 'Wizard Skill Tree'],
+    ['Keys', 'These are the DEFAULT keys. Every Builder and Wizard key can be changed in the pause menu: Settings, KEYS'],
   ]],
   ['PLAYER SELECT (before each game)', [
     [K('LEFT') + ' ' + K('RIGHT') + ' &nbsp;or stick', 'Move your controller to the Builder side, the middle (the keyboard then plays any job nobody else has) or the Wizard side'],
@@ -1139,7 +1191,7 @@ const CONTROLS = [
     [K('A'), 'Pick up (hold to sweep). With a building selected: place in front (hold with Belt to lay belts)'],
     [K('B') + ' &nbsp;/&nbsp; ' + K('LT') + ' + ' + K('B'), 'Throw (hold = rapid) / throw the whole stack. Hand-gathering is stopped by walking away'],
     [K('X'), 'Use'],
-    [K('LT') + ' + ' + K('X'), 'Switch the element of the Harnesser in reach'],
+    [K('LT') + ' + ' + K('X'), 'Switch the element of the Harvester in reach'],
     [K('LT') + ' + ' + K('A'), 'Builder roll (the Tumble skill in the tree)'],
     [K('RIGHT STICK') + ' &nbsp;or ' + K('R3'), 'Flick to cycle targets'],
     [K('LB') + ' ' + K('RB'), 'Previous / next hotbar slot'],
@@ -1174,6 +1226,41 @@ const CONTROLS = [
     ['<code>node tools/devtool/server.mjs</code>', 'The dev tool (port 8090): layout, variables, formulas and audio tabs over a live preview'],
   ]],
 ];
+// Settings > KEYS: every keyboard action of the Builder and the Wizard (Keys.list) with its current key; click one, press the new key. Esc cancels. A key another action of the same player
+// had swaps places with this one's old key, so nothing is left unbound by accident. The mouse buttons, the pad, Esc / Enter and the F-keys are fixed.
+UI.keysPage = function (box, back) {
+  box.classList.add('wideCtl');
+  let listen = null, note = '';
+  const stop = () => { if (listen) { window.removeEventListener('keydown', listen.fn, true); listen = null; } };
+  const draw = () => {
+    const groups = [];
+    for (const a of Keys.list) { let g = groups.find(x => x.t === a.group); if (!g) groups.push(g = { t: a.group, rows: [] }); g.rows.push(a); }
+    box.innerHTML = '<h2>KEYS</h2><p class="keyNote">Click a key, then press the new one (Esc cancels). If another action of the same player had that key, the two swap. Mouse buttons and the pad are fixed.' +
+      (note ? '<br><b>' + note + '</b>' : '') + '</p><div class="ctlBody keyBody">' +
+      groups.map(g => '<div class="ctlSec"><h3>' + g.t + '</h3>' + g.rows.map(a => '<div class="keyRow"><span>' + a.label + '</span><button class="keyBtn' + (Keys.custom(a.id) ? ' on' : '') + (listen && listen.id === a.id ? ' wait' : '') + '" data-id="' + a.id + '">' +
+        (listen && listen.id === a.id ? 'PRESS A KEY' : Keys.labels(a.id)) + '</button><button class="keyRst" data-id="' + a.id + '" title="Back to the default"' + (Keys.custom(a.id) ? '' : ' disabled') + '>' + UI.img('ic_rotate', 14) + '</button></div>').join('') + '</div>').join('') +
+      '</div><button class="big ghost reset">RESET ALL TO DEFAULT</button><button class="big ghost back">BACK</button>';
+    box.querySelectorAll('.keyBtn').forEach(b => { b.onclick = () => begin(b.dataset.id); });
+    box.querySelectorAll('.keyRst').forEach(b => { b.onclick = () => { stop(); Keys.reset(b.dataset.id); note = ''; AU.sfx('blip'); UI.keyChips(true); draw(); }; });
+    box.querySelector('.reset').onclick = () => { stop(); Keys.resetAll(); note = 'Every key is back to its default.'; AU.sfx('blip'); UI.keyChips(true); draw(); };
+    box.querySelector('.back').onclick = () => { stop(); back(); };
+  };
+  const begin = id => {
+    stop(); note = '';
+    const fn = e => {
+      if (!box.offsetParent) { stop(); return; }   // the menu was closed meanwhile: not ours any more
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (e.code === 'Escape') { stop(); AU.sfx('menu_close'); draw(); return; }
+      if (!Keys.bindable(e.code)) { note = Keys.name(e.code) + ' cannot be used (it is reserved). Pick another key.'; AU.sfx('error'); stop(); draw(); return; }
+      const other = Keys.set(id, e.code);
+      stop(); AU.sfx('buy'); UI.keyChips(true);
+      note = other ? Keys.by[id].label + ' = ' + Keys.name(e.code) + '. ' + other.label + ' took ' + Keys.labels(other.id) + ' (it had ' + Keys.name(e.code) + ').' : '';
+      draw();
+    };
+    listen = { id, fn }; window.addEventListener('keydown', fn, true); draw();
+  };
+  draw();
+};
 UI.controlsPage = function (box, back) {
   box.classList.add('wideCtl');
   const sec = ([title, rows]) => '<div class="ctlSec' + (title.startsWith('DEBUG') ? ' dbg wide' : '') + '"><h3>' + title + '</h3>' +

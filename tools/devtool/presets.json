@@ -10,7 +10,7 @@
     { "id": "hud-new", "label": "In game: new game + controls card", "steps": [ { "wait": 600 }, { "eval": "W.Main.newGame(1)" }, { "waitFor": "#help" }, { "wait": 900 } ] },
     { "id": "help", "label": "In game: controls card (H)", "steps": [ { "include": "hud" }, { "click": "#btnHelp" }, { "waitFor": "#help" } ] },
     { "id": "hotbar-tip", "label": "In game: hotbar tooltip + inspector", "steps": [ { "include": "hud" }, { "freeze": true }, { "eval": "UI.showTip('forge'); UI.tipT = 1e9; UI.setInspect('ELEMENTAL FORGE: making Flamethrower. STARVED: needs Fire Ember')" } ] },
-    { "id": "toasts", "label": "In game: toasts (both sides)", "steps": [ { "include": "hud" }, { "freeze": true }, { "eval": "UI.toast('Goal complete! +15 XP', 'L', 'ic_target'); UI.toast('Unlocked: Swift Harnessing 3', 'L', 'ic_fast'); UI.toast('An Ember Imp! Weak to Water', 'R', 'ic_skull'); UI.toast('Goal complete! +15 XP', 'R', 'ic_target')" } ] },
+    { "id": "toasts", "label": "In game: toasts (both sides)", "steps": [ { "include": "hud" }, { "freeze": true }, { "eval": "UI.toast('Goal complete! +15 XP', 'L', 'ic_target'); UI.toast('Unlocked: Swift Harvesting 3', 'L', 'ic_fast'); UI.toast('An Ember Imp! Weak to Water', 'R', 'ic_skull'); UI.toast('Goal complete! +15 XP', 'R', 'ic_target')" } ] },
     { "id": "tree-l", "label": "In game: Skill Tree (Builder side)", "steps": [ { "include": "hud" }, { "key": "KeyT" }, { "waitFor": "#treeL" } ] },
     { "id": "tree-r", "label": "In game: Skill Tree (Wizard side)", "steps": [ { "include": "hud" }, { "key": "KeyY" }, { "waitFor": "#treeR" } ] },
     { "id": "tree-tip", "label": "In game: Skill Tree hover card", "steps": [ { "include": "tree-l" }, { "eval": "UI.showNodeTip('L', 'swift')" }, { "waitFor": "#nodeTip" } ] },

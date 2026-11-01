@@ -227,7 +227,7 @@ FA.initial = function () {
   // straight down into a Creature Spawner (Zephyr Wisps). The Spawner's Eggs leave its east side, turn north one tile further out and run east into the portal's lower cell: the egg belts
   // never touch the belt that feeds the Spawner (the old route ran right beside it and read as one line)
   const sx = ox + B.w - 5;
-  FA.makeBuilding('harness', sx - 4, sy, true, false, 0);
+  FA.makeBuilding('harness', sx - 4, sy, true, false, 0).el = G.flags.startEl || 'air';   // (random per new world: Main.newGame)
   FA.addBelt(sx - 3, sy, 0); FA.addBelt(sx - 2, sy, 0); FA.addBelt(sx - 1, sy, 0);
   const sp = FA.makeBuilding('splitter', sx, sy, true, true, 3);
   FA.addBelt(sx + 1, sy, 0); FA.addBelt(sx + 2, sy, 0); FA.addBelt(sx + 3, sy, 0);
@@ -251,7 +251,7 @@ FA.blockOk = (ax, ay) => {
   const n = FA.tileSz(); let touch = false;
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const x = ax + i, y = ay + j;
-    if (!FA.inb(x, y) || FA.owned(x, y) || FA.isQ(x, y) || G.fac.grid[y * G.fac.w + x]) return false;
+    if (!FA.inb(x, y) || FA.owned(x, y) || G.fac.grid[y * G.fac.w + x]) return false;   // (the ? station does not block a Floor Tile: FA.moveQ steps it aside when one is placed over it)
     if (DIRS.some(d => FA.owned(x + d[0], y + d[1]))) touch = true;
   }
   return touch;
@@ -659,12 +659,25 @@ FA.place = function (type, x, y, dir) {
   const b = FA.makeBuilding(type, x, y, credit, credit, dir);
   if (rcost) b.cost = rcost;
   if (type === 'stockpile') for (const o of G.fac.floor.slice()) if (Math.floor(o.x) === x && Math.floor(o.y) === y) { G.fac.floor.splice(G.fac.floor.indexOf(o), 1); FA.dropAt(o.kind, o.x, o.y, true); }   // loose items make way for the blueprint
-  if (type === 'expand') { b.cost = FA.tileCost(); G.fac.added += FA.tileSz() * FA.tileSz(); }
+  if (type === 'expand') { b.cost = FA.tileCost(); G.fac.added += FA.tileSz() * FA.tileSz(); if (FA.tileCells(b).some(c => FA.isQ(c[0], c[1]))) FA.moveQ(); }
   if (credit) { G.credits[type]--; FA.burst(x + 0.5, y + 0.5, '#7be0ff', 20); FA.ipop(x + 0.5, y + 0.5, [['ic_gift']]); AU.sfx('complete'); }
   else AU.sfx('place');
   b.pop = 0.4;
   UI.changed();
   return b;
+};
+// the ? station gets out of the way of a Floor Tile placed over it: it moves to the nearest empty tile off the floor (preferring one that touches the floor, where the Builder can still reach it)
+FA.moveQ = function () {
+  const f = G.fac, q = FA.qTile();
+  let best = null, bd = 1e9;
+  for (let y = q.y - 12; y <= q.y + 12; y++) for (let x = q.x - 12; x <= q.x + 12; x++) {
+    if (!FA.inb(x, y) || FA.owned(x, y) || f.grid[y * f.w + x] || (x === q.x && y === q.y)) continue;
+    const touch = DIRS.some(d => FA.owned(x + d[0], y + d[1])), d = Math.hypot(x - q.x, y - q.y) + (touch ? 0 : 6);
+    if (d < bd) { bd = d; best = [x, y]; }
+  }
+  if (!best) return;
+  f.qp = { x: best[0], y: best[1] };
+  FA.burst(best[0] + 0.5, best[1] + 0.5, '#c8b8e8', 14); FA.ipop(best[0] + 0.5, best[1] + 0.5, [['ic_swap']]);
 };
 FA.placeBelt = function (x, y, dir) {
   if (!FA.inb(x, y)) return false;

@@ -13,14 +13,14 @@ const CFG = {
   stockCap: 50,               // items of ONE kind a Stockpile tile holds (a kind with more spreads over more tiles)
   rotFlash: 0.7,              // seconds a belt / machine flashes (and shows a big arrow) after R turned it
   carry: { holdT: 0.6 },      // hold the carry key this long on a finished building to pick it up and move it
-  stockShow: 4,               // items drawn in a Stockpile tile's stack (the number under it keeps counting past that)
+  stockShow: 3,               // items drawn in a Stockpile tile's stack (the number under it keeps counting past that)
   floorCap: 3,                // loose items a plain floor tile holds (more bounce on to the next tile with room)
   stockReject: 2.5,           // seconds a drop the Stockpile had no room for lies still before the Wizard can try to pick it up again
   start: { wood: 10, stone: 6, iron: 0 },
   satchel: 5,
   autosave: 9,
   beltTime: 0.9,              // seconds per tile before Swift Belts
-  manual: { taps: 8 },        // hand-harnessing: taps of E to fill the meter and get one packet (the meter never fills by itself); Quick Hands adds upgrade.manual per tier to each tap
+  manual: { taps: 8 },        // hand-harvesting: taps of E to fill the meter and get one packet (the meter never fills by itself); Quick Hands adds upgrade.manual per tier to each tap
   buffer: 3,
   fuelPerPacket: 15, fuelCap: 120,
   starterSplit: 25,           // the starting Splitter: % of the Air packets that go straight to the Spell Portal (the rest, 75%, feed the Spawner)
@@ -250,16 +250,17 @@ const CFG = {
   },
   // the one Harvester carries any of the four elements (a crystal grows growT seconds after every switch, then shakes shakeT seconds before it starts making packets)
   harness: { growT: 5, shakeT: 1.2, order: ['air', 'water', 'fire', 'earth'], air: { cycle: 3.41, power: 2 }, water: { cycle: 5.11, power: 2 }, fire: { cycle: 5.11, power: 2 }, earth: { cycle: 6.25, power: 2 } },
-  // hotbar slots: 'hand', 'belt' or a family (members cycle with Q / the wheel over the slot / pad right-trigger)
+  // hotbar slots: 'belt', a single building or a family (members cycle with the family key / the wheel over the slot / pad right-trigger / pressing the slot's own key again).
+  // There is no Hand slot: the hand is what the Builder has when nothing is selected (G.selected is the string 'hand').
   families: {
-    craft:   { name: 'Crafters',   members: ['cauldron', 'forge', 'anvil'] },
+    craft:   { name: 'Crafters',   members: ['cauldron', 'anvil'] },
     power:   { name: 'Power',      members: ['battery', 'heavybat'] },
     logi:    { name: 'Logistics',  members: ['splitter', 'crate'] },
     spawn:   { name: 'Creature Spawner', members: ['spawner'] },
     tiles:   { name: 'Tiles',      members: ['expand', 'stockpile'] },
     bots:    { name: 'Helper Robot', members: ['robot'] },
   },
-  hotbar: ['hand', 'belt', 'harness', 'craft', 'power', 'logi', 'spawn', 'tiles', 'bots'],
+  hotbar: ['belt', 'harness', 'tiles', 'forge', 'craft', 'power', 'logi', 'spawn', 'bots'],
   hotkeys: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9'],
   recipes: {
     // machine, inputs (any mix of belt / hand / thrown), output, craft time, power draw, skill-tree node(s) that unlock it
@@ -292,7 +293,7 @@ const CFG = {
       tiers: [12, 18, 25, 33, 43, 54, 65, 80],
       kinds: [['air'], ['fire', 'earth'], ['air', 'fire'], ['water', 'earth'], ['air', 'earth'], ['water', 'fire'], ['water', 'fire', 'earth'], ['air', 'water', 'fire', 'earth']],
       combos: {} },
-    { id: 'manual',  col: 2, br: 'bldr', icon: 'ic_hand', name: 'Quick Hands', per: '+30% hand-harnessing speed',
+    { id: 'manual',  col: 2, br: 'bldr', icon: 'ic_hand', name: 'Quick Hands', per: '+30% hand-harvesting speed',
       tiers: [4, 14, 28],
       kinds: [['air'], ['water', 'fire'], ['air', 'earth']],
       combos: {} },
@@ -813,24 +814,28 @@ const flN = (g, k) => (g.stats.fl || {})[k] || 0;   // how many times a goal eve
 const builtN = (g, ...ks) => ks.reduce((a, k) => a + ((g.stats.built || {})[k] || 0), 0);   // buildings the player finished (not the starting ones)
 // A goal NEVER completes on what happened before it showed: counters (`stat` + `n`) start from the value when the goal appears, and even a plain `done` goal waits
 // CFG.questMinShow seconds on the card first (UI.questSide)
+// The starting Harvester's element is random per world (G.flags.startEl, set when the world is made). The goals that name "the first element" (hand-gather, the first Eggs, the Battery's
+// first spell) say THAT one, and the goals that walk through the other elements (switch, Cauldron, three more creatures) take the other three in the canonical air / water / fire / earth order:
+// with an Air start it is exactly the old chain. questEl() (below) patches the entries that have an id; UI.updateHud calls it whenever the start element differs from the one last applied.
+const QUEST_EGG = { air: 'zephyr', water: 'puddle', fire: 'cinder', earth: 'pebble' };
 const QUESTS = {
   B: [
     // v5: the goal's index in the previous list (saves from before QUEST_VERSION 6 resume at the first goal with v5 >= their old index)
     { from: 0,  v5: 0,  icon: 'wood',  text: 'Walk to the Stockpile and left-click (pad A) to grab some Wood', xp: 2, stat: g => flN(g, 'tookPile'), n: 1, hint: { pile: 'wood' } },
-    { from: 2,  v5: 1,  icon: 'air',   text: 'Stand by the Harvester: press E to hand-gather Air, then keep tapping E to fill the meter', xp: 3, stat: g => flN(g, 'gathered'), n: 1, hint: { use: 'harness' } },
+    { id: 'gather', from: 2,  v5: 1,  icon: 'air',   text: 'Stand by the Harvester: press E to hand-gather Air, then keep tapping E to fill the meter', xp: 3, stat: g => flN(g, 'gathered'), n: 1, hint: { use: 'harness' } },
     { from: 3,  v5: 2,  icon: 'ic_portal', text: 'Throw (right-click / pad B) a spell into the Spell Portal', xp: 3, stat: g => flN(g, 'portalHand'), n: 1, hint: { portal: 'spell' } },
-    { from: 5,  v5: 3,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, stat: g => Object.values(g.stats.banked || {}).reduce((a, n) => a + n, 0), n: 5, hint: { portal: 'skill' } },
-    { icon: 'b:water', text: 'Switch the Harvester to another element: press F beside it (the new crystal grows for 5 seconds)', xp: 4, stat: g => flN(g, 'switched'), n: 1, hint: { use: 'harness' } },
-    { from: 6,  v5: 4,  icon: 'b:air', text: 'Build a second Harvester: press 3, click a tile, then throw Wood & Stone at it', xp: 8, stat: g => builtN(g, 'harness'), n: 1, hint: { build: 'harness' } },
-    { from: 7,  v5: 5,  icon: 'battery', text: 'Feed the Battery: grab an Air spell and throw it at the Battery (Wood or Stone work too)', xp: 10, stat: g => flN(g, 'fed'), n: 1, hint: { make: 'battery' } },
-    { icon: 'egg_zephyr', text: 'Hatch Air creatures: send 3 Zephyr Wisp Eggs through the Spell Portal', xp: 8, stat: g => (g.stats.sent || {}).egg_zephyr || 0, n: 3, hint: { make: 'spawner' } },
-    { v5: 6,  icon: 'b:water', text: 'Switch a Harvester to Water: press F beside it. The new crystal grows for 5 seconds', xp: 8, gift: { bank: { water: 4 } }, stat: g => (g.stats.elSet || {}).water || 0, n: 1, also: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
-    { from: 11, v5: 8,  icon: 'hp_water', text: 'Build an Alchemy Cauldron, feed it ONE Water spell and send the Health Potion through the Spell Portal', xp: 12, stat: g => potionN(g, 'hp'), n: 1, hint: { make: 'cauldron' } },
+    { id: 'bank5', from: 5,  v5: 3,  icon: 'ic_skill', text: 'Send 5 Air Pockets into the Skill Portal: spells are skill-tree currency', xp: 3, gift: { bank: { air: 4 } }, stat: g => Object.values(g.stats.banked || {}).reduce((a, n) => a + n, 0), n: 5, hint: { portal: 'skill' } },
+    { icon: 'b:harness', text: 'Switch the Harvester to another element: press F beside it (the new crystal grows for 5 seconds)', xp: 4, stat: g => flN(g, 'switched'), n: 1, hint: { use: 'harness' } },
+    { from: 6,  v5: 4,  icon: 'b:harness', text: 'Build a second Harvester: press 2, click a tile, then throw Wood & Stone at it', xp: 8, stat: g => builtN(g, 'harness'), n: 1, hint: { build: 'harness' } },
+    { id: 'feed', from: 7,  v5: 5,  icon: 'battery', text: 'Feed the Battery: grab an Air spell and throw it at the Battery (Wood or Stone work too)', xp: 10, stat: g => flN(g, 'fed'), n: 1, hint: { make: 'battery' } },
+    { id: 'hatch0', icon: 'egg_zephyr', text: 'Hatch Air creatures: send 3 Zephyr Wisp Eggs through the Spell Portal', xp: 8, stat: g => (g.stats.sent || {}).egg_zephyr || 0, n: 3, hint: { make: 'spawner' } },
+    { id: 'swEl', v5: 6,  icon: 'b:water', text: 'Switch a Harvester to Water: press F beside it. The new crystal grows for 5 seconds', xp: 8, gift: { bank: { water: 4 } }, stat: g => (g.stats.elSet || {}).water || 0, n: 1, also: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === 'water' && !FA.growing(b)), hint: { use: 'harness' } },
+    { id: 'cauld', from: 11, v5: 8,  icon: 'hp_water', text: 'Build an Alchemy Cauldron, feed it ONE Water spell and send the Health Potion through the Spell Portal', xp: 12, stat: g => potionN(g, 'hp'), n: 1, hint: { make: 'cauldron' } },
     { v5: 9,  icon: 'hp_flamethrower', text: 'Keep the Wizard healthy: send 3 more Health Potions (a stronger spell makes a stronger potion)', xp: 10, gift: { stock: { wood: 12, stone: 9, iron: 6 } }, stat: g => potionN(g, 'hp'), n: 3, hint: { make: 'cauldron' } },
-    { icon: 'egg_puddle', text: 'Hatch a Puddle Slime: feed Water to a Spawner, then send the Egg', xp: 10, stat: g => (g.stats.sent || {}).egg_puddle || 0, n: 1, hint: { make: 'spawner' } },
-    { icon: 'egg_cinder', text: 'Hatch a Cinder Imp: set a Harvester to Fire, feed a Spawner, send the Egg', xp: 10, gift: { bank: { fire: 4 } }, stat: g => (g.stats.sent || {}).egg_cinder || 0, n: 1, hint: { make: 'spawner' } },
+    { id: 'hatch1', icon: 'egg_puddle', text: 'Hatch a Puddle Slime: feed Water to a Spawner, then send the Egg', xp: 10, stat: g => (g.stats.sent || {}).egg_puddle || 0, n: 1, hint: { make: 'spawner' } },
+    { id: 'hatch2', icon: 'egg_cinder', text: 'Hatch a Cinder Imp: set a Harvester to Fire, feed a Spawner, send the Egg', xp: 10, gift: { bank: { fire: 4 } }, stat: g => (g.stats.sent || {}).egg_cinder || 0, n: 1, hint: { make: 'spawner' } },
     { from: 12, v5: 10, icon: 'b:forge', text: 'Build the Elemental Forge: it fuses element spells into combo spells', xp: 12, stat: g => builtN(g, 'forge'), n: 1, hint: { make: 'forge' } },
-    { v5: 11, icon: 'battery', text: 'Build a second Battery: press 5, click a tile, then throw Wood, Stone & Iron at it', xp: 8, stat: g => builtN(g, 'battery', 'heavybat'), n: 1, hint: { build: 'battery' } },
+    { v5: 11, icon: 'battery', text: 'Build a second Battery: press 6, click a tile, then throw Wood, Stone & Iron at it', xp: 8, stat: g => builtN(g, 'battery', 'heavybat'), n: 1, hint: { build: 'battery' } },
     { v5: 12, icon: 'ic_bolt', text: 'Keep the power on: top a Battery up to full 3 times with spells, Wood or Stone', xp: 15, gift: { credit: { battery: 1 } }, stat: g => g.stats.charged || 0, n: 3, hint: { make: 'battery' } },
     { from: 13, v5: 13, icon: 'flamethrower', text: 'Craft a combo spell at the Forge (press E to pick Air + Fire, Air + Water...) and deliver it', xp: 15, gift: { bank: { air: 3, fire: 3 } }, stat: g => flN(g, 'combo'), n: 1, hint: { combo: 2 } },
     { v5: 14, icon: 'ic_fast', text: 'Overdrive: put a charged Battery right beside a Forge or Cauldron', xp: 12, stat: g => flN(g, 'overdrive'), n: 1, hint: { make: 'battery' } },
@@ -838,8 +843,8 @@ const QUESTS = {
     { from: 15, v5: 16, icon: 'b:splitter', text: 'Build a Splitter (it routes spells to up to 3 outputs)', xp: 15, stat: g => builtN(g, 'splitter'), n: 1, hint: { make: 'splitter' } },
     { from: 16, v5: 17, icon: 'ap_earth', text: 'Switch the Cauldron to Armor mode (F beside it), feed it an Earth spell and send the Armor Potion', xp: 15, stat: g => potionN(g, 'ap'), n: 1, hint: { make: 'cauldron' } },
     { v5: 18, icon: 'plate', text: 'Build the Armory: forge a garment from Cores, send it', xp: 20, gift: { stock: { iron: 6 } }, stat: g => flN(g, 'sent_aug'), n: 1, hint: { make: 'anvil' } },
-    { icon: 'egg_pebble', text: 'Hatch a Pebble Golem: set a Harvester to Earth, feed a Spawner, send the Egg', xp: 12, stat: g => (g.stats.sent || {}).egg_pebble || 0, n: 1, hint: { make: 'spawner' } },
-    { from: 17, v5: 19, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 8) and throw 2 Wood + 2 Stone at it', xp: 15, stat: g => g.stats.tiles || 0, n: 1, hint: { make: 'expand' } },
+    { id: 'hatch3', icon: 'egg_pebble', text: 'Hatch a Pebble Golem: set a Harvester to Earth, feed a Spawner, send the Egg', xp: 12, stat: g => (g.stats.sent || {}).egg_pebble || 0, n: 1, hint: { make: 'spawner' } },
+    { from: 17, v5: 19, icon: 'b:expand', text: 'Add floor: place a Floor Tile (slot 3) and throw 2 Wood + 2 Stone at it', xp: 15, stat: g => g.stats.tiles || 0, n: 1, hint: { make: 'expand' } },
     { v5: 20, icon: 'egg_zephyr', text: 'Hatch a horde: send 8 Eggs through the Spell Portal', xp: 15, gift: { bank: { air: 5, water: 5 } }, stat: g => g.stats.eggs || 0, n: 8, hint: { make: 'spawner' } },
     { from: 19, v5: 21, icon: 'meteor', text: 'Deliver a Triple spell', xp: 40, gift: { stock: { shard: 1 } }, stat: g => flN(g, 'triple'), n: 1, hint: { combo: 3 } },
     { from: 20, v5: 22, icon: 'nova', text: 'Unleash the Elemental Nova', xp: 80, stat: g => flN(g, 'sent_nova'), n: 1, hint: { combo: 4 } },
@@ -847,7 +852,7 @@ const QUESTS = {
     { from: 24, v5: 24, icon: 'ic_crown', text: 'Light the Altar (the Warden must be dead): send a Single, a Pair, a Triple and the Nova', xp: 60, done: g => !!(g.altar && g.altar.placed && WZ.altarLitN() >= 4), hint: { altar: 1 } },
   ],
   W: [
-    { from: 1,  icon: 'ic_hat', text: 'Stand right next to a tree. The factory\'s Air Gusts will chop it down', xp: 4, stat: g => g.stats.harvested || 0, n: 1, hint: { harv: 1 } },
+    { from: 1,  icon: 'ic_hat', text: 'Stand right next to a tree. The factory\'s spells will chop it down', xp: 4, stat: g => g.stats.harvested || 0, n: 1, hint: { harv: 1 } },
     { icon: 'wood', text: 'Gather 10 more Wood or Stone: stand by trees and rocks while spells land', xp: 4, stat: g => g.stats.harvested || 0, n: 10, hint: { harv: 1 } },
     { icon: 'ic_boot', text: 'Forage 3 spots: stand next to a mound, sticks or bush and mash Mash (X)', xp: 6, stat: g => g.stats.foraged || 0, n: 3, hint: { forage: 1 } },
     { from: 4,  icon: 'egg_zephyr', text: 'Defeat a creature the factory made (the Spawner\'s Eggs arrive through the Spell Portal)', xp: 6, stat: g => g.stats.craftedKills || 0, n: 1, hint: { crafted: 1 } },
@@ -871,4 +876,23 @@ const QUESTS = {
     { from: 24, icon: 'ic_crown', text: 'Light the Altar with the Warden dead, then defeat the Primal Chimera!', xp: 150, done: g => g.flags.won, hint: { boss: 1 } },
   ],
 };
+
+let questElNow = null;
+function questEl(start) {
+  start = ELEM[start] ? start : 'air';
+  if (questElNow === start) return;
+  questElNow = start;
+  const o = ['air', 'water', 'fire', 'earth'].filter(e => e !== start), W = e => ELEM_WORD[e], C = e => QUEST_EGG[e], N = e => CFG.creatures[C(e)].name, sent = e => g => (g.stats.sent || {})['egg_' + C(e)] || 0;
+  const q = (id, p) => { const e = QUESTS.B.find(x => x.id === id); if (e) Object.assign(e, p); };
+  q('gather', { icon: start, text: 'Stand by the Harvester: press E to hand-gather ' + W(start) + ', then keep tapping E to fill the meter' });
+  q('bank5', { text: 'Send 5 spells into the Skill Portal: spells are skill-tree currency', gift: { bank: { [start]: 4 } } });
+  q('feed', { text: 'Feed the Battery: grab ' + (start === 'air' || start === 'earth' ? 'an ' : 'a ') + W(start) + ' spell and throw it at the Battery (Wood or Stone work too)' });
+  q('hatch0', { icon: 'egg_' + C(start), text: 'Hatch ' + W(start) + ' creatures: send 3 ' + N(start) + ' Eggs through the Spell Portal', stat: sent(start) });
+  q('swEl', { icon: 'b:' + o[0], text: 'Switch a Harvester to ' + W(o[0]) + ': press F beside it. The new crystal grows for 5 seconds', gift: { bank: { [o[0]]: 4 } }, stat: g => (g.stats.elSet || {})[o[0]] || 0,
+    also: g => G.fac.bld.some(b => b.type === 'harness' && b.done && b.el === o[0] && !FA.growing(b)) });
+  q('cauld', { icon: 'hp_' + o[0], text: 'Build an Alchemy Cauldron, feed it ONE ' + W(o[0]) + ' spell and send the Health Potion through the Spell Portal' });
+  q('hatch1', { icon: 'egg_' + C(o[0]), text: 'Hatch a ' + N(o[0]) + ': feed ' + W(o[0]) + ' to a Spawner, then send the Egg', stat: sent(o[0]) });
+  q('hatch2', { icon: 'egg_' + C(o[1]), text: 'Hatch a ' + N(o[1]) + ': set a Harvester to ' + W(o[1]) + ', feed a Spawner, send the Egg', gift: { bank: { [o[1]]: 4 } }, stat: sent(o[1]) });
+  q('hatch3', { icon: 'egg_' + C(o[2]), text: 'Hatch a ' + N(o[2]) + ': set a Harvester to ' + W(o[2]) + ', feed a Spawner, send the Egg', stat: sent(o[2]) });
+}
 

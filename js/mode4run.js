@@ -38,7 +38,7 @@ Main.newGame4 = function (slot, opts) {
 // the local seat plays through the normal controls (keyboard, mouse, a real pad); every other seat arrives as a pad (IN.pad[seat.pad], written by Net.drive from the guests' packets)
 M4.wizPad = function (p) {
   if (!p) return M4.zeroIn(2);
-  return { wix: p.ix || 0, wiy: p.iy || 0, wrx: p.rx || 0, wry: p.ry || 0, roll: !!p.a, act: { mash: !!p.x, cast: !!p.b, cycle: !!p.y, emote: !!p.rb } };
+  return { wix: p.ix || 0, wiy: p.iy || 0, wrx: p.rx || 0, wry: p.ry || 0, roll: !!p.a, act: { mash: !!p.x, cast: !!p.b, cycle: !!(p.y && !p.ltHeld), back: !!(p.y && p.ltHeld), emote: !!p.rb } };
 };
 M4.controls = function (dt) {
   const me = M4.me(), out = [null, null, null, null];

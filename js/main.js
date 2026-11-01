@@ -33,8 +33,10 @@ function blankState(slot) {
     saveT: 0, swapHold: 0, swapCd: 0, drag: null, lastFeet: null, lastInput: 'kb', helpT: 0, pRepeat: 0, mRepeat: 0,
   };
 }
-Main.newGame = function (slot) {
+// the starting Harvester's element is picked once, when a NEW world is made (a death never re-rolls it; it is saved in G.flags.startEl); tests / the dev tool ask for one with start(slot, el)
+Main.newGame = function (slot, el) {
   G = blankState(slot);
+  G.flags.startEl = ELEMS.indexOf(el) >= 0 ? el : ELEMS[Math.floor(Math.random() * ELEMS.length)];
   G.w = WZ.fresh();
   G.ev = WZ.evFresh(0);
   FA.initial();
@@ -280,9 +282,9 @@ Main.padW = () => (G.ctl.pw >= 0 ? IN.pad[G.ctl.pw] : null);
 // what the four buttons are called for whoever plays him (the HUD chips, the prompts over a shrine or a dig spot)
 Main.wizKeyNames = function () {
   const guest = Net.role === 'guest', pad = guest ? !!IN.pad[0] : !!Main.padW();
-  if (pad) return { cycle: 'Y', cast: 'B', dodge: 'A', mash: 'X', emote: 'RB', map: 'LB' };
+  if (pad) return { cycle: 'Y', back: 'LT', cast: 'B', dodge: 'A', mash: 'X', emote: 'RB', map: 'LB' };   // (back: what is held with the cycle button to go the other way)
   const L = Keys.label, mouse = guest || !Main.kbShared();   // alone on the keyboard the Wizard also has the mouse: right click casts, left click mashes
-  return { cycle: L('wCycle'), cast: mouse ? 'RMB' : L('wCast'), dodge: L('wDodge'), mash: mouse ? 'LMB' : L('wMash'), emote: L('wEmote'), map: L('wMap') };
+  return { cycle: L('wCycle'), back: 'SHIFT', cast: mouse ? 'RMB' : L('wCast'), dodge: L('wDodge'), mash: mouse ? 'LMB' : L('wMash'), emote: L('wEmote'), map: L('wMap') };
 };
 Main.emoteClick = false;
 Main.takeEmoteClick = function () { const c = Main.emoteClick; Main.emoteClick = false; return c; };
@@ -297,7 +299,8 @@ Main.wizBtns = function (hit, p1, noMouse) {
   const c = G.ctl, mouse = Main.mouseW() && !noMouse;
   const key = id => !!c.kbW && Keys.hit(id, hit);
   return {
-    cycle: key('wCycle') || !!(p1 && p1.y),
+    cycle: (key('wCycle') && !IN.shift()) || !!(p1 && p1.y && !p1.ltHeld),   // Cycle steps the armed wand attack forward; held with Shift (LT on a pad) it steps back
+    back: (key('wCycle') && IN.shift()) || !!(p1 && p1.y && p1.ltHeld),
     cast: key('wCast') || (mouse && IN.mouse.rp) || !!(p1 && p1.b),
     roll: key('wDodge') || !!(p1 && p1.a),
     mash: key('wMash') || (mouse && IN.mouse.lp) || !!(p1 && p1.x),
@@ -347,7 +350,9 @@ function handleMouseFactory(dt) {
   }
   const [tx, ty] = hoverTile(R.fv), [px, py] = hoverPoint(R.fv);
   const sel = G.selected, bd = G.bd;
-  // right mouse: throw along the lead line (hold = rapid), or cancel the current tool (while dragging a belt line: just the line)
+  // right mouse: throw along the lead line (hold = rapid), or cancel the current tool (while dragging a belt line: just the line). With a tool active AND something in hand, the press
+  // puts the tool away FIRST and throws nothing until the button is let go and pressed again (G.noThrow)
+  if (m.rp && G.hands.length && !G.drag && (G.demolish || sel !== 'hand')) { G.demolish = false; if (sel !== 'hand') UI.select('hand'); G.noThrow = true; }
   if (m.r && G.hands.length && !IN.shift() && !(bd.burst > 0)) throwAlongAim();
   else if (m.rp && G.drag && !G.drag.cancel) G.drag.cancel = true;
   else if (m.rp && !(IN.shift() && G.hands.length)) { if (G.demolish) G.demolish = false; else if (sel !== 'hand') UI.select('hand'); }
@@ -438,7 +443,7 @@ Main.controls = function (dt) {
   const carryKey = (Main.carryOk && throwDown && !G.hands.length) || !!(p0 && p0.ltHeld && p0.rbHeld);
   // a Wizard keyboard: arrows + . when it is shared and not swapped, WASD + Space when swapped; alone on the keyboard it takes both
   const wb = Main.wizBtns(IN.hit, p1);
-  let roll = wb.roll, act = { mash: wb.mash, cast: wb.cast, cycle: wb.cycle, emote: wb.emote };
+  let roll = wb.roll, act = { mash: wb.mash, cast: wb.cast, cycle: wb.cycle, back: wb.back, emote: wb.emote };
   if (wb.map && !frozenNow() && !G.menu) Main.mapToggle();
   // throw the whole stack: Shift + right-click (Shift + , when swapped), or LT + B on a pad
   const stackThrow = (IN.shift() && ((IN.mouse.rp && mouseInFactory() && Main.mouseB()) || (c.kbB && Keys.hit('throw')))) || (p0 && p0.b && p0.ltHeld);
@@ -462,7 +467,7 @@ Main.controls = function (dt) {
   if (IN.hit('F3') || IN.hit('Backquote')) { UI.debugOn = !UI.debugOn; AU.sfx('blip'); }
   if (IN.hit('F4') && UI.debugOn) DevBot.toggle();   // dev-only: only while the F3 overlay is open
   if (G.helpT > 0) { G.helpT -= dt; if (G.helpT <= 0) UI.help(false); }
-  if (!UI.splitB) CFG.hotbar.forEach((slot, i) => { if (Keys.hit('slot' + (i + 1))) UI.select(slot); });   // 1-4 toggle a Splitter output's filters while its settings are open
+  if (!UI.splitB) CFG.hotbar.forEach((slot, i) => { if (Keys.hit('slot' + (i + 1))) UI.pickSlot(slot); });   // 1-4 toggle a Splitter output's filters while its settings are open
   let rot = 0;
   if (Keys.hit('hotPrev') || (p0 && p0.lb)) rot = -1;
   if (Keys.hit('hotNext') || (p0 && p0.rb && !p0.ltHeld)) rot = 1;
@@ -617,7 +622,7 @@ Main.remoteB = function (dt, p) {
     if (p.rt) UI.cycleFam(1);
     if (p.back) { G.demolish = !G.demolish; }
     if (p.bi) for (const k of p.bi) {   // a Builder's extra presses: hotbar slot, rotate, switch element
-      if (/^sel[1-9]$/.test(k)) UI.select(CFG.hotbar[+k.slice(3) - 1]);
+      if (/^sel[1-9]$/.test(k)) UI.pickSlot(CFG.hotbar[+k.slice(3) - 1]);
       else if (k === 'rot') { if (!FA.rotateAt(Math.floor(G.bd.x + G.bd.fx), Math.floor(G.bd.y + G.bd.fy))) G.placeDir = (G.placeDir + 1) % 4; }
       else if (k === 'el') { const hb = FA.harnessNear(); if (hb) FA.cycleElem(hb, 1); else AU.sfx('error'); }
     }
@@ -693,9 +698,9 @@ Main.step = function (dt, ctl) {
   let still = false;
   const hc = Main.hsCarry || (Main.hsCarry = { roll: false, act: {} });
   if (!frozen && G.w.hitstop > 0) { still = G.w.hitstop >= dt * 0.5; G.w.hitstop = Math.max(0, G.w.hitstop - dt); }
-  if (still) { hc.roll = hc.roll || !!ctl.roll; for (const k of ['mash', 'cast', 'cycle']) hc.act[k] = hc.act[k] || !!(ctl.act && ctl.act[k]); }
-  else if (hc.roll || hc.act.mash || hc.act.cast || hc.act.cycle) {
-    ctl = Object.assign({}, ctl, { roll: ctl.roll || hc.roll, act: Object.assign({}, ctl.act, { mash: (ctl.act && ctl.act.mash) || hc.act.mash, cast: (ctl.act && ctl.act.cast) || hc.act.cast, cycle: (ctl.act && ctl.act.cycle) || hc.act.cycle }) });
+  if (still) { hc.roll = hc.roll || !!ctl.roll; for (const k of ['mash', 'cast', 'cycle', 'back']) hc.act[k] = hc.act[k] || !!(ctl.act && ctl.act[k]); }
+  else if (hc.roll || hc.act.mash || hc.act.cast || hc.act.cycle || hc.act.back) {
+    ctl = Object.assign({}, ctl, { roll: ctl.roll || hc.roll, act: Object.assign({}, ctl.act, { mash: (ctl.act && ctl.act.mash) || hc.act.mash, cast: (ctl.act && ctl.act.cast) || hc.act.cast, cycle: (ctl.act && ctl.act.cycle) || hc.act.cycle, back: (ctl.act && ctl.act.back) || hc.act.back }) });
     hc.roll = false; hc.act = {};
   }
   if (!frozen && !still) {
@@ -832,7 +837,8 @@ Main.sample = function (dt) {
 Main.hintFor = function (q) {
   const h = q && q.hint, out = { f: null, w: null, slot: null, tree: false };
   if (!h) return out;
-  const at = (b, lift) => ({ x: b.x + 0.5, y: b.y + 0.5, tile: true, lift: lift || 150 });
+  // the arrow hangs just over the thing it points at (its sprite's height, not a fixed 150 px above its tile)
+  const at = (b, lift) => { const sp = SP['b_' + b.type]; return { x: b.x + 0.5, y: b.y + 0.5, tile: true, lift: lift || (sp ? Math.max(52, Math.round(sp.c.height * 2.4) + 12) : 100) }; };
   const make = type => {
     const node = CFG.buildings[type].unlock;
     if (node && !G.tree[node]) { out.tree = true; return; }
@@ -840,8 +846,8 @@ Main.hintFor = function (q) {
     const bp = bs.find(b => !b.done), done = bs.find(b => b.done);
     if (bp) out.f = at(bp); else if (done) out.f = at(done); else out.slot = type;
   };
-  if (h.pile) { const p = FA.pileSpot(h.pile); out.f = { x: p.x, y: p.y, lift: 76 }; }
-  else if (h.portal) { const p = FA.portal(h.portal); out.f = { x: p.x + 0.5, y: p.y + 1, lift: 240 }; }
+  if (h.pile) { const p = FA.pileSpot(h.pile); out.f = { x: p.x, y: p.y, lift: 52 }; }
+  else if (h.portal) { const p = FA.portal(h.portal); out.f = { x: p.x + 0.5, y: p.y + 1, lift: 150 }; }
   else if (h.use) { const b = G.fac.bld.find(b2 => b2.type === h.use && b2.done); if (b) out.f = at(b); }
   else if (h.build) { const bp = G.fac.bld.find(b => b.type === h.build && !b.done); if (bp) out.f = at(bp); else out.slot = h.build; }
   else if (h.make) make(h.make);
@@ -1273,7 +1279,7 @@ Main.exitFrame = function (dt, ts) {
 window.__wands = {
   get G() { return G; },
   Main, FA, WZ, UI, R, CFG, DevBot, DevSpawn, Snap, Net,
-  start(slot) { Main.newGame(slot || 1); },
+  start(slot, el) { Main.newGame(slot || 1, el || 'air'); },   // (tests start with an Air Harvester unless they ask for another element)
   start4(slot, opts) { Main.newGame4(slot || 1, opts); },   // a 4-player game on this machine (tests); step4 plays all four seats
   step4(dt, n, seats) { for (let i = 0; i < (n || 1); i++) if (G && !G.paused) Main.step(dt, M4.ctlOf(seats)); },
   M4,

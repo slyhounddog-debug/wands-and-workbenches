@@ -55,13 +55,13 @@ WZ.wandCharge = function (spell) {
 };
 WZ.wandName = el => CFG.wandNames[el];
 // Cycle: the next READY slot (air, water, fire, earth order), wrapping; nothing is ready = nothing happens
-WZ.wandCycle = function () {
+WZ.wandCycle = function (dir) {   // dir 1 = the next ready slot (the default), -1 = the one before
   const W = G.wand, w = G.w;
   if (!W || (w && w.dead)) return false;
   const list = WZ.wandFilled();
   if (!list.length) return false;
-  const i = list.indexOf(W.armed);
-  W.armed = list[(i + 1) % list.length];
+  const i = list.indexOf(W.armed), d = dir < 0 ? -1 : 1;
+  W.armed = list[i < 0 ? (d > 0 ? 0 : list.length - 1) : ((i + d) % list.length + list.length) % list.length];
   AU.sfx('tab'); if (w) WZ.ring(w.x, w.y, 0.9, ELEM[W.armed].color, 0.25);
   UI.changed();
   return true;

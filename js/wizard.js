@@ -1710,7 +1710,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   // the wand's buttons: Cycle picks the armed slot, Cast fires it (a spell-delivery 'act' never comes from the menu world)
   let A = act || {};
   { const eo = WZ.emoteInput(ix, iy, rollPressed, A, dt); ix = eo.ix; iy = eo.iy; rollPressed = eo.roll; A = eo.act; }   // the emote wheel / dance (js/emote.js)
-  if (!G.menu && G.wand) { if (A.cycle && !WZ.wandCycle()) AU.sfx('error'); if (A.cast && !WZ.wandCast() && !w.ride && !(w.statT > 0)) AU.sfx('error'); }   // (nothing ready: a dull no)
+  if (!G.menu && G.wand) { if ((A.cycle || A.back) && !WZ.wandCycle(A.back ? -1 : 1)) AU.sfx('error'); if (A.cast && !WZ.wandCast() && !w.ride && !(w.statT > 0)) AU.sfx('error'); }   // (nothing ready: a dull no)
   if (w.ride) { ix = 0; iy = 0; rollPressed = false; w.rollBuf = 0; w.target = null; }   // a Riding Wave has the controls
   if (w.statT > 0) { rollPressed = false; w.rollBuf = 0; }   // stone does not roll
 
@@ -1881,7 +1881,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     if (G.w2) WZ.sel(Math.max(0, WZ.nearestW(e.x, e.y)));   // 4P: the foe's turn is played against the nearest living Wizard
     const dw = Math.hypot(w.x - e.x, w.y - e.y) || 1;   // to the Wizard (the despawn teleport and the first-sighting toast always use him)
     if (dw > 45) { const sp2 = WZ.dryNear(w.x, w.y, 8, [cfg.ringMin, cfg.ringMax]); if (sp2) { e.x = sp2[0]; e.y = sp2[1]; } continue; }
-    if (dw < 12) { const key = e.elite ? 'elite' : e.boss ? null : (e.weak ? e.type : null); if (key && !w.seen[key]) { w.seen[key] = true; WZ.announce(e, key); } }
+    if (dw < 12) { const key = e.elite ? 'elite' : e.boss ? null : (e.weak ? e.type : null); const sn = G.flags.seen || (G.flags.seen = {}); if (key && !sn[key]) { sn[key] = true; WZ.announce(e, key); } }   // (what he has met lives in G.flags.seen: a death does not make the Builder see the first-sighting panel again, and a save keeps it)
     const TG = WZ.foeTarget(e), ex = TG.x - e.x, ey = TG.y - e.y, d = TG.a ? Math.hypot(ex, ey) || 1 : dw;   // an ally within aggro range comes first
     WZ.cur = e;   // (whatever it hurts the Wizard with this turn is tagged with it: WZ.src)
     if (e.boss && !TG.mill) WZ.bossAI(e, dt, d, TG);

@@ -1114,7 +1114,12 @@ R.drawPile = function (ctx, v, pl) {
     const col = i % 2, row = Math.floor(i / 2), hop = pk && i === cnt - 1 && Math.sin(t * 10) > 0 ? 8 : 0;
     dspr(ctx, itemSprite(k), p[0] + (col ? 8 : -8) + (row % 2 ? 4 : 0), p[1] - 2 - row * 14 - col * 4 - hop, 4);
   }
-  if (n > 1) txt(ctx, '' + n, p[0], p[1] + 26, 12, n >= CFG.stockCap ? '#ffd23a' : k === 'shard' ? '#e0b8ff' : '#ffffff', 'center', 'd');   // gold = the tile is full
+  if (n > 1) {   // the count sits in a little tag right under the pile (on its own tile), so it reads as THIS pile's number; gold = the tile is full
+    const s = '' + n, w = 12 + s.length * 10, full = n >= CFG.stockCap, x = Math.round((p[0] - w / 2) / 4) * 4, y = Math.round((p[1] + 6) / 4) * 4;
+    ctx.fillStyle = full ? '#ffd23a' : '#4a3468'; ctx.fillRect(x - 4, y - 4, w + 8, 24);
+    ctx.fillStyle = '#1a0f28'; ctx.fillRect(x, y, w, 16);
+    txt(ctx, s, p[0], y + 14, 12, full ? '#ffd23a' : k === 'shard' ? '#e0b8ff' : '#ffffff', 'center', 'd');
+  }
 };
 // goal pointer in the factory: a bouncing arrow over the target, or an arrow on the edge pointing toward it
 // the goal's picture in a small gold badge on a goal pointer (centred on x, y), with GOAL over it: so a building that glows for a goal says why
@@ -1129,15 +1134,24 @@ R.goalBadge = function (ctx, x, y, icon, t) {
   R.defer.push(c => drawText(c, 'GOAL', q, r - 34, 12, '#ffe36b', 'center', 'd'));
 };
 R.drawHint = function (ctx, v, h, t) {
-  const p = R.toScreen(v, h.x, h.y), lift = h.lift || 150;
+  const p = R.toScreen(v, h.x, h.y), lift = h.lift || 100;
   const x0 = 40, x1 = R.rect.w - 40, y0 = 140, y1 = CFG.H - 130;
   const on = p[0] > x0 && p[0] < x1 && p[1] - lift > y0 - 60 && p[1] < y1 + 60;
   const bob = Math.sin(t * 6) > 0 ? 0 : 8;
   if (on) {
     ctx.strokeStyle = Math.sin(t * 6) > 0 ? '#ffe36b' : '#ffa62a'; ctx.lineWidth = 8;
     if (h.tile) { diamond(ctx, p[0], p[1], v.hw * 1.05, v.hh * 1.05); ctx.stroke(); }
-    R.arrow(ctx, p[0], p[1] - lift - bob, 0, 1);
-    R.goalBadge(ctx, p[0], p[1] - lift - bob - 76, h.icon, t);
+    // something over the target (the Spell Portal's first-sighting panel...) would hide the arrow and its badge: then the arrow comes in from the right side of the target instead, pointing left
+    const th = R.threatRect(v), ay = p[1] - lift - bob;
+    if (th && p[0] + 44 > th.x - 10 && p[0] - 44 < th.x + th.w + 10 && ay - 108 < th.y + th.h + 10 && ay > th.y - 10) {
+      const gap = (h.tile ? v.hw * 1.05 : 44) + 14 + bob, sy = p[1] - Math.min(lift, 120) * 0.55, right = p[0] + gap + 76 + 34 < R.rect.w;   // (no room on the right, as at the Spell Portal on the half's edge: it comes in from the left)
+      const sx = right ? p[0] + gap : p[0] - gap, d = right ? -1 : 1;
+      R.arrow(ctx, sx, sy, d, 0);
+      R.goalBadge(ctx, sx - d * 76, sy, h.icon, t);
+    } else {
+      R.arrow(ctx, p[0], ay, 0, 1);
+      R.goalBadge(ctx, p[0], ay - 76, h.icon, t);
+    }
   } else {
     const cx = Math.max(x0, Math.min(x1, p[0])), cy = Math.max(y0, Math.min(y1, p[1] - lift / 2));
     const dx = p[0] - cx, dy = p[1] - lift / 2 - cy, m = Math.hypot(dx, dy) || 1;

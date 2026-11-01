@@ -563,7 +563,7 @@ button.big.warn { background: #ff7a5a; color: #fff; box-shadow: 0 -4px 0 0 var(-
 #gearCard .gs.cool::after { content: ''; position: absolute; left: 3px; right: 3px; bottom: 3px; height: 4px; background: var(--ink); }
 #gearCard .gs.cool i { position: absolute; left: 3px; bottom: 3px; height: 4px; background: var(--gold); }
 /* the wand: four slots under his health bar (UI.updateWand). A slot fills from the bottom with the spells that charged it; READY = lit in its element's colour; ARMED = the bright frame + marker */
-#wandRow { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+#wandRow { display: flex; align-items: center; gap: 4px; margin-top: 22px; }   /* (room over the slots for the Cast button) */
 #wandRow .ws { position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: var(--panel-lo); box-shadow: inset 0 0 0 2px var(--ink); overflow: hidden; }
 #wandRow .ws img { position: relative; z-index: 1; opacity: .5; filter: grayscale(.7); }
 #wandRow .ws i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--ec); opacity: .38; }
@@ -572,9 +572,20 @@ button.big.warn { background: #ff7a5a; color: #fff; box-shadow: 0 -4px 0 0 var(-
 #wandRow .ws.full img { opacity: 1; filter: none; }
 #wandRow .ws.full i { opacity: .55; }
 #wandRow .ws.armed { box-shadow: inset 0 0 0 3px #fff, 0 0 0 3px var(--ec); animation: hintBlink .8s steps(2) infinite; }
-#wandRow .ws u { position: absolute; left: 50%; top: 0; margin-left: -4px; border: 4px solid transparent; border-top-color: #fff; z-index: 3; }
-#wandRow .wk { margin-left: auto; display: flex; flex-direction: column; gap: 3px; }
-#wandRow .wk kbd { font-size: 7px; min-width: 16px; padding: 3px 4px 2px; text-align: center; }
+/* the Cycle buttons flank the slots, each with an arrow; the Cast button floats over the selected, charged slot and bobs on the same beat as that slot's selection ring */
+#wandRow .wsw { position: relative; }
+#wandRow .wc { display: flex; align-items: center; gap: 2px; }
+#wandRow .wc.off { opacity: .3; }
+#wandRow .wc .kc { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+#wandRow .wc small { font: 6px var(--display); color: var(--muted); }
+#wandRow .wc kbd { font-size: 7px; min-width: 16px; padding: 3px 4px 2px; text-align: center; }
+#wandRow .tri { width: 0; height: 0; border: 7px solid transparent; }
+#wandRow .wc.l .tri { border-right: 9px solid var(--gold); border-left: 0; }
+#wandRow .wc.r .tri { border-left: 9px solid var(--gold); border-right: 0; }
+#wandRow em.cast { position: absolute; left: 50%; top: -19px; transform: translateX(-50%); z-index: 6; font-style: normal; white-space: nowrap; animation: castBob .8s steps(2) infinite; }
+#wandRow em.cast kbd { font-size: 9px; padding: 3px 6px 2px; background: #fff; color: #1a0f28; box-shadow: 0 0 0 2px var(--ink), 0 2px 0 2px var(--ink); }
+#wandRow em.cast::after { content: ''; position: absolute; left: 50%; bottom: -5px; margin-left: -4px; border: 4px solid transparent; border-top: 5px solid #fff; border-bottom: 0; }
+@keyframes castBob { 0% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-3px); } }
 /* the Collection Book (Wardrobe page shares its layout) */
 .bookPanel h3 { margin: 14px 0 8px; font: 10px var(--display); color: var(--sky); }
 .cnt { font: 10px var(--display); color: var(--gold); display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
@@ -678,7 +689,7 @@ button.big.warn { background: #ff7a5a; color: #fff; box-shadow: 0 -4px 0 0 var(-
 #wandRow .ws.grow { z-index: 5; animation: wsGrow 1s steps(8) both; }
 @keyframes wsGrow { 0% { transform: scale(1); } 20% { transform: scale(1.7); box-shadow: inset 0 0 0 3px var(--ec), 0 0 0 5px #fff; } 40% { transform: scale(1.3); } 60% { transform: scale(1.7); box-shadow: inset 0 0 0 3px var(--ec), 0 0 0 5px #fff; } 80% { transform: scale(1.35); } 100% { transform: scale(1.2); } }
 /* after a goal celebrates, only the goal's own pointer (the .hint slot / tree button) keeps blinking; the nudges and chips hold still for a moment */
-#game.goalFocus .iconbtns button.nudge:not(.hint), #game.goalFocus #wandRow .ws.armed, #game.goalFocus #noPow { animation: none; }
+#game.goalFocus .iconbtns button.nudge:not(.hint), #game.goalFocus #wandRow .ws.armed, #game.goalFocus #wandRow em.cast, #game.goalFocus #noPow { animation: none; }
 /* ...but while a danger is on the Wizard the completed goal only pulses in place (same length, so the swap to the next goal is unchanged) */
 .quest.celebrate.quiet { animation-name: qcelq; }
 @keyframes qcelq { 0%, 100% { transform: none; filter: none; } 20%, 60% { transform: scale(1.05); filter: brightness(1.25); } 40%, 80% { transform: none; filter: brightness(1.1); } }

@@ -72,9 +72,9 @@ WZ.mutate = function (e, kind) {
   WZ.icon(e.x, e.y - 0.5, M.ic);
   if (e.weak && w.t >= (w.mutThreatT || 0)) { w.mutThreatT = w.t + 6; FA.threat([e.weak], e.type, 'MUTANT SPAWNED'); }   // the Builder reads what it is weak to over the Spell Portal
   if (w.t >= (w.mutPopT || 0)) { w.mutPopT = w.t + 1.5; const p = FA.portal('spell'); FA.ipop(p.x + 0.5, p.y + 1.8, [[M.ic], [e.crafted ? 'egg_' + e.type : 'ic_skull']]); }
-  if (!w.seenMut) w.seenMut = {};
-  if (!w.seenMut[kind]) {
-    w.seenMut[kind] = true;
+  const sn = G.flags.seen || (G.flags.seen = {});   // (persists across deaths and saves, like the foes)
+  if (!sn['mut_' + kind]) {
+    sn['mut_' + kind] = true;
     UI.toast(M.name + ' ' + (CFG.enemies[e.type].name || 'foe') + ' appeared', 'L', M.ic); UI.toast(M.name + ' ' + (CFG.enemies[e.type].name || 'foe') + ' appeared', 'R', M.ic);
   }
 };

@@ -253,7 +253,7 @@ M4.setupFactory = function () {
     }
   }
   const a = (G.seats[2] && G.seats[2].att) || ['air', 'water'], b = (G.seats[3] && G.seats[3].att) || ['fire', 'earth'];
-  h1.el = a[0]; h1.grow = CFG.harness.growT;
+  h1.el = a[0]; h1.grow = CFG.harness.growT; G.flags.startEl = h1.el;   // (the goals that name the first element follow it)
   if (h2) { h2.el = b[0] === a[0] ? b[1] : b[0]; h2.grow = CFG.harness.growT; }
 };
 

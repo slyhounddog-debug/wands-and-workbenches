@@ -774,7 +774,7 @@ const Net = {
     if (!iy && gp) iy = gp.iy;
     const out = {
       ix, iy, rx: gp ? gp.rx || 0 : 0, ry: gp ? gp.ry || 0 : 0, cyc: L.cyc || 0,
-      xHeld: IN.mouse.l || Keys.down('wMash') || !!(gp && gp.xHeld), aHeld: Keys.down('wDodge') || !!(gp && gp.aHeld), bHeld: !!(gp && gp.bHeld), ltHeld: !!(gp && gp.ltHeld), startHeld: false,
+      xHeld: IN.mouse.l || Keys.down('wMash') || !!(gp && gp.xHeld), aHeld: Keys.down('wDodge') || !!(gp && gp.aHeld), bHeld: !!(gp && gp.bHeld), ltHeld: !!(gp && gp.ltHeld) || (Net.seatRole() !== 'B' && IN.shift()), startHeld: false,   // (Shift held with the wand's Cycle key steps it backward, as LT does on a pad)
     };
     for (const k of EDGES) out[k] = !!L[k];
     if (Net.seatRole() === 'B') { out.aHeld = Keys.down('tumble') || Keys.down('pick') || IN.mouse.l || !!(gp && gp.aHeld); out.xHeld = false; out.bHeld = IN.mouse.r || Keys.down('throw') || !!(gp && gp.bHeld); out.ltHeld = IN.shift() || !!(gp && gp.ltHeld); out.bi = L.bi || null; }

@@ -144,7 +144,7 @@ UI.keyChips = function (force) {
   const h = $('help'); if (!h) return;
   h.innerHTML = '<div class="hcol"><h3>' + UI.img('ic_wrench', 16) + 'BUILDER</h3>' +
     '<div>' + mv('B') + ' walk &nbsp; <kbd>CLICK</kbd> pick up (hold for more)</div>' +
-    '<div>' + k('use') + ' use / rotate / tap to harness &nbsp; ' + k('element') + ' switch element</div>' +
+    '<div>' + k('use') + ' use / rotate / tap to harvest &nbsp; ' + k('element') + ' switch element</div>' +
     '<div><kbd>RIGHT-CLICK</kbd> throw (hold = rapid, <kbd>SHIFT</kbd> = whole stack); <b>hold it on a building</b> to move it</div>' +
     '<div>' + k('slot1') + '-' + k('slot9') + ' or wheel: pick a slot &nbsp; ' + k('family') + ' next in a family</div>' +
     '<div>' + k('pipette') + ' pipette: put the tool away / copy what is under the cursor / bring back the last tool</div>' +
@@ -161,6 +161,7 @@ UI.keyChips = function (force) {
 };
 UI.updateHud = function (dt) {
   const f = G.fac, w = G.w;
+  questEl(G.flags.startEl);   // (the goals follow the random starting element)
   UI.keyChips();
   UI.seatHud();
   const pulse = (id, v) => { if (cache['v' + id] !== undefined && v > cache['v' + id]) { const el = $(id); el.classList.remove('gain'); void el.offsetWidth; el.classList.add('gain'); } cache['v' + id] = v; };
@@ -268,13 +269,17 @@ UI.updateWand = function () {
   const W = G.wand;
   if (!W || !$('wandRow')) return;
   const kn = Main.wizKeyNames();
-  let s = '';
+  const ready = ELEMS.filter(e => W.full[e]).length;   // how many attacks are charged: with fewer than two there is nothing to cycle between
+  // the layout says which button does what: Cycle sits on BOTH sides of the four slots with an arrow (left = the previous ready attack, held with its modifier; right = the next), and the
+  // Cast button only exists while the selected element is charged: it floats over that slot and pulses with the same beat as the selection ring, so what is selected and how to use it are one thing
+  let s = '<span class="wc l' + (ready < 2 ? ' off' : '') + '" title="Cycle the armed wand attack backward"><i class="tri"></i><span class="kc"><small>' + kn.back + '</small><kbd>' + kn.cycle + '</kbd></span></span>';
   for (const el of ELEMS) {
     const need = CFG.wand.need[el], full = W.full[el], m = W.m[el], fx = W.fx && W.fx.el === el && W.fx.kind === 'wand' ? W.fx : null;
-    const on = W.armed === el && !(fx && fx.t < CFG.wandFill.dur);   // a slot that just filled grows and pulses while the staff takes the element in; it only starts to blink after
-    s += '<span class="ws' + (full ? ' full' : '') + (on ? ' armed' : '') + (fx ? ' grow' : '') + '" style="--ec:' + ELEM[el].color + '" title="' + CFG.wandNames[el] + ': ' + (full ? 'READY' + (on ? ' (armed: Cast fires it)' : ' (Cycle arms it)') : m + ' of ' + need + ' spells') + '">' + UI.img('wand_' + el, 24) + '<i style="height:' + Math.round(m / need * 100) + '%"></i>' + (full ? '' : '<b>' + m + '</b>') + (on ? '<u></u>' : '') + '</span>';
+    const on = W.armed === el && full && !(fx && fx.t < CFG.wandFill.dur);   // a slot that just filled grows and pulses while the staff takes the element in; it only starts to pulse as the selection after
+    s += '<span class="wsw">' + (on ? '<em class="cast" title="Cast the ' + CFG.wandNames[el] + '"><kbd>' + kn.cast + '</kbd></em>' : '') +
+      '<span class="ws' + (full ? ' full' : '') + (on ? ' armed' : '') + (fx ? ' grow' : '') + '" style="--ec:' + ELEM[el].color + '" title="' + CFG.wandNames[el] + ': ' + (full ? 'READY' + (on ? ' (selected: ' + kn.cast + ' casts it)' : ' (Cycle selects it)') : m + ' of ' + need + ' spells') + '">' + UI.img('wand_' + el, 24) + '<i style="height:' + Math.round(m / need * 100) + '%"></i>' + (full ? '' : '<b>' + m + '</b>') + '</span></span>';
   }
-  s += '<span class="wk" title="Cycle the armed wand attack / Cast it"><kbd>' + kn.cycle + '</kbd><kbd>' + kn.cast + '</kbd></span>';
+  s += '<span class="wc r' + (ready < 2 ? ' off' : '') + '" title="Cycle the armed wand attack forward"><span class="kc"><kbd>' + kn.cycle + '</kbd></span><i class="tri"></i></span>';
   setHtml('wandRow', s);
   setTxt('emoteKey', kn.emote); setTxt('mapKey', kn.map);   // (the emote wheel has its own button beside the Book, not a chip on the wand)
 };// The building note sits right above the hotbar and the button prompts (drawn by R.drawFocus) stack above it; UI.inspectH is how tall the note is, so they can clear it.
@@ -557,6 +562,7 @@ UI.updateHotbar = function (force) {
 UI.recipeHtml = r => { const R = CFG.recipes[r]; return '<span class="rec' + (FA.recipeOk(r) ? '' : ' off') + '">' + Object.keys(R.in).map(k => UI.img(k, 16) + (R.in[k] > 1 ? 'x' + R.in[k] : '')).join(' ') + ' > ' + UI.img(R.out, 16) + '</span>'; };
 UI.showTip = function (slot) {
   if (UI.remote) return;   // (4P: a Builder played from the network does not pop tips on this screen)
+  if (slot === 'hand') { $('hotTip').classList.add('hidden'); return; }   // (no tip for "nothing selected")
   const fam = UI.isFam(slot), id = fam ? UI.famMember(slot) : slot;
   let h;
   if (id === 'hand') h = '<b>Hand</b><p>Click to walk. Click a machine, pile or item to walk over and use it.</p>';
@@ -570,7 +576,7 @@ UI.showTip = function (slot) {
     const lockNode = d.unlock && CFG.tree.find(n => n.id === d.unlock);
     // a family slot also lists its members (locked ones greyed) and how to cycle them
     const strip = fam ? '<div class="fam"><span class="fn">' + CFG.families[slot].name + '</span>' + CFG.families[slot].members.map(m => '<span class="fm' + (m === id ? ' cur' : '') + (FA.unlocked(m) ? '' : ' off') + '" title="' + CFG.buildings[m].name + '">' + UI.img('b:' + m, 28) + '</span>').join('') +
-      '<span class="fk"><kbd>Q</kbd>' + (IN.padList.length ? '<kbd>RT</kbd>' : '') + UI.img('ic_swap', 12) + '</span></div>' : '';
+      '<span class="fk"><kbd>' + Keys.label('family') + '</kbd>' + (IN.padList.length ? '<kbd>RT</kbd>' : '') + UI.img('ic_swap', 12) + ' or the slot key again</span></div>' : '';
     h = strip + '<b>' + d.name + '</b> <span class="cost">' + cost + '</span>' + (FA.unlocked(id) ? '' : ' <span class="lockt">' + UI.img('ic_lock', 12) + lockNode.name + ' in the Skill Tree</span>') + (G.credits[id] ? ' <span class="freet">next one FREE</span>' : '') + '<p>' + d.desc + '</p>' + rec;
   }
   const el = $('hotTip');
@@ -589,9 +595,14 @@ UI.select = function (id) {
   UI.showTip(UI.isFam(fam) ? fam : id);
   AU.sfx('blip');
 };
-UI.cycle = function (dir) {   // the previous / next slot
+UI.cycle = function (dir) {   // the previous / next slot (from an empty hand: the first / the last)
   const n = CFG.hotbar.length, i = CFG.hotbar.indexOf(UI.slotOf(G.selected));
-  UI.select(CFG.hotbar[((i + dir) % n + n) % n]);
+  UI.select(CFG.hotbar[i < 0 ? (dir > 0 ? 0 : n - 1) : ((i + dir) % n + n) % n]);
+};
+// a slot's own key: pick it; pressed again while it is already the selected slot, it switches the building inside it (a family's next member)
+UI.pickSlot = function (slot) {
+  if (UI.isFam(slot) && !G.demolish && UI.slotOf(G.selected) === slot) { UI.cycleFam(1, slot); UI.showTip(slot); }
+  else UI.select(slot);
 };
 // the next / previous unlocked member of a family (the selected building's, or the slot given); locked members are skipped
 UI.cycleFam = function (dir, slot) {
@@ -715,7 +726,7 @@ UI.nodeStats = function (n) {   // rows [label, now, next]: next undefined = a p
   const row = (label, f) => [label, f(L), nx === null ? null : f(nx)];
   switch (n.id) {
     case 'swift': return [row('Harvester speed', l => fPct(up * l)), row('Air Pocket every', l => fSec(CFG.harness.air.cycle / (1 + up * l))), row('Water Drop every', l => fSec(CFG.harness.water.cycle / (1 + up * l)))];
-    case 'manual': return [row('Hand-harnessing speed', l => fPct(up * l)), row('Taps to fill the meter', l => (CFG.manual.taps / (1 + up * l)).toFixed(1))];
+    case 'manual': return [row('Hand-harvesting speed', l => fPct(up * l)), row('Taps to fill the meter', l => (CFG.manual.taps / (1 + up * l)).toFixed(1))];
     case 'belts': return [row('Belt speed', l => fPct(up * l)), row('Time per tile', l => fSec(CFG.beltTime / (1 + up * l)))];
     case 'satchel': return [row('Items carried (any mix)', l => '' + (CFG.satchel + up * l))];
     case 'zoomies': return [row('Wizard speed', l => fPct(up * l))];
@@ -1057,11 +1068,11 @@ const HOWTO = {
   ],
   'FACTORY': [
     ['Hands', 'The Builder carries one stack (5 at first). <b>Left-click</b> (pad <b>A</b>) picks up <b>one item at a time</b>: hold it to keep grabbing. <b>Right-click</b> (pad <b>B</b>) throws one item along the dotted lead line: it aims at machines, blueprints, belts, portals or the Stockpile. Throwing is the only way to put things in. Nothing ever vanishes.'],
-    ['Building', 'Pick a slot (keys <b>1</b> to <b>8</b> or the wheel; slot 8 is Floor Tiles). Slots with a pip row are <b>families</b> (Crafters, Power, Logistics, Creature Spawners): <b>Q</b>, the wheel over the slot or <b>RT</b> on a pad cycles the member (locked ones are skipped). <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
+    ['Building', 'Pick a slot (keys <b>1</b> to <b>9</b> or the wheel; slot 3 is Floor Tiles). With nothing selected you simply have your hands free: there is no Hand slot. Slots with a pip row are <b>families</b> (Crafters, Power, Logistics, Creature Spawners): pressing the slot key again, <b>O</b>, the wheel over the slot or <b>RT</b> on a pad cycles the member (locked ones are skipped). <b>Q</b> is the pipette: it puts the tool away, or copies the building under the cursor. <b>R</b> rotates its output arrow, click a tile to drop a blueprint, then throw Wood, Stone and Iron Ore at it. Demolish (<b>B</b>) always refunds 100%.'],
     ['Machines', 'The <b>Harvester</b> carries one of four element crystals: <b>F</b> (<b>LT + X</b> on a pad) switches it to the next element at any time. The old crystal bursts, the new one grows for 5 seconds, then the Harvester shakes and starts making spells (nothing is made while it grows, and switching again restarts the 5 seconds). Every building shows what it holds as real items stacked on it: inputs, what it has made, a blueprint materials (faint copies = still missing), Battery fuel. Harvesters make spells by themselves, or stand next to one and press <b>E</b>, then <b>keep tapping E</b> to fill the meter and crank one out by hand (it never fills by itself; no power needed; <b>right-click</b> or pad <b>B</b> stops). Machines push out of their arrow side: onto a belt, into another machine or into a portal.'],
     ['Power', 'Harvesters (Air too) and the Forge use power. The factory starts with one charged <b>Battery</b> just south of the Stockpile. A Battery is a building: it gives +10 power while it has charge and drains by itself while anything needs power. To refill it, throw element spells, Wood or Stone at it (or belt them in): it burns them into charge, more kinds at once = faster (hand-gathered spells are free). Every spell charges 10% more than its base, and a spell you throw in by hand adds another 20%. Build more Batteries like any building (place the blueprint, throw its materials at it). A charged Battery right beside a <b>Forge</b> or <b>Cauldron</b> overdrives it: <b>+15%</b> crafting speed. Late on, the <b>Heavy Batteries</b> node unlocks the <b>Heavy Battery</b>, which drains slower so its charge lasts 50% longer.'],
     ['Creatures', 'The <b>Creature Spawner</b> turns element spells into <b>Eggs</b>. Send an Egg through the <b>Spell Portal</b> and the creature drops in beside the Wizard (inside his view, dazed for a moment) for him to fight and earn XP gems. Zephyr Wisps (Air) are hatching from the very start. There is only one Spawner and nothing to unlock: feed it ONE thing at a time. An element spell hatches the basic creature of its element. A forged combo spell hatches the pair or triple creature of its elements: Flamethrower (Cinder Phoenix), Tempest Tear (Thunderhead), Magma Bomb (Lava Golem), Mud Shield (Swamp Shambler), Meteor Shower (Ember Dragon), Thunderstorm (Storm Leviathan), Geyser Eruption (Kiln Titan). Steam Mine, Gale Boomerang and Blizzard are no seeds: the Spawner bounces them back. <b>Allies:</b> throw an Element <b>Core</b> (by hand) at an idle Spawner and it grows a <b>friendly</b> version of the creature instead: Gale = Zephyr Wisp, Tide = Puddle Slime, Ember = Cinder Imp, Stone = Pebble Golem. While it grows, throw a Core of a different element to make it the pair creature, then a third for the triple (each Core adds growing time). A Core thrown at a hostile grow, a repeated element, a mix with no creature, a fourth Core, or a spell during an ally grow all bounce back. Send the green-tinted Egg through the Spell Portal: the ally hatches 2-4 tiles from the Wizard with double health and half damage, and hostiles go for it before him. Up to 10 allies, 3 eggs waiting; a spent ally pays nothing. A small icon shows which creature it is hatching; when one dies it sometimes gives back what it was hatched from. At most 25 factory creatures live at once: extra Eggs wait beside the portal. Every creature is in the <b>Collection Book</b> (C) with a live demo. Creatures are weak to the cycle <b>Fire &lt; Water &lt; Earth &lt; Air &lt; Fire</b> (the first element in their name), so practise on them with the right spells.'],
-    ['Growing', 'The floor starts small (12 x 8). Place <b>Floor Tiles</b> (slot 8) on empty ground beside it (each covers a 2 x 2 block) and throw them Wood and Stone (and Iron after the 12th) to turn them into floor. A floor tile holds <b>5</b> loose items; more bounce on to the next tile.'],
+    ['Growing', 'The floor starts small (12 x 8). Place <b>Floor Tiles</b> (slot 3) on empty ground beside it (each covers a 2 x 2 block) and throw them Wood and Stone (and Iron after the 12th) to turn them into floor. A floor tile holds <b>5</b> loose items; more bounce on to the next tile.'],
     ['Stockpile', 'The <b>Stockpile</b> is a real inventory: it starts as 3 x 2 wooden tiles, and every tile holds <b>50 of ONE kind</b> (Wood, Stone, Iron, Shards, Cores, the Warden Key, element spells, garments). Slot 8 swaps (<b>Q</b>) to the <b>Stockpile Tile</b> (4 Wood, 2 Stone, 1 Iron), placed on an empty floor tile. When the Stockpile has no room for something, the Wizard cannot send it home: the portal over his head spits it back out. <b>Demolish</b> takes a building first; on an empty tile it lifts the Stockpile tile (back to floor) or the floor tile itself, refunded, and whatever lay there bounces to the next tile with room. When the whole factory is full the extras go through the Spell Portal into the wilds.'],
     ['Spells', 'Spells need no unlocking: a pair is the two element spells fused at an Elemental Forge, a triple needs its two parent pairs to have been made once, and the Nova needs all four triples. The <b>Collection Book</b> (button beside the Skill Tree, or <b>C</b>) lists every spell and creature with a live demo, its recipe and its numbers.'],
     ['Logistics', 'Belts already merge: any belt can feed into another. The <b>Splitter</b> routes what comes in to up to 3 outputs: every side that has a belt, machine or portal to feed (the side items arrive from is the input). Click it (<b>A</b> on a pad) to share the outputs out by percentage with a slider, and switch element toggles on an output to make it a <b>filter</b> (Fire + Earth left, Water + Air right). The starting Splitter sends 25% to the Spell Portal and 75% to the Spawner. The <b>Storage Crate</b> holds any number of one kind of element spell or Egg and feeds them out of its arrow. E turns a Crate.'],
@@ -1127,7 +1138,7 @@ const CONTROLS = [
     [K('F') + ' &nbsp;(' + K('SHIFT') + ' + ' + K('F') + ' = back)', 'Switch the element of the Harvester in reach (the new crystal grows for 5 seconds)'],
     [K('RIGHT-CLICK') + ' (hold, empty hands) &nbsp;/&nbsp; pad B (hold) or LT + RB', 'Move a finished building: hold the button on it and it lifts after a moment, the ghost follows you, let go to set it down (R turns its output, left-click / Esc / A cancels)'],
     [K('G') + ' &nbsp;/&nbsp; pad LT + Y', 'Auto-pickup on / off (off by default): loose items that settle within a tile of you hop into your hands'],
-    [K('1') + ' - ' + K('9') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Hand, Belt, the building families, Floor Tiles, then the Helper Robot)'],
+    [K('1') + ' - ' + K('9') + ' &nbsp;or&nbsp; ' + K('WHEEL'), 'Pick a hotbar slot (Belt, Harvester, Floor Tiles, Forge, the building families, then the Helper Robot). Press the key of the slot you are on to switch the building inside it'],
     [K('[') + ' ' + K(']'), 'Previous / next hotbar slot'],
     [K('Q'), 'PIPETTE. A tool is active (a building, belts or demolish): put it away, like right-click. Nothing active: take the building or belt under the cursor as the tool (with its direction); nothing under the cursor: bring back the last tool'],
     [K('O') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Next member of a family slot (or the wheel over the slot, or Shift + the wheel in the factory; the key over a hotbar slot swaps that slot)'],
@@ -1144,7 +1155,7 @@ const CONTROLS = [
     [K('SPACE') + ' &nbsp;/&nbsp; ' + K('.'), 'DODGE: the roll (invulnerable); with the Gale Circlet it is a short blink. Sharing the keyboard: ' + K('.')],
     [K('LEFT-CLICK') + ' &nbsp;/&nbsp; ' + K('/'), 'MASH: dig a mound, stick pile, bush or buried cache; wake a claimed shrine (press again as its ring closes). Mash is never the roll. Sharing the keyboard: ' + K('/')],
     [K('RIGHT-CLICK') + ' &nbsp;/&nbsp; ' + K(','), 'CAST the armed wand attack (it needs a ready slot). Sharing the keyboard: ' + K(',')],
-    [K('Q') + ' &nbsp;/&nbsp; ' + K('M'), 'CYCLE the wand: the next ready slot becomes the armed one (a slot that just filled is armed at once). Sharing the keyboard: ' + K('M')],
+    [K('Q') + ' &nbsp;/&nbsp; ' + K('M'), 'CYCLE the wand: the next ready slot becomes the selected one (a slot that just filled is selected at once); with ' + K('SHIFT') + ' held (pad: LT + Y) it goes back. The wand row shows the Cycle button on both sides of the four slots, and the Cast button only over the selected slot while it is charged. Sharing the keyboard: ' + K('M')],
     [K('L') + ' &nbsp;/&nbsp; pad LB', 'BIG MAP: the map flies to the middle of the Wizard\'s screen and grows, with a legend of every marker (press again or Esc to close). Only the Wizard\'s screen changes'],
     [K('Y'), 'Wizard Skill Tree'],
     ['Keys', 'These are the DEFAULT keys. Every Builder and Wizard key can be changed in the pause menu: Settings, KEYS'],

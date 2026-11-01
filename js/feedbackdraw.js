@@ -104,6 +104,14 @@ R.drawTether = function (ctx, v, o, t) {
 };
 
 // ---------- the Spell Portal says what the Wizard just met ----------
+// where the threat panel stands over the Spell Portal (a pure function of G: the goal arrow asks it, to get out of its way)
+R.threatRect = function (v) {
+  const th = G.fac.threat;
+  if (!th) return null;
+  const p0 = FA.portal('spell'), base = R.toScreen(v, p0.x + 0.5, p0.y + 1), n = th.els.length, bw = 92 + Math.max(110, n * 48 + 20), bh = 84;
+  const rx0 = R.rect.x0, rx1 = R.rect.x0 + R.rect.w;
+  return { x: Math.max(rx0 + 8, Math.min(rx1 - bw - 8, Math.round(base[0] - bw / 2))), y: Math.round(base[1] - 236 - (th.t < 0.3 ? (0.3 - th.t) * 60 : 0)), w: bw, h: bh };
+};
 R.drawThreat = function (ctx, v, t, base) {
   const th = G.fac.threat;
   if (!th) return;

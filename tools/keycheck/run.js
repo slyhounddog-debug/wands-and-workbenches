@@ -1,7 +1,8 @@
 'use strict';
 // The 2026-11-01 request pass (headless, offline): remappable keys (Keys, js/keys.js), the Q pipette, moving a building by holding right-click, the Wizard's big map, the Builder's own game over
 // screen, the Book's per-part spell damage and the separate elite Shard line, the bolt icon in the building note, the new building prices / resource yields / drop rates, the starter factory's
-// egg route.   node tools/keycheck/run.js        (needs playwright-core + Edge: PLAYWRIGHT_CORE=<path>; SHOTS=<dir> saves screenshots). Exits 1 on any FAIL.
+// egg route; and the second batch of that day: hotbar (no Hand slot, Forge on its own, the slot key toggles), the random starting Harvester + its goals, what the Wizard has met surviving a death,
+// right-click cancelling a tool before throwing, the ? station stepping aside, the Stockpile tag, the goal arrow's distance and its way round the threat panel, the wand HUD.   node tools/keycheck/run.js        (needs playwright-core + Edge: PLAYWRIGHT_CORE=<path>; SHOTS=<dir> saves screenshots). Exits 1 on any FAIL.
 const path = require('path'), fs = require('fs');
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'playwright-core');
 const SHOTS = process.env.SHOTS || '';
@@ -46,7 +47,7 @@ const ok = (c, msg, extra) => { console.log((c ? 'PASS ' : 'FAIL ') + msg + (ext
   // ================= 3. keys: defaults, remaps, swaps, reserved keys =================
   r = await ev(() => ({ use: Keys.codes('use'), dodge: Keys.codes('wDodge'), sch: Keys.scheme(), pip: Keys.codes('pipette'), fam: Keys.codes('family') }));
   ok(r.pip[0] === 'KeyQ' && r.fam[0] === 'KeyO', 'defaults: Q is the pipette, the family cycle moved to O', JSON.stringify(r));
-  await ev(() => { Keys.set('wDodge', 'KeyJ'); Keys.set('treeB', 'KeyU'); Keys.set('slot3', 'KeyK'); __wands.UI.keyChips(true); });
+  await ev(() => { Keys.set('wDodge', 'KeyJ'); Keys.set('treeB', 'KeyU'); Keys.set('slot2', 'KeyK'); __wands.UI.keyChips(true); });
   await ev(() => { const w = __wands.G.w; w.rollCd = 0; w.roll = 0; });
   await page.keyboard.down('ArrowRight'); await page.waitForTimeout(150); await page.keyboard.press('KeyJ'); await page.waitForTimeout(80);
   r = await ev(() => __wands.G.w.roll);
@@ -58,7 +59,7 @@ const ok = (c, msg, extra) => { console.log((c ? 'PASS ' : 'FAIL ') + msg + (ext
   ok(r === 0, 'the old dodge key does nothing once it is remapped', 'roll ' + r);
   await page.keyboard.up('ArrowRight');
   await page.keyboard.press('KeyK'); await page.waitForTimeout(200);
-  r = await ev(() => [__wands.G.selected, document.querySelector('#hotbar .slot:nth-child(3) kbd').textContent, document.querySelector('#btnTree kbd').textContent]);
+  r = await ev(() => [__wands.G.selected, document.querySelector('#hotbar .slot:nth-child(2) kbd').textContent, document.querySelector('#btnTree kbd').textContent]);
   ok(r[0] === 'harness' && r[1] === 'K' && r[2] === 'U', 'a remapped hotbar slot key selects it and the chips show the new keys', JSON.stringify(r));
   await page.keyboard.press('KeyU'); await page.waitForTimeout(250);
   r = await ev(() => !!__wands.UI.treeOpen.L); ok(r, 'a remapped skill-tree key opens the Builder tree'); await page.keyboard.press('KeyU'); await page.waitForTimeout(250); await page.keyboard.press('Escape'); await page.waitForTimeout(200);
@@ -178,6 +179,70 @@ const ok = (c, msg, extra) => { console.log((c ? 'PASS ' : 'FAIL ') + msg + (ext
   await page.click('#rReW'); await page.waitForTimeout(600);
   r = await ev(() => [__wands.G.w.dead, document.getElementById('results').classList.contains('hidden'), document.getElementById('resultsB').classList.contains('hidden')]);
   ok(r[0] === false && r[1] && r[2], 'both ready: the run restarts and both screens close', JSON.stringify(r));
+
+  // ================= 10. the hotbar =================
+  r = await ev(() => ({ bar: __wands.CFG.hotbar.join(), craft: __wands.CFG.families.craft.members.join(), dom: [...document.querySelectorAll('#hotbar .slot')].map(s => s.dataset.id).join() }));
+  ok(r.bar === 'belt,harness,tiles,forge,craft,power,logi,spawn,bots' && r.craft === 'cauldron,anvil' && r.dom === r.bar, 'the hotbar has no Hand slot, the Forge on its own and Floor Tiles right after the Harvester', r.dom);
+  await ev(() => { __wands.UI.select('hand'); });
+  await page.keyboard.press('Digit5'); await page.waitForTimeout(120); const s1 = await ev(() => __wands.G.selected);
+  await page.keyboard.press('Digit5'); await page.waitForTimeout(120); const s2 = await ev(() => __wands.G.selected);
+  await page.keyboard.press('Digit4'); await page.waitForTimeout(120); const s3 = await ev(() => __wands.G.selected);
+  await page.keyboard.press('Digit4'); await page.waitForTimeout(120); const s4 = await ev(() => __wands.G.selected);
+  ok(s1 === 'cauldron' && s2 === 'anvil' && s3 === 'forge' && s4 === 'forge', 'pressing the key of the slot you are on switches the building inside it (a single building stays)', [s1, s2, s3, s4].join());
+  await ev(() => __wands.UI.select('hand'));
+
+  // ================= 11. right-click puts the tool away before it throws =================
+  await ev(() => { const G = __wands.G; G.hands.length = 0; G.hands.push({ kind: 'wood' }, { kind: 'wood' }); __wands.UI.select('battery'); });
+  await page.mouse.move(150, 500); await page.waitForTimeout(150);
+  const handsBefore = await ev(() => __wands.G.hands.length);
+  await page.mouse.down({ button: 'right' }); await page.waitForTimeout(250);
+  r = await ev(() => ({ sel: __wands.G.selected, hands: __wands.G.hands.length }));
+  await page.mouse.up({ button: 'right' }); await page.waitForTimeout(100);
+  ok(r.sel === 'hand' && r.hands === handsBefore, 'right-click with a tool active and items in hand puts the tool away and throws nothing', JSON.stringify(r));
+  await page.mouse.down({ button: 'right' }); await page.waitForTimeout(250); r = await ev(() => __wands.G.hands.length); await page.mouse.up({ button: 'right' });
+  ok(r < handsBefore, 'the next right-click throws', 'hands ' + handsBefore + ' -> ' + r);
+  await ev(() => { __wands.G.hands.length = 0; });
+
+  // ================= 12. what the Wizard has met survives his death and a save =================
+  r = await ev(() => { const W = __wands, G = W.G; G.flags.seen = G.flags.seen || {}; G.flags.seen.imp = true; G.w.hp = 0; G.w.dead = true; W.WZ.reenter(); return { still: !!G.flags.seen.imp, w: G.w.seen === undefined || !G.w.seen.imp }; });
+  ok(r.still && r.w, 'a foe type he has met stays met after he dies (no first-sighting panel again)', JSON.stringify(r));
+  r = await ev(() => { const W = __wands; W.Main.save(); const s = JSON.parse(localStorage.getItem('wands2_save_slot1')); return !!(s.flags.seen && s.flags.seen.imp); });
+  ok(r, 'and the save keeps it');
+
+  // ================= 13. a random starting Harvester, and goals that follow it =================
+  const goals = {};
+  for (const el of ['air', 'water', 'fire', 'earth']) {
+    goals[el] = await page.evaluate(el0 => { const W = __wands; W.start(1, el0); W.step(0.05, 5); W.UI.updateHud(0.05); const G = W.G, hs = G.fac.bld.filter(b => b.type === 'harness'); return { flag: G.flags.startEl, hs: hs.map(b => b.el).join(), gather: QUESTS.B.find(q => q.id === 'gather').text, h0: QUESTS.B.find(q => q.id === 'hatch0').text, sw: QUESTS.B.find(q => q.id === 'swEl').text }; }, el);
+  }
+  ok(['air', 'water', 'fire', 'earth'].every(el => goals[el].flag === el && goals[el].hs === el && goals[el].gather.indexOf(el[0].toUpperCase() + el.slice(1)) > 0), 'a new world starts with the Harvester on the chosen element and the hand-gather goal names it', JSON.stringify(goals.fire));
+  ok(!/Air/.test(goals.water.gather + goals.water.h0) && /Switch a Harvester to Air/.test(goals.water.sw) && /Switch a Harvester to Water/.test(goals.air.sw), 'the goals say Water for a Water start and walk through the other elements', goals.water.sw);
+  r = await ev(() => { const n = {}, M = __wands.Main; for (let i = 0; i < 80; i++) { M.newGame(1); n[__wands.G.flags.startEl] = 1; } return Object.keys(n).length; });
+  ok(r >= 3, 'with no element asked for, a new world rolls the element at random', r + ' of 4 seen in 80 worlds');
+  await ev(() => { __wands.start(1, 'air'); __wands.step(0.05, 30); __wands.G.w.hp = 1e5; });
+
+  // ================= 14. the ? station steps aside for a Floor Tile =================
+  r = await ev(() => { const W = __wands, FA = W.FA, G = W.G, q = FA.qTile(); G.stock.wood = 50; G.stock.stone = 50; const a = FA.tileAnchor(q.x, q.y); const b = a ? FA.place('expand', a[0], a[1], 0) : null; const q2 = FA.qTile(); return { placed: !!b, moved: q2.x !== q.x || q2.y !== q.y, free: !FA.owned(q2.x, q2.y) && !G.fac.grid[q2.y * G.fac.w + q2.x] }; });
+  ok(r.placed && r.moved && r.free, 'a Floor Tile can be placed over the ? block and the block moves to a free tile beside the floor', JSON.stringify(r));
+
+  // ================= 15. the Stockpile tag and three items =================
+  r = await ev(() => __wands.CFG.stockShow);
+  ok(r === 3, 'a Stockpile pile draws 3 items', '' + r);
+
+  // ================= 16. the goal arrow hangs close and gets out of the threat panel's way =================
+  r = await ev(() => { const W = __wands, G = W.G; G.quest.B = 2; W.step(0.05, 5); const h = W.R.hint; return h && { lift: h.lift }; });
+  ok(r && r.lift <= 160, 'the Builder goal arrow hangs close to its target (lift)', JSON.stringify(r));
+  r = await ev(() => { const W = __wands; W.FA.threat(['water'], 'ic_skull', 'ELITE SPAWNED'); W.step(0.05, 6); const t = W.R.threatRect(W.R.fv); return !!t && t.w > 0; });
+  ok(r, 'the threat panel has a rectangle the arrow can avoid (R.threatRect)');
+  await page.waitForTimeout(500); await shot('goalarrow');
+
+  // ================= 17. the wand HUD: Cycle on both sides, Cast only on the charged selection =================
+  r = await ev(() => { const G = __wands.G; for (const e of ['air', 'water', 'fire', 'earth']) { G.wand.m[e] = 0; G.wand.full[e] = false; } G.wand.armed = null; __wands.UI.updateWand(); const row = document.getElementById('wandRow'); return { cyc: row.querySelectorAll('.wc').length, cast: row.querySelectorAll('em.cast').length, dim: row.querySelectorAll('.wc.off').length }; });
+  ok(r.cyc === 2 && r.cast === 0 && r.dim === 2, 'nothing charged: Cycle shows on both sides (dimmed) and there is no Cast button', JSON.stringify(r));
+  r = await ev(() => { const G = __wands.G; G.wand.m.fire = 8; G.wand.full.fire = true; G.wand.m.water = 9; G.wand.full.water = true; G.wand.armed = 'water'; G.wand.fx = null; __wands.UI.updateWand(); const row = document.getElementById('wandRow'), em = row.querySelector('em.cast'); return { cast: row.querySelectorAll('em.cast').length, over: em && em.parentElement.querySelector('.ws.armed') ? 1 : 0, dim: row.querySelectorAll('.wc.off').length }; });
+  ok(r.cast === 1 && r.over === 1 && r.dim === 0, 'with a charged selection the Cast button floats over exactly that slot, which pulses', JSON.stringify(r));
+  r = await ev(() => { const W = __wands, G = W.G, a = G.wand.armed; W.WZ.wandCycle(1); const b = G.wand.armed; W.WZ.wandCycle(-1); return [a, b, G.wand.armed]; });
+  ok(r[0] === 'water' && r[1] === 'fire' && r[2] === 'water', 'Cycle goes forward and back through the charged attacks', r.join());
+  await shot('wandhud');
 
   ok(errs.length === 0, 'no page errors', errs.slice(0, 3).join(' / '));
   await browser.close();

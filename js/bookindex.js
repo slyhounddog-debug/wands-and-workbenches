@@ -35,7 +35,7 @@ function bookIndexEntries() {
     'Hotbar family 4. Throw the ingredients at it by hand (belts refuse resources), pick a recipe with the use key. Draws 2 power.',
     'Garments give the Wizard new verbs (walk on water, cross lava, blink, a second life...) and some are needed to reach the Stronghold. The Wardrobe page lists them all.');
   bld('spawner', 'build', 'b:spawner', 'Hatches Eggs. A spell packet makes its basic creature; a seed spell makes a pair or triple creature. Throw it Element Cores and it grows a FRIENDLY one instead.',
-    'Hotbar slot 7. Throw in ONE spell at a time and send the Egg through the Spell Portal; the creature drops in beside the Wizard.',
+    'Hotbar slot ' + (CFG.hotbar.indexOf('spawn') + 1) + '. Throw in ONE spell at a time and send the Egg through the Spell Portal; the creature drops in beside the Wizard.',
     'Creatures are the Wizard\'s XP, drops and Cores, and a friendly one fights beside him. The Creatures page shows each one\'s Egg recipe.');
   bld('battery', 'build', 'b:battery', 'Stores power: a charged Battery gives ' + CFG.stationGen + ' power to the whole factory and runs flat in about a minute at that load. It is charged by throwing it packets, Wood or Stone.',
     'Hotbar family 5. Throw spells (or Wood / Stone) at it. A combo spell or a strong Health Potion overcharges it past full.',
@@ -44,13 +44,13 @@ function bookIndexEntries() {
     'Hotbar family 5, Q switches member. Charge it like a Battery.',
     'The same power for less feeding: good for a big factory the Builder cannot babysit.');
   bld('robot', 'build', 'b:robot', 'A wheeled helper that carries building materials from the Stockpile to blueprints (and nothing else). It runs on its own small charge and naps flat.',
-    'Hotbar slot 9. You can own up to ' + CFG.robot.max + '; each costs more than the last. Throw it spells, Wood or Stone to wake it.',
+    'Hotbar slot ' + (CFG.hotbar.indexOf('bots') + 1) + '. You can own up to ' + CFG.robot.max + '; each costs more than the last. Throw it spells, Wood or Stone to wake it.',
     'It does the fetching while the Builder does the throwing. You still press E to finish a building it paid for.', costRow(CFG.robot.cost));
   bld('expand', 'build', 'b:expand', 'A Floor Tile: a 2 x 2 block of new factory floor, joined to the floor you have.',
-    'Hotbar slot 8. Place it touching your floor and throw the materials at it; it turns into floor when paid for.',
+    'Hotbar slot ' + (CFG.hotbar.indexOf('tiles') + 1) + '. Place it touching your floor and throw the materials at it; it turns into floor when paid for.',
     'Room to build. The factory starts small on purpose, so every machine has to earn its tile.');
   bld('stockpile', 'build', 'b:stockpile', 'A Stockpile Tile: one floor tile that stores up to ' + CFG.stockCap + ' of ONE kind of item.',
-    'Hotbar slot 8, Q switches member. Place it on a plain floor tile and pay for it by throwing.',
+    'Hotbar slot ' + (CFG.hotbar.indexOf('tiles') + 1) + ', pressing the slot key again switches member. Place it on a plain floor tile and pay for it by throwing.',
     'Everything the Wizard brings home (Wood, Stone, Iron, Shards, Cores, spells) lives on these tiles. When there is no room he is told the factory is full, so build more.');
   E('spellportal', 'build', 'Spell Portal', 'ic_portal', 'The door between the two halves: whatever the Builder throws in sails out of the factory and lands in the wilds beside the Wizard (spells cast, potions wait to be walked over, Eggs hatch).',
     'It is always there, on the east edge of the floor. Throw an item at it, or belt it in.',

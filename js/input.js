@@ -41,7 +41,7 @@ const IN = {
   });
   window.addEventListener('wheel', e => {
     pos(e);
-    if (e.target && e.target.closest && e.target.closest('.tree, #pause, #results, .sheet, #hotbar')) return;
+    if (e.target && e.target.closest && e.target.closest('.tree, #pause, #results, .sheet, #hotbar, #debug')) return;
     if (e.shiftKey) IN.wheelS += Math.sign(e.deltaY || e.deltaX);   // (browsers turn Shift + wheel sideways: deltaX)
     else IN.wheel += Math.sign(e.deltaY);
   }, { passive: true });

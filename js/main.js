@@ -1219,7 +1219,7 @@ Main.exitFrame = function (dt, ts) {
 // ---------- test hook ----------
 window.__wands = {
   get G() { return G; },
-  Main, FA, WZ, UI, R, CFG, DevBot, Snap, Net,
+  Main, FA, WZ, UI, R, CFG, DevBot, DevSpawn, Snap, Net,
   start(slot) { Main.newGame(slot || 1); },
   start4(slot, opts) { Main.newGame4(slot || 1, opts); },   // a 4-player game on this machine (tests); step4 plays all four seats
   step4(dt, n, seats) { for (let i = 0; i < (n || 1); i++) if (G && !G.paused) Main.step(dt, M4.ctlOf(seats)); },

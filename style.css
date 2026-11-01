@@ -182,9 +182,21 @@ kbd { display: inline-block; min-width: 22px; padding: 4px 5px 3px; background: 
 
 /* debug overlay */
 #debug { position: absolute; right: 16px; bottom: 180px; width: 360px; padding: 10px 12px; font-size: 16px; z-index: 36; line-height: 1.25; }
-#debug > b { font: 10px var(--display); color: var(--gold); display: inline-flex; gap: 6px; align-items: center; }
+#dbgStats > b { font: 10px var(--display); color: var(--gold); display: inline-flex; gap: 6px; align-items: center; }
 #debug div { margin-top: 3px; }
 #debug div b { font: 10px var(--display); color: var(--sky); }
+#debug { pointer-events: auto; }
+#debug.wide { width: 560px; }
+#debug .dbgTabs, #debug .dsTabs { display: flex; gap: 6px; margin: 0 0 6px; }
+#debug .dbgTabs button, #debug .dsTabs button { font: 10px var(--display); padding: 5px 8px; color: #f0e8ff; border: 0; cursor: pointer; }
+#debug .dbgTabs button.on, #debug .dsTabs button.on { color: var(--gold); background: #4a3578; }
+#debug .dsElite { display: block; margin: 4px 0; font-size: 15px; cursor: pointer; }
+#debug .dsGrid { max-height: 470px; overflow-y: auto; padding-right: 4px; }
+#debug .dsGrid h4 { margin: 8px 0 4px; font: 9px var(--display); color: var(--gold); }
+#debug .dsRow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin: 0; }
+#debug .dsRow button { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; height: 58px; padding: 3px 2px; color: #f0e8ff; border: 0; cursor: pointer; font: 15px/1 var(--body); }
+#debug .dsRow button:hover { background: #4a3578; }
+#debug .dsRow button span { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 /* hotbar */
 #hotbar { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 4px; padding: 8px; }

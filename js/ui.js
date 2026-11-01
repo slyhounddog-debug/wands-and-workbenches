@@ -416,10 +416,30 @@ UI.debugGear = function () {
   return '<div>Worn: <b>' + worn + '</b></div><div class="dim">Stockpile ' + FA.pileList().filter(p => p.n > 0).length + '/' + FA.pileTiles().length + ' tiles  Cores ' + ELEMS.map(e => e[0].toUpperCase() + (G.stock['core_' + e] || 0)).join(' ') +
     '  Door ' + (A.door ? 'open' : 'locked') + '  Warden ' + (G.flags.warden ? 'dead' : 'alive') + '  Altar ' + (al.placed ? 'lit ' + al.lit.map(l => (l ? 'X' : '.')).join('') : G.tree.summon ? 'landing' : 'not bought') + '  Wand <b>' + ELEMS.map(e => e[0].toUpperCase() + (G.wand.full[e] ? (G.wand.armed === e ? '*' : '!') : G.wand.m[e] + '/' + CFG.wand.need[e])).join(' ') + '</b>  Feather ' + Math.ceil(A.cd.phoenix) + 's</div>';
 };
+// the overlay is a STATS page (rewritten four times a second) and, offline, a SPAWN page (js/devspawn.js: built once, so its buttons survive the rewrites)
+UI.dbgTab = 'stats';
+UI.dbgShell = function () {
+  const root = $('debug');
+  root.innerHTML = '<div class="dbgTabs"><button class="px" data-t="stats">STATS</button><button class="px" data-t="spawn">SPAWN</button></div><div id="dbgStats"></div><div id="dbgSpawn" class="hidden"></div>';
+  root.addEventListener('click', e => { const t = e.target && e.target.dataset && e.target.dataset.t; if (t) { UI.dbgTab = t; AU.sfx('tab'); UI.dbgT = 0; } });
+  root.addEventListener('mousedown', e => e.preventDefault());
+  return root;
+};
 UI.updateDebug = function (dt) {
-  const el = $('debug');
-  el.classList.toggle('hidden', !UI.debugOn);
+  const root = $('debug');
+  root.classList.toggle('hidden', !UI.debugOn);
   if (!UI.debugOn) return;
+  if (!$('dbgStats')) UI.dbgShell();
+  const spawnOk = DevSpawn.ok();
+  if (!spawnOk) UI.dbgTab = 'stats';
+  const spawn = UI.dbgTab === 'spawn', pane = $('dbgSpawn');
+  root.classList.toggle('wide', spawn);
+  root.querySelector('.dbgTabs').style.display = spawnOk ? '' : 'none';
+  for (const b of root.querySelectorAll('.dbgTabs button')) b.classList.toggle('on', b.dataset.t === UI.dbgTab);
+  $('dbgStats').classList.toggle('hidden', spawn);
+  pane.classList.toggle('hidden', !spawn);
+  if (spawn) { if (!DevSpawn.built) DevSpawn.build(pane); return; }
+  const el = $('dbgStats');
   UI.dbgT = (UI.dbgT || 0) - dt;
   if (UI.dbgT > 0) return;
   UI.dbgT = 0.25;

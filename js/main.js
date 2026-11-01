@@ -47,7 +47,7 @@ Main.newGame = function (slot, el) {
 };
 Main.loadGame = function (slot, useBak) {
   const s = UI.slotInfo(slot, useBak);
-  if (!s || s.old || s.m4) return;   // (a 4-player save is opened by a 4-player room: Main.loadGame4)
+  if (!s || s.old || s.m4 || s.m3) return;   // (a 4-player / 3-player save is opened by a room of its mode: Main.loadGame4 / loadGame3)
   try { Main.applySave(slot, s); }
   catch (e) {
     if (!useBak && UI.slotInfo(slot, true)) { UI.err('Save in slot ' + slot + ' would not load (' + e.message + '): loaded the backup instead'); Main.loadGame(slot, true); return; }
@@ -188,7 +188,8 @@ Main.save = function () {
       v: SAVE_VERSION, qv: QUEST_VERSION, tv: TREE_VERSION, xp: G.xp + FA.gemsPending(), tree: G.tree, stock: stockSaved, ev: { n: G.ev ? G.ev.n : 0 }, bank: G.bank, bankTotal: G.bankTotal, credits: G.credits, stats: G.stats,
       flags: G.flags, quest: G.quest, qbase: G.qbase, hands: G.hands, placeDir: G.placeDir, bd: { x: G.bd.x, y: G.bd.y }, fac: Main.facSaved(), at: Date.now(),
       bankLog: (G.bankLog || []).slice(-CFG.bankUndoMax), pins: G.pins, pinBp: G.pinBp, aug: G.aug, wand: G.wand, altar: G.altar, bshr: WZ.bshrSave(),
-      m4: G.m4 ? M4.saveData() : undefined,   // (4P: the save is tagged with its mode; the second Builder and Wizard and the attunements ride in it)
+      m4: G.m4 ? M4.saveData() : undefined,
+      m3: G.m3 && G.u ? M3.saveData() : undefined,   // (3P: the save is tagged with its mode and carries the underworld)   // (4P: the save is tagged with its mode; the second Builder and Wizard and the attunements ride in it)
     });
     if (!Main.saveOk(JSON.parse(data))) throw new Error('the new save failed its own check');
     // rolling backup: the save we're about to replace becomes the backup, if it was good
@@ -460,7 +461,7 @@ Main.controls = function (dt) {
     else Main.pause(true);
   }
   if (Keys.hit('treeB') || (p0 && p0.y && !p0.ltHeld && !UI.splitB)) UI.openTree('L');
-  if ((!Net.on || G.m4) && (Keys.hit('treeW') || (p1 && p1.back))) UI.openTree('R');   // (online the Wizard's tree is on the guest's screen) Back / Select on his pad: Y is the wand's Cycle now
+  if ((!Net.on || G.m4 || G.m3) && (Keys.hit('treeW') || (p1 && p1.back))) UI.openTree('R');   // (online the Wizard's tree is on the guest's screen) Back / Select on his pad: Y is the wand's Cycle now
   if (Keys.hit('help')) { UI.help(); G.helpT = 0; }
   if (Keys.hit('book') && !frozenNow() && !UI.splitB && !UI.askB) Book.open();   // the Collection Book: every spell and creature
   if ((Keys.hit('pin') || (p0 && p0.l3)) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
@@ -680,7 +681,7 @@ AU.setAttn(() => UI.cueLevel());   // a danger or a goal cue that is up drops th
 // ---------- per-frame simulation ----------
 Main.step = function (dt, ctl) {
   Main.stepN++;
-  ctl = ctl || (G.m4 ? M4.controls(dt) : Main.modal() ? Main.wizardOnly() : Main.controls(dt));
+  ctl = ctl || (G.m4 ? M4.controls(dt) : G.m3 ? M3.controls(dt) : Main.modal() ? Main.wizardOnly() : Main.controls(dt));
   // the whole game (machines, belts, Builder, wilds) freezes while anyone has a skill tree open, then for the "And..." beat. Online nothing ever freezes it.
   const inTree = !Net.on && (UI.treeOpen.L || UI.treeOpen.R);
   if (!inTree && Main.graceT > 0) { Main.graceT -= dt; if (Main.graceT <= 0) UI.and(false); }
@@ -693,6 +694,7 @@ Main.step = function (dt, ctl) {
       FA.moveBuilder(dt, ctl.bix, ctl.biy);
     }
     FA.update(dt);
+    if (G.m3) M3.update(dt, ctl.k);   // 3P: the underworld and the Rootkeeper (it waits with the factory while the Wizard is down)
   }
   // hit-stop (CFG.hitstop): the Wizard's side holds still for a beat after an elite / the Warden dies; presses made meanwhile are kept for the next frame
   let still = false;
@@ -719,7 +721,8 @@ Main.step = function (dt, ctl) {
     G.w.deadHandled = true;
     setTimeout(() => { if (G && G.w.dead) UI.showResults(); }, 900);   // (online the guest's screen opens it from the snapshots: Main.guestSeen)
   }
-  if (!G.m4 && G.w.dead) {   // the game over screen: both players ready up with RESTART (the Wizard's roll button also readies him), then the run starts again
+  if (G.m3) M3.deadFlow(dt);   // 3P: every connected player readies on his own screen
+  else if (!G.m4 && G.w.dead) {   // the game over screen: both players ready up with RESTART (the Wizard's roll button also readies him), then the run starts again
     G.w.deadT = (G.w.deadT || 0) + dt;
     const p1 = Main.padW(), rd = G.w.ready || (G.w.ready = { B: false, W: false });
     if (G.w.deadT > 1 && p1 && p1.a) rd.W = true;
@@ -740,7 +743,7 @@ Main.step = function (dt, ctl) {
   if (G.m4) M4.asSeat(M4.me(), () => UI.updateHud(dt)); else UI.updateHud(dt);
   if ((Players.checkT -= dt) <= 0) { Players.checkT = 1; Players.check(); }   // achievements (they unlock cosmetics)
   UI.splitTick(dt);
-  if (G.m4) { if (M4.ROLE[M4.me()] === 'B') M4.asSeat(M4.me(), Main.updateFocus); else R.focus = null; } else Main.updateFocus();   // (4P: only a Builder seat has prompts)
+  if (G.m4) { if (M4.ROLE[M4.me()] === 'B') M4.asSeat(M4.me(), Main.updateFocus); else R.focus = null; } else if (G.m3) { if (M3.myRole() === 'B') Main.updateFocus(); else R.focus = null; } else Main.updateFocus();   // (4P: only a Builder seat has prompts)
   G.saveT += dt;
   if (G.saveT > CFG.autosave || (UI.dirty && G.saveT > 1.5)) { G.saveT = 0; UI.dirty = false; Main.save(); }
 };
@@ -1046,10 +1049,11 @@ function frame(ts) {
       if (!G.paused && !(Net.role === 'host' && Net.state !== 'live')) Main.step(dt);   // (online, the host waits while the guest is away)
       else AU.hum(0);
       if (Net.role === 'host') { Net.hostTick(dt); Main.netBannerTick(); Main.pausedBanner(); }
-      if (G && Net.on) {   // online the Builder's world fills the stage with the Wizard's in a corner; nothing is ever frozen, so nothing is skipped
+      if (G && (Net.on || G.m3)) {   // online the Builder's world fills the stage (a 3P game always draws one seat's view: offline it is a test) with the Wizard's in a corner; nothing is ever frozen, so nothing is skipped
         ctx.clearRect(0, 0, CFG.W, CFG.H);
         const pd = G.paused ? 0 : dt;   // (a pause menu on either machine holds the picture too)
         if (G.m4) M4.draw(ctx, pd);   // 4P: this seat's world fills the stage, the buddy's is the picture-in-picture
+        else if (G.m3) M3.draw(ctx, pd);   // 3P: this seat's world fills the stage, the corner shows the teammate he picked
         else {
           R.drawFactory(ctx, pd, { x0: 0, w: CFG.W });
           R.drawPip(ctx, pd);
@@ -1258,7 +1262,7 @@ Main.introEnd = function () {
   const gm = $('game'); gm.classList.add('fadeIn'); setTimeout(() => gm.classList.remove('fadeIn'), 900);
   UI.resetCache(); Main.still = 0; Main.drawSig = null;
   UI.help(true); G.helpT = 25; Main.helpFoot();
-  if (Net.on && Net.role === 'host') UI.toast('Player 2 joined as the Wizard.', 'L', 'ic_check');
+  if (Net.on && Net.role === 'host' && !G.m3) UI.toast('Player 2 joined as the Wizard.', 'L', 'ic_check');
 };
 // ---------- the way back: the Builder is sucked into a portal, the factory slides away, he drops into the Wizard's world, both are teleported to the start ----------
 Main.exitFrame = function (dt, ts) {
@@ -1283,6 +1287,9 @@ window.__wands = {
   start4(slot, opts) { Main.newGame4(slot || 1, opts); },   // a 4-player game on this machine (tests); step4 plays all four seats
   step4(dt, n, seats) { for (let i = 0; i < (n || 1); i++) if (G && !G.paused) Main.step(dt, M4.ctlOf(seats)); },
   M4,
+  start3(slot, opts) { Main.newGame3(slot || 1, Object.assign({ el: 'air' }, opts || {})); },   // a 3-player game on this machine (tests): opts { seats, me }; step3 feeds the seats' inputs
+  step3(dt, n, k, w, b) { for (let i = 0; i < (n || 1); i++) if (G && !G.paused) Main.step(dt, Object.assign({ bix: 0, biy: 0, broll: false, wix: 0, wiy: 0, roll: false, wrx: 0, wry: 0, act: {} }, b || {}, w || {}, { k: Object.assign(M3.zeroK(), k || {}) })); },
+  M3,
   get menu() { return Menu; },
   deliver(kind) { FA.deliver(kind); },
   bank(kind, n) { for (let i = 0; i < (n || 1); i++) FA.bank(kind); },

@@ -2,7 +2,7 @@
 // The Collection Book's INDEX page: everything the Spells / Creatures / Wardrobe / Wand pages do not cover (every building, resource, item, potion, landmark, kind of ground and
 // the systems that tie them together). Each entry says WHAT it does, HOW to get it and WHY you need it. Built when the book opens (Book.indexEntries), so every number is read off CFG
 // and cannot drift from the game. Plain text only (ASCII): pictures are sprite keys, drawn by the Book through UI.img.
-const BOOK_CATS = [['build', 'BUILDINGS'], ['stuff', 'RESOURCES & ITEMS'], ['potion', 'POTIONS'], ['wild', 'THE WILDS'], ['sys', 'HOW THINGS WORK']];
+const BOOK_CATS = [['build', 'BUILDINGS'], ['stuff', 'RESOURCES & ITEMS'], ['potion', 'POTIONS'], ['wild', 'THE WILDS'], ['sys', 'HOW THINGS WORK'], ['root', 'THE ROOTKEEPER (3 PLAYERS)']];
 function bookIndexEntries() {
   const B = CFG.buildings, P = CFG.potion, pc = v => Math.round(v * 100) + '%';
   const costRow = c => '<div class="bkRec">' + Object.keys(c).map(k => '<span>' + UI.img(k, 32) + (c[k] > 1 ? '<u>x' + c[k] + '</u>' : '') + '</span>').join('') + '</div>';
@@ -138,5 +138,29 @@ function bookIndexEntries() {
     'A free read-out: look at the sky to see what the factory is doing.');
   E('shake', 'sys', 'Shake Loose', 'ic_warn', 'When the Wizard loses health, the factory shakes and may drop something: an item off a belt (more likely the weaker he is) or, very rarely, out of the Stockpile.',
     'It happens by itself. Armor that absorbs the hit prevents it.', 'It makes the Wizard\'s danger felt in the factory.');
+  // ---------------- the Rootkeeper (only in a 3-player game) ----------------
+  if (G && G.m3) {
+    const M = CFG.mode3, cost = c => Object.keys(c).map(k => c[k] + ' ' + ELEM_WORD[k]).join(', ') || 'nothing';
+    E('rootkeeper', 'root', 'The Rootkeeper', 'ic_root', 'The third player: he works in the underworld, a copy of the wilds that lies under them. Kills above drop remains down here; he burns them to grow trees and rocks in the wilds, set traps under the foes and send spells up to the Builder.',
+      'He walks at the Wizard\'s speed. Root Roll in his skill branch gives him a dodge roll.', 'Without him the Wizard supplies every harvest; with him part of the supply runs through the roots, and the 3-player skill tree costs his Ash.');
+    E('remains', 'root', 'Remains', 'rem_earth', 'What a dead foe leaves below, in its element (a normal foe ' + M.remains.normal + ', a mutant ' + M.remains.mutant + ', an elite ' + M.remains.elite + '). Left lying they decay after ' + M.remains.life + ' seconds (they blink first).',
+      'The Wizard kills above; the Rootkeeper picks them up below and throws them into a Storage Pylon or a Burner.', 'They are his fuel and his building material.');
+    E('pylon', 'root', 'Storage Pylon', 'u_pylon', 'Banks remains by type, in one store every pylon shares; pick at a pylon to take the last one banked back out.',
+      'Toolbar 7. Costs ' + cost(M.bld.pylon.cost) + ' remains.', 'Building and crafting are paid from the bank, and Burners load their type from it.');
+    E('burner', 'root', 'Burner', 'u_burner', 'Burns ONE remain type (the use key sets it) and pushes its output down its hoses as pulses, shared evenly by everything on them: fewer hoses, bigger pulses. Burning leaves ash.',
+      'Toolbar 2. Costs ' + cost(M.bld.burner.cost) + ' remains.', 'It feeds nodes, traps and mirror Harvesters: full rate on what they prefer, half on anything else.');
+    E('hoses', 'root', 'Hoses and Poles', 'u_pole', 'Hoses are free. A building reaches ' + M.reach + ' tiles; a Hose Pole between two buildings doubles that, a Heavy Hose Pole triples it.',
+      'Toolbar 1: the hose tool links the building you click to the next one. Toolbar 6: poles (press it again for the heavy one, once Heavy Hose Poles is bought).', 'Reach is the whole puzzle: where a Burner stands decides what it can feed.');
+    E('nodes', 'root', 'Planted Nodes', 'n_tree', 'Seeds from the Resource Crafter: a tree (likes Water), a rock (Earth) or an iron node (Fire). Planted, a stump or rock pile stands in BOTH worlds; charged, it grows into a real tree, rock or ore in the wilds. Harvested, it is a stump again.',
+      'Toolbar 4 builds the crafter; pick at it to craft (paid in remains), throw to plant. Charge it from a Burner or by mashing it.', 'More Wood, Stone and Iron where the Wizard needs them: he sees the stumps and their charge.');
+    E('traps', 'root', 'Traps', 't_dmg', 'Thorn Snap (damage, likes Earth) and Root Snare (slows, likes Air). Placed below, a trap stands in the wilds at the same spot and fires on foes that step in; fueled it re-arms, unfueled it does nothing.',
+      'Toolbar 3 builds the Trap Crafter; craft, then throw to place; hose it to a Burner.', 'Help for the Wizard where he fights.');
+    E('mirror', 'root', 'Mirror Harvesters', 'u_mirror', 'One drops into the underworld for every Harvester the Builder finishes, each further out than the last. Charged (its element, or mashing) it sends a spell up into that Harvester.',
+      'They come by themselves; hose one to a Burner set to its element and mash it.', 'A fed, mashed mirror can out-produce the Harvester above it. Demolish the Harvester and its mirror goes, dropping its fuel as remains.');
+    E('collector', 'root', 'Collector and Ash', 'u_collector', 'Lifts the ash a Burner leaves up into the skill bank: four new currencies (Air, Water, Fire and Earth Ash). A Burner whose ash tray is full stops.',
+      'Toolbar 5. Hose it to a Burner (through poles). The starting one is NOT hosed.', 'In a 3-player game every skill-tree purchase costs some Ash.');
+    E('ghost', 'root', 'Ghost View', 'ic_ghost', 'The Wizard and the Rootkeeper can each see the other world\'s outline in their own: the Wizard sees the hoses, buildings and the Rootkeeper; the Rootkeeper sees the foes and the Wizard. The grass always bends where the other one walks.',
+      'G (the Wizard\'s RT, the Rootkeeper\'s Y on a pad). J cycles the corner picture between your two teammates.', 'Knowing where the other one is, without words.');
+  }
   return L;
 }

@@ -1587,12 +1587,13 @@ R.drawWorld = function (main, dt, rect) {
   for (const pk of w.pickups) objs.push({ d: pk.x + pk.y, t: 'pick', o: pk });
   for (const e of w.enemies) if (vis(e.x, e.y, 240, 100, 360)) objs.push({ d: e.x + e.y, t: 'enemy', o: e });
   for (const e of w.allies) if (vis(e.x, e.y, 240, 100, 360)) objs.push({ d: e.x + e.y, t: 'enemy', o: e });   // the friendly creatures (R.drawEnemy shows them in green)
-  if (!(G.menu && G.menu.l4)) objs.push({ d: w.x + w.y, t: 'wiz', o: w });   // (the 4P lobby draws its own four characters)
+  if (!(G.menu && (G.menu.l4 || G.menu.l3))) objs.push({ d: w.x + w.y, t: 'wiz', o: w });   // (the 4P / 3P lobbies draw their own characters)
   if (G.w2) { const ow = R.wizOther(); objs.push({ d: ow.x + ow.y, t: 'wiz', o: ow }); }   // 4P: the other Wizard
   if (mv) Menu.collect(objs, v, mv);
   if (alt && !airborne) objs.push({ d: alt.x + alt.y, t: 'altar', o: alt });
   const bsh = G.bshr;   // the Battery Shrines
   for (const s of bsh) objs.push({ d: s.x + s.y, t: 'bshr', o: s });
+  if (G.m3 && G.u && !G.menu) M3D.wildsObjs(objs, v, w);   // 3P: the underworld's nodes and traps stand here too (and its ghosts, with the ghost view on)
   objs.sort((a, b) => a.d - b.d);
   // the menu world: the scenery, then the fog outside the patch + its rim, then the floor plates, then everything that stands or moves on them
   const order = mv ? objs.filter(i => !MENU_TOP[i.t]).concat([{ t: 'edge' }, { t: 'plates' }], objs.filter(i => MENU_TOP[i.t])) : objs;

@@ -22,7 +22,7 @@ const Snap = { snap: null, mode: 'off', img: null, report: null, MODES: ['live',
   // Live state outside G that the renderers may read without it being a leak: scratch the renderer owns, and the world that is
   // generated once from a fixed seed (terrain, palette, landmark positions). Everything else on these modules is a leak.
   const ALLOW = new Set([
-    'R.defer', 'R.px', 'R.org', 'R.bufs', 'R.fv', 'R.wv', 'R.mapC', 'R.rect',   // (R.rect: the rectangle the draw call was given)
+    'R.defer', 'R.px', 'R.org', 'R.bufs', 'R.fv', 'R.wv', 'R.uv', 'R.mapC', 'R.rect',   // (R.uv: the underworld's view, like R.wv)   // (R.rect: the rectangle the draw call was given)
     'WZ.terrain', 'WZ.palette', 'WZ.marks', 'WZ.bucket',   // (WZ.bucket is the static layout of nodes; their changing state is G.w.hv / G.w.fg)
     'FA.splitCol', 'WZ.emoteOrder', 'WZ.emoteName',   // constant tables (colours, the emote wheel's order and names)
   ]);
@@ -32,6 +32,7 @@ const Snap = { snap: null, mode: 'off', img: null, report: null, MODES: ['live',
   Snap.KNOWN = {
     leaks: new Set([
       'read R.fcam', 'read R.wcam',                                  // smoothed cameras live on R
+      'read R.ucam',                                                 // 3P: the underworld's smoothed camera, the same kind of thing as R.wcam (flagged 2026-11-01)
       'read R.focus', 'read R.hoverB', 'read R.ghost', 'read R.rot', 'read R.demo', 'read R.aim', 'read R.hint', 'read R.whint', 'read R.padMode',   // prompts, pointers, placement ghost: computed in Main.updateFocus, stored on R
       'read IN.pad',                                                 // which key cap the Wizard's Mash prompt shows (a pad's X or a key) follows the local controller: a per-machine label (flagged 2026-10-31)
       'read UI.treeOpen',                                            // the skill tree being open lives in UI (and it freezes the sim)
@@ -182,7 +183,13 @@ const Snap = { snap: null, mode: 'off', img: null, report: null, MODES: ['live',
     Date.now = () => t0; performance.now = () => t0;
     try { return fn(); } finally { Math.random = mr; Date.now = dn; performance.now = pn; }
   };
-  const drawFrame = c => { c.clearRect(0, 0, CFG.W, CFG.H); R.drawFactory(c, 0); R.drawWorld(c, 0); };
+  // 3P: the frame is the wilds (left) and the underworld (right) by default; Snap.v3 = 'fu' draws the factory and the underworld
+  Snap.v3 = 'wu';
+  const drawFrame = c => {
+    c.clearRect(0, 0, CFG.W, CFG.H);
+    if (G.m3 && G.u) { if (Snap.v3 === 'fu') R.drawFactory(c, 0); else R.drawWorld(c, 0, { x0: 0, w: CFG.HALF }); R.drawUnder(c, 0, { x0: CFG.HALF, w: CFG.HALF }); return; }
+    R.drawFactory(c, 0); R.drawWorld(c, 0);
+  };
 
   // ---------- the photo test ----------
   Snap.photo = function () {

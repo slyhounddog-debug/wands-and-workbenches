@@ -1,6 +1,6 @@
 'use strict';
 // Every acceptance check in one command, so none gets forgotten:
-//   node tools/runall.js                 syntax gate, qolcheck, menucheck, snapcheck, allycheck, bshrcheck, robotcheck, wandcheck, nettest
+//   node tools/runall.js                 syntax gate, qolcheck, menucheck, snapcheck, allycheck, bshrcheck, robotcheck, wandcheck, featcheck, passcheck, mode4check, mode4net, mode3check, mode3net, nettest
 //   node tools/runall.js --offline       the same without nettest (it needs the internet); the summary says it was SKIPPED
 //   node tools/runall.js --only=snapcheck,wandcheck     just those        --list      what there is
 //   node tools/runall.js -v              stream every check's own output (otherwise only a failing check's last lines are shown)
@@ -29,6 +29,8 @@ const CHECKS = [
   { id: 'passcheck', what: 'goals count from when they show, goal gems, shard moment, boulders, lava + thermometer, swimmers, the Cauldron, armor rule, drop rates, removed tracks', file: 'tools/passcheck/run.js', browser: true },
   { id: 'mode4check', what: '4-player mode: two Wizards and two Builders, per-seat input, foes pick the nearer Wizard, spells by whoever grabs them, balance block, garments, element effects, snapshot photo test', file: 'tools/mode4check/run.js', browser: true },
   { id: 'mode4net', what: '4-player online through the real PeerJS cloud: mode choice, a host and three guests, the lobby, the bump, the start, the game from every seat (needs the internet)', file: 'tools/mode4check/net.js', browser: true, net: true },
+  { id: 'mode3check', what: '3-player mode: the underworld and the Rootkeeper, remains, burners, hoses and poles, nodes, traps, mirror Harvesters, collectors and the Ash tree layer, saves, the game over, the photo test; 2P untouched', file: 'tools/mode3check/run.js', browser: true },
+  { id: 'mode3net', what: '3-player online through the real PeerJS cloud: a host and two guests with their roles, a taken role refused, the statues, the start, every seat, pause, drop + rejoin, the game over (needs the internet)', file: 'tools/mode3check/net.js', browser: true, net: true },
   { id: 'nettest', what: 'online co-op through the real PeerJS cloud (needs the internet)', file: 'tools/nettest/run.js', browser: true, net: true },
 ];
 if (has('--list')) { for (const c of CHECKS) console.log(c.id.padEnd(10), c.what); process.exit(0); }

@@ -281,9 +281,10 @@ const OUT = process.env.SHOTS || '';
 
   // ================= the feedback ledger (FEEDBACK.md): every row's cue fires, and a row with no cue is a FAIL =================
   // (what / why / what next: a hit carries its source, a bounce its reason, the factory-full bounce is visible at the Spell Portal...)
-  const fbText = require('fs').readFileSync(path.resolve(__dirname, '../../FEEDBACK.md'), 'utf8'), cut = fbText.indexOf('## 4-player mode');
+  const fbText = require('fs').readFileSync(path.resolve(__dirname, '../../FEEDBACK.md'), 'utf8'), cut = fbText.indexOf('## 4-player mode'), cut3 = fbText.indexOf('## 3-player mode');
   const ids = t => t.split(/\r?\n/).map(l => (l.match(/^\| `([a-z-]+)` \|/) || [])[1]).filter(Boolean);
-  const ledger = ids(cut < 0 ? fbText : fbText.slice(0, cut)), ledger4 = cut < 0 ? [] : ids(fbText.slice(cut));   // (the rows under "4-player mode" are proven by a 4P game, below)
+  const ledger = ids(cut < 0 ? fbText : fbText.slice(0, cut)), ledger4 = cut < 0 ? [] : ids(fbText.slice(cut, cut3 > cut ? cut3 : undefined));   // (the rows under "4-player mode" are proven by a 4P game, below)
+  const ledger3 = cut3 < 0 ? [] : ids(fbText.slice(cut3));   // (and the rows under "3-player mode" by a 3P game, at the end)
   ok(ledger.length >= 14, 'FEEDBACK.md lists the ledger rows', ledger.join(' '));
   r = await run(() => {
     const W = __wands, G = W.G, WZ = W.WZ, FA = W.FA, CFG = W.CFG, UI = W.UI, w = G.w, o = {};
@@ -577,6 +578,59 @@ const OUT = process.env.SHOTS || '';
   ok(r.far[0] === 1 && r.far[1] < 0.5, 'juice: a far sound is quieter', JSON.stringify(r.far));
   const noProbe = juiceIds.filter(id => JUICE_ROWS.indexOf(id) < 0), noRow = JUICE_ROWS.filter(id => juiceIds.indexOf(id) < 0);
   ok(noProbe.length === 0 && noRow.length === 0, 'JUICE.md and the probes list the same verbs (a new row needs a probe, a probe needs a row)', 'rows without a probe: ' + noProbe.join(' ') + ' / probes without a row: ' + noRow.join(' '));
+
+  // ================= the 3-player ledger rows: a 3P game exercises each cue (the lobby and a dropped player through the same code the network calls) =================
+  r = await run(() => {
+    const W = __wands, M3 = W.M3, seats = M3.defaultSeats(); seats[0].who = 'g1'; seats[1].who = 'g2'; seats[2].who = 'host';
+    W.start3(1, { seats, me: 2 }); W.UI.help(false); W.G.helpT = 0; W.CFG.world.cap = 0;
+    const G = W.G, u = G.u, WZ = W.WZ, FA = W.FA, C = W.CFG.mode3, step = n => W.step3(0.05, n), o = {};
+    G.fb = {};
+    const bu = u.bld.find(b => b.type === 'burner'), py = u.bld.find(b => b.type === 'pylon'), col = u.bld.find(b => b.type === 'collector'), mir = u.bld.find(b => b.type === 'mirror');
+    const tree = u.bld.find(b => b.type === 'node' && b.nk === 'tree'), rock = u.bld.find(b => b.type === 'node' && b.nk === 'rock');
+    // remains: one lands, one fades, one is banked
+    WZ.kill(WZ.makeEnemy('imp', G.w.x + 4, G.w.y)); step(30);
+    u.items[0].t = C.remains.life - 1; step(10);
+    bu.el = 'earth'; u.bank.earth = 0; u.rk.hands = ['rem_air']; u.rk.x = py.x + 0.8; u.rk.y = py.y; u.rk.fx = -1; u.rk.fy = 0; M3.throwOne(); step(30);
+    step(40);   // (the burner, set to Earth with none banked, starves)
+    bu.ash.air = C.burner.ashCap; bu.burn = 0; step(30);
+    M3.deliver(rock, 'water', 1);
+    tree.ch = 0.99; M3.deliver(tree, 'water', 5); let n = 0; while (!tree.broken && n++ < 40) WZ.hurtH(tree, 10); step(2);
+    tree.ch = 0.4; G.w.x = tree.x + 1; G.w.y = tree.y; step(12);
+    // a trap is planted and fires
+    let spot = null; for (let d = 2; d < 8 && !spot; d += 0.5) for (let a = 0; a < 6.28 && !spot; a += 0.3) { const x = Math.floor(bu.x + Math.cos(a) * d) + 0.5, y = Math.floor(bu.y + Math.sin(a) * d) + 0.5; if (M3.free(x + 1.4, y, 1.3) && M3.free(x, y, 0.6)) spot = [x, y]; }
+    u.rk.x = spot[0]; u.rk.y = spot[1]; u.rk.fx = 1; u.rk.fy = 0; u.rk.hands = ['t_dmg']; u.rk.throwCd = 0; M3.throwOne();
+    const tp = u.bld[u.bld.length - 1]; tp.fuel = 12; const e = WZ.makeEnemy('golem', tp.x, tp.y); e.hp = e.maxHp = 1e5; e.spd = 0; e.dazeT = 100; step(4); G.w.enemies.length = 0;
+    // a mirror Harvester: a packet up, a new one, gone with its Harvester
+    M3.deliver(mir, mir.el, C.mirror.pack);
+    let hs = null; for (let y = 0; y < G.fac.h && !hs; y++) for (let x = 0; x < G.fac.w && !hs; x++) if (FA.owned(x, y) && !FA.cell(x, y) && !FA.isPile(x, y)) hs = [x, y];
+    const h2 = FA.makeBuilding('harness', hs[0], hs[1], false, false, 0); FA.onComplete(h2, false); step(2); FA.demolish(h2.x, h2.y, true); step(2);
+    // a collector through a pole lifts ash
+    const p = M3.make('pole', (bu.x + col.x) / 2, (bu.y + col.y) / 2); M3.link(bu, p); M3.link(p, col); step(40);
+    // building and crafting
+    for (const k of ['air', 'water', 'fire', 'earth']) { u.bank[k] = 20; for (let i = 0; i < 20; i++) u.blog.push(k); }
+    u.rk.x = spot[0] - 4; u.rk.y = spot[1] + 4; u.rk.fx = 1; u.rk.fy = 0; let rc = null; for (let i = 0; i < 300 && !rc; i++) { const a = Math.random() * 6.28, d = 3 + Math.random() * 20; u.rk.x = bu.x + Math.cos(a) * d; u.rk.y = bu.y + Math.sin(a) * d; u.rk.fx = 1; u.rk.fy = 0; const f = M3.front(); if (M3.free(f[0], f[1], 1.0) && !M3.blockedU(u.rk.x, u.rk.y, 0.3)) rc = M3.place('rcraft'); } M3.craft(rc); step(Math.ceil(C.craftT / 0.05) + 2);
+    // dropping out and back (the host hooks), the game over
+    W.Main.hostHooks3.lost({ id: 'g1' }); W.Main.hostHooks3.back({ id: 'g1' });
+    G.w.hp = 1; WZ.damage(500, false, WZ.HAZ.unknown); step(30); W.UI.showResults();
+    o.fb3 = Object.keys(G.fb).filter(k => G.fb[k] > 0);
+    o.res = /ROOTKEEPER: GAME OVER/.test(document.getElementById('results').textContent);
+    document.getElementById('results').classList.add('hidden');
+    // the lobby: three statues, one seat per role, a taken role is rejected (no bump), READY
+    W.menu.make(); const m = W.G.menu; m.online = { code: 'TEST', state: 'live' }; Lobby3.open(); const L = m.l3;
+    const g1 = Lobby3.addChar(L, 'g1'), g2 = Lobby3.addChar(L, 'g2'), host = L.chars.find(c => c.who === 'host');
+    o.c1 = Lobby3.claim(host, 'K'); o.c2 = Lobby3.claim(g1, 'K'); o.c3 = Lobby3.claim(g1, 'B'); o.c4 = Lobby3.claim(g2, 'W');
+    o.seats = L.seats.map(s => s.who).join(','); o.join = W.Main.hostHooks3.canJoin({ mode: 3, role: 'W' });
+    for (const q of m.plates) q.st = 'up';
+    { const pl = m.plates.find(q => q.kind === 'ready' && q.seat === 2); host.x = pl.x; host.y = pl.y; host.tele = 0; Lobby3.step(0.05); }
+    o.fb3 = o.fb3.concat(Object.keys(W.G.fb).filter(k => W.G.fb[k] > 0));
+    return o;
+  });
+  ok(r.c1 && !r.c2 && r.c3 && r.c4 && r.seats === 'g1,g2,host', '3P lobby: a statue claims a free role; a taken one is REJECTED (no bump)', JSON.stringify(r));
+  ok(r.join === 'role', '3P: a join asking for a role already in the room is refused', r.join);
+  ok(r.res, '3P: the Rootkeeper has his own game over screen');
+  const missing3 = ledger3.filter(id => r.fb3.indexOf(id) < 0);
+  ok(missing3.length === 0, 'every 3-player row of the feedback ledger has a cue that fires', 'missing: ' + missing3.join(' ') + ' (have ' + r.fb3.join(' ') + ')');
+  ok(ledger3.length >= 15, 'FEEDBACK.md lists the 3-player rows', ledger3.join(' '));
 
   ok(errs.length === 0, 'no page errors', errs.slice(0, 5).join(' | '));
   await browser.close();

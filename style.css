@@ -704,3 +704,29 @@ button.big.warn { background: #ff7a5a; color: #fff; box-shadow: 0 -4px 0 0 var(-
 .bkTr { margin-top: 4px; color: #cfc4e8; font-size: 12px; }
 .bkTot { margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 6px; color: #cfc4e8; font: 8px var(--display); opacity: 0.85; }
 #inspect img { vertical-align: middle; margin: -3px 0; }
+
+/* ===== 3-player mode (js/mode3run.js): the Rootkeeper's screen, his card, the 4-column tree, the one-panel game over ===== */
+#game.onRoot #hudL, #game.onRoot #hudR, #game.onRoot #questB, #game.onRoot #hotbar, #game.onRoot #inspect, #game.onRoot #hotTip, #game.onRoot #vigL, #game.onRoot #toastL, #game.onRoot #swapRing, #game.onRoot #eggQ { display: none; }
+#game.onRoot #questW { left: 360px; --qdx: 90px; }
+#game.onRoot #toastR { left: 560px; }
+#game.onRoot #help { bottom: 20px; width: 860px; grid-template-columns: 1fr; }
+#game.onRoot #help .hfoot { grid-column: 1; }
+#rootHud { position: absolute; left: 16px; top: 16px; width: 320px; z-index: 20; }
+#rootHud.hidden { display: none; }
+#rootHud .clabel b { color: #8fd85a; }
+#rootHud .kg { display: flex; align-items: center; gap: 3px; margin-left: 8px; opacity: .45; }
+#rootHud .kg.on { opacity: 1; }
+#rootHud .kg kbd, #rootHud .kt kbd { font: 8px var(--display); padding: 1px 3px; background: var(--ink); color: var(--cream); }
+#rootHud .kbank { display: flex; align-items: center; gap: 6px; font: 11px var(--display); color: var(--cream); margin-bottom: 6px; }
+#rootHud .khands { display: flex; gap: 2px; min-height: 18px; margin-bottom: 6px; }
+#rootHud .khands .hs { width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; background: var(--panel-lo); }
+#rootHud .khands .hs.fr { box-shadow: 0 0 0 2px var(--gold); }
+#rootHud .khands .hs.em { opacity: .5; box-shadow: inset 0 0 0 1px var(--ink); }
+#rootHud .ktools { display: flex; gap: 3px; flex-wrap: wrap; }
+#rootHud .kt { display: flex; flex-direction: column; align-items: center; width: 34px; padding: 2px 0; background: var(--panel-lo); }
+#rootHud .kt.on { box-shadow: 0 0 0 3px #8fd85a; background: var(--panel-hi); }
+#rootHud .ktool { margin-top: 6px; font: 9px var(--display); color: #cfe88a; }
+.res.ash { display: flex; align-items: center; gap: 4px; }
+.res.ash:empty { display: none; }
+.cols.c4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+#results.r3 { left: 580px; }

@@ -60,8 +60,9 @@ UI.toast = function (text, side, icon, local, prio) {
     return;
   }
   UI.cue(prio);
-  if (!local && (side === 'R' || (G && G.m4))) Net.sendToast(text, icon, side);   // the Wizard's messages also reach the Wizard's screen (online host)
-  const box = $(side === 'R' ? 'toastR' : 'toastL');
+  if (!local && (side === 'R' || (G && (G.m4 || G.m3)))) Net.sendToast(text, icon, side);   // the Wizard's messages also reach the Wizard's screen (online host)
+  if (G && G.m3 && !local && Net.role === 'host') { const r = M3.myRole(); if (side !== (r === 'B' ? 'L' : r === 'W' ? 'R' : 'K')) return; }   // 3P: the host shows only his own world's toasts (side 'K' = the Rootkeeper's)
+  const box = $(side === 'R' || side === 'K' ? 'toastR' : 'toastL');
   if (!box) return;
   for (const c of box.children) if (c.dataset.t === text) { c.classList.remove('out'); c._ttl = 2.6; c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); return; }
   const el = document.createElement('div');
@@ -125,6 +126,7 @@ UI.handsHtml = function () {
 };
 UI.seatHud = function () {   // 4P: whose screen this is (a coloured name chip), and the Wizard card's own name
   const el = $('seatTag');
+  if (G.m3) return;   // (3P: M3.hud keeps the chip)
   if (!G.m4) { if (!el.classList.contains('hidden')) { el.classList.add('hidden'); $('wizName').textContent = 'WIZARD'; } return; }
   const s = M4.me(), q = G.seats[s], A = q.att && q.att.length ? q.att.map(e => UI.img(e, 16)).join('') : '';
   setHtml('seatTag', '<b style="color:' + q.col + '">' + q.name + '</b> <i>' + (q.role === 'B' ? 'BUILDER ' : 'WIZARD ') + q.n + '</i> ' + A);
@@ -663,7 +665,7 @@ UI.openTree = function (side, open) {
 UI.nodeOf = id => CFG.tree.find(t => t.id === id);
 UI.renderTree = function (side) {
   const el = $(side === 'L' ? 'treeL' : 'treeR');
-  const cols = CFG.branches;   // three branches, left to right: Builder, Buildings, Wizard (spells and creatures live in the Collection Book)
+  const cols = CFG.branches.filter(c => !c.m3 || (G && G.m3));   // (the Rootkeeper's branch is a 3P column only) three branches, left to right: Builder, Buildings, Wizard (spells and creatures live in the Collection Book)
   const bank = BANK_KINDS.filter(k => G.bank[k] > 0).map(k => '<span class="bk">' + UI.img(k, 16) + G.bank[k] + '</span>').join('') || '<span class="dim">empty: send spells into the Skill Portal</span>';
   let h = '<div class="treeHead"><h2>' + UI.img(side === 'L' ? 'ic_wrench' : 'ic_hat', 32) + 'SKILL TREE</h2><div class="xpbig">' + UI.img('ic_xp', 24) + Math.floor(G.xp) + '</div><button class="x" data-close="1">' + UI.img('ic_x', 16) + '</button></div>';
   const un = UI.undoKind();
@@ -1245,7 +1247,7 @@ UI.keysPage = function (box, back) {
   const stop = () => { if (listen) { window.removeEventListener('keydown', listen.fn, true); listen = null; } };
   const draw = () => {
     const groups = [];
-    for (const a of Keys.list) { let g = groups.find(x => x.t === a.group); if (!g) groups.push(g = { t: a.group, rows: [] }); g.rows.push(a); }
+    for (const a of Keys.list) { if (a.m3 && !(G && G.m3)) continue; let g = groups.find(x => x.t === a.group); if (!g) groups.push(g = { t: a.group, rows: [] }); g.rows.push(a); }   // (the Rootkeeper's keys and the 3P view keys only show in a 3P game)
     box.innerHTML = '<h2>KEYS</h2><p class="keyNote">Click a key, then press the new one (Esc cancels). If another action of the same player had that key, the two swap. Mouse buttons and the pad are fixed.' +
       (note ? '<br><b>' + note + '</b>' : '') + '</p><div class="ctlBody keyBody">' +
       groups.map(g => '<div class="ctlSec"><h3>' + g.t + '</h3>' + g.rows.map(a => '<div class="keyRow"><span>' + a.label + '</span><button class="keyBtn' + (Keys.custom(a.id) ? ' on' : '') + (listen && listen.id === a.id ? ' wait' : '') + '" data-id="' + a.id + '">' +

@@ -8,7 +8,7 @@ const Keys = { map: {}, list: [], by: {} };
 (function () {
   const K = 'wands_keys';
   const S = (...a) => ({ solo: a, duo: a, swap: a });   // the same in every scheme
-  const act = (id, role, group, label, def) => { const a = { id, role, group, label, def: Array.isArray(def) ? S(...def) : def }; Keys.list.push(a); Keys.by[id] = a; };
+  const act = (id, role, group, label, def) => { const a = { id, role, group, label, def: Array.isArray(def) ? S(...def) : def }; Keys.list.push(a); Keys.by[id] = a; return a; };
   const MV = (r, dirs) => dirs.forEach(([n, wasd, arrow, lab]) => act(r + n, r, r === 'B' ? 'BUILDER: WALK' : 'WIZARD: WALK', lab,
     { solo: [wasd, arrow], duo: [r === 'B' ? wasd : arrow], swap: [r === 'B' ? arrow : wasd] }));
   const D = [['Up', 'KeyW', 'ArrowUp', 'Up'], ['Down', 'KeyS', 'ArrowDown', 'Down'], ['Left', 'KeyA', 'ArrowLeft', 'Left'], ['Right', 'KeyD', 'ArrowRight', 'Right']];
@@ -39,6 +39,21 @@ const Keys = { map: {}, list: [], by: {} };
   act('wEmote', 'W', WG, 'Emote wheel', ['KeyN']);
   act('wMap', 'W', WG, 'Big map', ['KeyL']);
   act('treeW', 'W', WG, 'Wizard skill tree', ['KeyY']);
+  // the ROOTKEEPER (3-player mode only: the Settings > KEYS page lists these, and the two view keys below, only in a 3P game; m3 marks them)
+  const KG = 'ROOTKEEPER', m3 = a => { a.m3 = true; return a; };
+  D.forEach(([n, wasd, arrow, lab]) => m3(act('K' + n, 'K', 'ROOTKEEPER: WALK', lab, [wasd, arrow])));
+  m3(act('kPick', 'K', KG, 'Pick up / take from a pylon / craft / place the tool (also left click)', ['Period']));
+  m3(act('kThrow', 'K', KG, 'Throw remains / plant a seed or a trap (also right click)', ['Comma']));
+  m3(act('kUse', 'K', KG, 'Use: mash a node or mirror Harvester, set a Burner, switch a crafter', ['KeyE', 'Slash']));
+  m3(act('kRoll', 'K', KG, 'Root Roll (once the skill is bought)', ['Space']));
+  m3(act('kTool', 'K', KG, 'Put the tool away', ['KeyQ']));
+  m3(act('kPrev', 'K', KG, 'Previous tool', ['BracketLeft']));
+  m3(act('kNext', 'K', KG, 'Next tool', ['BracketRight']));
+  for (let i = 1; i <= 9; i++) m3(act('kSlot' + i, 'K', 'ROOTKEEPER: TOOLBAR', 'Tool ' + i, ['Digit' + i]));
+  m3(act('kGhost', 'K', KG, 'Ghost view: the wilds above (foes, the Wizard)', ['KeyG']));
+  m3(act('treeK', 'K', KG, 'Rootkeeper skill tree', ['KeyT']));
+  m3(act('wGhost', 'W', WG, 'Ghost view: the underworld below (3-player)', ['KeyG']));
+  m3(act('pip3', 'S', 'BOTH PLAYERS', 'Corner picture: the next teammate (3-player)', ['KeyJ']));
   act('swapHold', 'S', 'BOTH PLAYERS', 'Swap jobs (hold)', ['KeyX']);
   act('help', 'S', 'BOTH PLAYERS', 'Controls card', ['KeyH']);
   act('book', 'S', 'BOTH PLAYERS', 'Collection Book', ['KeyC']);

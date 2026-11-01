@@ -32,7 +32,7 @@ const DevSpawn = { tab: 'enemies', elite: false, built: false };
   };
   const TABS = [['enemies', 'ENEMIES'], ['allies', 'ALLIES'], ['spells', 'SPELLS'], ['resources', 'RESOURCES']];
 
-  DevSpawn.ok = () => !!(G && G.w && G.fac && !G.menu && !Net.role && !Net.on && !G.m4);
+  DevSpawn.ok = () => !!(G && G.w && G.fac && !G.menu && !Net.role && !Net.on && !G.m4 && !G.m3);
   const say = (t) => UI.toast(t, 'L', 'ic_warn');
   const alive = () => { if (WZ.anyAlive()) return true; say('The Wizard is down'); return false; };
 

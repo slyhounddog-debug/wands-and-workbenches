@@ -74,7 +74,7 @@ const ok = (c, msg, extra) => { console.log((c ? 'PASS ' : 'FAIL ') + msg + (ext
   await page.evaluate(() => { [...document.querySelectorAll('#pause button')].find(b => /KEYS/.test(b.textContent)).click(); });
   await page.waitForTimeout(200);
   r = await ev(() => document.querySelectorAll('.keyBtn').length);
-  ok(r === await ev(() => Keys.list.length), 'Settings > KEYS lists every action', '' + r);
+  ok(r === await ev(() => Keys.list.filter(a => !a.m3).length), 'Settings > KEYS lists every action (the 3-player ones only in a 3P game)', '' + r);
   await page.click('.keyBtn[data-id="wMap"]'); await page.waitForTimeout(100); await page.keyboard.press('KeyZ'); await page.waitForTimeout(200);
   r = await ev(() => Keys.codes('wMap')[0]); ok(r === 'KeyZ', 'clicking a key and pressing another binds it', r);
   await shot('keys');

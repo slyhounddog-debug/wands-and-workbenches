@@ -22,7 +22,7 @@
 // toasts) and a second UNRELIABLE, UNORDERED one for the 20 Hz snapshots (a late or lost picture is simply skipped: nothing waits behind it, so one bad packet on a phone
 // hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
-  VERSION: 14,   // 14: 4-player snapshots are role-scoped (the other world's bulk parts ride every third picture, "~" lists the ones left out); 13: 4-player rooms (G.m4 / seats / w2 / bd2 / bs2 / wand2 / aug2 / vi / wi / bi / rdy / over, owner tags pi on timers, projectiles, zones, mines, booms; the pad carries bi; toasts carry their side); 12: the 2026-10-31 pass puts new plain data in the snapshot (G.fac.xpg / shardPrev, G.w boulder motion, drop.up, w.heat, G.stats.fl / built); 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
+  VERSION: 15,   // 15: 3-player rooms (Net.mode 3: a host and two guests, one seat per role; the hello names the mode and the role and a taken role is refused 'role'; G carries m3 / u, the underworld, and the Rootkeeper's seat); 14: 4-player snapshots are role-scoped (the other world's bulk parts ride every third picture, "~" lists the ones left out); 13: 4-player rooms (G.m4 / seats / w2 / bd2 / bs2 / wand2 / aug2 / vi / wi / bi / rdy / over, owner tags pi on timers, projectiles, zones, mines, booms; the pad carries bi; toasts carry their side); 12: the 2026-10-31 pass puts new plain data in the snapshot (G.fac.xpg / shardPrev, G.w boulder motion, drop.up, w.heat, G.stats.fl / built); 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
   BUILD: 11,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
@@ -149,7 +149,7 @@ const Net = {
       pad.onmessage = e => {
         if (!isHostConn(conn) || typeof e.data !== 'string') return;
         let m; try { m = JSON.parse(e.data); } catch (x) { return; }
-        if (m && m.t === 'pad') { Net.lastRx = now(); (Net.mode === 4 ? host4Msg : hostMsg)(conn, m); }
+        if (m && m.t === 'pad') { Net.lastRx = now(); (Net.mode >= 3 ? host4Msg : hostMsg)(conn, m); }
       };
       conn._padCh = pad;
     } catch (e) { conn._snapCh = null; Net.log('snapshot channel failed: ' + (e && e.message)); }
@@ -204,7 +204,7 @@ const Net = {
   // ================= HOST =================
   // open a room: resolves with the code. The game itself starts when the guest has joined (hooks.guestJoined).
   Net.createRoom = function (mode) {
-    Net.reset(); Net.role = 'host'; Net.state = 'opening'; Net.mode = mode === 4 ? 4 : 2;
+    Net.reset(); Net.role = 'host'; Net.state = 'opening'; Net.mode = mode === 4 ? 4 : mode === 3 ? 3 : 2;
     return Promise.all([loadLib(), getRelay()]).then(() => new Promise((res, rej) => {
       let tries = 0;
       const attempt = () => {
@@ -212,7 +212,7 @@ const Net = {
         let opened = false;
         peer.on('open', () => {
           opened = true; Net.peer = peer; Net.code = code; Net.state = 'waiting';
-          peer.on('connection', c => (Net.mode === 4 ? host4Conn(c) : hostConn(c)));
+          peer.on('connection', c => (Net.mode >= 3 ? host4Conn(c) : hostConn(c)));   // (3P and 4P rooms take several guests)
           peer.on('close', () => Net.log('host peer CLOSED (destroyed)'));
           peer.on('disconnected', () => Net.log('host peer lost the matchmaking server'));
           peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) { /* ignore */ } });   // the signaling server dropped us: stay reachable for a rejoin
@@ -241,6 +241,7 @@ const Net = {
     if (!m || typeof m !== 'object') return;
     if (m.t === 'hello') {
       if (m.v !== Net.VERSION) { refuse(conn, 'version'); return; }
+      if (m.mode && m.mode !== 2) { refuse(conn, 'mode'); return; }   // (a guest who chose 3 or 4 PLAYER dialled a 2-player room)
       if (Net.tok && m.tok !== Net.tok) { refuse(conn, 'full'); return; }   // the room locked to the first guest: anyone else is turned away
       if (!Net.tok && Net.state !== 'waiting') { refuse(conn, 'full'); return; }
       if (typeof m.tok !== 'string' || m.tok.length < 8) { refuse(conn, 'full'); return; }
@@ -279,7 +280,7 @@ const Net = {
   }
   // called every host frame, right after IN.pollPads: the guest's pad becomes the Wizard's pad (the dev bot's seam)
   Net.drive = function (ts) {
-    if (Net.role === 'host' && Net.mode === 4) { drive4(); return; }
+    if (Net.role === 'host' && Net.mode >= 3) { drive4(); return; }
     if (Net.role !== 'host' || !G || G.ctl.pw < 0) return;
     const g = Net.gpad || {}, e = Net.gedge || {};
     const pad = { ix: Math.max(-1, Math.min(1, g.ix || 0)), iy: Math.max(-1, Math.min(1, g.iy || 0)), rx: Math.max(-1, Math.min(1, g.rx || 0)), ry: Math.max(-1, Math.min(1, g.ry || 0)), cyc: e.cyc || 0, any: !!(g.any || Object.keys(e).length) };
@@ -304,7 +305,7 @@ const Net = {
   }
   Net.hostTick = function (dt) {
     if (Net.role !== 'host') return;
-    if (Net.mode === 4) { hostTick4(dt); return; }
+    if (Net.mode >= 3) { hostTick4(dt); return; }
     const st = Net.stats;
     st._t += dt;
     if (st._t >= 1) { st.kbps = Math.round(st._b / 1024 / st._t); st.fps = +(st._n / st._t).toFixed(1); st._t = 0; st._b = 0; st._n = 0; }
@@ -426,7 +427,7 @@ const Net = {
       }
     }).catch(e => { Net.busy = false; UI.err(e); });
   }
-  Net.sendToast = (text, icon, side) => { if (Net.role === 'host' && Net.mode === 4) { Net.sendToast4(text, icon, side || 'R'); return; } if (Net.role === 'host' && Net.state === 'live') send(Net.conn, { t: 'toast', text, icon }); };
+  Net.sendToast = (text, icon, side) => { if (Net.role === 'host' && Net.mode >= 3) { Net.sendToast4(text, icon, side || 'R'); return; } if (Net.role === 'host' && Net.state === 'live') send(Net.conn, { t: 'toast', text, icon }); };
   Net.sendBuyRes = (id, ok, toasts) => { if (Net.role === 'host' && Net.state === 'live') send(Net.conn, { t: 'buyres', id, ok, toasts }); };
 
   // ================= 4-PLAYER HOST: three guests (Net.mode 4) =================
@@ -438,7 +439,7 @@ const Net = {
   Net.slotOf = conn => Net.gs.find(s => s.conn === conn) || null;
   Net.liveSlots = () => Net.gs.filter(s => s.state === 'live');
   Net.hooks4 = Net.hooks4 || {};
-  function isHostConn(conn) { return Net.role === 'host' && (Net.mode === 4 ? !!Net.slotOf(conn) : conn === Net.conn); }
+  function isHostConn(conn) { return Net.role === 'host' && (Net.mode >= 3 ? !!Net.slotOf(conn) : conn === Net.conn); }
   function host4Conn(conn) {
     const dropT = setTimeout(() => { if (!Net.slotOf(conn)) { try { conn.close(); } catch (e) { /* ignore */ } } }, 50000);   // never said hello
     conn.on('data', m => host4Msg(conn, m));
@@ -450,17 +451,21 @@ const Net = {
     if (m.t === 'hello') {
       if (m.v !== Net.VERSION) { refuse(conn, 'version'); return; }
       if (typeof m.tok !== 'string' || m.tok.length < 8) { refuse(conn, 'full'); return; }
+      if (m.mode && m.mode !== Net.mode) { refuse(conn, 'mode'); return; }   // (the guest chose another mode than this room's)
       let s = Net.gs.find(q => q.tok === m.tok), fresh = false;
       if (!s) {   // a new player: a free slot, or one whose player stayed away past the rejoin window
-        const rel = Net.gs.find(q => q.released);
-        if (Net.gs.length < 3 && !Net.sealed) { const id = 'g' + (Net.gs.length + 1); s = { id, tok: m.tok, pad: SLOT_PAD[id], state: 'lost', lastRx: 0, lostAt: 0, gpad: null, gedge: null, gseq: 0, gsig: '', conn: null, released: false }; Net.gs.push(s); fresh = true; }
+        const why = Net.mode === 3 && Net.hooks4.canJoin ? Net.hooks4.canJoin(m) : '';   // 3P: one seat per role: a role already in the room is refused (no bump)
+        if (why) { refuse(conn, why); return; }
+        const rels = Net.gs.filter(q => q.released), rel = Net.mode === 3 && Net.hooks4.pickRel ? Net.hooks4.pickRel(m, rels) : rels[0];
+        if (Net.gs.length < (Net.mode === 3 ? 2 : 3) && !Net.sealed) { const id = 'g' + (Net.gs.length + 1); s = { id, tok: m.tok, pad: SLOT_PAD[id], state: 'lost', lastRx: 0, lostAt: 0, gpad: null, gedge: null, gseq: 0, gsig: '', conn: null, released: false }; Net.gs.push(s); fresh = true; }
         else if (rel) { s = rel; s.tok = m.tok; s.released = false; fresh = true; }
-        else { refuse(conn, 'full'); return; }
+        else { refuse(conn, Net.mode === 3 && Net.sealed && rels.length ? 'role' : 'full'); return; }
+        s.want = typeof m.role === 'string' ? m.role : null;   // (3P: the role he asked for)
       }
       if (s.conn && s.conn !== conn) { const old = s.conn; s.conn = null; try { old.close(); } catch (e) { /* ignore */ } }   // the same guest on a fresh connection
       s.conn = conn; s.state = 'live'; s.lastRx = now(); s.lostAt = 0; s.gseq = 0;
       snapChannel(conn);
-      send(conn, { t: 'welcome', v: Net.VERSION, seed: Net.SEED, sig: Net.sig(), mode: 4, you: s.id, runMeta: { slot: G ? G.slot : 0, time: G && G.stats ? G.stats.time : 0 } });
+      send(conn, { t: 'welcome', v: Net.VERSION, seed: Net.SEED, sig: Net.sig(), mode: Net.mode, you: s.id, runMeta: { slot: G ? G.slot : 0, time: G && G.stats ? G.stats.time : 0 } });
       Net.slowStr = {}; Net.snapAcc = 1; Net.busy = false; Net.state = 'live'; s.fresh = true;   // (his first picture carries everything)
       if (fresh) { if (Net.hooks4.joined) Net.hooks4.joined(s); } else if (Net.hooks4.back) Net.hooks4.back(s);
       return;
@@ -555,12 +560,13 @@ const Net = {
   Net.sendToast4 = (text, icon, side) => { for (const s of Net.liveSlots()) send(s.conn, { t: 'toast', text, icon, side }); };
   Net.sendBuyRes4 = (s, id, ok, toasts) => { if (s && s.state === 'live') send(s.conn, { t: 'buyres', id, ok, toasts }); };
   // this machine (a guest) names its seat's role for the keyboard mapping: 'B' (Builder keys) or 'W' (Wizard keys); js/online4.js sets the hook
-  Net.seatRole = () => (Net.mode === 4 && Net.hooks.seatRole ? Net.hooks.seatRole() : 'W');
+  Net.seatRole = () => (Net.mode >= 3 && Net.hooks.seatRole ? Net.hooks.seatRole() : 'W');
 
   // ================= GUEST =================
   // join a room; resolves once the host has said welcome
-  Net.join = function (code) {
+  Net.join = function (code, opts) {
     Net.reset(); Net.role = 'guest'; Net.state = 'opening'; Net.code = code; Net.tok = token();
+    Net.want = opts || null;   // (3P: { mode: 3, role }: the hello names them, the host refuses a taken role)
     return open(false);
   };
   // after a drop: dial the same code again with the same token (a fresh handshake, then a full snapshot)
@@ -587,7 +593,7 @@ const Net = {
         const conn = peer.connect(Net.PREFIX + Net.code, { reliable: true, serialization: 'binary' });
         Net.conn = conn;
         Net.diag = watchIce(conn); traceClose(conn, 'guest');
-        conn.on('open', () => { snapChannel(conn); send(conn, { t: 'hello', v: Net.VERSION, tok: Net.tok }); });
+        conn.on('open', () => { snapChannel(conn); send(conn, Object.assign({ t: 'hello', v: Net.VERSION, tok: Net.tok }, Net.want ? { mode: Net.want.mode, role: Net.want.role } : null)); });
         conn.on('data', m => guestMsg(conn, m, res, fail, again));
         conn.on('close', () => { if (conn === Net.conn) connLost('closed'); });
         conn.on('error', () => { if (conn === Net.conn) connLost('error'); });
@@ -694,12 +700,14 @@ const Net = {
     switch (m.t) {
       case 'welcome':
         if (m.v !== Net.VERSION || m.seed !== Net.SEED || m.sig !== Net.sig()) { fail('Game version differs from the host. Reload the page (Ctrl+F5) so both of you run the same build.'); return; }
-        Net.runMeta = m.runMeta; Net.state = 'live'; Net.mode = m.mode === 4 ? 4 : 2; Net.me = m.you || null;
+        Net.runMeta = m.runMeta; Net.state = 'live'; Net.mode = m.mode === 4 ? 4 : m.mode === 3 ? 3 : 2; Net.me = m.you || null;
         if (again && Net.hooks.resumed) Net.hooks.resumed();
         res(m);
         break;
       case 'refuse':
-        if (Net.state === 'opening') fail(m.why === 'version' ? 'Game version differs from the host (theirs ' + m.v + ', yours ' + Net.VERSION + '). Reload the page (Ctrl+F5) so both of you run the same build.' : 'That room already has its second player.');
+        if (Net.state === 'opening') fail(m.why === 'version' ? 'Game version differs from the host (theirs ' + m.v + ', yours ' + Net.VERSION + '). Reload the page (Ctrl+F5) so both of you run the same build.' :
+          m.why === 'role' ? 'That role is already taken in that room: pick another role (BUILDER, WIZARD or ROOTKEEPER) and join again.' :
+          m.why === 'mode' ? 'That room is a different mode: choose the same 2 / 3 / 4 PLAYER plate as the host.' : Net.want && Net.want.mode === 3 ? 'That room is full.' : 'That room already has its second player.');
         else endSession('Could not rejoin.');
         break;
       case 'snap': snapIn(m.n, m.z, 'reliable'); break;
@@ -752,6 +760,9 @@ const Net = {
     if (Net.mute) { Net.latch = {}; return; }   // the guest's own tree / menu / book is up: his presses belong to it, not to the Wizard
     const L = Net.latch || (Net.latch = {}), gp = IN.pad[0] || null;
     if (Net.seatRole() === 'B') { collectB(L, gp); return; }   // (4P: a Builder seat has the Builder's keys)
+    if (Net.seatRole() === 'K') { M3.collectK(L, gp); return; }   // (3P: the Rootkeeper's keys)
+    if (G && G.m3 && Keys.hit('wGhost')) L.rt = true;   // (3P: the Wizard's ghost view rides his pad's RT)
+    if (G && G.menu && G.menu.l3 && IN.hit('KeyE')) L.x = true;   // (the 3P lobby: E at a statue)
     // the Wizard's four buttons (see Main.wizBtns): Space / . dodge = a, left click / / mash = x, right click / , cast = b, Q / M cycle = y; T (the tree) goes as Back
     // (the keys are the Keys actions, so the guest's own remaps apply: js/keys.js)
     if (Keys.hit('wDodge') || (gp && gp.a)) L.a = true;
@@ -768,7 +779,7 @@ const Net = {
   Net.padNow = function () {
     if (Net.mute) return { ix: 0, iy: 0, rx: 0, ry: 0, cyc: 0, a: false, b: false, x: false, y: false, lb: false, rb: false, rt: false, l3: false, back: false, xHeld: false, aHeld: false, bHeld: false, ltHeld: false, startHeld: false, any: false };
     const L = Net.latch || (Net.latch = {}), gp = IN.pad[0] || null;
-    const mv = Keys.move(Net.seatRole() === 'B' ? 'B' : 'W');
+    const mv = Keys.move(Net.seatRole() === 'B' ? 'B' : Net.seatRole() === 'K' ? 'K' : 'W');
     let ix = mv[0], iy = mv[1];
     if (!ix && gp) ix = gp.ix;
     if (!iy && gp) iy = gp.iy;
@@ -777,6 +788,7 @@ const Net = {
       xHeld: IN.mouse.l || Keys.down('wMash') || !!(gp && gp.xHeld), aHeld: Keys.down('wDodge') || !!(gp && gp.aHeld), bHeld: !!(gp && gp.bHeld), ltHeld: !!(gp && gp.ltHeld) || (Net.seatRole() !== 'B' && IN.shift()), startHeld: false,   // (Shift held with the wand's Cycle key steps it backward, as LT does on a pad)
     };
     for (const k of EDGES) out[k] = !!L[k];
+    if (Net.seatRole() === 'K') { out.aHeld = false; out.xHeld = false; out.bHeld = false; out.ltHeld = false; out.bi = L.bi || null; }
     if (Net.seatRole() === 'B') { out.aHeld = Keys.down('tumble') || Keys.down('pick') || IN.mouse.l || !!(gp && gp.aHeld); out.xHeld = false; out.bHeld = IN.mouse.r || Keys.down('throw') || !!(gp && gp.bHeld); out.ltHeld = IN.shift() || !!(gp && gp.ltHeld); out.bi = L.bi || null; }
     out.any = ix !== 0 || iy !== 0 || out.aHeld || out.xHeld || EDGES.some(k => out[k]);
     return out;

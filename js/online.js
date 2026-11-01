@@ -26,9 +26,9 @@ Main.pausedBanner = function () {
     el.style.cssText = 'position:absolute;left:50%;top:70px;transform:translateX(-50%);padding:10px 18px;background:#1d1830;color:#ffe36b;font-family:var(--display);font-size:16px;z-index:40;pointer-events:none';
     $('stage').appendChild(el);
   }
-  const p = G && G.pauseBy, mine = G && G.m4 ? (G.seats[M4.me()] || {}).who : Net.role === 'guest' ? 'guest' : 'host';
+  const p = G && G.pauseBy, mine = G && G.m4 ? (G.seats[M4.me()] || {}).who : G && G.m3 ? (G.seats[M3.me()] || {}).who : Net.role === 'guest' ? 'guest' : 'host';
   let other = Net.role === 'guest' ? p && p.host : p && p.guest, who = Net.role === 'guest' ? 'BUILDER' : 'WIZARD';
-  if (G && G.m4 && p) { const k = Object.keys(p).find(q => p[q] && q !== mine); other = !!k; const s = k && G.seats.find(x => x.who === k); who = s ? s.name : 'A PLAYER'; }
+  if (G && (G.m4 || G.m3) && p) { const k = Object.keys(p).find(q => p[q] && q !== mine); other = !!k; const s = k && G.seats.find(x => x.who === k); who = s ? s.name : 'A PLAYER'; }
   el.classList.toggle('hidden', !(Net.on && other && !Main.menuUp));
   if (other) el.textContent = who + ' PAUSED THE GAME';
 };
@@ -68,7 +68,7 @@ Main.netBannerTick = function () {
 // the layout classes on the HUD (CSS: #game.onHost / #game.onGuest) and the guest's own controls card
 Main.netUi = function (mode) {
   const g = $('game');
-  g.classList.toggle('online', !!mode); g.classList.toggle('onHost', mode === 'host'); g.classList.toggle('onGuest', mode === 'guest');
+  g.classList.toggle('online', !!mode); g.classList.toggle('onHost', mode === 'host'); g.classList.toggle('onGuest', mode === 'guest'); g.classList.toggle('onRoot', mode === 'root');   // (onRoot: the 3P Rootkeeper's layout)
   Main.netBanner(null);
   const help = $('help');
   if (Main.helpHtml === undefined) Main.helpHtml = help.innerHTML;
@@ -131,11 +131,15 @@ Main.guestHooks = {
   },
   toast(m) {
     if (G && G.m4) { const mine = M4.ROLE[M4.me()] === 'B' ? 'L' : 'R'; if (m.side && m.side !== mine) return; UI.toast(m.text, mine, m.icon, true); return; }   // 4P: each seat shows the toasts of its own half
+    if (G && G.m3) { const r = M3.myRole(), mine = r === 'B' ? 'L' : r === 'W' ? 'R' : 'K'; if (m.side && m.side !== mine) return; UI.toast(m.text, mine, m.icon, true); return; }   // 3P: and of its own world ('K' = the Rootkeeper's)
     UI.toast(m.text, 'R', m.icon, true);
   },
-  seatRole() { const i = G && G.m4 ? G.seats.findIndex(x => x.who === Net.me) : G && G.menu && G.menu.l4 ? Lobby4.mySeat() : -1; return i >= 0 ? M4.ROLE[i] : 'W'; },   // (the keyboard mapping: Builder keys or Wizard keys)
+  seatRole() {
+    if (G && G.m3) { const q = G.seats.find(x => x.who === Net.me); return q ? q.role : 'W'; }   // 3P: 'B', 'W' or 'K' (the Rootkeeper's keys)
+    const i = G && G.m4 ? G.seats.findIndex(x => x.who === Net.me) : G && G.menu && G.menu.l4 ? Lobby4.mySeat() : -1; return i >= 0 ? M4.ROLE[i] : 'W';
+  },   // (the keyboard mapping: Builder keys or Wizard keys)
   buyres(m) {
-    const b = G && G.m4 && M4.ROLE[M4.me()] === 'B';
+    const b = G && ((G.m4 && M4.ROLE[M4.me()] === 'B') || (G.m3 && M3.myRole() === 'B'));
     for (const t of m.toasts || []) if (t.side === 'L') UI.toast(t.text, b ? 'L' : 'R', t.icon, true);   // the host's answer: "Unlocked: ..." / "Still need ..."
     AU.sfx(m.ok ? 'buy' : 'error');
     if (UI.treeOpen.R) UI.renderTree('R');
@@ -143,9 +147,9 @@ Main.guestHooks = {
   },
 };
 // the guest types the code at the keyboard prop in the menu world (Menu typingTick); once the host has said welcome, the host's menu world arrives as snapshots
-Main.joinOnline = function (code) {
+Main.joinOnline = function (code, opts) {
   Net.hooks = Main.guestHooks;
-  return Net.join(code).then(() => {
+  return Net.join(code, opts).then(() => {
     STATE = 'guest'; Main.menuUp = false;
     UI.show('game', false);
     Main.netUi('guest');
@@ -160,7 +164,8 @@ Main.enterGuest = function () {
   UI.show('game', true);
   UI.show('pause', false); UI.show('results', false); UI.show('victory', false);
   if (G.m4) G.vi = M4.guestSeat();
-  Main.netUi(G.m4 && M4.ROLE[G.vi] === 'B' ? 'host' : 'guest');
+  if (G.m3) { G.vi = M3.guestSeat(); M3.netUi(M3.ROLE[G.vi]); if (M3.ROLE[G.vi] === 'B') UI.buildHotbar(); }   // 3P: this machine's role decides the HUD
+  else Main.netUi(G.m4 && M4.ROLE[G.vi] === 'B' ? 'host' : 'guest');
   if (G.m4 && M4.ROLE[G.vi] === 'B') UI.buildHotbar();   // (a Builder seat has the Builder's hotbar)
   UI.openTree('L', false); UI.openTree('R', false);
   R.wcam.x = G.w.x; R.wcam.y = G.w.y; R.fcam.x = G.bd.x; R.fcam.y = G.bd.y;
@@ -169,7 +174,7 @@ Main.enterGuest = function () {
 };
 Main.guestKeys = function (dt) {
   const p = IN.pad[0];
-  const bs = G.m4 && M4.ROLE[M4.me()] === 'B';   // 4P: a Builder seat has the Builder's tree (left) and the Builder's keys
+  const bs = (G.m4 && M4.ROLE[M4.me()] === 'B') || (G.m3 && M3.myRole() === 'B');   // 4P / 3P: a Builder seat has the Builder's tree (left) and the Builder's keys
   if (IN.hit('Escape')) { if (UI.treeOpen.R) UI.openTree('R', false); else if (UI.treeOpen.L) UI.openTree('L', false); else if (!Book.isOpen) Main.pause(!Main.menuUp); }
   if (!Main.menuUp && !Book.isOpen && (Keys.hit('treeB') || (!bs && (Keys.hit('treeW') || (p && p.back))))) UI.openTree(bs ? 'L' : 'R');
   if (Keys.hit('book') && !UI.treeOpen.R && !Main.menuUp && !Book.isOpen) Book.open();
@@ -278,7 +283,7 @@ const slowOf = w => (1 - Math.min(0.8, w.zSlow || 0)) * (w.slowT > 0 ? 1 - w.slo
 // a new snapshot (G is already it): start the copy from the host's Wizard and replay the pad packets the host has not used yet
 Main.predSnap = function (s) {
   const pr = Main.pr, w = s.w;
-  pr.ok = Main.PREDICT && !s.m4 && !!w && !s.menu && !w.dead && !w.jump && !w.blink && !w.kick && !w.ride && !(w.statT > 0) && !(w.cine);   // (a Riding Wave and the Statue's heavy sliding are the host's: shown as they are)
+  pr.ok = Main.PREDICT && !s.m4 && !(s.m3 && (s.seats.find(q => q.who === Net.me) || {}).role !== 'W') && !!w && !s.menu && !w.dead && !w.jump && !w.blink && !w.kick && !w.ride && !(w.statT > 0) && !(w.cine);   // (a Riding Wave and the Statue's heavy sliding are the host's: shown as they are)
   if (!pr.ok) { pr.s = null; pr.ex = pr.ey = 0; return; }
   const o = {};
   for (const f of PFIELDS) o[f] = w[f];
@@ -409,12 +414,14 @@ Main.guestFrame = function (dt, ts) {
   if (!G || !Net.on) { AU.hum(0); AU.mix(0, 0, false); AU.layerMix(null); AU.muffle(true); drawBackdrop(ts); return; }
   if (Main.sb.length) Main.interpFrame(performance.now()); else Main.tweenStep(performance.now());
   if (G.m4) G.vi = M4.guestSeat();   // (this machine's seat; the picture is drawn from it)
+  if (G.m3) G.vi = M3.guestSeat();
   Net.mute = !!(UI.treeOpen.R || UI.treeOpen.L || Main.menuUp || Book.isOpen);
   Net.guestTick(dt);
   Main.predictFrame(dt);
   Book.tick(dt);
   Main.guestKeys(dt);
   if (G.m4) { M4.guestView(dt); return; }   // 4P: drawn from this seat's point of view (js/mode4run.js)
+  if (G.m3) { M3.guestView(dt); return; }   // 3P: the same (js/mode3run.js)
   const bh = Main.hintFor(QUESTS.B[G.quest.B]), wh = Main.hintFor(QUESTS.W[G.quest.W]);
   R.hint = bh.f; R.whint = wh.w; R.focus = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null; R.rot = null;
   UI.setHint(null, false, wh.tree);

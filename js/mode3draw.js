@@ -174,16 +174,17 @@ R.drawUnder = function (main, dt, rect) {
   drawGround(ctx, v, left, right);
   // the same layout as the wilds: its grass (bending where the Wizard walks above, and where he walks himself), then the dark of being underground over all of it
   const d0 = Math.floor((-v.oy) / v.hh) - 2, d1 = Math.ceil((CFG.H - v.oy) / v.hh) + 6, uMin = Math.floor((left - v.ox) / v.hw) - 2, uMax = Math.ceil((right - v.ox) / v.hw) + 2;
-  const WW = CFG.WW, WH = CFG.WH, bk = WZ.bucket, B = CFG.bend;
+  const WW = CFG.WW, WH = CFG.WH, bk = WZ.bucket, B = CFG.bend, motes = [];
   for (let d = Math.max(0, d0); d <= Math.min(WW + WH - 2, d1); d++) for (let uu = uMin; uu <= uMax; uu++) {
     if (((d + uu) & 1) !== 0) continue;
     const x = (d + uu) / 2, y = (d - uu) / 2;
     if (x < 0 || y < 0 || x >= WW || y >= WH) continue;
-    const i = y * WW + x, b = bk[i];
+    const i = y * WW + x, b = bk[i], h = hash2(x, y, 77);
+    if (h <= 0.035) motes.push(x, y, h);   // (a glowing mote in the earth here: drawn over the dark below)
     if (!b) continue;
     for (let j = 0; j < b.length; j++) {
       const o = b[j];
-      if (!o.deco || !BENDY.has(o.spr)) continue;
+      if (!o.deco || !BENDY.has(o.spr) || (x * 3 + y * 5 + j) % 3) continue;   // (a third of the grass: it lies under the dark of the underworld, so the rest was ~600 sprite draws a frame nobody could see; the third that stays still bends where the Wizard walks above)
       const p = R.toScreen(v, o.x, o.y), bn = u.bend[i * 32 + j];
       let sk = 0;
       if (bn) { const q = bn.t - B.hold; sk = Math.round(bn.d * B.amp * (q <= 0 ? 1 : Math.exp(-q * B.damp) * Math.cos(q * B.spring)) * 10) / 10; }
@@ -193,11 +194,8 @@ R.drawUnder = function (main, dt, rect) {
   ctx.fillStyle = 'rgba(34,14,22,0.7)'; ctx.fillRect(X0, 0, RW + P, CFG.H);   // (an earth-dark wash: the layer underneath)
   ctx.fillStyle = 'rgba(10,4,12,0.35)'; for (let i = 0; i < 3; i++) { const e = 24 + i * 24; ctx.fillRect(X0, 0, RW + P, e); ctx.fillRect(X0, CFG.H - e, RW + P, e); ctx.fillRect(X0, 0, e, CFG.H); ctx.fillRect(X0 + RW - e, 0, e + P, CFG.H); }   // a stepped dark rim (the cave closes in at the edges)
   // glowing motes in the earth (a hash of the tile: no state)
-  for (let d = Math.max(0, d0); d <= Math.min(WW + WH - 2, d1); d++) for (let uu = uMin; uu <= uMax; uu++) {
-    if (((d + uu) & 1) !== 0) continue;
-    const x = (d + uu) / 2, y = (d - uu) / 2, h = hash2(x, y, 77);
-    if (h > 0.035) continue;
-    const p = R.toScreen(v, x + 0.5, y + 0.5);
+  for (let m = 0; m < motes.length; m += 3) {
+    const x = motes[m], y = motes[m + 1], h = motes[m + 2], p = R.toScreen(v, x + 0.5, y + 0.5);
     ctx.globalAlpha = 0.35 + 0.3 * Math.sin(t * 2 + h * 300); ctx.fillStyle = h < 0.012 ? '#9adf5a' : '#c8a0ff'; ctx.fillRect(Math.round(p[0] / 3) * 3, Math.round(p[1] / 3) * 3, 3, 3);
   }
   ctx.globalAlpha = 1;

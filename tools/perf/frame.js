@@ -7,6 +7,7 @@
 //   SECS=12 PROFILE=1 node tools/perf/frame.js   a CPU profile (self time by function, inclusive time of the main phases, children of drawWorld)
 //   ROOT=<worktree of an older commit> ...   measure another build with the same tool
 //   MODE2=1 ...                              a 2-player game instead (the stress scene without the second Wizard)
+//   MODE3=1 [ROLE=W|B|K] ...                 a 3-player game drawn from that seat (default the Wizard); the stress scene adds a busy underworld (remains, burners, traps)
 // Needs playwright-core + Edge (PLAYWRIGHT_CORE=<path>).
 const path = require('path');
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'playwright-core');
@@ -44,7 +45,7 @@ const SETUP = (two) => {
 const INSTRUMENT = (lean) => {
   const W = window.__wands, P = {}, D = { calls: 0, ms: 0, by: {} }, tags = [];
   const wrap = (o, k, tag) => { if (!o || !o[k]) return; const f = o[k]; o[k] = function (...a) { const t = performance.now(); try { return f.apply(this, a); } finally { const d = performance.now() - t; (P[tag] || (P[tag] = [])).push(d); } }; };
-  for (const [o, k, tag] of lean ? [] : [[W.R, 'drawWorld', 'drawWorld'], [W.R, 'drawFactory', 'drawFactory'], [W.R, 'drawPip', 'drawPip'], [W.UI, 'updateHud', 'updateHud'], [W.Main, 'step', 'Main.step'], [W.WZ, 'update', 'WZ.update'], [W.FA, 'update', 'FA.update'], [W.R, 'flush', 'R.flush'], [W.Main, 'hintFor', 'hintFor'], [W.Net, 'wirePacket', 'snapshot build']]) wrap(o, k, tag);
+  for (const [o, k, tag] of lean ? [] : [[W.R, 'drawWorld', 'drawWorld'], [W.R, 'drawFactory', 'drawFactory'], [W.R, 'drawPip', 'drawPip'], [W.UI, 'updateHud', 'updateHud'], [W.Main, 'step', 'Main.step'], [W.R, 'drawUnder', 'drawUnder'], [window.M3D, 'drawPip', 'drawPip3'], [W.M3, 'update', 'M3.update'], [W.WZ, 'update', 'WZ.update'], [W.FA, 'update', 'FA.update'], [W.R, 'flush', 'R.flush'], [W.Main, 'hintFor', 'hintFor'], [W.Net, 'wirePacket', 'snapshot build']]) wrap(o, k, tag);
   // who makes the drawImage calls: tag the innermost R.draw* function
   const tag = (o, k) => { const f = o[k]; o[k] = function (...a) { tags.push(k); try { return f.apply(this, a); } finally { tags.pop(); } }; };
   if (!lean) for (const k of Object.keys(W.R)) if (/^draw[A-Z]/.test(k) && typeof W.R[k] === 'function' && !/^draw(World|Factory|Pip)$/.test(k)) tag(W.R, k);
@@ -64,7 +65,7 @@ const INSTRUMENT = (lean) => {
     on = false; CanvasRenderingContext2D.prototype.drawImage = di;
     const secs = (performance.now() - t0) / 1000, avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0, out = { secs: +secs.toFixed(1), frames, fps: +(frames / secs).toFixed(1), ms: {}, sum: 0 };
     for (const k in P) { const per = P[k].length ? P[k].reduce((x, y) => x + y, 0) / frames : 0; out.ms[k] = +per.toFixed(2); }
-    out.sum = +(['Main.step', 'drawWorld', 'drawFactory', 'drawPip', 'updateHud'].reduce((a, k) => a + (out.ms[k] || 0), 0)).toFixed(2);   // (what one frame costs on the main thread)
+    out.sum = +(['Main.step', 'drawWorld', 'drawFactory', 'drawPip', 'drawUnder', 'drawPip3', 'updateHud'].reduce((a, k) => a + (out.ms[k] || 0), 0)).toFixed(2);   // (what one frame costs on the main thread)
     out.defers = +(defers / frames).toFixed(0);
     if (window.__swapWho) out.swapWho = Object.entries(window.__swapWho).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => (v / frames).toFixed(1) + '/f ' + k);
     out.swaps = +(swaps / frames).toFixed(0);
@@ -85,15 +86,28 @@ const INSTRUMENT = (lean) => {
   await page.waitForFunction(() => !StudioIntro.isActive(), null, { timeout: 30000 });
   await page.waitForFunction(() => __wands.G && __wands.G.menu && __wands.G.menu.plates.length > 5, null, { timeout: 30000 });
   await sleep(800);
-  const two = !!process.env.MODE2;
-  await page.evaluate(two => {
+  const m3 = !!process.env.MODE3, two = !!process.env.MODE2 || m3, role = ['B', 'W', 'K'].indexOf(process.env.ROLE || 'W');
+  await page.evaluate(([two, m3, role]) => {
     const W = __wands;
-    if (two) W.start(1); else { const s = W.M4.defaultSeats(); s[2].att = ['fire', 'water']; s[3].att = ['air', 'earth']; W.start4(1, { seats: s, me: 2 }); }
+    if (m3) W.start3(1, { me: role }); else if (two) W.start(1); else { const s = W.M4.defaultSeats(); s[2].att = ['fire', 'water']; s[3].att = ['air', 'earth']; W.start4(1, { seats: s, me: 2 }); }
     W.UI.help(false); W.G.helpT = 0;
-  }, two);
+  }, [two, m3, role]);
   await sleep(1500);
   await page.evaluate(() => { if (__wands.Main.pause) { /* a blurred headless page opens the pause menu */ } });
-  if (!process.env.CALM) { await page.evaluate(SETUP, two); await sleep(3000); }
+  if (!process.env.CALM) {
+    await page.evaluate(SETUP, two);
+    if (m3) await page.evaluate(() => {   // the underworld busy too (as in tools/mode3check/stress.js)
+      const W = __wands, u = W.G.u, M3 = W.M3, E = ['air', 'water', 'fire', 'earth'];
+      for (const el of E) u.bank[el] = 400;
+      for (let i = 0; i < 40; i++) M3.addItem('rem_' + E[i % 4], u.rk.x + Math.random() * 16 - 8, u.rk.y + Math.random() * 16 - 8);
+      const b0 = u.bld.find(b => b.type === 'burner');
+      for (let i = 0; i < 6; i++) { const p = M3.dryU(b0.x + Math.random() * 8 - 4, b0.y + Math.random() * 8 - 4, 40, [1, 4]); if (p) M3.link(b0, M3.make('trap', p[0], p[1], { tk: i % 2 ? 'slow' : 'dmg' })); }
+      for (let i = 0; i < 5; i++) { const p = M3.dryU(b0.x + Math.random() * 10 - 5, b0.y + Math.random() * 10 - 5, 40, [1, 5]); if (!p) continue; const b = M3.make('burner', p[0], p[1], { el: E[i % 4] }); for (const c of u.bld) if (c !== b && (c.type === 'node' || c.type === 'mirror' || c.type === 'trap')) M3.link(b, c); }
+      for (const b of u.bld) if (b.type === 'burner') for (const el in b.hop) b.hop[el] = 100;   // (burners only burn what is thrown in)
+      u.ghost.W = u.ghost.K = true;   // (the ghost views on: the most each seat draws)
+    });
+    await sleep(3000);
+  }
   await page.keyboard.down('KeyD');
   if (process.env.SWAPWHO) await page.evaluate(() => { window.__swapWho = {}; });
   await page.evaluate(INSTRUMENT, !!process.env.PROFILE);   // (a profile wants the real function names, not the counting wrappers)
@@ -102,7 +116,7 @@ const INSTRUMENT = (lean) => {
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
   const res = await page.evaluate(() => window.__rep());
   const scene = await page.evaluate(() => { const w = __wands.G.w; return { foes: w.enemies.filter(e => !e.dead).length, allies: w.allies.length, zones: w.zones.length, proj: w.proj.length, fx: w.fx_.length, decals: w.decals.length }; });
-  console.log((process.env.CALM ? 'CALM' : 'STRESS') + (two ? ' 2P' : ' 4P') + ' scene ' + JSON.stringify(scene));
+  console.log((process.env.CALM ? 'CALM' : 'STRESS') + (m3 ? ' 3P seat ' + (process.env.ROLE || 'W') : two ? ' 2P' : ' 4P') + ' scene ' + JSON.stringify(scene));
   console.log('frame  ' + res.fps + ' fps, ' + res.sum + ' ms of main-thread work per frame  ' + JSON.stringify(res.ms));
   console.log('swaps (Wizard field swaps) per frame: ' + res.swaps + ', deferred text/icon draws per frame: ' + res.defers);
   if (res.swapWho) for (const l of res.swapWho) console.log('   swap ' + l);

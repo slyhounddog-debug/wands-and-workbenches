@@ -221,6 +221,10 @@ Main.tween = function (a, b, at) {
   if (a.bd && b.bd) { push(a.bd, b.bd, 'x', 4); push(a.bd, b.bd, 'y', 4); }
   if (a.w2 && b.w2) { push(a.w2, b.w2, 'x', 4); push(a.w2, b.w2, 'y', 4); }   // (4P: the second Wizard and Builder)
   if (a.bd2 && b.bd2) { push(a.bd2, b.bd2, 'x', 4); push(a.bd2, b.bd2, 'y', 4); }
+  if (a.u && b.u && a.u !== b.u) {   // (3P: the Rootkeeper, the pulses on the hoses, thrown remains, remains seeping down)
+    push(a.u, b.u, 't', 1, true); if (a.u.rk && b.u.rk) { push(a.u.rk, b.u.rk, 'x', 4); push(a.u.rk, b.u.rk, 'y', 4); }
+    pair(a.u.pulses, b.u.pulses, ['t'], 2, true); pair(a.u.fly, b.u.fly, ['t'], 2, true); pair(a.u.items, b.u.items, ['z'], 3);
+  }
   if (a.fac && b.fac) {
     push(a.fac, b.fac, 't', 1, true);
     pair(a.fac.flying, b.fac.flying, ['t'], 3, true);

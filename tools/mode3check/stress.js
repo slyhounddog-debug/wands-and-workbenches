@@ -6,6 +6,8 @@
 //   node tools/mode3check/stress.js                    the stress scene
 //   CALM=1 node tools/mode3check/stress.js             the quiet game instead
 //   THROTTLE=3 ...                                     slow every page's CPU 3 times (a weaker laptop)
+//   AB=1 ...                                           alternating windows with role-scoped snapshots off (otherEvery 1) and on (3) in the same game
+//   ROOT=<worktree of an older commit> ...             measure that build instead (before / after)
 //   SECS=10 ...                                        how long to measure
 // Needs playwright-core + Edge (PLAYWRIGHT_CORE=<path>).
 const path = require('path');
@@ -61,10 +63,12 @@ const SETUP = () => {
   // the underworld busy too: remains lying about, five more burners (each hosed to every node / trap / mirror in reach), six traps, the bank full
   const u = G.u, M3 = W.M3;
   for (const el of ['air', 'water', 'fire', 'earth']) u.bank[el] = 400;
+  const fill = () => { for (const b of u.bld) if (b.type === 'burner') for (const el in b.hop) b.hop[el] = 100; };   // (burners only burn what is thrown in: fill their hoppers)
   for (let i = 0; i < 40; i++) M3.addItem('rem_' + ['air', 'water', 'fire', 'earth'][i % 4], u.rk.x + Math.random() * 16 - 8, u.rk.y + Math.random() * 16 - 8);
   const b0 = u.bld.find(b => b.type === 'burner');
   for (let i = 0; i < 6; i++) { const s = M3.dryU(b0.x + Math.random() * 8 - 4, b0.y + Math.random() * 8 - 4, 40, [1, 4]); if (s) { const t = M3.make('trap', s[0], s[1], { tk: i % 2 ? 'slow' : 'dmg' }); M3.link(b0, t); } }
   for (let i = 0; i < 5; i++) { const s = M3.dryU(b0.x + Math.random() * 10 - 5, b0.y + Math.random() * 10 - 5, 40, [1, 5]); if (!s) continue; const b = M3.make('burner', s[0], s[1], { el: ['air', 'water', 'fire', 'earth'][i % 4] }); for (const c of u.bld) if (c !== b && (c.type === 'node' || c.type === 'mirror' || c.type === 'trap')) M3.link(b, c); }
+  fill();
   top(); cast();
   setInterval(top, 200); setInterval(cast, 1500);
 };
@@ -126,6 +130,30 @@ const INSTRUMENT = () => {
   for (const p of P) await p.evaluate(() => { __wands.UI.help(false); __wands.G.helpT = 0; });
   await sleep(1500);
   if (!process.env.CALM) { await hp.evaluate(SETUP); await sleep(3000); }
+  if (process.env.AB) {   // AB=1: the same game measured with role-scoped snapshots off (otherEvery 1) and on (3), alternating, so the scene's own noise averages out
+    await thr(T);
+    await P[1].keyboard.down('KeyD'); await P[2].keyboard.down('KeyS');
+    const rows = { 1: [], 3: [] };
+    for (const every of [1, 3, 1, 3, 1, 3]) {
+      await hp.evaluate(e => { const n = __wands.CFG.mode3.net; if (n) n.otherEvery = e; }, every);
+      await sleep(1500);
+      await Promise.all(P.map(p => p.evaluate(INSTRUMENT)));
+      await sleep(SECS * 1000);
+      const r = await Promise.all(P.map(p => p.evaluate(() => window.__rep())));
+      const work = x => Object.entries(x.ms).filter(([k]) => /^(Main.step|drawWorld|drawFactory|drawPip|updateHud|guestFrame)$/.test(k)).reduce((a, [k, v]) => a + (k === 'Main.step' || k === 'guestFrame' ? parseFloat(v) : 0), 0);
+      rows[every].push(r);
+    }
+    await P[1].keyboard.up('KeyD'); await P[2].keyboard.up('KeyS');
+    const avg = (a, g) => a.reduce((x, y) => x + g(y), 0) / a.length;
+    for (const every of [1, 3]) {
+      const R = rows[every], one = i => g => g(R, i);
+      const line = (name, i) => name + ' fps ' + avg(R, r => r[i].fps).toFixed(1) + ' p95gap ' + avg(R, r => r[i].gap_p95).toFixed(0) + ' kbps ' + avg(R, r => r[i].net.kbps).toFixed(0) + ' zipKB ' + avg(R, r => r[i].net.zipKB).toFixed(1) + ' rawKB ' + avg(R, r => r[i].net.rawKB).toFixed(1) + ' parse ' + avg(R, r => parseFloat(r[i].ms['JSON.parse'] || 0)).toFixed(2) + 'ms x' + avg(R, r => parseFloat((r[i].ms['JSON.parse'] || '0 x0').split(' x')[1])).toFixed(0) + ' out ' + avg(R, r => r[i].net.bytesKB / r[i].secs).toFixed(0) + 'KB/s';
+      console.log('otherEvery=' + every + ' (' + R.length + ' windows of ' + SECS + ' s)');
+      for (let i = 0; i < 3; i++) console.log('  ' + line(i ? (i === 1 ? 'Builder guest   ' : 'Rootkeeper guest') : 'host (Wizard)   ', i));
+    }
+    console.log(errs.length ? 'FAIL page errors: ' + errs.slice(0, 4).join(' | ') : 'PASS no page errors');
+    await browser.close(); process.exit(errs.length ? 1 : 0);
+  }
   await thr(T);
   await P[1].keyboard.down('KeyD'); await P[2].keyboard.down('KeyS');   // two guests walk, like players would
   if (process.env.DEBUGDEC) for (const p of P.slice(1)) await p.evaluate(() => { window.__dbg = []; setInterval(() => { const W = __wands, G = W.G; if (G && G.w && !Array.isArray(G.w.decals) && window.__dbg.length < 3) window.__dbg.push({ keys: Object.keys(G.w).length, hasDecKey: 'decals' in G.w, sv: Object.keys(W.Net.slowVal).join(','), next: !!W.Net.next, nextDec: W.Net.next && Array.isArray(W.Net.next.w && W.Net.next.w.decals), prevDec: W.Net.prev && Array.isArray(W.Net.prev.w && W.Net.prev.w.decals), vi: G.vi, menu: !!G.menu, m4: !!G.m4, lastN: W.Net.lastN }); }, 50); });

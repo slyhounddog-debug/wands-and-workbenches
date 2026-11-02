@@ -146,8 +146,8 @@ function bookIndexEntries() {
     E('remains', 'root', 'Remains', 'rem_earth', 'What a dead foe leaves below, in its element (a normal foe ' + M.remains.normal + ', a mutant ' + M.remains.mutant + ', an elite ' + M.remains.elite + '). Left lying they decay after ' + M.remains.life + ' seconds (they blink first).',
       'The Wizard kills above; the Rootkeeper picks them up below and throws them into a Storage Pylon or a Burner.', 'They are his fuel and his building material.');
     E('pylon', 'root', 'Storage Pylon', 'u_pylon', 'Banks remains by type, in one store every pylon shares; pick at a pylon to take the last one banked back out.',
-      'Toolbar 7. Costs ' + cost(M.bld.pylon.cost) + ' remains.', 'Building and crafting are paid from the bank, and Burners load their type from it.');
-    E('burner', 'root', 'Burner', 'u_burner', 'Burns ONE remain type (the use key sets it) and pushes its output down its hoses as pulses, shared evenly by everything on them: fewer hoses, bigger pulses. Burning leaves ash.',
+      'Toolbar 7. Costs ' + cost(M.bld.pylon.cost) + ' remains.', 'Building and crafting are paid from the bank. Burners never take from it: throw remains into a Burner.');
+    E('burner', 'root', 'Burner', 'u_burner', 'Burns only the remains thrown into it (the use key sets which type goes first) and pushes its output down its hoses as pulses, shared evenly by everything on them: fewer hoses, bigger pulses. Burning leaves ash.',
       'Toolbar 2. Costs ' + cost(M.bld.burner.cost) + ' remains.', 'It feeds nodes, traps and mirror Harvesters: full rate on what they prefer, half on anything else.');
     E('hoses', 'root', 'Hoses and Poles', 'u_pole', 'Hoses are free. A building reaches ' + M.reach + ' tiles; a Hose Pole between two buildings doubles that, a Heavy Hose Pole triples it.',
       'Toolbar 1: the hose tool links the building you click to the next one. Toolbar 6: poles (press it again for the heavy one, once Heavy Hose Poles is bought).', 'Reach is the whole puzzle: where a Burner stands decides what it can feed.');

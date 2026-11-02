@@ -169,11 +169,12 @@ M3.addItem = function (k, x, y, o) {
   G.u.items.push(it);
   return it;
 };
-// a foe died in the wilds: its remains land below at the same spot (normal 1, mutant 2, elite 3; a boss: 3 of every element)
+// a foe died in the wilds: its remains land below at the same spot (normal 1 + 50% a second, one if it came from an Egg of several; mutant 2, elite 3; a boss: 3 of every element)
 M3.remainsFrom = function (e) {
   const R = C().remains, els = WZ.elemsOf ? WZ.elemsOf(e) : [];
   if (e.boss) { for (const el of ELS) for (let i = 0; i < R.boss; i++) M3.dropRemain(el, e.x, e.y); return; }
-  const n = e.elite ? R.elite : e.mut ? R.mutant : R.normal;
+  const many = e.crafted && ((CFG.creatures[e.type] || {}).n || 1) > 1;   // one of several from one Egg: one remain each
+  const n = e.elite ? R.elite : e.mut ? R.mutant : R.normal + (!many && Math.random() < R.extra ? 1 : 0);
   for (let i = 0; i < n; i++) M3.dropRemain(els.length ? els[i % els.length] : ELS[Math.floor(Math.random() * 4)], e.x, e.y);
 };
 M3.dropRemain = function (el, x, y) {
@@ -397,13 +398,10 @@ M3.burnerTick = function (b, dt) {
   const u = G.u, B = C().burner, ashN = ELS.reduce((a, e) => a + b.ash[e], 0);
   if (b.burn <= 0) {
     if (ashN >= B.ashCap) b.st = 'ash';
-    else if (b.hop[b.el] > 0) { b.hop[b.el]--; b.burn = M3.burnT(); b.bel = b.el; }
-    else if (u.bank[b.el] > 0) {   // its own hopper is empty: it loads its type from the bank (the pylons share one store)
-      u.bank[b.el]--; const i = u.blog.lastIndexOf(b.el); if (i >= 0) u.blog.splice(i, 1);
-      b.burn = M3.burnT(); b.bel = b.el;
-      const py = u.bld.filter(q => q.type === 'pylon').sort((p, q) => dist(p, b) - dist(q, b))[0];
-      if (py) M3.fx('stream', py.x, py.y, { x1: b.x, y1: b.y, col: ELEM[b.el].color });
-    } else b.st = 'starve';
+    else {   // only what was thrown into it burns (never the shared bank): its set type first, else whatever else is in the hopper
+      const el = b.hop[b.el] > 0 ? b.el : ELS.find(e => b.hop[e] > 0);
+      if (el) { b.hop[el]--; b.burn = M3.burnT(); b.bel = el; } else b.st = 'starve';
+    }
   }
   if (b.burn > 0) {
     b.st = 'burn'; b.burn -= dt;

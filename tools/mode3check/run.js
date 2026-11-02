@@ -85,7 +85,6 @@ const OUT = process.env.SHOTS || '';
   r = await run(() => {
     const W = __wands, G = W.G, u = G.u, M3 = W.M3, o = {};
     T.step(20);   // (the roll of section 2 is over)
-    u.bld.find(b => b.type === 'burner').el = 'earth';   // (a burner loads its type from the shared bank: park it on a type nobody banks here)
     const it = u.items.find(i => i.k === 'rem_water'), py = u.bld.find(b => b.type === 'pylon');
     T.near(it.x + 0.3, it.y); T.step(2); T.K({ pick: true }); o.hand = u.rk.hands.slice();
     const it2 = u.items.find(i => i.k === 'rem_fire'); T.near(it2.x + 0.3, it2.y); T.step(2); T.K({ pick: true }); o.hand2 = u.rk.hands.length;
@@ -105,27 +104,30 @@ const OUT = process.env.SHOTS || '';
   ok(r.pulled[0] === 'rem_' + r.blog[r.blog.length - 1] && r.bank2[r.blog[r.blog.length - 1]] === 0, 'picking at a pylon pulls the LAST banked one back out (last in, first out)', JSON.stringify([r.blog, r.pulled]));
   ok(r.fb[0] > 0, 'banking is a ledger cue (remain-bank)');
 
-  // ================= 4. the burner: one type, auto-load from the bank, pulses split evenly, wrong fuel at half rate =================
+  // ================= 4. the burner: only what is thrown in (never the bank), pulses split evenly, wrong fuel at half rate =================
   r = await run(() => {
     const W = __wands, G = W.G, u = G.u, M3 = W.M3, C = W.CFG.mode3, o = {};
-    const bu = u.bld.find(b => b.type === 'burner'); bu.el = 'water'; u.bank.water = 3; u.blog.push('water', 'water'); bu.burn = 0; for (const e in bu.hop) bu.hop[e] = 0;
+    const bu = u.bld.find(b => b.type === 'burner'); bu.el = 'water'; u.bank.water = 3; u.blog.push('water', 'water'); bu.burn = 0; for (const e in bu.hop) bu.hop[e] = 0; bu.hop.water = 6;
     const tr = u.bld.find(b => b.type === 'node' && b.nk === 'tree'), rk_ = u.bld.find(b => b.type === 'node' && b.nk === 'rock');
     tr.ch = 0; rk_.ch = 0; u.pulses.length = 0;
     T.near(bu.x + 12, bu.y + 12);
-    T.step(1); o.loaded = bu.st === 'burn' && bu.bel === 'water' && u.bank.water === 2;
+    T.step(1); o.loaded = bu.st === 'burn' && bu.bel === 'water' && bu.hop.water === 5 && u.bank.water === 3;
     o.pulses = u.pulses.length; o.amt = u.pulses.length ? u.pulses[0].a : 0; o.want = M3.out() * C.burner.pulse / 7;
     T.step(60);
     o.tree = tr.ch; o.rock = rk_.ch; o.ratio = (rk_.ch * C.nodes.rock.charge) / (tr.ch * C.nodes.tree.charge);
     o.wrong = G.fb && G.fb['wrong-fuel'] || 0;
-    // the set type is empty everywhere: starved (and it says which)
-    bu.el = 'earth'; u.bank.earth = 0; bu.hop.earth = 0; bu.burn = 0; T.step(50); o.starve = bu.st; o.sfb = G.fb && G.fb['burner-starve'] || 0;
+    // its set type not in the hopper: it burns whatever else was thrown in
+    for (const e in bu.hop) bu.hop[e] = 0; bu.hop.fire = 1; bu.el = 'earth'; bu.burn = 0; T.step(1); o.other = bu.st === 'burn' && bu.bel === 'fire' && bu.hop.fire === 0;
+    // an empty hopper: starved even with plenty banked (and it says which)
+    for (const e in bu.hop) bu.hop[e] = 0; u.bank.earth = 5; bu.burn = 0; T.step(50); o.starve = bu.st; o.bankKept = u.bank.earth === 5; o.sfb = G.fb && G.fb['burner-starve'] || 0;
     return o;
   });
-  ok(r.loaded, 'a burner with its set type in the bank loads one and burns it', JSON.stringify(r));
+  ok(r.loaded, 'a burner burns a remain thrown into its hopper and never takes from the shared bank', JSON.stringify(r));
   ok(r.pulses >= 7 && Math.abs(r.amt - r.want) < 1e-6, 'its output goes out as pulses, split evenly over the 7 things on its hoses', r.amt.toFixed(3) + ' each');
   ok(r.tree > 0 && Math.abs(r.ratio - 0.5) < 0.05, 'a tree (prefers Water) charges at full rate, a rock at half (wrong fuel)', 'ratio ' + r.ratio.toFixed(3));
   ok(r.wrong > 0, 'running on the wrong fuel is a ledger cue (wrong-fuel)');
-  ok(r.starve === 'starve' && r.sfb > 0, 'a burner with none of its type is starved (burner-starve)', r.starve);
+  ok(r.other, 'with none of its set type thrown in it burns another type that was', JSON.stringify(r));
+  ok(r.starve === 'starve' && r.bankKept && r.sfb > 0, 'an empty hopper is starved even with remains in the bank (burner-starve)', r.starve);
   await shot('k_burn');
 
   // ================= 5. a node manifests in the wilds, the Wizard harvests it, it is a stump again =================
@@ -278,7 +280,10 @@ const OUT = process.env.SHOTS || '';
   r = await run(() => {
     const W = __wands, G = W.G, u = G.u, WZ = W.WZ, C = W.CFG.mode3, o = {};
     const n = () => u.items.filter(i => /^rem_/.test(i.k)).length;
-    let k0 = n(); const e1 = WZ.makeEnemy('imp', 60, 60); WZ.kill(e1); o.normal = n() - k0;
+    let k0; o.normal = [];
+    for (let i = 0; i < 60; i++) { k0 = n(); WZ.kill(WZ.makeEnemy('imp', 60, 60)); o.normal.push(n() - k0); }
+    o.egg = [];   // a Zephyr Wisp Egg hatches 3: one remain each
+    for (let i = 0; i < 20; i++) { k0 = n(); const e = WZ.makeCreature('zephyr', 60, 60, { plain: true }); e.crafted = true; WZ.kill(e); o.egg.push(n() - k0); }
     k0 = n(); const e2 = WZ.makeEnemy('imp', 60, 60); e2.mut = 'swift'; WZ.kill(e2); o.mutant = n() - k0;
     k0 = n(); const e3 = WZ.makeEnemy('imp', 60, 60, true); WZ.kill(e3); o.elite = n() - k0;
     const last = u.items[u.items.length - 1]; o.at = [Math.round(last.x), Math.round(last.y)]; o.el = last.k;
@@ -289,7 +294,9 @@ const OUT = process.env.SHOTS || '';
     o.k = W.M4.k('spawn');
     return o;
   });
-  ok(r.normal === 1 && r.mutant === 2 && r.elite === 3, 'a kill drops remains below: normal 1, mutant 2, elite 3', JSON.stringify([r.normal, r.mutant, r.elite]));
+  const two = r.normal.filter(v => v === 2).length;
+  ok(r.normal.every(v => v === 1 || v === 2) && two >= 15 && two <= 45 && r.mutant === 2 && r.elite === 3, 'a kill drops remains below: normal 1 + 50% a second, mutant 2, elite 3', two + '/60 normal kills dropped two, ' + JSON.stringify([r.mutant, r.elite]));
+  ok(r.egg.every(v => v === 1), 'a creature from an Egg that hatches several drops exactly one', JSON.stringify(r.egg));
   ok(Math.abs(r.at[0] - 60) <= 2 && Math.abs(r.at[1] - 60) <= 2 && r.el === 'rem_fire', 'at the kill\'s spot, of the foe\'s element', JSON.stringify([r.at, r.el]));
   ok(r.left === 0 && r.fade > 0 && r.land > 0, 'unbanked remains fade out and decay after their life (remain-fade, remain-land)', JSON.stringify(r));
   ok(Math.abs(r.hp / r.base - 1.2) < 0.25 && r.k === 1.25, '3P balance: foe health x1.2, counts x1.25', JSON.stringify([r.hp, r.base, r.k]));

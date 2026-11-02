@@ -22,7 +22,7 @@
 // toasts) and a second UNRELIABLE, UNORDERED one for the 20 Hz snapshots (a late or lost picture is simply skipped: nothing waits behind it, so one bad packet on a phone
 // hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
-  VERSION: 15,   // 15: 3-player rooms (Net.mode 3: a host and two guests, one seat per role; the hello names the mode and the role and a taken role is refused 'role'; G carries m3 / u, the underworld, and the Rootkeeper's seat); 14: 4-player snapshots are role-scoped (the other world's bulk parts ride every third picture, "~" lists the ones left out); 13: 4-player rooms (G.m4 / seats / w2 / bd2 / bs2 / wand2 / aug2 / vi / wi / bi / rdy / over, owner tags pi on timers, projectiles, zones, mines, booms; the pad carries bi; toasts carry their side); 12: the 2026-10-31 pass puts new plain data in the snapshot (G.fac.xpg / shardPrev, G.w boulder motion, drop.up, w.heat, G.stats.fl / built); 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
+  VERSION: 16,   // 16: 3-player snapshots are role-scoped (the underworld is a third world split one level down; its bulk rides every third picture for the Builder and the Wizard, the wilds bulk for the Rootkeeper; G.u.pulses / fly / items carry uid); 15: 3-player rooms (Net.mode 3: a host and two guests, one seat per role; the hello names the mode and the role and a taken role is refused 'role'; G carries m3 / u, the underworld, and the Rootkeeper's seat); 14: 4-player snapshots are role-scoped (the other world's bulk parts ride every third picture, "~" lists the ones left out); 13: 4-player rooms (G.m4 / seats / w2 / bd2 / bs2 / wand2 / aug2 / vi / wi / bi / rdy / over, owner tags pi on timers, projectiles, zones, mines, booms; the pad carries bi; toasts carry their side); 12: the 2026-10-31 pass puts new plain data in the snapshot (G.fac.xpg / shardPrev, G.w boulder motion, drop.up, w.heat, G.stats.fl / built); 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
   BUILD: 11,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
@@ -319,7 +319,7 @@ const Net = {
   };
   // Everything that moves gets a stable id the first time a snapshot is taken (Net.stamp; G.w.uidN is the counter), so the guest can match "the same foe" between two
   // snapshots and glide it from one place to the next (Main.tween in online.js). The id is a plain field on the object and rides along in every snapshot.
-  const STAMP = [['w', 'enemies'], ['w', 'allies'], ['w', 'proj'], ['w', 'eproj'], ['w', 'aproj'], ['w', 'drops'], ['w', 'pickups'], ['w', 'boulders'], ['w', 'zones'], ['w', 'mines'], ['w', 'booms'], ['w', 'arcs'], ['fac', 'flying']];
+  const STAMP = [['w', 'enemies'], ['w', 'allies'], ['w', 'proj'], ['w', 'eproj'], ['w', 'aproj'], ['w', 'drops'], ['w', 'pickups'], ['w', 'boulders'], ['w', 'zones'], ['w', 'mines'], ['w', 'booms'], ['w', 'arcs'], ['fac', 'flying'], ['u', 'pulses'], ['u', 'fly'], ['u', 'items']];
   Net.stamp = function () {
     const w = G && G.w;
     if (!w) return;
@@ -344,14 +344,20 @@ const Net = {
   // redrawn a few times a second anyway. Everything a guest's own screen and HUD live on is in every snapshot.
   const OTHER_W = new Set(['enemies', 'allies', 'proj', 'eproj', 'aproj', 'zones', 'mines', 'booms', 'fx_', 'decals', 'bend', 'boulders', 'drops', 'pickups'].map(j => 'w.' + j));
   const OTHER_F = new Set(['grid', 'bld', 'belts', 'floor', 'flying', 'parts', 'pops', 'thumps', 'rings', 'waves', 'sucks', 'xpg'].map(j => 'fac.' + j));
-  const KEEP = Object.assign({}, SLOW); for (const p of OTHER_W) KEEP[p] = 1; for (const p of OTHER_F) KEEP[p] = 1;   // (the parts a guest remembers between pictures)
+  // 3-player rooms (G.m3) scope by role the same way, with the underworld as a third world: its bulk (OTHER_U: the remains lying about, the pulses, flights, effects, pops, the bent grass)
+  // rides every Nth picture for the Builder and the Wizard; the Builder (who sees it only in his corner picture) also gets its buildings and hoses at that cadence, the Wizard
+  // keeps them in every picture (the stumps, rock piles and traps stand in his world, and his ghost view draws the rest). The Rootkeeper gets the wilds' bulk at the reduced cadence,
+  // except the foes while his ghost view is on (they would hop), and the factory's.
+  const OTHER_U = new Set(['items', 'pulses', 'fly', 'fx', 'pops', 'bend'].map(j => 'u.' + j)), OTHER_UB = new Set([...OTHER_U, 'u.bld', 'u.hoses']);
+  const SCOPE3 = { B: new Set([...OTHER_W, ...OTHER_UB]), W: new Set([...OTHER_F, ...OTHER_U]), K: new Set([...OTHER_W, ...OTHER_F]), KG: new Set([...OTHER_W, ...OTHER_F].filter(p => p !== 'w.enemies')) };
+  const KEEP = Object.assign({}, SLOW); for (const p of OTHER_W) KEEP[p] = 1; for (const p of OTHER_F) KEEP[p] = 1; for (const p of OTHER_UB) KEEP[p] = 1;   // (the parts a guest remembers between pictures)
   // the snapshot as a list of parts: JSON.stringify(G), but built part by part (G.w and G.fac one level down) so parts can be left out. Each part is [top key, inner key | null, path, text].
   // 'skip' = paths nobody needs this time (they are not even stringified).
   function wireParts(skip) {
     const parts = [], t = now(); parts.slow = []; parts.skipped = [];
     for (const k in G) {
       const v = G[k];
-      if ((k === 'w' || k === 'fac') && v && typeof v === 'object') {
+      if ((k === 'w' || k === 'fac' || k === 'u') && v && typeof v === 'object') {   // (u: the 3P underworld)
         for (const j in v) {
           const p = k + '.' + j;
           if (skip && skip.has(p)) { parts.skipped.push(p); continue; }   // (left out of every picture this time: still named in "~")
@@ -392,7 +398,7 @@ const Net = {
     return variants.map(o => wireJoin(parts, o));
   }
   Net.wirePacket = wirePacket;   // (tests)
-  Net.wireVariants = wireVariants; Net.OTHER_W = OTHER_W; Net.OTHER_F = OTHER_F;
+  Net.wireVariants = wireVariants; Net.OTHER_W = OTHER_W; Net.OTHER_F = OTHER_F; Net.SCOPE3 = SCOPE3;
   // how much is already waiting to go out on the data channel (bytes). Every snapshot is a whole picture, so a late one is worth nothing: when the link is slower than the
   // stream, snapshots are DROPPED (the stream slows to what the link carries) instead of queued (which made every message, the ping included, arrive seconds late).
   const backlog = conn => (conn.dataChannel ? conn.dataChannel.bufferedAmount : 0) + (conn.bufferSize > 3 ? 1e6 : 0) + (lossyOf(conn) ? lossyOf(conn).bufferedAmount : 0);
@@ -534,10 +540,16 @@ const Net = {
     const ready = live.filter(s => backlog(s.conn) <= Net.BACKLOG);
     if (!ready.length) { Net.stats.skipped++; return; }
     // role-scoped: on most pictures a guest gets his own world in full and the other one (his corner picture) left out; every Nth picture, and the first one a guest gets, carries everything
-    const every = Math.max(1, ((CFG.mode4.net && CFG.mode4.net.otherEvery) | 0) || 1), n = Net.snapN + 1;
-    if (Net.scopeG !== G || Net.scopeW !== G.w || Net.scopeF !== G.fac) { Net.scopeG = G; Net.scopeW = G.w; Net.scopeF = G.fac; for (const s of Net.gs) s.fresh = true; }   // (a new state - the game after the lobby, a restart: what the guests remember is of the old one)
-    const scoped = every > 1 && G.m4 && G.seats && n % every !== 0 && !ready.some(s => s.fresh);
-    const omitOf = s => { if (!scoped) return null; const i = G.seats.findIndex(q => q.who === s.id); return i < 0 ? null : M4.ROLE[i] === 'B' ? OTHER_W : OTHER_F; };
+    const NC = G.m3 ? CFG.mode3.net : CFG.mode4.net, every = Math.max(1, ((NC && NC.otherEvery) | 0) || 1), n = Net.snapN + 1;
+    if (Net.scopeG !== G || Net.scopeW !== G.w || Net.scopeF !== G.fac || Net.scopeU !== G.u) { Net.scopeG = G; Net.scopeW = G.w; Net.scopeF = G.fac; Net.scopeU = G.u; for (const s of Net.gs) s.fresh = true; }   // (a new state - the game after the lobby, a restart: what the guests remember is of the old one)
+    const scoped = every > 1 && (G.m4 || (G.m3 && G.u)) && G.seats && n % every !== 0 && !ready.some(s => s.fresh);
+    const omitOf = s => {
+      if (!scoped) return null;
+      const i = G.seats.findIndex(q => q.who === s.id);
+      if (i < 0) return null;
+      if (G.m3) { const r = G.seats[i].role; return r === 'K' ? (G.u.ghost.K ? SCOPE3.KG : SCOPE3.K) : SCOPE3[r] || null; }
+      return M4.ROLE[i] === 'B' ? OTHER_W : OTHER_F;
+    };
     const sets = ready.map(omitOf), variants = [...new Set(sets)];
     let strs;
     try { Net.stamp(); strs = wireVariants(variants); } catch (e) { UI.err(e); return; }
@@ -736,7 +748,7 @@ const Net = {
       Net.lastN = n;
       const st = Net.stats; st.chan = via; st.zipKB = (typeof z === 'string' ? z.length : z.byteLength) / 1024; st.rawKB = txt.length / 1024; st._n++; st._b += st.zipKB * 1024;
       const snap = JSON.parse(txt);
-      st.pics = (st.pics || 0) + 1; if (snap['~'] && (snap['~'].includes('w.enemies') || snap['~'].includes('fac.grid'))) st.scoped = (st.scoped || 0) + 1;   // (role-scoped pictures)
+      st.pics = (st.pics || 0) + 1; if (snap['~'] && (snap['~'].includes('w.enemies') || snap['~'].includes('fac.grid') || snap['~'].includes('u.items'))) st.scoped = (st.scoped || 0) + 1;   // (role-scoped pictures)
       if (!putSlow(snap)) return;   // (a slow part left out that we never got: wait for the host's next full copy)
       Net.prev = Net.next; Net.next = snap;   // the newest two are kept; the frame loop takes the newest whole one
       const t = performance.now();

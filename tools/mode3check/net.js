@@ -150,6 +150,14 @@ async function join(gp, code, role) {
   await hp.evaluate(() => document.getElementById('rRe3').click()); await sleep(1500);
   ok(await hp.evaluate(() => !__wands.G.w.dead), 'all three ready: the run starts again');
   if (SHOTS) for (let i = 0; i < 3; i++) await P[i].page.screenshot({ path: path.join(SHOTS, 'end3_' + i + '.png') });
+  // ---- role-scoped pictures (CFG.mode3.net.otherEvery): most pictures leave the worlds a guest does not play in out; every guest still holds all three worlds
+  await sleep(1500);
+  const sc0 = await Promise.all(P.slice(1).map(G_ => G_.page.evaluate(() => ({ p: __wands.Net.stats.pics || 0, s: __wands.Net.stats.scoped || 0 }))));
+  await sleep(3000);
+  const sc1 = await Promise.all(P.slice(1).map(G_ => G_.page.evaluate(() => { const G = __wands.G; return { p: __wands.Net.stats.pics || 0, s: __wands.Net.stats.scoped || 0, all: Array.isArray(G.w.enemies) && Array.isArray(G.w.fx_) && Array.isArray(G.fac.bld) && Array.isArray(G.u.items) && Array.isArray(G.u.bld) && Array.isArray(G.u.pulses) }; })));
+  const fr = sc1.map((a, i) => (a.s - sc0[i].s) / Math.max(1, a.p - sc0[i].p));
+  ok(fr.every(f => f > 0.5 && f < 0.8), 'about two pictures in three leave the other worlds out (role-scoped)', fr.map(f => f.toFixed(2)).join(','));
+  ok(sc1.every(a => a.all), 'and every guest still holds all three worlds (the last copy is put back)', JSON.stringify(sc1));
   const errs = P.flatMap(p => p.errs).concat(x3.errs);
   ok(errs.length === 0, 'no page errors on any machine', errs.slice(0, 5).join(' | '));
   await browser.close();

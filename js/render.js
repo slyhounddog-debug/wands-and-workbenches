@@ -1230,17 +1230,19 @@ R.drawFloorPile = function (ctx, v, g, t) {
   for (let i = 0; i < Math.min(n, 4); i++) R.item(ctx, g.kind, p[0] + (i % 2 ? 4 : -4), p[1] - 6 - i * 10, 4, t, i === Math.min(n, 4) - 1);
   txt(ctx, '' + n, p[0] + 24, p[1] - 10, 12, '#ffffff', 'center', 'd');
 };
-R.drawFly = function (ctx, v, o, t) {
+// a thrown item in the air (S: the sprite scale of the world it flies in, zk: pixels per unit of height: the Builder's 4 and 44, the underworld's his own)
+R.drawFly = function (ctx, v, o, t, S, zk) {
+  S = S || 4; zk = zk || 44;
   if (o.t < 0) return;   // still waiting its turn to leave the portal
   const p = R.toScreen(v, o.x, o.y);
-  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(Math.round((p[0] - 10) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 20, 8);
+  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(Math.round((p[0] - 2.5 * S) / S) * S, Math.round(p[1] / S) * S - S, 5 * S, 2 * S);
   if (o.boing) {   // a bounce-back: it wobbles like a spring (squashed off the hit, stretched on the way up) and tumbles
     const k = o.t / o.T, w = Math.sin(k * Math.PI * 3) * (1 - k) * 0.45, spr = itemSprite(o.kind);
-    ctx.save(); ctx.translate(snap(p[0]), Math.round((p[1] - o.z * 44 + 6) / 4) * 4); ctx.rotate(Math.round(k * 4) / 4 * Math.PI * (o.tx > o.sx ? 1 : -1));
-    ctx.scale(1 + w, 1 - w); if (spr) ctx.drawImage(spr.c, -spr.ax * 4, -spr.ay * 4, spr.c.width * 4, spr.c.height * 4); ctx.restore();
+    ctx.save(); ctx.translate(snap(p[0]), Math.round((p[1] - o.z * zk + 1.5 * S) / S) * S); ctx.rotate(Math.round(k * 4) / 4 * Math.PI * (o.tx > o.sx ? 1 : -1));
+    ctx.scale(1 + w, 1 - w); if (spr) ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S, spr.c.width * S, spr.c.height * S); ctx.restore();
     return;
   }
-  R.item(ctx, o.kind, p[0], p[1] - o.z * 44 + 6, 4, t);
+  R.item(ctx, o.kind, p[0], p[1] - o.z * zk + 1.5 * S, S, t);
 };
 
 // THE ROLL as drawn, for every character that rolls (the Wizard, the Builder's Tumble, the Rootkeeper's Root Roll): a somersault in 8 chunky frames (fr 0..1 of the roll),

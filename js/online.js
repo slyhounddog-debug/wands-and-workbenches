@@ -72,9 +72,9 @@ Main.netUi = function (mode) {
   Main.netBanner(null);
   const help = $('help');
   if (Main.helpHtml === undefined) Main.helpHtml = help.innerHTML;
-  if (mode === 'host' && Net.role === 'guest') {   // 4P: a Builder seat on a guest's machine (no mouse: auto-aimed throws)
+  if (mode === 'host' && Net.role === 'guest') {   // 4P: a Builder seat on a guest's machine (the mouse aims his throws; no drag-to-lay belts or drag-to-delete)
     help.innerHTML = '<div class="hcol"><h3>' + UI.img('ic_wrench', 16) + 'YOU ARE A BUILDER</h3>' +
-      '<div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk &nbsp; <kbd>SPACE</kbd> or <kbd>LEFT CLICK</kbd> pick up / place &nbsp; <kbd>RIGHT CLICK</kbd> throw (auto-aimed) &nbsp; <kbd>E</kbd> use / crank</div>' +
+      '<div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk &nbsp; <kbd>SPACE</kbd> or <kbd>LEFT CLICK</kbd> pick up / place &nbsp; <kbd>RIGHT CLICK</kbd> throw (the cursor aims) &nbsp; <kbd>E</kbd> use / crank</div>' +
       '<div><kbd>1</kbd>-<kbd>9</kbd> or <kbd>[</kbd><kbd>]</kbd> hotbar &nbsp; <kbd>Q</kbd> next in the family &nbsp; <kbd>R</kbd> rotate &nbsp; <kbd>F</kbd> switch a Harvester &nbsp; <kbd>B</kbd> demolish &nbsp; <kbd>T</kbd> skill tree &nbsp; <kbd>ESC</kbd> menu</div>' +
       '<div>Two Builders share one factory. A gamepad works too (A pick, B throw, X use, LB / RB hotbar, RT family).</div></div>' +
       '<div class="hfoot"><kbd>H</kbd> hides this.</div>';
@@ -371,7 +371,8 @@ Main.playSnd = function (s) {
   if (!q) return;
   if (Main.sndN < 0 || q.n < Main.sndN) { Main.sndN = q.n; return; }
   let played = 0;
-  for (const e of q.list) if (e.n > Main.sndN && played++ < 8) AU.sfx(e.s, e.x, e.y);
+  const kk = !!(G && G.m3 && M3.myRole() === 'K');   // (an underworld sound is for the Rootkeeper's machine only)
+  for (const e of q.list) if (e.n > Main.sndN && (!e.k || kk) && played++ < 8) AU.sfx(e.s, e.x, e.y);
   Main.sndN = q.n;
 };
 Main.interpFrame = function (now) {

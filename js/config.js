@@ -522,22 +522,22 @@ const CFG = {
     hp: 1.2,        // foe health x (one Wizard, but traps and from-below packets help him)
     spawn: 1.25,    // foe counts x (the world cap and the wild spawn rate)
     remains: { normal: 1, extra: 0.5, mutant: 2, elite: 3, boss: 3, life: 120, fade: 12, start: 2, scatter: 0.7 },   // remains a kill drops below (a normal foe: normal + a second one with chance extra, except a creature from an Egg that hatches more than one; a boss: that many of each element); they decay after life s (fading for the last fade s); start = of each element round his spawn
-    rk: { speedK: 1.0, radius: 0.3, reach: 1.8, hands: 6, throwR: 9, throwT: 0.42, throwGap: 0.18, rollT: 0.28, rollSpeed: 2.6, rollCd: 1.2 },   // the Rootkeeper: the Wizard's speed x speedK, his reach for picking / using, what his hands hold, how far a throw reaches
+    rk: { speedK: 1.0, radius: 0.3, reach: 1.8, hands: 6, throwR: 9, throwGap: 0.18, rollT: 0.28, rollSpeed: 2.6, rollCd: 1.2 },   // the Rootkeeper: the Wizard's speed x speedK, his reach for picking / using, what his hands hold, how far a throw reaches
     reach: 10,      // a building's hose reach (tiles): a link may be (reach of one end + reach of the other) / 2 long, so one standard pole between doubles it and one heavy pole triples it
     poleK: 1, heavyPoleK: 2,   // a pole's reach x reach (standard, heavy)
     burner: { out: 2, pulse: 1, burnT: 12, ashCap: 10, pulseSpeed: 9 },   // fuel units a second it puts out (shared evenly by everything on its hoses), one pulse every `pulse` s; one remain burns burnT s; it stops when its ash tray holds ashCap
     wrong: 0.5,     // a node, trap or mirror Harvester fed a burned type it does not prefer works at this rate
     craftT: 3,      // seconds a Resource / Trap Crafter takes
     bld: {          // his toolbar: name and cost in banked remains (an even spread of the four)
-      hose:      { name: 'Hose',           cost: {} },
-      burner:    { name: 'Burner',          cost: { air: 2, water: 2, fire: 2, earth: 2 } },
-      tcraft:    { name: 'Trap Crafter',    cost: { air: 2, water: 2, fire: 2, earth: 2 } },
-      rcraft:    { name: 'Resource Crafter', cost: { air: 2, water: 2, fire: 2, earth: 2 } },
-      collector: { name: 'Collector',       cost: { air: 1, water: 1, fire: 1, earth: 1 } },
-      pole:      { name: 'Hose Pole',       cost: { earth: 1 } },
-      hpole:     { name: 'Heavy Hose Pole', cost: { air: 1, water: 1, fire: 1, earth: 1 } },
-      pylon:     { name: 'Storage Pylon',   cost: { air: 1, water: 1, fire: 1, earth: 1 } },
-      remove:    { name: 'Remove',          cost: {} },
+      hose:      { name: 'Hose',           cost: {}, desc: 'Pick a building, then the next one: a hose carries a Burner\'s pulses to it. A pole in between doubles the reach. Pick a linked pair again to take the hose off.' },
+      burner:    { name: 'Burner',          cost: { air: 2, water: 2, fire: 2, earth: 2 }, desc: 'Burns the remains you throw into it and sends the heat down its hoses. Use sets what it burns.' },
+      tcraft:    { name: 'Trap Crafter',    cost: { air: 2, water: 2, fire: 2, earth: 2 }, desc: 'Pick it to craft a trap from banked remains; use switches the recipe. Throw the trap to plant it, and hose it up.' },
+      rcraft:    { name: 'Resource Crafter', cost: { air: 2, water: 2, fire: 2, earth: 2 }, desc: 'Pick it to craft a Tree, Rock or Iron seed; use switches the recipe. Throw the seed to plant it, then charge it.' },
+      collector: { name: 'Collector',       cost: { air: 1, water: 1, fire: 1, earth: 1 }, desc: 'Hose it to a Burner: it lifts the Burner\'s ash into the skill bank.' },
+      pole:      { name: 'Hose Pole',       cost: { earth: 1 }, desc: 'A hose relay: a link through a pole reaches twice as far.' },
+      hpole:     { name: 'Heavy Hose Pole', cost: { air: 1, water: 1, fire: 1, earth: 1 }, desc: 'A heavy relay: a link through it reaches three times as far.' },
+      pylon:     { name: 'Storage Pylon',   cost: { air: 1, water: 1, fire: 1, earth: 1 }, desc: 'Banks remains for the whole underworld. Throw remains in; pick it to take the last one back out.' },
+      remove:    { name: 'Remove',          cost: {}, desc: 'Pick a building to take it down for a full refund of its cost.' },
     },
     nodes: {        // what the Resource Crafter makes: planted, a node is a stump / rock pile in both worlds until it is charged (fuel units at its preferred type, or mashing), then it manifests in the wilds
       tree: { name: 'Tree Seed', harv: 'tree', pref: 'water', cost: { air: 1, water: 1, fire: 1, earth: 1 }, charge: 18, mash: 0.035 },

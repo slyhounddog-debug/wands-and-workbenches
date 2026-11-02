@@ -115,6 +115,23 @@ async function join(gp, code, role) {
   r = await hp.evaluate(() => { const u = __wands.G.u; return { ch: u.bld.find(b => b.id === window.__node).ch, ghost: u.ghost.K, tool: u.rk.tool }; });
   ok(r.ch > 0.05 && r.ghost && r.tool === 'hose', 'the Rootkeeper guest mashes, toggles his ghost view and picks a tool (through his pad)', JSON.stringify(r));
   await press(P[2].page, 'KeyQ'); await sleep(400);
+  // ---- the underworld's sounds are the Rootkeeper's alone (the Wizard host and the Builder guest never play them); his guest plays his own verbs from the host's sound log
+  for (const pg of [hp, P[1].page, P[2].page]) await pg.evaluate(() => { window.__snd = []; const o = AU.sfx; AU.sfx = function (n) { window.__snd.push(n); return o.apply(AU, arguments); }; });
+  await hp.evaluate(() => { const W = __wands, u = W.G.u; u.rk.hands.length = 0; u.rk.tool = null; u.rk.throwCd = 0; u.items = u.items.filter(i => Math.hypot(i.x - u.rk.x, i.y - u.rk.y) > 3); W.M3.addItem('rem_air', u.rk.x + 0.4, u.rk.y); });
+  await sleep(500); await P[2].page.mouse.click(700, 400); await sleep(900);
+  const snd = await Promise.all([hp, P[1].page, P[2].page].map(pg => pg.evaluate(() => window.__snd.slice())));
+  ok(snd[2].indexOf('pickup') >= 0 && snd[0].indexOf('pickup') < 0 && snd[1].indexOf('pickup') < 0, 'the Rootkeeper guest hears his own pickup; the Wizard host and the Builder guest do not', JSON.stringify(snd.map(s => s.filter(x => x === 'pickup').length)));
+  // ---- the guests' cursors: the Rootkeeper's and the Builder's aim where their mice point (the pad carries ax / ay)
+  await P[2].page.mouse.move(1000, 350); await sleep(800);
+  const cur = await P[2].page.evaluate(() => __wands.Net.cursor()), at = await hp.evaluate(() => __wands.G.u.rk.at);
+  ok(cur && at && Math.hypot(cur[0] - at[0], cur[1] - at[1]) < 0.3, 'the Rootkeeper guest\'s cursor reaches the host (his aim point)', JSON.stringify([cur, at]));
+  await hp.evaluate(() => { const W = __wands, G = W.G; G.hands.length = 0; W.FA.addHands('wood', 6); G.bd.throwCd = 0; G.noThrow = false; window.__thr = []; const o = W.FA.throwOne; W.FA.throwOne = function (ax, ay) { window.__thr.push([ax, ay]); return o.apply(this, arguments); }; });
+  await P[1].page.mouse.move(820, 480); await sleep(600);
+  const bc = await P[1].page.evaluate(() => __wands.Net.cursor());
+  const want = await hp.evaluate(c => { const t = __wands.FA.throwTarget(c[0], c[1]); return [t.x, t.y]; }, bc);   // (asked before the click, while he still holds something: the aim snaps to a building's tile and stays inside his range, as it does for the Builder's own mouse)
+  await P[1].page.mouse.down({ button: 'right' }); await sleep(120); await P[1].page.mouse.up({ button: 'right' }); await sleep(800);
+  const thr = await hp.evaluate(() => window.__thr);
+  ok(bc && thr.length > 0 && thr.some(t => Math.hypot(t[0] - want[0], t[1] - want[1]) < 0.01), 'the Builder guest throws at his cursor (the host aims where the guest\'s mouse is)', JSON.stringify([bc, want, thr[0]]));
   // the Wizard (host) ghost key
   await press(hp, 'KeyG'); await sleep(300);
   ok(await hp.evaluate(() => __wands.G.u.ghost.W), 'the Wizard\'s ghost key turns his ghost view on');

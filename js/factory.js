@@ -630,10 +630,10 @@ FA.stash = function () {       // what the Stockpile can hold goes back into it 
 };
 // what picking something up does: a pop of sparks in its colour where it was, the Builder's squash and the pickup sound (x, y = where it was; the Builder's own spot when not given)
 // (o, burst: who picked it and his world's particles: the Rootkeeper passes his own; the Builder's are the default)
-FA.pickJuice = function (kind, x, y, o, burst) {
+FA.pickJuice = function (kind, x, y, o, burst, sfx) {
   const bd = o || G.bd;
   (burst || FA.burst)(x === undefined ? bd.x : x, y === undefined ? bd.y : y, ITEMS[kind] && ITEMS[kind].color || '#ffffff', 4);
-  bd.squash = 0.2; AU.sfx('pickup');
+  bd.squash = 0.2; (sfx || AU.sfx)('pickup');
 };
 FA.pickFloor = function (it) {   // one item per press (hold to keep grabbing)
   const f = G.fac, i = f.floor.indexOf(it);
@@ -1406,7 +1406,7 @@ FA.update = function (dt) {
     o.t += dt;
     const k = Math.min(1, Math.max(0, o.t / o.T));
     if (o.stock && !o.q && o.t - dt < 0 && o.t >= 0) { FA.burst(o.sx, o.sy, ITEMS[o.kind].color, 5); f.flash = Math.max(f.flash, 0.12); f.flashCol = '#ffffff'; }   // it leaves the Spell Portal
-    o.x = o.sx + (o.tx - o.sx) * k; o.y = o.sy + (o.ty - o.sy) * k; o.z = Math.sin(k * Math.PI) * o.h + (1 - k) * 0.8;
+    FA.flightPos(o, o);
     if (o.sw && o.t > 0) {   // a corkscrew round the straight line (nothing at either end), with a glittering trail
       const SW = CFG.stockFlight.swirl, a = k * SW.turns * 6.283, r = SW.r * Math.sin(k * Math.PI);
       o.x += Math.cos(a) * r; o.y += Math.sin(a) * r; o.z += Math.sin(a) * r * 0.5;
@@ -1716,24 +1716,35 @@ FA.aimFrom = function (o, list, w, h) {
   if (best) return { x: best.x, y: best.y, obj: best.obj };
   return { x: Math.max(0.3, Math.min(w - 0.3, o.x + fx * 2.6)), y: Math.max(0.3, Math.min(h - 0.3, o.y + fy * 2.6)), obj: null };
 };
+// ONE thrown item's flight, for every role that throws (the Builder's G.fac.flying; the Rootkeeper's G.u.fly): the straight line from the thrower to where it lands, a lob on top
+// (higher the further it goes), and the time it takes grows with the distance. Plain data: the picture is a function of t (FA.flightPos), so a guest can glide t.
+FA.flightOf = function (kind, sx, sy, tx, ty, extra) {
+  const d = Math.hypot(tx - sx, ty - sy);
+  return Object.assign({ kind, sx, sy, x: sx, y: sy, z: 0.8, tx, ty, t: 0, T: 0.28 + d * 0.045, h: 0.9 + d * 0.22 }, extra);
+};
+FA.flightPos = function (o, out) {
+  const k = Math.min(1, Math.max(0, o.t / o.T));
+  out.x = o.sx + (o.tx - o.sx) * k; out.y = o.sy + (o.ty - o.sy) * k; out.z = Math.sin(k * Math.PI) * o.h + (1 - k) * 0.8;
+  return out;
+};
 FA.throwOne = function (aimX, aimY, cd) {
   const bd = G.bd;
   if (!G.hands.length || bd.throwCd > 0) return false;
   const tg = FA.throwTarget(aimX, aimY);
   const it = FA.takeOne();
   const d = Math.hypot(tg.x - bd.x, tg.y - bd.y);
-  G.fac.flying.push({ kind: it.kind, sx: bd.x, sy: bd.y, x: bd.x, y: bd.y, z: 0.8, tx: tg.x, ty: tg.y, t: 0, T: 0.28 + d * 0.045, h: 0.9 + d * 0.22, fromBuilder: true });
+  G.fac.flying.push(FA.flightOf(it.kind, bd.x, bd.y, tg.x, tg.y, { fromBuilder: true }));
   bd.throwCd = FA.throwGap(cd || CFG.throwRepeat);
   FA.throwJuice(bd, tg.x, tg.y, it.kind, FA.burst);
   return true;
 };
 // what letting go of a throw does, for every role that throws: he squashes, turns to face where it goes, a few sparks of its colour fly off his hands, the throw sound
-FA.throwJuice = function (o, tx, ty, kind, burst) {
+FA.throwJuice = function (o, tx, ty, kind, burst, sfx) {
   const d = Math.hypot(tx - o.x, ty - o.y);
   o.squash = 0.18;
   o.fx = tx - o.x || o.fx; o.fy = ty - o.y || o.fy;
   burst(o.x + (tx - o.x) / (d || 1) * 0.35, o.y + (ty - o.y) / (d || 1) * 0.35, ITEMS[kind].color || '#ffffff', 3);
-  AU.sfx('throw');
+  (sfx || AU.sfx)('throw');
 };
 // the portal (cell) nearest to (x, y) that takes this kind and is within CFG.portalCatch tiles of it, else null
 FA.portalNear = function (x, y, kind) {

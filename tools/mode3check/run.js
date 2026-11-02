@@ -396,6 +396,48 @@ const OUT = process.env.SHOTS || '';
   ok(b0[2] && Math.hypot(b1[0] - b0[0], b1[1] - b0[1]) > 0.5, 'solo test: F9 lets the dev bot play the Wizard while you are the Rootkeeper', Math.hypot(b1[0] - b0[0], b1[1] - b0[1]).toFixed(2));
   ok(s3.restarted && !s3.saved, 'solo test: your RESTART is everybody\'s, and nothing is saved', JSON.stringify(s3));
 
+  // ================= 16. his toolbar is the Builder's hotbar; his throws fly the Builder's flight; the mouse aims; the camera kicks =================
+  r = await run(() => {
+    const W = __wands; W.start3(1, { me: 2 }); W.UI.help(false); W.G.helpT = 0; W.CFG.world.cap = 0;
+    const G = W.G, u = G.u, M3 = W.M3, FA = W.FA, rk = u.rk, o = {};
+    W.step3(0.05, 3);
+    const hb = document.getElementById('hotbar');
+    o.slots = hb.children.length; o.shown = getComputedStyle(hb).display !== 'none' && hb.getBoundingClientRect().top > innerHeight / 2; o.old = !!document.querySelector('#rootHud .ktools');
+    o.keys = [...hb.querySelectorAll('kbd')].map(k => k.textContent).join('');
+    hb.children[1].click(); W.step3(0.05, 2); o.t1 = rk.tool; o.sel1 = [...hb.children].map(s => (s.classList.contains('sel') ? 1 : 0)).join('');
+    hb.children[5].click(); o.t2 = rk.tool; hb.children[5].click(); o.t2b = rk.tool;
+    G.tree.rkpole = true; hb.children[5].click(); o.t3 = rk.tool; W.step3(0.05, 2); o.pips = hb.children[5].querySelectorAll('.pips b').length; o.sel5 = hb.children[5].classList.contains('sel');
+    o.icon = !!hb.children[5].querySelector('.ic img'); o.tip = !document.getElementById('hotTip').classList.contains('hidden') && /Heavy Hose Pole/.test(document.getElementById('hotTip').textContent);
+    rk.tool = null; W.step3(0.05, 2); o.none = [...hb.children].every(s => !s.classList.contains('sel'));
+    // his throw is the Builder's flight (same line, lob and time) and is in the air for a moment
+    const py = u.bld.find(b => b.type === 'pylon'); rk.x = py.x - 3; rk.y = py.y; rk.vx = rk.vy = 0; rk.fx = 1; rk.fy = 0; rk.hands = ['rem_air']; rk.throwCd = 0; u.fly.length = 0; W.step3(0.05, 1);
+    M3.throwOne(); const f = u.fly[0], d = f ? Math.hypot(f.tx - f.sx, f.ty - f.sy) : 0;
+    o.fly = !!f && Math.abs(f.T - (0.28 + d * 0.045)) < 1e-9 && Math.abs(f.h - (0.9 + d * 0.22)) < 1e-9 && f.z === 0.8;
+    W.step3(0.05, 4); o.air = u.fly[0] ? u.fly[0].z : null;
+    // the mouse aims: a host's k.at, a guest's pad ax / ay (padK), the throw lands there; no cursor = auto-aim
+    rk.x = py.x - 6; rk.y = py.y + 4; rk.vx = rk.vy = 0; rk.fx = 1; rk.fy = 0; u.fly.length = 0; rk.hands = ['rem_air']; rk.throwCd = 0; W.step3(0.05, 1);
+    const kk = M3.padK({ ix: 0, iy: 0, ax: rk.x + 2, ay: rk.y - 1.5 }); o.padAt = kk.at; o.padWant = [rk.x + 2, rk.y - 1.5]; o.padNone = M3.padK({ ix: 0, iy: 0, ax: null, ay: null }).at;
+    W.step3(0.05, 1, { throw: true, at: [rk.x + 2, rk.y - 1.5] }); const g = u.fly[0]; o.aim = g ? [g.tx - rk.x, g.ty - rk.y] : null;
+    // a remote Builder aims with his cursor too
+    const bd = G.bd; G.hands.length = 0; FA.addHands('wood', 1); bd.throwCd = 0; G.noThrow = false;
+    const thr = [], o0 = FA.throwOne; FA.throwOne = function (ax, ay) { thr.push([ax, ay]); return o0.apply(this, arguments); };
+    W.Main.remoteB(0.05, { ix: 0, iy: 0, bHeld: true, b: true, ax: bd.x + 2.5, ay: bd.y + 1, any: true }); FA.throwOne = o0; o.bAim = thr[0]; o.bWant = [bd.x + 2.5, bd.y + 1];
+    // the camera kick decays; he feels what he builds
+    u.shake = 0; M3.kick(0.2); o.k1 = u.shake; W.step3(0.05, 3); o.k2 = u.shake;
+    return o;
+  });
+  ok(r.slots === 8 && r.shown && !r.old, 'his toolbar is the Builder\'s hotbar along the bottom (8 slots), not a strip on his card', JSON.stringify([r.slots, r.shown, r.old]));
+  ok(r.keys === '12345678', 'its key caps are his tool keys', r.keys);
+  ok(r.t1 === 'burner' && r.sel1 === '01000000' && r.none, 'a click picks the slot, the picked slot lifts, an empty hand lifts none', JSON.stringify([r.t1, r.sel1, r.none]));
+  ok(r.t2 === 'pole' && r.t2b === 'pole' && r.t3 === 'hpole' && r.pips === 2 && r.sel5 && r.icon, 'the pole slot is a family: the heavy pole joins it once bought, with pips', JSON.stringify([r.t2, r.t2b, r.t3, r.pips, r.sel5]));
+  ok(r.tip, 'picking a tool shows its tip card (the Builder\'s #hotTip)');
+  ok(r.fly && r.air > 0.8, 'his throw is the Builder\'s flight: the same line, lob and time, in the air for a moment', JSON.stringify([r.fly, r.air]));
+  ok(r.padAt && Math.hypot(r.padAt[0] - r.padWant[0], r.padAt[1] - r.padWant[1]) < 1e-9 && r.padNone === null, 'a guest\'s pad cursor becomes his aim point (none: auto-aim)', JSON.stringify([r.padAt, r.padNone]));
+  ok(r.aim && Math.abs(r.aim[0] - 2) < 0.05 && Math.abs(r.aim[1] + 1.5) < 0.05, 'the Rootkeeper\'s throw lands where the mouse points', JSON.stringify(r.aim));
+  ok(r.bAim && Math.hypot(r.bAim[0] - r.bWant[0], r.bAim[1] - r.bWant[1]) < 1e-9, 'a remote Builder\'s throw aims at his own cursor (not the host\'s)', JSON.stringify(r.bAim));
+  ok(Math.abs(r.k1 - 0.2) < 1e-9 && r.k2 < r.k1, 'his camera kick decays', JSON.stringify([r.k1, r.k2]));
+  await shot('k_hotbar');
+
   ok(errs.length === 0, 'no page errors', errs.slice(0, 5).join(' | '));
   await browser.close();
   console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASS');

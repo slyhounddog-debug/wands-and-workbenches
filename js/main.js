@@ -392,6 +392,12 @@ function handleMouseFactory(dt) {
 }
 
 
+// a guest Builder's own lead line: where a throw lands now, from his cursor when he plays on the mouse (the host aims the same way: Main.remoteB), else auto-aim
+Main.guestAim = function () {
+  if (!G.hands.length || G.selected !== 'hand' || G.demolish) return null;
+  const c = Net.cursor();
+  return c ? FA.throwTarget(c[0], c[1]) : FA.throwTarget();
+};
 // the Builder's side of the shared pick / use buttons (FA.pressPre / FA.pressPick)
 Main.builderAd = () => ({
   interact: FA.interact, building: G.selected !== 'hand' || G.demolish, place: placeInFront, actionFor: FA.actionFor, n: () => G.hands.length,
@@ -589,10 +595,13 @@ Main.controls = function (dt) {
 Main.remoteB = function (dt, p) {
   const out = { bix: 0, biy: 0, broll: false };
   if (!p) return out;
+  // where his throws land: his cursor when he plays on the mouse (the pad carries it), else auto-aim; never the host's own lead line (R.aim belongs to the host's seat)
+  const aimOf = () => (typeof p.ax === 'number' && isFinite(p.ax) ? FA.throwTarget(p.ax, p.ay) : FA.throwTarget());
+  const throwHere = () => { if (!G.hands.length || G.noThrow) return; const a = aimOf(); if (a) FA.throwOne(a.x, a.y); };
   out.bix = clampv(p.ix || 0); out.biy = clampv(p.iy || 0);
   UI.remote = true;
   try {
-    const lt = !!p.ltHeld, use = !!p.x && !lt, pick = !!p.a && !lt, pickHeld = !!p.aHeld && !lt, throwHeld = !!p.bHeld, stackThrow = !!p.b && lt;
+    const lt = !!p.ltHeld, use = !!p.x && !lt, pick = !!p.a && !lt, pickHeld = !!p.aHeld && !lt, throwHeld = !!p.bHeld || (!!p.b && !lt), stackThrow = !!p.b && lt;   // (a press edge throws too: a quick click is down and up inside one frame, so no held state ever arrives)
     out.broll = !!(p.a && lt);
     if (p.lb) UI.cycle(-1);
     if (p.rb && !lt) UI.cycle(1);
@@ -605,13 +614,13 @@ Main.remoteB = function (dt, p) {
     }
     if (!throwHeld) G.noThrow = false;
     if (p.cyc) FA.cycleLock(p.cyc);
-    if (stackThrow && G.hands.length && !G.noThrow) { const a = R.aim || aimNow(); if (a) { G.bd.burst = G.hands.length; G.bd.burstAim = { x: a.x, y: a.y }; } }
+    if (stackThrow && G.hands.length && !G.noThrow) { const a = aimOf(); if (a) { G.bd.burst = G.hands.length; G.bd.burstAim = { x: a.x, y: a.y }; } }
     if (G.bd.burst > 0) { if (!G.hands.length) G.bd.burst = 0; else if (FA.throwOne(G.bd.burstAim.x, G.bd.burstAim.y, CFG.throwStackGap)) G.bd.burst--; }
     const ad = Main.builderAd();
     FA.pressPre(dt, G, ad, pick, use);
     if (p.x && lt) { const hb = FA.harnessNear(); if (hb) FA.cycleElem(hb, 1); else AU.sfx('error'); }
     FA.pressPick(dt, G, ad, pick, pickHeld);
-    if (throwHeld && !(G.bd.burst > 0) && !lt) throwAlongAim();
+    if (throwHeld && !(G.bd.burst > 0) && !lt) throwHere();
     if (p.aHeld && G.selected === 'belt' && !G.demolish) {   // hold A with the Belt tool: lay belts as he walks
       const tx = Math.floor(G.bd.x), ty = Math.floor(G.bd.y), key = tx + ',' + ty;
       if (G.lastFeet !== key) { G.lastFeet = key; const ax = Math.abs(G.bd.fx) >= Math.abs(G.bd.fy); G.placeDir = ax ? (G.bd.fx >= 0 ? 0 : 2) : (G.bd.fy >= 0 ? 1 : 3); FA.placeBelt(tx, ty, G.placeDir); }
@@ -626,11 +635,13 @@ Main.remoteB = function (dt, p) {
 const WORLD_SFX = new Set(['hit', 'hitw', 'thump', 'kill', 'hurt', 'clank', 'die', 'roll', 'dodge', 'weak', 'warn', 'heart', 'evwarn', 'alert', 'roar', 'slam', 'volley', 'victory', 'shrine', 'chest', 'shard', 'gem', 'gemBig', 'dig', 'rustle',
   'zap_air', 'zap_fire', 'zap_water', 'zap_earth', 'zap_combo', 'incoming', 'incoming_big', 'portalDrop', 'whoosh', 'pressure', 'wall', 'freeze', 'launch', 'powerup', 'step_w']);
 Main.stepN = 0;
-Main.tapSfx = function (name, x, y) {
-  if (!Net.on || Net.role === 'guest' || !G || G.menu || !G.w || !WORLD_SFX.has(name)) return;
+// k: an underworld sound (M3.sfx): only the Rootkeeper's machine plays it
+Main.tapSfx = function (name, x, y, k) {
+  if (!Net.on || Net.role === 'guest' || !G || G.menu || !G.w || !(k || WORLD_SFX.has(name))) return;
   const q = G.snd || (G.snd = { n: 0, list: [] });
-  for (let i = q.list.length - 1; i >= 0 && q.list[i].f === Main.stepN; i--) if (q.list[i].s === name) return;   // one of each per step: a crowd hit by one blast is one sound
+  for (let i = q.list.length - 1; i >= 0 && q.list[i].f === Main.stepN; i--) if (q.list[i].s === name && !q.list[i].k === !k) return;   // one of each per step: a crowd hit by one blast is one sound
   const e = { n: q.n + 1, s: name, f: Main.stepN };
+  if (k) e.k = 1;
   if (x != null && y != null) { e.x = Math.round(x * 10) / 10; e.y = Math.round(y * 10) / 10; }   // where it was made (the guest turns it down with distance)
   q.n++; q.list.push(e);
   if (q.list.length > 24) q.list.shift();
@@ -675,8 +686,6 @@ Main.step = function (dt, ctl) {
     const bd = G.bd, wz = G.w, st = Main.stride || (Main.stride = { b: 0, w: 0 });
     if (!facHalt && bd.moving) { st.b -= dt; if (st.b <= 0) { st.b = 0.3; AU.sfx('step_b'); } } else st.b = 0.08;
     if (wz.moving && !wz.dead && !(wz.roll > 0)) { st.w -= dt; if (st.w <= 0) { st.w = 0.27; AU.sfx('step_w'); } } else st.w = 0.08;
-    const rk = G.m3 && G.u && M3.myRole() === 'K' ? G.u.rk : null;   // 3P: the Rootkeeper's own steps on his own screen (the Builder's footstep: not a wilds sound, so nobody else hears it)
-    if (rk && rk.moving && !(rk.roll > 0)) { st.k = (st.k || 0) - dt; if (st.k <= 0) { st.k = 0.3; AU.sfx('step_b'); } } else st.k = 0.08;
   }
   if (G.m4) M4.deadFlow(dt);
   else if (G.w.dead && !G.w.deadHandled) {

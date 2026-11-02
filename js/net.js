@@ -22,7 +22,7 @@
 // toasts) and a second UNRELIABLE, UNORDERED one for the 20 Hz snapshots (a late or lost picture is simply skipped: nothing waits behind it, so one bad packet on a phone
 // hotspot costs one frame instead of stalling the whole stream). ICE servers: STUN plus the Cloudflare relay when the game can fetch a login (see CLAUDE.md).
 const Net = {
-  VERSION: 17,   // 17: the Rootkeeper speaks the shared verbs (G.u.rk carries rollBuf / ibuf / pRepeat / burst / burstAim / at / aim, his ghosts count up like the Wizard's; his pad carries aHeld / bHeld / ltHeld); 16: 3-player snapshots are role-scoped (the underworld is a third world split one level down; its bulk rides every third picture for the Builder and the Wizard, the wilds bulk for the Rootkeeper; G.u.pulses / fly / items carry uid); 15: 3-player rooms (Net.mode 3: a host and two guests, one seat per role; the hello names the mode and the role and a taken role is refused 'role'; G carries m3 / u, the underworld, and the Rootkeeper's seat); 14: 4-player snapshots are role-scoped (the other world's bulk parts ride every third picture, "~" lists the ones left out); 13: 4-player rooms (G.m4 / seats / w2 / bd2 / bs2 / wand2 / aug2 / vi / wi / bi / rdy / over, owner tags pi on timers, projectiles, zones, mines, booms; the pad carries bi; toasts carry their side); 12: the 2026-10-31 pass puts new plain data in the snapshot (G.fac.xpg / shardPrev, G.w boulder motion, drop.up, w.heat, G.stats.fl / built); 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
+  VERSION: 18,   // 18: a Rootkeeper / Builder guest's pad carries the mouse point in his seat's world (ax, ay) so his throws and tools aim where his cursor is; 17: the Rootkeeper speaks the shared verbs (G.u.rk carries rollBuf / ibuf / pRepeat / burst / burstAim / at / aim, his ghosts count up like the Wizard's; his pad carries aHeld / bHeld / ltHeld); 16: 3-player snapshots are role-scoped (the underworld is a third world split one level down; its bulk rides every third picture for the Builder and the Wizard, the wilds bulk for the Rootkeeper; G.u.pulses / fly / items carry uid); 15: 3-player rooms (Net.mode 3: a host and two guests, one seat per role; the hello names the mode and the role and a taken role is refused 'role'; G carries m3 / u, the underworld, and the Rootkeeper's seat); 14: 4-player snapshots are role-scoped (the other world's bulk parts ride every third picture, "~" lists the ones left out); 13: 4-player rooms (G.m4 / seats / w2 / bd2 / bs2 / wand2 / aug2 / vi / wi / bi / rdy / over, owner tags pi on timers, projectiles, zones, mines, booms; the pad carries bi; toasts carry their side); 12: the 2026-10-31 pass puts new plain data in the snapshot (G.fac.xpg / shardPrev, G.w boulder motion, drop.up, w.heat, G.stats.fl / built); 11: slow snapshot parts are left out ("~", Net.slowVal) and pad packets without a press ride the unreliable pad channel; 10: the attention layer is in the snapshot (G.w.hurt / killer / zSrc / slowSrc / statBurn, G.fac.threat / rejs / focusT, G.wand.fx, drops' fx / fy / tet, G.fb), the factory-full bounce is a Spell Portal animation; 9: Floor Tiles are 2 x 2 blocks (the grid points four cells at one blueprint), flights carry sw (the swirl), the emote wheel has a centre (sel null) and rel, camps and crypts hold a countdown (lm.t), the goal cards celebrate on the guest from G.quest; 8: the snd entries carry where the sound was made (x, y); 7: G carries snd (the wilds' sound effects for the guest); 6: the guest sends { t: 'pause', on } and G carries pauseBy / paused; 5: the pad fields mean the Wizard's four wand buttons (y = cycle, b = cast, x = mash; the tree is Back), G carries the wand
   BUILD: 11,                      // bumped with every networking change that is not a wire change, so a screenshot says which build produced it
   SEED: 20261020,                // the wilds' seed (WZ.generate); the guest regenerates the same world from it
   REJOIN_MS: 60000,              // how long the host waits for the same guest to come back
@@ -490,6 +490,7 @@ const Net = {
     const g = s.gpad || (s.gpad = {}), e = s.gedge || (s.gedge = {});
     if (!stale) {
       g.ix = +p.ix || 0; g.iy = +p.iy || 0; g.rx = +p.rx || 0; g.ry = +p.ry || 0;
+      g.ax = typeof p.ax === 'number' && isFinite(p.ax) ? p.ax : null; g.ay = typeof p.ay === 'number' && isFinite(p.ay) ? p.ay : null;   // (a Builder / Rootkeeper guest's cursor in his world, when the mouse is what he plays on)
       for (const k of HELD) g[k] = !!p[k];
     }
     for (const k of EDGES) if (p[k]) e[k] = true;
@@ -505,7 +506,7 @@ const Net = {
     for (const s of Net.gs) {
       if (s.state !== 'live') { IN.pad[s.pad] = null; continue; }
       const g = s.gpad || {}, e = s.gedge || {};
-      const pad = { ix: Math.max(-1, Math.min(1, g.ix || 0)), iy: Math.max(-1, Math.min(1, g.iy || 0)), rx: Math.max(-1, Math.min(1, g.rx || 0)), ry: Math.max(-1, Math.min(1, g.ry || 0)), cyc: e.cyc || 0, bi: e.bi || null, any: !!(g.any || Object.keys(e).length) };
+      const pad = { ix: Math.max(-1, Math.min(1, g.ix || 0)), iy: Math.max(-1, Math.min(1, g.iy || 0)), rx: Math.max(-1, Math.min(1, g.rx || 0)), ry: Math.max(-1, Math.min(1, g.ry || 0)), cyc: e.cyc || 0, bi: e.bi || null, ax: g.ax === undefined ? null : g.ax, ay: g.ay === undefined ? null : g.ay, any: !!(g.any || Object.keys(e).length) };
       for (const k of EDGES) pad[k] = !!e[k];
       for (const k of HELD) pad[k] = !!g[k];
       pad.back = !!(e.back && Net.hooks4.padBack ? Net.hooks4.padBack(s) : false);   // (a Wizard's Back opens his own tree on his screen; a Builder's Back is demolish: the hook says which)
@@ -767,10 +768,22 @@ const Net = {
   // The guest's input as an IN.pad-shaped object. Keyboard (built here: the host never sees physical keys): WASD move, Space = a (dodge), left click = x (mash), right click = b (cast the wand),
   // Q = y (cycle the wand), T = back (skill tree); a real gamepad's state is used as it is. Presses are latched every frame (Net.collect) and ride in the next packet's edge fields; held state goes in
   // every packet.
+  // the guest's mouse as a point in his seat's world (a Builder: the factory; the Rootkeeper: the underworld), while the mouse is what he last played on and it is not over the
+  // corner picture: the same rule as the Builder's G.lastInput === 'mouse'. null = no cursor (the host auto-aims, as for a pad).
+  Net.aimMouse = false;
+  Net.cursor = function () {
+    const r = Net.seatRole();
+    if ((r !== 'B' && r !== 'K') || !Net.aimMouse) return null;
+    const q = R.pipRect, m = IN.mouse;
+    if (q && m.x >= q.x && m.x < q.x + q.w && m.y >= q.y && m.y < q.y + q.h) return null;
+    const t = R.toTile(r === 'K' ? R.uv : R.fv, m.x, m.y);
+    return [Math.round(t[0] * 100) / 100, Math.round(t[1] * 100) / 100];
+  };
   Net.collect = function () {
     if (Net.role !== 'guest') return;
     if (Net.mute) { Net.latch = {}; return; }   // the guest's own tree / menu / book is up: his presses belong to it, not to the Wizard
     const L = Net.latch || (Net.latch = {}), gp = IN.pad[0] || null;
+    { const sr = Net.seatRole(); if (sr === 'B' || sr === 'K') { const mv0 = Keys.move(sr); if (IN.mouse.mv) Net.aimMouse = true; else if (mv0[0] || mv0[1] || (gp && (gp.ix || gp.iy || gp.any))) Net.aimMouse = false; } }
     if (Net.seatRole() === 'B') { collectB(L, gp); return; }   // (4P: a Builder seat has the Builder's keys)
     if (Net.seatRole() === 'K') { M3.collectK(L, gp); return; }   // (3P: the Rootkeeper's keys)
     if (G && G.m3 && Keys.hit('wGhost')) L.rt = true;   // (3P: the Wizard's ghost view rides his pad's RT)
@@ -800,6 +813,7 @@ const Net = {
       xHeld: IN.mouse.l || Keys.down('wMash') || !!(gp && gp.xHeld), aHeld: Keys.down('wDodge') || !!(gp && gp.aHeld), bHeld: !!(gp && gp.bHeld), ltHeld: !!(gp && gp.ltHeld) || (Net.seatRole() !== 'B' && IN.shift()), startHeld: false,   // (Shift held with the wand's Cycle key steps it backward, as LT does on a pad)
     };
     for (const k of EDGES) out[k] = !!L[k];
+    { const cur = Net.cursor(); if (cur) { out.ax = cur[0]; out.ay = cur[1]; } }
     if (Net.seatRole() === 'K') { Object.assign(out, M3.heldK(gp)); out.xHeld = false; out.bi = L.bi || null; }   // (3P: the Rootkeeper's held pick / throw / LT, as a Builder's)
     if (Net.seatRole() === 'B') { out.aHeld = Keys.down('tumble') || Keys.down('pick') || IN.mouse.l || !!(gp && gp.aHeld); out.xHeld = false; out.bHeld = IN.mouse.r || Keys.down('throw') || !!(gp && gp.bHeld); out.ltHeld = IN.shift() || !!(gp && gp.ltHeld); out.bi = L.bi || null; }
     out.any = ix !== 0 || iy !== 0 || out.aHeld || out.xHeld || EDGES.some(k => out[k]);

@@ -94,7 +94,7 @@ M3.localK = function (dt) {
 };
 M3.noThrow = false;   // (local input state, like Main.carryOk: never in G)
 // a Rootkeeper guest's pad (his keys were mapped onto it by Net.collect): A pick (held: keep picking), B throw (held: keep throwing; LT + B the whole pile), X use, RT roll,
-// Y ghost view, LB / RB tools, bi = the toolbar keys. (No mouse point rides the pad: a guest aims like a pad player, as a 4P Builder guest does.)
+// Y ghost view, LB / RB tools, bi = the toolbar keys, ax / ay = his cursor in the underworld when the mouse is what he plays on.
 M3.padK = function (p) {
   const k = M3.zeroK();
   if (!p) return k;
@@ -102,6 +102,7 @@ M3.padK = function (p) {
   k.ix = clamp1(p.ix || 0); k.iy = clamp1(p.iy || 0);
   k.pick = !!p.a && !lt; k.pickHeld = !!p.aHeld && !lt; k.stack = !!p.b && lt; k.throw = !!p.b && !lt; k.throwHeld = !!p.bHeld && !lt;
   k.use = !!p.x; k.roll = !!p.rt; k.ghost = !!p.y;
+  if (typeof p.ax === 'number' && isFinite(p.ax) && typeof p.ay === 'number' && isFinite(p.ay)) k.at = [p.ax, p.ay];   // (a guest on the mouse: his cursor in the underworld aims his throws and tools, as a host's does)
   if (p.lb) k.tool = 'prev'; else if (p.rb) k.tool = 'next';
   if (p.bi) for (const s of p.bi) { if (s === 'clear') k.tool = 'clear'; else if (/^sel\d$/.test(s)) k.tool = +s.slice(3) - 1; }
   return k;
@@ -160,7 +161,7 @@ M3.soloSwitch = function (role) {
   R.focus = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null; R.rot = null;
   R.fcam.x = G.bd.x; R.fcam.y = G.bd.y; R.wcam.x = G.w.x; R.wcam.y = G.w.y; R.ucam.x = G.u.rk.x; R.ucam.y = G.u.rk.y;
   IN.squelch();
-  M3.netUi(role); UI.resetCache(); UI.buildHotbar(); M3.hudSig = '';
+  M3.netUi(role); UI.resetCache(); UI.buildHotbar(); M3.hudSig = ''; if (role !== 'K') $('hotTip').classList.add('hidden');
   if (G.w.dead) UI.showResults3();
   AU.sfx('tab');
   UI.toast('SOLO TEST: you are the ' + SOLO_NAME[role], role === 'B' ? 'L' : role === 'W' ? 'R' : 'K', SOLO_IC[role]);
@@ -299,6 +300,53 @@ M3.ashOf = function (n, L) {
     M3.hud();
   };
 }
+// ---------- his toolbar IS the Builder's hotbar: the same #hotbar along the bottom (its slots, key caps, the lift of the picked one, the pips of a family, the tip card on hover or pick) ----------
+M3.toolIc = t => ({ hose: 'ic_root', remove: 'ic_bomb' }[t] || 'u_' + t);
+M3.slotId = t => (t === 'pole' ? M3.poleNow() : t);
+M3.isK = () => !!(G && G.m3 && G.u && M3.myRole() === 'K');
+{
+  const build0 = UI.buildHotbar, upd0 = UI.updateHotbar;
+  UI.buildHotbar = function () { return M3.isK() ? M3.buildHotbar() : build0(); };
+  UI.updateHotbar = function (force) { return M3.isK() ? M3.updateHotbar(force) : upd0(force); };
+}
+M3.pickToolSlot = function (i) {   // a click on a slot: the key press (a guest's rides his pad like his keys do)
+  if (Net.role === 'guest') { const L = Net.latch || (Net.latch = {}); L.bi = (L.bi || []).concat('sel' + (i + 1)); } else M3.cycleTool(i);
+};
+M3.buildHotbar = function () {
+  const box = $('hotbar');
+  box.innerHTML = ''; M3.hotSig = ''; M3.lastTool = G.u.rk.tool;
+  M3.TOOLS.forEach((t, i) => {
+    const s = document.createElement('div');
+    s.className = 'slot'; s.dataset.id = t;
+    s.innerHTML = '<kbd>' + Keys.label('kSlot' + (i + 1)) + '</kbd><span class="ic"></span><span class="pips"></span>';
+    s.onclick = () => M3.pickToolSlot(i);
+    s.onmouseenter = () => { UI.tipHover = true; M3.showTip(i); };
+    s.onmouseleave = () => { UI.tipHover = false; UI.tipT = 0.6; };
+    box.appendChild(s);
+  });
+  M3.updateHotbar(true);
+};
+M3.updateHotbar = function (force) {
+  const rk = G.u.rk, sig = rk.tool + '|' + M3.poleNow() + '|' + !!G.tree.rkpole;
+  if (!force && M3.hotSig === sig) return;
+  M3.hotSig = sig;
+  for (const s of $('hotbar').children) {
+    const t = s.dataset.id, fam = t === 'pole', cur = M3.slotId(t), ic = M3.toolIc(cur);
+    if (s.dataset.cur !== cur) { s.dataset.cur = cur; s.querySelector('.ic').innerHTML = UI.img(ic, ic.startsWith('u_') ? 64 : 42); }
+    s.querySelector('.pips').innerHTML = fam ? ['pole', 'hpole'].map(m => '<b class="' + (m === cur ? 'on' : '') + (m === 'hpole' && !G.tree.rkpole ? ' off' : '') + '"></b>').join('') : '';
+    s.classList.toggle('sel', fam ? rk.tool === 'pole' || rk.tool === 'hpole' : rk.tool === t);
+  }
+};
+M3.showTip = function (i) {
+  const t = M3.TOOLS[i], id = M3.slotId(t), d = CFG.mode3.bld[id], el = $('hotTip'), locked = id === 'hpole' && !G.tree.rkpole;
+  const cost = Object.keys(d.cost).map(k => UI.img('rem_' + k, 16) + d.cost[k]).join(' ');
+  const strip = t === 'pole' ? '<div class="fam"><span class="fn">POLES</span>' + ['pole', 'hpole'].map(m => '<span class="fm' + (m === id ? ' cur' : '') + (m === 'hpole' && !G.tree.rkpole ? ' off' : '') + '" title="' + CFG.mode3.bld[m].name + '">' + UI.img('u_' + m, 28) + '</span>').join('') +
+    '<span class="fk"><kbd>' + Keys.label('kSlot' + (i + 1)) + '</kbd>' + UI.img('ic_swap', 12) + ' the slot key again</span></div>' : '';
+  el.innerHTML = strip + '<b>' + d.name + '</b>' + (cost ? ' <span class="cost">' + cost + '</span>' : '') + (locked ? ' <span class="lockt">' + UI.img('ic_lock', 12) + 'Heavy Hose Poles in the Skill Tree</span>' : '') + '<p>' + d.desc + '</p>';
+  el.classList.remove('hidden');
+  el.style.left = Math.max(10, Math.min(CFG.HALF - 430, 18 + i * 62 - 170)) + 'px';
+  UI.tipT = 3;
+};
 M3.hudSig = '';
 M3.hud = function () {
   let a = $('tAsh');
@@ -315,14 +363,14 @@ M3.hud = function () {
   const u = G.u, rk = u.rk, cap = M3.cap();
   let hands = '';
   for (let i = 0; i < cap; i++) hands += rk.hands[i] ? '<span class="hs' + (i === rk.hands.length - 1 ? ' fr' : '') + '">' + UI.img(rk.hands[i], 16) + '</span>' : '<span class="hs em"></span>';
-  const tools = M3.TOOLS.map((t, i) => { const id = t === 'pole' && rk.tool === 'hpole' ? 'hpole' : t, on = rk.tool === t || (t === 'pole' && rk.tool === 'hpole'), ic = t === 'hose' ? 'ic_root' : t === 'remove' ? 'ic_bomb' : 'u_' + id;
-    return '<span class="kt' + (on ? ' on' : '') + '" title="' + CFG.mode3.bld[id].name + '">' + UI.img(ic, 22) + '<kbd>' + Keys.label('kSlot' + (i + 1)) + '</kbd></span>'; }).join('');
   const bank = ELS.map(e => UI.img('rem_' + e, 18) + '<b>' + (u.bank[e] || 0) + '</b>').join('');
   const gh = '<span class="kg' + (u.ghost.K ? ' on' : '') + '">' + UI.img('ic_ghost', 16) + '<kbd>' + Keys.label('kGhost') + '</kbd></span>';
   const roll = G.tree.rkroll ? '<span class="kg' + (rk.rollCd > 0 ? '' : ' on') + '">' + UI.img('ic_swap', 16) + '<kbd>' + Keys.label('kRoll') + '</kbd></span>' : '';
-  const h = '<div class="clabel">' + UI.img('ic_root', 16) + '<b>ROOTKEEPER</b>' + gh + roll + '</div><div class="kbank">' + UI.img('u_pylon', 18) + bank + '</div><div class="khands">' + hands + '</div><div class="ktools">' + tools + '</div>' +
-    (rk.tool ? '<div class="ktool">' + CFG.mode3.bld[rk.tool].name.toUpperCase() + (rk.hose ? ': CLICK THE NEXT BUILDING' : '') + '</div>' : '');
+  const h = '<div class="clabel">' + UI.img('ic_root', 16) + '<b>ROOTKEEPER</b>' + gh + roll + '</div><div class="kbank">' + UI.img('u_pylon', 18) + bank + '</div><div class="khands">' + hands + '</div>' +
+    (rk.hose ? '<div class="ktool">HOSE: PICK THE NEXT BUILDING</div>' : '');   // (the toolbar itself is the Builder's hotbar along the bottom)
   if (h !== M3.hudSig) { M3.hudSig = h; el.innerHTML = h; }
+  M3.updateHotbar();
+  if (rk.tool !== M3.lastTool) { M3.lastTool = rk.tool; if (rk.tool) M3.showTip(Math.max(0, M3.TOOLS.indexOf(rk.tool === 'hpole' ? 'pole' : rk.tool))); }   // (picking a tool shows its card, as the Builder's slots do)
 };
 
 // ---------- what this machine shows (host) ----------
@@ -337,7 +385,7 @@ M3.guestView = function (dt) {
   const r = M3.myRole();
   const bh = Main.hintFor(QUESTS.B[G.quest.B]), wh = Main.hintFor(QUESTS.W[G.quest.W]);
   R.hint = bh.f; R.whint = wh.w; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null; R.rot = null;
-  if (r === 'B') { G.lastInput = 'pad'; R.focus = null; Main.updateFocus(); UI.setHint(bh.slot || null, !!bh.tree, false); }
+  if (r === 'B') { G.lastInput = 'pad'; R.focus = null; Main.updateFocus(); R.aim = Main.guestAim(); UI.setHint(bh.slot || null, !!bh.tree, false); }
   else { R.focus = null; UI.setHint(null, false, r === 'W' ? wh.tree : false); }
   if (Keys.hit('pip3') || (IN.pad[0] && IN.pad[0].l3)) M3D.cyclePip();
   ctx.clearRect(0, 0, CFG.W, CFG.H);
@@ -356,10 +404,11 @@ M3.netUi = function (role) {
   const g = $('game');
   g.classList.toggle('onRoot', role === 'K');
   if (role !== 'K') return;
+  M3.buildHotbar();
   const k = id => '<kbd>' + Keys.labels(id).replace(/ \/ /g, '</kbd> <kbd>') + '</kbd>', mv = ['Up', 'Left', 'Down', 'Right'].map(d => '<kbd>' + Keys.label('K' + d) + '</kbd>').join('');
   $('help').innerHTML = '<div class="hcol"><h3>' + UI.img('ic_root', 16) + 'YOU ARE THE ROOTKEEPER</h3>' +
     '<div>' + mv + ' walk &nbsp; <kbd>LEFT CLICK</kbd> ' + k('kPick') + ' pick up remains / take from a pylon / craft (hold: keep picking) &nbsp; <kbd>RIGHT CLICK</kbd> ' + k('kThrow') + ' throw into a Pylon or Burner, plant a seed or a trap (hold: keep throwing; <kbd>SHIFT</kbd> + throw: the whole pile) &nbsp; the mouse aims</div>' +
-    '<div>' + k('kUse') + ' mash a node or mirror Harvester, set a Burner\'s type, switch a crafter &nbsp; ' + k('kSlot1') + '-' + k('kSlot8') + ' or the wheel: tools (hose, burner, crafters, collector, pole, pylon, remove) &nbsp; ' + k('kTool') + ' put the tool away</div>' +
+    '<div>' + k('kUse') + ' mash a node or mirror Harvester, set a Burner\'s type, switch a crafter &nbsp; ' + k('kSlot1') + '-' + k('kSlot8') + ' or the wheel, or click a slot of the bar along the bottom: tools (hose, burner, crafters, collector, pole, pylon, remove) &nbsp; ' + k('kTool') + ' put the tool away</div>' +
     '<div>' + k('kGhost') + ' ghost view (the foes and the Wizard above) &nbsp; ' + k('pip3') + ' corner picture: next teammate &nbsp; ' + k('treeK') + ' skill tree &nbsp; <kbd>ESC</kbd> menu</div>' +
     '<div>Kills above drop remains down here. Burners feed whatever their hoses reach: nodes grow trees and rocks in the wilds, traps fire on foes up there, mirror Harvesters send spells up to the Builder. Collectors lift the Ash into the skill bank.</div></div>' +
     '<div class="hfoot"><kbd>H</kbd> hides this. A pad: A pick, B throw (LT + B: the whole pile), X use, RT roll, Y ghost view, LB / RB tools, Back tree.</div>';

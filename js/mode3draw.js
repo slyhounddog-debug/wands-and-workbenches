@@ -170,7 +170,9 @@ R.drawUnder = function (main, dt, rect) {
   R.px = P; R.org = X0; R.defer = [];
   const cam = R.ucam, k = Math.min(1, dt * 8);
   cam.x += (rk.x + rk.vx * 0.12 - cam.x) * k; cam.y += (rk.y + rk.vy * 0.12 - cam.y) * k;
-  const v = R.uv; v.org = X0; v.cx = X0 + RW / 2; setView(v, cam, 0, 0);
+  const v = R.uv; v.org = X0; v.cx = X0 + RW / 2;
+  const sh = u.shake > 0 && !rc.pip ? u.shake * 24 : 0;   // (his camera kick: the wilds' w.shake)
+  setView(v, cam, (Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh);
   const left = X0, right = X0 + RW;
   ctx.fillStyle = '#120a1a'; ctx.fillRect(X0, 0, RW + P, CFG.H);
   drawGround(ctx, v, left, right);
@@ -236,10 +238,7 @@ R.drawUnder = function (main, dt, rect) {
     else if (o.gw) { const s = SP.wizard, p = R.toScreen(v, G.w.x, G.w.y); dspr(ctx, { c: s.white, ax: s.ax, ay: s.ay }, p[0], p[1], S, CFG.mode3.ghostA); R.defer.push(c => txt(c, 'WIZARD', Math.round(p[0]), Math.round(p[1]) + 26, 9, '#d8c8ff', 'center', 'd')); }
   }
   // thrown remains in the air, the effects, the icons popping over things
-  for (const f of u.fly) {
-    const k = Math.min(1, f.t / f.T), x = f.x0 + (f.x1 - f.x0) * k, y = f.y0 + (f.y1 - f.y0) * k, p = R.toScreen(v, x, y);
-    dspr(ctx, itemSprite(f.k), p[0], p[1] - 10 - Math.sin(k * 3.14) * 60, S);
-  }
+  for (const f of u.fly) { const q = FA.flightPos(f, { kind: f.kind, t: f.t }); R.drawFly(ctx, v, q, t, S, v.hh * 2.2); }   // (the Builder's flight, drawn by the Builder's code: shadow on the ground, the item on its lob)
   for (const f of u.fx) {
     const p = R.toScreen(v, f.x, f.y), k = f.t / (f.type === 'lift' ? 1.1 : 0.7);
     if (f.type === 'ring') { ctx.globalAlpha = 1 - k; ctx.strokeStyle = f.col; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 20 + k * (f.big ? 90 : 40), 10 + k * (f.big ? 45 : 20)); ctx.stroke(); }

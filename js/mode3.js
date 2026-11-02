@@ -36,8 +36,8 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 
 // ---------- the state ----------
 M3.rkFresh = () => ({ x: SPAWN.x - 2.5, y: SPAWN.y - 2.5, vx: 0, vy: 0, fx: 1, fy: 1, moving: false, bob: 0, roll: 0, rollCd: 0, rdx: 1, rdy: 0, squash: 0, ghosts: [],
-  hands: [], tool: null, hose: null, mashT: 0, throwCd: 0, rollBuf: 0, ibuf: null, pRepeat: 0, burst: 0, burstAim: null, at: null, aim: null });
-M3.fresh = () => ({ v: 1, t: 0, rk: M3.rkFresh(), items: [], bld: [], hoses: [], pulses: [], fly: [], fx: [], pops: [], bank: { air: 0, water: 0, fire: 0, earth: 0 }, blog: [], bend: {},
+  hands: [], tool: null, hose: null, mashT: 0, throwCd: 0, pole: 'pole', stT: 0, dustT: 0, rollBuf: 0, ibuf: null, pRepeat: 0, burst: 0, burstAim: null, at: null, aim: null });
+M3.fresh = () => ({ v: 1, t: 0, shake: 0, rk: M3.rkFresh(), items: [], bld: [], hoses: [], pulses: [], fly: [], fx: [], pops: [], bank: { air: 0, water: 0, fire: 0, earth: 0 }, blog: [], bend: {},
   ghost: { W: false, K: false }, idN: 1, mirN: 0, ready: false,
   st: { picked: 0, burned: 0, planted: 0, manifest: 0, traps: 0, sent: 0, banked: 0, ash: 0, trapHits: 0 } });
 M3.byId = id => (G.u ? G.u.bld.find(b => b.id === id) : null) || null;
@@ -113,6 +113,15 @@ M3.adj = function () {
 };
 M3.pref = b => (b.type === 'node' ? C().nodes[b.nk].pref : b.type === 'trap' ? C().traps[b.tk].pref : b.type === 'mirror' ? b.el : null);
 
+// an underworld sound is for the Rootkeeper only: his machine plays it (the host when he is the host) and a Rootkeeper guest hears it from the host's sound log (G.snd, k: 1);
+// the Builder's and the Wizard's machines never do. (Sounds the wilds should hear, a tree growing, a trap firing, stay AU.sfx with their position.)
+M3.sfx = function (name) {
+  if (Net.role !== 'guest' && M3.myRole() === 'K') AU.sfx(name);
+  if (Net.on && Net.role === 'host') Main.tapSfx(name, null, null, true);
+};
+// the underworld's camera kick (the wilds' w.shake: seconds of it, 24 px a second at most), and the wilds' own when the Wizard is near enough to feel what is made below
+M3.kick = amp => { const u = G.u; if (u) u.shake = Math.max(u.shake || 0, amp); };
+M3.feel = (x, y, amp) => { const w = G.w; if (w && !w.dead && Math.hypot(x - w.x, y - w.y) < 14) w.shake = Math.max(w.shake, amp); };
 // ---------- what goes to the Rootkeeper's screen: a toast on his side ('K'), a pop over a spot ----------
 M3.toastK = (text, icon) => UI.toast(text, 'K', icon);
 M3.pop = (x, y, ic) => { G.u.pops.push({ x, y, ic, t: 0 }); if (G.u.pops.length > 24) G.u.pops.shift(); };
@@ -144,7 +153,7 @@ M3.setup = function () {
 // the save: the underworld is kept like the factory (an expedition does not reset it); what is in flight / on screen for a moment is not
 M3.saveData = function () {
   const u = G.u;
-  return { v: 1, u: { t: u.t, rk: { x: u.rk.x, y: u.rk.y, hands: u.rk.hands.slice(), tool: u.rk.tool }, items: u.items.map(o => ({ k: o.k, x: o.x, y: o.y, t: o.t })).concat(u.fly.map(f => ({ k: f.k, x: f.x1, y: f.y1, t: 0 }))),
+  return { v: 1, u: { t: u.t, rk: { x: u.rk.x, y: u.rk.y, hands: u.rk.hands.slice(), tool: u.rk.tool }, items: u.items.map(o => ({ k: o.k, x: o.x, y: o.y, t: o.t })).concat(u.fly.map(f => ({ k: f.kind, x: f.tx, y: f.ty, t: 0 }))),
     bld: u.bld.map(b => { const o = Object.assign({}, b); delete o.pop; delete o.drop; return o; }), hoses: u.hoses, bank: u.bank, blog: u.blog.slice(-200), idN: u.idN, mirN: u.mirN, st: u.st, ghost: u.ghost } };
 };
 M3.fix = function (d) {
@@ -213,7 +222,8 @@ M3.moveRk = function (dt, k) {
   if (m > 0) { dx /= m; dy /= m; rk.fx = dx; rk.fy = dy; }
   if (rk.rollCd > 0) rk.rollCd -= dt;
   if (WZ.rollBuffer(rk, !!(k.roll && G.tree.rkroll), dt) && rk.rollCd <= 0 && rk.roll <= 0) {   // (Root Roll: a press a moment too early is kept, as the Wizard's is)
-    WZ.rollStart(rk, m, dx, dy, Cr.rollT, Cr.rollCd); AU.sfx('roll'); FA.fb('rk-roll');
+    WZ.rollStart(rk, m, dx, dy, Cr.rollT, Cr.rollCd); M3.sfx('roll'); FA.fb('rk-roll');
+    M3.fx('dust', rk.x, rk.y, { col: '#cdbf9a', n: 8 }); rk.squash = 0.12; M3.kick(0.05);   // (a puff off the ground, a squash, a small kick)
   }
   let sp = M3.speed();
   const t = WZ.terrain[Math.floor(rk.y) * CFG.WW + Math.floor(rk.x)] >> 3;
@@ -222,8 +232,14 @@ M3.moveRk = function (dt, k) {
   else WZ.steer(rk, dx * sp, dy * sp, (m > 0 ? CFG.wizard.accel : CFG.wizard.friction) * dt);
   WZ.ghostAge(rk, dt);
   const spd = Math.hypot(rk.vx, rk.vy);
+  const was = rk.moving;
   rk.moving = spd > 0.3;
+  if (was !== rk.moving) rk.squash = 0.12;   // (the Builder squashes when he starts or stops walking)
   if (spd > 0.01) WZ.stepOn(rk, dt, spd, sp, Cr.radius, M3.slide);
+  if (rk.moving && !(rk.roll > 0)) {   // dust puffs behind him (the Builder's) and a soft step
+    if ((rk.dustT -= dt) <= 0) { rk.dustT = 0.16; M3.fx('dust', rk.x - rk.vx * 0.04, rk.y - rk.vy * 0.04, { col: '#cdbf9a', n: 3 }); }
+    if ((rk.stT -= dt) <= 0) { rk.stT = 0.3; M3.sfx('step_b'); }
+  } else { rk.stT = 0.08; rk.dustT = 0; }
   if (rk.squash > 0) rk.squash -= dt;
   if (rk.throwCd > 0) rk.throwCd -= dt;
   if (rk.mashT > 0) rk.mashT -= dt;
@@ -246,7 +262,7 @@ M3.pay = function (c) {
   }
 };
 M3.short = c => Object.keys(c).filter(k => (G.u.bank[k] || 0) < c[k]).map(k => ['rem_' + k, c[k] - (G.u.bank[k] || 0)]);
-M3.say = (ic) => { const rk = G.u.rk; M3.pop(rk.x, rk.y - 0.5, ic); AU.sfx('error'); };
+M3.say = (ic) => { const rk = G.u.rk; M3.pop(rk.x, rk.y - 0.5, ic); M3.sfx('error'); };
 M3.sayA = a => { const rk = G.u.rk; M3.pop(rk.x, rk.y - 0.5, a.row || (a.ic || []).map(k => [k])); };   // (FA.doAct: why a press can't happen, over him; the error sound is FA.doAct's)
 M3.burst = (x, y, col, n) => M3.fx('spark', x, y, { col, n });   // (his world's particles, for the shared juice)
 M3.toolCost = t => (C().bld[t] || {}).cost || {};
@@ -310,28 +326,29 @@ M3.takeItem = function (it) {   // one item per press (hold to keep grabbing)
   const u = G.u, rk = u.rk, i = u.items.indexOf(it);
   if (i < 0 || !M3.canHold()) return;
   u.items.splice(i, 1); rk.hands.push(it.k); u.st.picked += ITEMS[it.k].rem ? 1 : 0;
-  FA.pickJuice(it.k, it.x, it.y, rk, M3.burst);
+  FA.pickJuice(it.k, it.x, it.y, rk, M3.burst, M3.sfx);
 };
 M3.pullPylon = function (py) {
   const u = G.u, rk = u.rk;
   if (!u.blog.length || !M3.canHold()) return;
   const el = u.blog.pop();   // last in, first out
   u.bank[el] = Math.max(0, u.bank[el] - 1); rk.hands.push('rem_' + el); M3.pop(py.x, py.y - 1, [['rem_' + el]]);
-  FA.pickJuice('rem_' + el, py.x, py.y, rk, M3.burst);
+  FA.pickJuice('rem_' + el, py.x, py.y, rk, M3.burst, M3.sfx);
 };
 M3.craft = function (b) {
   if (b.busy) { M3.say([['ic_clock']]); return; }
   const c = M3.recipeCost(b);
   if (!M3.canPay(c)) { M3.say(M3.short(c)); return; }
-  M3.pay(c); b.busy = M3.productOf(b); b.prog = 0; b.pop = 0.3; AU.sfx('craft');
+  M3.pay(c); b.busy = M3.productOf(b); b.prog = 0; b.pop = 0.3; M3.sfx('craft');
+  M3.fx('spark', b.x, b.y, { col: '#ffe36b', n: 5 }); M3.kick(0.05); G.u.rk.squash = 0.12;
 };
-M3.nextRecipe = b => { b.r = (b.r + 1) % M3.recipesOf(b).length; b.pop = 0.2; AU.sfx('blip'); };
-M3.setBurner = b => { b.el = ELS[(ELS.indexOf(b.el) + 1) % 4]; b.pop = 0.3; AU.sfx('el_' + b.el); M3.pop(b.x, b.y - 1.2, [[b.el]]); };
+M3.nextRecipe = b => { b.r = (b.r + 1) % M3.recipesOf(b).length; b.pop = 0.2; M3.sfx('blip'); };
+M3.setBurner = b => { b.el = ELS[(ELS.indexOf(b.el) + 1) % 4]; b.pop = 0.3; M3.sfx('el_' + b.el); M3.pop(b.x, b.y - 1.2, [[b.el]]); M3.fx('ring', b.x, b.y, { col: ELEM[b.el].color }); G.u.rk.squash = 0.12; };
 M3.mash = function (b) {   // a tap fills the meter (the Builder's crank: he squashes, sparks of what it makes, the crank sound)
   const rk = G.u.rk;
   rk.mashT = 0.15; rk.squash = 0.15; b.mashT = 0.2; b.pop = 0.12;
-  if (b.type === 'node') { b.ch = Math.min(1, b.ch + C().nodes[b.nk].mash * M3.mashK()); AU.sfx('crank'); M3.fx('spark', b.x, b.y, { col: '#cfe88a' }); if (b.ch >= 1) M3.manifest(b); }
-  else { b.ch += C().mirror.mash * M3.mashK(); AU.sfx('crank'); M3.fx('spark', b.x, b.y, { col: ELEM[b.el].color }); M3.mirrorSend(b); }
+  if (b.type === 'node') { b.ch = Math.min(1, b.ch + C().nodes[b.nk].mash * M3.mashK()); M3.sfx('crank'); M3.fx('spark', b.x, b.y, { col: '#cfe88a' }); if (b.ch >= 1) M3.manifest(b); }
+  else { b.ch += C().mirror.mash * M3.mashK(); M3.sfx('crank'); M3.fx('spark', b.x, b.y, { col: ELEM[b.el].color }); M3.mirrorSend(b); }
   FA.fb('rk-mash');
 };
 // ---------- the tools (the pick button with a tool out): place, lay a hose, remove. Each returns whether it did something; quiet = the input buffer will retry, say nothing yet ----------
@@ -351,37 +368,40 @@ M3.toolTarget = function () {
 };
 M3.place = function (tool, quiet) {
   const [x, y] = M3.toolAt(), type = tool;
-  const no = ic => { if (!quiet) { M3.pop(x, y - 0.4, ic); AU.sfx('error'); } return null; };   // (the Builder's placeInFront: the reason pops on the tile)
+  const no = ic => { if (!quiet) { M3.pop(x, y - 0.4, ic); M3.sfx('error'); } return null; };   // (the Builder's placeInFront: the reason pops on the tile)
   if (type === 'hpole' && !G.tree.rkpole) return no([['ic_lock']]);
   if (!M3.free(x, y, 1.0)) return no([['ic_x']]);
   const c = M3.toolCost(type);
   if (!M3.canPay(c)) return no(M3.short(c));
   M3.pay(c);
   const b = M3.make(type, x, y);
-  M3.fx('dust', b.x, b.y, { col: '#cdbf9a', n: 12 }); AU.sfx('place'); FA.fb('rk-build');
+  M3.fx('dust', b.x, b.y, { col: '#cdbf9a', n: 12 }); M3.fx('ring', b.x, b.y, { col: '#cdbf9a' }); M3.sfx('place'); FA.fb('rk-build');
+  M3.kick(0.15); G.u.rk.squash = 0.12;   // (the Builder's building lands with a nudge)
   return b;
 };
 M3.hoseAt = function (quiet) {
   const u = G.u, rk = u.rk, b = M3.toolTarget();
-  if (!b) { if (rk.hose) { rk.hose = null; AU.sfx('blip'); return true; } if (!quiet) M3.say([['ic_x']]); return false; }
-  if (!rk.hose) { rk.hose = b.id; AU.sfx('blip'); return true; }
+  if (!b) { if (rk.hose) { rk.hose = null; M3.sfx('blip'); return true; } if (!quiet) M3.say([['ic_x']]); return false; }
+  if (!rk.hose) { rk.hose = b.id; M3.sfx('blip'); M3.fx('spark', b.x, b.y, { col: '#9adf5a', n: 5 }); rk.squash = 0.1; return true; }
   const a = M3.byId(rk.hose);
-  if (!a || a === b) { rk.hose = null; AU.sfx('blip'); return true; }
-  if (M3.linked(a.id, b.id)) { M3.unlink(a.id, b.id); rk.hose = null; AU.sfx('menu_close'); return true; }
-  if (!M3.canLink(a, b)) { if (!quiet) { M3.pop(b.x, b.y - 1, [['ic_target'], ['ic_x']]); AU.sfx('error'); } return false; }   // too far: a pole between them doubles it
-  M3.link(a, b); rk.hose = b.id; AU.sfx('place'); FA.fb('rk-hose');   // (the hose carries on from here: pick the next building to keep laying)
+  if (!a || a === b) { rk.hose = null; M3.sfx('blip'); return true; }
+  if (M3.linked(a.id, b.id)) { M3.unlink(a.id, b.id); rk.hose = null; M3.sfx('menu_close'); M3.fx('puff', b.x, b.y, { col: '#7a5a3a' }); rk.squash = 0.1; return true; }
+  if (!M3.canLink(a, b)) { if (!quiet) { M3.pop(b.x, b.y - 1, [['ic_target'], ['ic_x']]); M3.sfx('error'); } return false; }   // too far: a pole between them doubles it
+  M3.link(a, b); rk.hose = b.id; M3.sfx('place'); FA.fb('rk-hose');
+  M3.fx('stream', a.x, a.y, { col: '#9adf5a', x1: b.x, y1: b.y }); M3.fx('spark', b.x, b.y, { col: '#9adf5a', n: 6 }); rk.squash = 0.12; M3.kick(0.06);   // (the hose carries on from here: pick the next building to keep laying)
   return true;
 };
 M3.refundOf = b => (b.type === 'node' ? C().nodes[b.nk].cost : b.type === 'trap' ? C().traps[b.tk].cost : M3.toolCost(b.type));
 M3.removeAt = function (quiet) {
   const b = M3.toolTarget();
   if (!b) { if (!quiet) M3.say([['ic_x']]); return false; }
-  if (b.type === 'mirror') { if (!quiet) { M3.pop(b.x, b.y - 1, [['ic_lock']]); AU.sfx('error'); } return false; }   // a mirror Harvester is the Builder's: it goes when its Harvester goes
+  if (b.type === 'mirror') { if (!quiet) { M3.pop(b.x, b.y - 1, [['ic_lock']]); M3.sfx('error'); } return false; }   // a mirror Harvester is the Builder's: it goes when its Harvester goes
   const u = G.u, c = M3.refundOf(b);
   for (const k in c) { u.bank[k] += c[k]; for (let i = 0; i < c[k]; i++) u.blog.push(k); }
   if (b.type === 'burner') for (const el of ELS) for (let i = 0; i < b.hop[el]; i++) M3.addItem('rem_' + el, b.x + rnd(-0.6, 0.6), b.y + rnd(-0.6, 0.6));
   M3.pop(b.x, b.y - 0.6, Object.keys(c).map(k => ['rem_' + k, c[k]]));
-  M3.fx('puff', b.x, b.y, { col: '#b0a080' }); AU.sfx('drop');
+  M3.fx('puff', b.x, b.y, { col: '#b0a080' }); M3.sfx('drop');
+  M3.kick(0.12); G.u.rk.squash = 0.12;
   M3.unbuild(b);
   return true;
 };
@@ -415,18 +435,17 @@ M3.throwOne = function (cd, aim, quiet) {
   const k = M3.top(), I = ITEMS[k];
   if (I.seed || I.trap) {
     const [x, y] = M3.toolAt();
-    if (!M3.free(x, y, 1.0)) { if (!quiet) { M3.pop(x, y - 0.4, [['ic_x']]); AU.sfx('error'); } return false; }
+    if (!M3.free(x, y, 1.0)) { if (!quiet) { M3.pop(x, y - 0.4, [['ic_x']]); M3.sfx('error'); } return false; }
     rk.hands.pop(); rk.throwCd = cd || C().rk.throwGap;
-    if (I.seed) { const b = M3.make('node', x, y, { nk: I.seed }); u.st.planted++; FA.fb('node-plant'); M3.fx('dust', b.x, b.y, { col: '#8a6a3c', n: 10 }); AU.sfx('dig'); }
-    else { const b = M3.make('trap', x, y, { tk: I.trap }); u.st.traps++; FA.fb('trap-set'); M3.fx('dust', b.x, b.y, { col: '#c8a050', n: 10 }); AU.sfx('place'); }
-    rk.squash = 0.18;
+    if (I.seed) { const b = M3.make('node', x, y, { nk: I.seed }); u.st.planted++; FA.fb('node-plant'); M3.fx('dust', b.x, b.y, { col: '#8a6a3c', n: 10 }); M3.sfx('dig'); }
+    else { const b = M3.make('trap', x, y, { tk: I.trap }); u.st.traps++; FA.fb('trap-set'); M3.fx('dust', b.x, b.y, { col: '#c8a050', n: 10 }); M3.sfx('place'); }
+    rk.squash = 0.18; M3.kick(0.1);
     return true;
   }
-  const tg = aim ? { x: aim.x, y: aim.y, obj: aim.to ? M3.byId(aim.to) : null } : M3.throwTarget(), R = C().rk.throwR;
+  const tg = aim ? { x: aim.x, y: aim.y, obj: aim.to ? M3.byId(aim.to) : null } : M3.throwTarget();
   rk.hands.pop(); rk.throwCd = cd || C().rk.throwGap;
-  const d = Math.hypot(tg.x - rk.x, tg.y - rk.y);
-  u.fly.push({ k, x0: rk.x, y0: rk.y, x1: tg.x, y1: tg.y, t: 0, T: C().rk.throwT * (0.6 + Math.min(1, d / R) * 0.6), to: tg.obj ? tg.obj.id : null });
-  FA.throwJuice(rk, tg.x, tg.y, k, M3.burst);
+  u.fly.push(FA.flightOf(k, rk.x, rk.y, tg.x, tg.y, { to: tg.obj ? tg.obj.id : null }));   // (the Builder's flight: the same line, lob and time)
+  FA.throwJuice(rk, tg.x, tg.y, k, M3.burst, M3.sfx);
   return true;
 };
 // a throw comes down: into what it was aimed at, else (the Builder's catch grace, CFG.catchR) into a pylon or burner it lands right beside, else on the ground
@@ -444,39 +463,44 @@ M3.flyTick = function (dt) {
   for (let i = u.fly.length - 1; i >= 0; i--) {
     const f = u.fly[i];
     f.t += dt;
+    FA.flightPos(f, f);
     if (f.t < f.T) continue;
     u.fly.splice(i, 1);
-    const el = ITEMS[f.k].el, b = (f.to ? M3.byId(f.to) : null) || (el ? M3.catchNear(f.x1, f.y1) : null);
+    const el = ITEMS[f.kind].el, b = (f.to ? M3.byId(f.to) : null) || (el ? M3.catchNear(f.tx, f.ty) : null);
     if (b && b.type === 'pylon' && el) {
       u.bank[el]++; u.blog.push(el); if (u.blog.length > 400) u.blog.shift(); u.st.banked++;
-      M3.pop(b.x, b.y - 1.2, [['rem_' + el]]); M3.fx('ring', b.x, b.y, { col: ELEM[el].color }); AU.sfx('bank'); FA.fb('remain-bank');
+      M3.pop(b.x, b.y - 1.2, [['rem_' + el]]); M3.fx('ring', b.x, b.y, { col: ELEM[el].color }); M3.sfx('bank'); FA.fb('remain-bank'); M3.kick(0.1); b.pop = 0.3;
     } else if (b && b.type === 'burner' && el) {
-      b.hop[el]++; M3.fx('ring', b.x, b.y, { col: ELEM[el].color }); AU.sfx('drop');
-    } else { M3.addItem(f.k, f.x1, f.y1); AU.sfx('thud'); }
+      b.hop[el]++; M3.fx('ring', b.x, b.y, { col: ELEM[el].color }); M3.sfx('drop'); M3.kick(0.1); b.pop = 0.3;
+    } else { M3.addItem(f.kind, f.tx, f.ty); M3.sfx('thud'); M3.fx('dust', f.tx, f.ty, { col: ITEMS[f.kind].color, n: 4 }); M3.kick(0.05); }
   }
 };
 // ---------- the toolbar: the Builder's hotbar rules (UI.select / UI.cycle / UI.pickSlot) ----------
 // a slot's key picks it (pressed again it stays; on the pole slot, a family once the heavy pole is bought, it switches the pole inside); prev / next go slot to slot (from an empty
 // hand: the first / the last); clear puts the tool away (the empty hand)
+M3.poleNow = () => (G.tree.rkpole && G.u.rk.pole === 'hpole' ? 'hpole' : 'pole');   // the pole slot's member (the Builder's family slot: the last one picked)
 M3.cycleTool = function (k) {
   const rk = G.u.rk, T = M3.TOOLS;
-  if (k === 'clear') { if (rk.tool || rk.hose) AU.sfx('blip'); rk.tool = null; rk.hose = null; rk.ibuf = null; return; }
+  if (k === 'clear') { if (rk.tool || rk.hose) M3.sfx('blip'); rk.tool = null; rk.hose = null; rk.ibuf = null; return; }
   if (k === 'prev' || k === 'next') {
     const n = T.length, i = T.indexOf(rk.tool === 'hpole' ? 'pole' : rk.tool), dir = k === 'next' ? 1 : -1;
-    rk.tool = T[i < 0 ? (dir > 0 ? 0 : n - 1) : ((i + dir) % n + n) % n]; rk.hose = null; rk.ibuf = null; AU.sfx('blip'); return;
+    rk.tool = T[i < 0 ? (dir > 0 ? 0 : n - 1) : ((i + dir) % n + n) % n]; if (rk.tool === 'pole') rk.tool = M3.poleNow(); rk.hose = null; rk.ibuf = null; M3.sfx('blip'); return;
   }
   const want = T[k];
   if (!want) return;
-  if (want === 'pole' && (rk.tool === 'pole' || rk.tool === 'hpole')) { if (G.tree.rkpole) rk.tool = rk.tool === 'pole' ? 'hpole' : 'pole'; AU.sfx('blip'); return; }
+  if (want === 'pole') {   // the pole slot is a family: its first press picks the pole it shows, pressing it again switches poles once the heavy pole is bought
+    if (rk.tool === 'pole' || rk.tool === 'hpole') { if (G.tree.rkpole) rk.pole = rk.tool === 'pole' ? 'hpole' : 'pole'; } else { rk.hose = null; rk.ibuf = null; }
+    rk.tool = M3.poleNow(); M3.sfx('blip'); return;
+  }
   if (rk.tool !== want) { rk.hose = null; rk.ibuf = null; }
-  rk.tool = want; AU.sfx('blip');
+  rk.tool = want; M3.sfx('blip');
 };
 M3.input = function (dt, k) {
   const u = G.u, rk = u.rk;
   rk.at = k.at || null;
   M3.moveRk(dt, k);
   if (k.tool !== null && k.tool !== undefined) M3.cycleTool(k.tool);
-  if (k.ghost) { u.ghost.K = !u.ghost.K; AU.sfx(u.ghost.K ? 'menu_open' : 'menu_close'); FA.fb('ghost-view'); }
+  if (k.ghost) { u.ghost.K = !u.ghost.K; M3.sfx(u.ghost.K ? 'menu_open' : 'menu_close'); FA.fb('ghost-view'); }
   // the lead line (drawn from G: R.drawAim): where a throw would land now, while he holds remains with no tool out
   const top = M3.top(), tg = top && !rk.tool && !M3.plantable(top) ? M3.throwTarget() : null;
   rk.aim = tg ? { x: tg.x, y: tg.y, to: tg.obj ? tg.obj.id : null } : null;
@@ -554,7 +578,7 @@ M3.collectorTick = function (b, dt) {
     const el = ELS.find(e => c.ash[e] > 0);
     if (!el) continue;
     c.ash[el]--; G.bank['ash_' + el] = (G.bank['ash_' + el] || 0) + 1; u.st.ash++;
-    b.lift = 0.9; b.lel = el; M3.fx('lift', b.x, b.y, { col: ELEM[el].color, el }); AU.sfx('bank'); FA.fb('ash-up');
+    b.lift = 0.9; b.lel = el; M3.fx('lift', b.x, b.y, { col: ELEM[el].color, el }); M3.sfx('bank'); FA.fb('ash-up'); M3.kick(0.05);
     UI.changed();
     return;
   }
@@ -579,9 +603,9 @@ M3.craftTick = function (b, dt) {
   if (b.prog < C().craftT) return;
   const rk = G.u.rk, k = b.busy;
   b.busy = null; b.prog = 0; b.pop = 0.3;
-  if (rk.hands.length < M3.cap() && dist(rk, b) < C().rk.reach * 2) { rk.hands.push(k); AU.sfx('pickup'); }
+  if (rk.hands.length < M3.cap() && dist(rk, b) < C().rk.reach * 2) { rk.hands.push(k); M3.sfx('pickup'); }
   else M3.addItem(k, b.x + 0.9, b.y + 0.3);
-  M3.fx('spark', b.x, b.y, { col: '#ffe36b' }); AU.sfx('complete'); FA.fb('rk-craft');
+  M3.fx('spark', b.x, b.y, { col: '#ffe36b' }); M3.sfx('complete'); FA.fb('rk-craft'); M3.kick(0.1);
 };
 
 // ---------- nodes: a stump / rock pile in both worlds, a harvestable in the wilds once charged ----------
@@ -589,7 +613,7 @@ M3.manifest = function (b) {
   if (b.up) return;
   b.up = true; b.ch = 1; b.hp = b.maxHp = CFG.harvest[b.kind].hp; b.broken = false; b.flash = 0; b.surf = undefined; G.u.st.manifest++;
   if (G.w) { WZ.ring(b.x, b.y, 1.4, '#8fd85a', 0.5); WZ.puff(b.x, b.y, '#8fd85a', 12); }
-  M3.fx('ring', b.x, b.y, { col: '#8fd85a' }); AU.sfx('powerup', b.x, b.y);
+  M3.fx('ring', b.x, b.y, { col: '#8fd85a' }); AU.sfx('powerup', b.x, b.y); M3.kick(0.2); M3.feel(b.x, b.y, 0.12);
   FA.fb('node-up');
   const nm = b.kind === 'tree' ? 'A tree' : b.kind === 'ore' ? 'An iron ore' : 'A rock';
   UI.toast(nm + ' grew up from the roots', 'R', b.kind === 'tree' ? 'wood' : b.kind === 'ore' ? 'iron' : 'stone');
@@ -625,7 +649,7 @@ M3.trapTick = function (b, dt) {
   G.u.st.trapHits += foes.length;
   WZ.ring(b.x, b.y, T.r, b.tk === 'slow' ? '#9ad0ff' : '#e8c060', 0.35); WZ.puff(b.x, b.y, b.tk === 'slow' ? '#6a8a4a' : '#c8a050', 10);
   M3.fx('ring', b.x, b.y, { col: '#e8c060' });
-  AU.sfx(b.tk === 'slow' ? 'freeze' : 'slam', b.x, b.y); FA.fb('trap-fire');
+  AU.sfx(b.tk === 'slow' ? 'freeze' : 'slam', b.x, b.y); FA.fb('trap-fire'); M3.kick(0.2); M3.feel(b.x, b.y, 0.12);
 };
 // ---------- mirror Harvesters ----------
 M3.mirrorSend = function (b) {
@@ -639,7 +663,7 @@ M3.mirrorSend = function (b) {
     const cx = h.x + 0.5, cy = h.y + 0.5;
     for (let i = 0; i < 14; i++) { const a = Math.random() * 6.283, r = Math.random() * 0.4; G.fac.parts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, z: 0.02, vx: 0, vy: 0, vz: 2.5 + Math.random() * 2.5, g: 1.5, t: 0.7 + Math.random() * 0.3, col: i % 2 ? '#8fd85a' : ELEM[b.el].color }); }
     FA.ipop(cx, cy - 0.2, [['ic_root'], [b.el]]); h.pop = 0.3;
-    AU.sfx('el_' + b.el); FA.fb('below-packet');
+    AU.sfx('el_' + b.el); FA.fb('below-packet'); FA.nudge(2.5); M3.kick(0.1);
     M3.fx('lift', b.x, b.y, { col: ELEM[b.el].color, el: b.el });
   }
 };
@@ -669,14 +693,14 @@ M3.mirrorAdd = function (h) {
   u.mirN++;
   M3.fx('ring', m.x, m.y, { col: ELEM[h.el].color, big: 1 }); M3.fx('dust', m.x, m.y, { col: '#cdbf9a', n: 18 });
   M3.toastK('A mirror Harvester (' + ELEM_WORD[h.el] + ') dropped in below: the Builder built a Harvester', 'b:' + h.el);
-  AU.sfx('thud'); FA.fb('mirror-new');
+  M3.sfx('thud'); FA.fb('mirror-new');
 };
 M3.mirrorGone = function (m) {
   const tot = ELS.reduce((a, e) => a + (m.got[e] || 0), 0), per = C().mirror.perRemain;
   for (const el of ELS) { let n = Math.floor((m.got[el] || 0) / per + 0.5); if (!n && tot >= per / 2 && (m.got[el] || 0) === Math.max(...ELS.map(e => m.got[e] || 0))) n = 1; for (let i = 0; i < n; i++) M3.addItem('rem_' + el, m.x + rnd(-0.8, 0.8), m.y + rnd(-0.8, 0.8)); }
   M3.fx('puff', m.x, m.y, { col: '#6a5a7a' }); M3.fx('ring', m.x, m.y, { col: '#ff7a7a' });
   M3.toastK('A mirror Harvester crumbled: the Builder took down its Harvester', 'ic_warn');
-  AU.sfx('drop'); FA.fb('mirror-gone');
+  M3.sfx('drop'); FA.fb('mirror-gone');
   M3.unbuild(m);
 };
 
@@ -685,6 +709,7 @@ M3.update = function (dt, k) {
   const u = G.u;
   if (!u) return;
   u.t += dt;
+  if (u.shake > 0) u.shake = Math.max(0, u.shake - dt);
   M3.input(dt, k || M3.zeroK());
   M3.mirrorTick(dt);
   for (const b of u.bld.slice()) {

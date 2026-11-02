@@ -118,7 +118,7 @@ M4.guestView = function (dt) {
   M4.asSeat(s, () => {
     const bh = Main.hintFor(QUESTS.B[G.quest.B]), wh = Main.hintFor(QUESTS.W[G.quest.W]);
     R.hint = bh.f; R.whint = wh.w; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null; R.rot = null;
-    if (role === 'B') { G.lastInput = 'pad'; R.focus = null; Main.updateFocus(); UI.setHint(bh.slot || null, !!bh.tree, false); }
+    if (role === 'B') { G.lastInput = 'pad'; R.focus = null; Main.updateFocus(); R.aim = Main.guestAim(); UI.setHint(bh.slot || null, !!bh.tree, false); }
     else { R.focus = null; UI.setHint(null, false, wh.tree); }
     ctx.clearRect(0, 0, CFG.W, CFG.H);
     if (role === 'B') R.drawFactory(ctx, dt, { x0: 0, w: CFG.W }); else R.drawWorld(ctx, dt, { x0: 0, w: CFG.W });

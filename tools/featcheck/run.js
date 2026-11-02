@@ -491,7 +491,7 @@ const OUT = process.env.SHOTS || '';
   // ================= the juice ledger (JUICE.md): every verb has a sound, a burst and a kick; a row with no probe is a FAIL =================
   // (a probe runs the verb for real and reads three things: the sounds it asked for, the particles / rings it added, and whether anything moved: camera shake, nudge or the Builder's squash)
   const juiceText = require('fs').readFileSync(path.resolve(__dirname, '../../JUICE.md'), 'utf8');
-  const juiceIds = ids(juiceText), JUICE_ROWS = ['wand', 'throw', 'pick', 'build', 'deliver', 'hit'];
+  const juiceIds = ids(juiceText), JUICE_ROWS = ['wand', 'throw', 'pick', 'build', 'deliver', 'hit'];   // (+ the Rootkeeper's rk-* rows, probed in his own 3P game below)
   r = await run(() => {
     const W = __wands, G = W.G, WZ = W.WZ, FA = W.FA, CFG = W.CFG, o = { probes: {}, flat: [] };
     T.clear(); G.hands.length = 0; G.fac.parts.length = 0;
@@ -568,6 +568,68 @@ const OUT = process.env.SHOTS || '';
     return o;
   });
   ok(r.flat.length === 0, 'every verb has a sound, a burst and a kick', r.flat.join('; '));
+  // -- the Rootkeeper's rows (his own meters: the sounds he asks for, the effects below, his camera shake or his squash); a 3P game, he is the host
+  const rkJ = await run(() => {
+    const W = __wands, M3 = W.M3, seats = M3.defaultSeats(); seats[0].who = 'g1'; seats[1].who = 'g2'; seats[2].who = 'host';
+    W.start3(1, { seats, me: 2 }); W.UI.help(false); W.G.helpT = 0; W.CFG.world.cap = 0;
+    const G = W.G, u = G.u, WZ = W.WZ, FA = W.FA, C = W.CFG.mode3, rk = u.rk, o = { rows: [], flat: [], labels: {} };
+    const sfxLog = [], orig = AU.sfx;
+    AU.sfx = function (n) { sfxLog.push(n); return orig.apply(AU, arguments); };
+    for (const k of ['air', 'water', 'fire', 'earth']) { u.bank[k] = 60; for (let i = 0; i < 60; i++) u.blog.push(k); }
+    G.tree.rkroll = true; G.tree.rkpole = true;
+    const bu = u.bld.find(b => b.type === 'burner'), py = u.bld.find(b => b.type === 'pylon'), col = u.bld.find(b => b.type === 'collector'), mir = u.bld.find(b => b.type === 'mirror'), tree = u.bld.find(b => b.type === 'node' && b.nk === 'tree');
+    const stand = (x, y) => { rk.x = x; rk.y = y; rk.fx = 1; rk.fy = 0; rk.vx = rk.vy = 0; rk.roll = 0; rk.rollCd = 0; rk.throwCd = 0; };
+    const openSpot = () => { for (let i = 0; i < 600; i++) { const a = Math.random() * 6.28, d = 8 + Math.random() * 14, x = bu.x + Math.cos(a) * d, y = bu.y + Math.sin(a) * d, f = [Math.floor(x + 1.4) + 0.5, Math.floor(y) + 0.5]; if (!M3.blockedU(x, y, 0.5) && M3.free(x, y, 1.6) && M3.free(f[0], f[1], 1.4) && M3.free(x + 3, y, 1.4)) return [x, y]; } throw new Error('no open spot'); };
+    const probe = (row, label, fn) => {
+      sfxLog.length = 0; u.fx.length = 0; u.pops.length = 0; u.shake = 0; rk.squash = 0;
+      fn();
+      const res = { sfx: sfxLog.slice(), burst: u.fx.length, kick: u.shake > 0 || rk.squash > 0 };
+      const lack = [!res.sfx.length && 'sound', res.burst <= 0 && 'burst', !res.kick && 'kick'].filter(Boolean);
+      if (lack.length) o.flat.push(label + ' (no ' + lack.join(', ') + ')');
+      if (o.rows.indexOf(row) < 0) o.rows.push(row);
+      (o.labels[row] = o.labels[row] || []).push(label);
+      return res;
+    };
+    let s = openSpot(); stand(s[0], s[1]);
+    probe('rk-roll', 'roll', () => M3.moveRk(0.05, { ix: 0, iy: 0, roll: true }));
+    stand(s[0], s[1]); rk.hands.length = 0;
+    { const it = M3.addItem('rem_air', rk.x + 0.4, rk.y); probe('rk-pick', 'pick item', () => M3.takeItem(it)); }
+    u.blog.push('air'); u.bank.air++; rk.hands.length = 0; probe('rk-pick', 'pick pylon', () => M3.pullPylon(py));
+    rk.hands = ['rem_air']; probe('rk-throw', 'throw', () => M3.throwOne());
+    for (const [label, tgt] of [['pylon', py], ['burner', bu], ['ground', null]]) {
+      const f = FA.flightOf('rem_air', rk.x, rk.y, tgt ? tgt.x : s[0] + 1.4, tgt ? tgt.y : s[1], { to: tgt ? tgt.id : null });
+      f.t = f.T; u.fly.length = 0; u.fly.push(f); probe('rk-land', 'land ' + label, () => M3.flyTick(0.05));
+    }
+    s = openSpot(); stand(s[0], s[1]); rk.hands = ['n_tree']; probe('rk-plant', 'plant seed', () => M3.throwOne());
+    s = openSpot(); stand(s[0], s[1]); rk.hands = ['t_dmg']; probe('rk-plant', 'plant trap', () => M3.throwOne());
+    const tp = u.bld[u.bld.length - 1];
+    for (const t of Object.keys(C.bld).filter(t => t !== 'hose' && t !== 'remove')) { s = openSpot(); stand(s[0], s[1]); rk.tool = t; probe('rk-build', 'build ' + t, () => { if (!M3.place(t)) throw new Error('could not place ' + t); }); }
+    rk.tool = null;
+    s = openSpot(); const pa = M3.make('pole', s[0], s[1]), pb = M3.make('pole', s[0] + 3, s[1]);
+    stand(pa.x + 0.2, pa.y + 0.2); rk.tool = 'hose'; rk.hose = null; probe('rk-hose', 'hose start', () => M3.hoseAt());
+    stand(pb.x - 0.2, pb.y + 0.2); rk.hose = pa.id; probe('rk-hose', 'hose lay', () => M3.hoseAt());
+    stand(pb.x - 0.2, pb.y + 0.2); rk.hose = pa.id; probe('rk-hose', 'hose off', () => M3.hoseAt());
+    stand(pb.x + 0.1, pb.y + 0.1); rk.tool = 'remove'; probe('rk-remove', 'remove', () => { if (!M3.removeAt()) throw new Error('nothing removed'); });
+    rk.tool = null; rk.hose = null;
+    s = openSpot(); const tc = M3.make('tcraft', s[0], s[1]); stand(tc.x - 0.8, tc.y);
+    probe('rk-craft', 'craft start', () => M3.craft(tc)); tc.prog = C.craftT; probe('rk-craft', 'craft done', () => M3.craftTick(tc, 0.05));
+    stand(tree.x + 0.6, tree.y); tree.ch = 0; probe('rk-mash', 'mash node', () => M3.mash(tree)); probe('rk-mash', 'mash mirror', () => M3.mash(mir));
+    probe('rk-burner', 'set burner', () => M3.setBurner(bu));
+    tree.ch = 0.99; probe('rk-grow', 'grow', () => M3.deliver(tree, 'water', 5));
+    G.w.enemies.length = 0; tp.fuel = 12; tp.arm = 0; { const e = WZ.makeEnemy('golem', tp.x, tp.y); e.hp = e.maxHp = 1e5; e.spd = 0; e.dazeT = 100; }
+    probe('rk-trap', 'trap fires', () => M3.trapTick(tp, 0.05)); G.w.enemies.length = 0;
+    probe('rk-send', 'mirror send', () => M3.deliver(mir, mir.el, C.mirror.pack));
+    { const p = M3.make('pole', (bu.x + col.x) / 2, (bu.y + col.y) / 2); M3.link(bu, p); M3.link(p, col); bu.ash.air = 3; col.ct = 0; }
+    probe('rk-ash', 'ash lift', () => M3.collectorTick(col, 0.05));
+    AU.sfx = orig;
+    // his sounds are for him alone: a Builder or Wizard machine plays none of them (they are only logged for a Rootkeeper guest)
+    o.others = [];
+    for (const role of ['B', 'W']) { const sv = M3.myRole; M3.myRole = () => role; sfxLog.length = 0; AU.sfx = function (n) { sfxLog.push(n); return orig.apply(AU, arguments); }; M3.sfx('bank'); AU.sfx = orig; M3.myRole = sv; o.others.push(sfxLog.length); }
+    return o;
+  });
+  ok(rkJ.flat.length === 0, 'the Rootkeeper: every verb has a sound, a burst and a kick', rkJ.flat.join('; '));
+  ok(rkJ.labels['rk-build'] && rkJ.labels['rk-build'].length >= 7, 'the Rootkeeper: every building of his toolbar probed', JSON.stringify(rkJ.labels['rk-build']));
+  ok(rkJ.others.every(n => n === 0), 'the Rootkeeper\'s underworld sounds are not played on a Builder or Wizard machine', JSON.stringify(rkJ.others));
   ok(r.probes.wand.length === 4, 'juice: all four wand attacks probed', r.probes.wand.join(' '));
   ok(r.probes.build.length >= 10, 'juice: every building type probed', r.probes.build.join(' '));
   ok(r.probes.pick.length === 4 && r.probes.throw.sfx.indexOf('throw') >= 0, 'juice: throw + four kinds of pick probed');
@@ -576,7 +638,7 @@ const OUT = process.env.SHOTS || '';
   ok(r.vary.every(Boolean), 'juice: the busy sounds carry a pitch / volume drift', JSON.stringify(r.vary));
   ok(r.pan[0] > 0 && r.pan[1] < 0 && r.pan[2] === 0 && r.pan[3] === 0, 'juice: a sound pans to its side of the Wizard', JSON.stringify(r.pan));
   ok(r.far[0] === 1 && r.far[1] < 0.5, 'juice: a far sound is quieter', JSON.stringify(r.far));
-  const noProbe = juiceIds.filter(id => JUICE_ROWS.indexOf(id) < 0), noRow = JUICE_ROWS.filter(id => juiceIds.indexOf(id) < 0);
+  const ALLROWS = JUICE_ROWS.concat(rkJ.rows), noProbe = juiceIds.filter(id => ALLROWS.indexOf(id) < 0), noRow = ALLROWS.filter(id => juiceIds.indexOf(id) < 0);
   ok(noProbe.length === 0 && noRow.length === 0, 'JUICE.md and the probes list the same verbs (a new row needs a probe, a probe needs a row)', 'rows without a probe: ' + noProbe.join(' ') + ' / probes without a row: ' + noRow.join(' '));
 
   // ================= the 3-player ledger rows: a 3P game exercises each cue (the lobby and a dropped player through the same code the network calls) =================

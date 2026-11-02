@@ -64,24 +64,44 @@ M3.localK = function (dt) {
   if (Keys.hit('pip3') || (p && p.l3)) M3D.cyclePip();
   if (G.helpT > 0) { G.helpT -= dt; if (G.helpT <= 0) UI.help(false); }
   if (UI.treeOpen.R) { Main.treePads(dt, null, p); return k; }
+  // what he plays on last decides the prompts' key caps and whether the mouse aims (the Builder's G.lastInput / R.padMode)
+  if (mv[0] || mv[1]) G.lastInput = 'kb';
+  if (p && (p.ix || p.iy || p.any)) G.lastInput = 'pad';
+  if (IN.mouse.mv) G.lastInput = 'mouse';
+  R.padMode = G.lastInput === 'pad';
+  const mouse = !overPip(), lt = !!(p && p.ltHeld), rk = G.u.rk;
   k.ix = clamp1(mv[0] + (p ? p.ix : 0)); k.iy = clamp1(mv[1] + (p ? p.iy : 0));
-  k.pick = Keys.hit('kPick') || (IN.mouse.lp && !overPip()) || !!(p && p.a);
-  k.throw = Keys.hit('kThrow') || (IN.mouse.rp && !overPip()) || !!(p && p.b);
+  if (G.lastInput === 'mouse' && mouse) k.at = R.toTile(R.uv, IN.mouse.x, IN.mouse.y);   // the mouse aims his throws and his tools (the Builder's hoverPoint)
+  k.pick = Keys.hit('kPick') || (IN.mouse.lp && mouse) || !!(p && p.a && !lt);
+  k.pickHeld = Keys.down('kPick') || (IN.mouse.l && mouse) || !!(p && p.aHeld && !lt);
+  // right click with a tool out puts it away first and throws nothing until it is let go (the Builder's G.noThrow)
+  if (IN.mouse.rp && mouse && (rk.tool || rk.hose)) { k.tool = 'clear'; M3.noThrow = true; }
+  if (!IN.mouse.r && !Keys.down('kThrow') && !(p && p.bHeld)) M3.noThrow = false;
+  k.stack = (IN.shift() && ((IN.mouse.rp && mouse) || Keys.hit('kThrow'))) || !!(p && p.b && lt);   // the whole pile: Shift + throw, LT + B
+  k.throw = !k.stack && (Keys.hit('kThrow') || (IN.mouse.rp && mouse) || !!(p && p.b));
+  k.throwHeld = !k.stack && !IN.shift() && (Keys.down('kThrow') || (IN.mouse.r && mouse) || !!(p && p.bHeld && !lt));
+  if (M3.noThrow) { k.throw = false; k.throwHeld = false; k.stack = false; }
   k.use = Keys.hit('kUse') || !!(p && p.x);
   k.roll = Keys.hit('kRoll') || !!(p && p.rt);
   k.ghost = Keys.hit('kGhost') || !!(p && p.y);
-  if (Keys.hit('kTool')) k.tool = 'clear';
+  if (k.tool === 'clear') { /* (the right click above) */ }
+  else if (Keys.hit('kTool')) k.tool = 'clear';
   else if (Keys.hit('kPrev') || (p && p.lb)) k.tool = 'prev';
   else if (Keys.hit('kNext') || (p && p.rb)) k.tool = 'next';
+  else if (IN.wheel && mouse) k.tool = IN.wheel > 0 ? 'next' : 'prev';   // (the wheel goes round the toolbar, as it goes round the Builder's hotbar)
   else for (let i = 1; i <= 8; i++) if (Keys.hit('kSlot' + i)) k.tool = i - 1;
   return k;
 };
-// a Rootkeeper guest's pad (his keys were mapped onto it by Net.collect): A pick, B throw, X use, RT roll, Y ghost view, LB / RB tools, bi = the toolbar keys
+M3.noThrow = false;   // (local input state, like Main.carryOk: never in G)
+// a Rootkeeper guest's pad (his keys were mapped onto it by Net.collect): A pick (held: keep picking), B throw (held: keep throwing; LT + B the whole pile), X use, RT roll,
+// Y ghost view, LB / RB tools, bi = the toolbar keys. (No mouse point rides the pad: a guest aims like a pad player, as a 4P Builder guest does.)
 M3.padK = function (p) {
   const k = M3.zeroK();
   if (!p) return k;
+  const lt = !!p.ltHeld;
   k.ix = clamp1(p.ix || 0); k.iy = clamp1(p.iy || 0);
-  k.pick = !!p.a; k.throw = !!p.b; k.use = !!p.x; k.roll = !!p.rt; k.ghost = !!p.y;
+  k.pick = !!p.a && !lt; k.pickHeld = !!p.aHeld && !lt; k.stack = !!p.b && lt; k.throw = !!p.b && !lt; k.throwHeld = !!p.bHeld && !lt;
+  k.use = !!p.x; k.roll = !!p.rt; k.ghost = !!p.y;
   if (p.lb) k.tool = 'prev'; else if (p.rb) k.tool = 'next';
   if (p.bi) for (const s of p.bi) { if (s === 'clear') k.tool = 'clear'; else if (/^sel\d$/.test(s)) k.tool = +s.slice(3) - 1; }
   return k;
@@ -338,25 +358,29 @@ M3.netUi = function (role) {
   if (role !== 'K') return;
   const k = id => '<kbd>' + Keys.labels(id).replace(/ \/ /g, '</kbd> <kbd>') + '</kbd>', mv = ['Up', 'Left', 'Down', 'Right'].map(d => '<kbd>' + Keys.label('K' + d) + '</kbd>').join('');
   $('help').innerHTML = '<div class="hcol"><h3>' + UI.img('ic_root', 16) + 'YOU ARE THE ROOTKEEPER</h3>' +
-    '<div>' + mv + ' walk &nbsp; <kbd>LEFT CLICK</kbd> ' + k('kPick') + ' pick up remains / take from a pylon / craft &nbsp; <kbd>RIGHT CLICK</kbd> ' + k('kThrow') + ' throw into a Pylon or Burner, plant a seed or a trap</div>' +
-    '<div>' + k('kUse') + ' mash a node or mirror Harvester, set a Burner\'s type, switch a crafter &nbsp; ' + k('kSlot1') + '-' + k('kSlot8') + ' tools (hose, burner, crafters, collector, pole, pylon, remove) &nbsp; ' + k('kTool') + ' put the tool away</div>' +
+    '<div>' + mv + ' walk &nbsp; <kbd>LEFT CLICK</kbd> ' + k('kPick') + ' pick up remains / take from a pylon / craft (hold: keep picking) &nbsp; <kbd>RIGHT CLICK</kbd> ' + k('kThrow') + ' throw into a Pylon or Burner, plant a seed or a trap (hold: keep throwing; <kbd>SHIFT</kbd> + throw: the whole pile) &nbsp; the mouse aims</div>' +
+    '<div>' + k('kUse') + ' mash a node or mirror Harvester, set a Burner\'s type, switch a crafter &nbsp; ' + k('kSlot1') + '-' + k('kSlot8') + ' or the wheel: tools (hose, burner, crafters, collector, pole, pylon, remove) &nbsp; ' + k('kTool') + ' put the tool away</div>' +
     '<div>' + k('kGhost') + ' ghost view (the foes and the Wizard above) &nbsp; ' + k('pip3') + ' corner picture: next teammate &nbsp; ' + k('treeK') + ' skill tree &nbsp; <kbd>ESC</kbd> menu</div>' +
     '<div>Kills above drop remains down here. Burners feed whatever their hoses reach: nodes grow trees and rocks in the wilds, traps fire on foes up there, mirror Harvesters send spells up to the Builder. Collectors lift the Ash into the skill bank.</div></div>' +
-    '<div class="hfoot"><kbd>H</kbd> hides this. A pad: A pick, B throw, X use, RT roll, Y ghost view, LB / RB tools, Back tree.</div>';
+    '<div class="hfoot"><kbd>H</kbd> hides this. A pad: A pick, B throw (LT + B: the whole pile), X use, RT roll, Y ghost view, LB / RB tools, Back tree.</div>';
   UI.decorate($('help'));
 };
 // the guest's keyboard as the Rootkeeper's pad (net.js calls it from Net.collect when this seat is the Rootkeeper)
 M3.collectK = function (L, gp) {
+  const rk = G && G.u && G.u.rk, bi = L.bi || (L.bi = []);
+  if (IN.mouse.rp && rk && (rk.tool || rk.hose)) { bi.push('clear'); M3.noThrow = true; }   // (right click with a tool out puts it away first, as on a host)
+  if (!IN.mouse.r && !Keys.down('kThrow') && !(gp && gp.bHeld)) M3.noThrow = false;
   if (Keys.hit('kPick') || IN.mouse.lp || (gp && gp.a)) L.a = true;
-  if (Keys.hit('kThrow') || IN.mouse.rp || (gp && gp.b)) L.b = true;
+  if (!M3.noThrow && (Keys.hit('kThrow') || IN.mouse.rp || (gp && gp.b))) L.b = true;
   if (Keys.hit('kUse') || (gp && gp.x)) L.x = true;
   if (Keys.hit('kRoll') || (gp && gp.rt)) L.rt = true;
   if (Keys.hit('kGhost') || (gp && gp.y)) L.y = true;
-  if (Keys.hit('kPrev') || (gp && gp.lb)) L.lb = true;
-  if (Keys.hit('kNext') || (gp && gp.rb)) L.rb = true;
+  if (Keys.hit('kPrev') || (gp && gp.lb) || IN.wheel < 0) L.lb = true;
+  if (Keys.hit('kNext') || (gp && gp.rb) || IN.wheel > 0) L.rb = true;
   if (Keys.hit('treeK') || (gp && gp.back)) L.back = true;
-  const bi = L.bi || (L.bi = []);
   for (let i = 1; i <= 8; i++) if (Keys.hit('kSlot' + i)) bi.push('sel' + i);
   if (Keys.hit('kTool')) bi.push('clear');
 };
+// the held buttons a guest Rootkeeper's pad carries (Net.padNow): pick held, throw held, LT (Shift: the whole pile)
+M3.heldK = gp => ({ aHeld: Keys.down('kPick') || IN.mouse.l || !!(gp && gp.aHeld), bHeld: !M3.noThrow && (Keys.down('kThrow') || IN.mouse.r || !!(gp && gp.bHeld)), ltHeld: IN.shift() || !!(gp && gp.ltHeld) });
 })();

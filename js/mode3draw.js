@@ -66,9 +66,10 @@ const shadow = (ctx, p, w) => { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(
 // ---------- the Rootkeeper himself (in his world, and as a ghost in the wilds) ----------
 R.drawRoot = function (ctx, v, rk, alpha, t) {
   const p = R.toScreen(v, rk.x, rk.y), S = T().S, flip = (rk.fx - rk.fy) < 0;
-  for (const gh of rk.ghosts || []) { const q = R.toScreen(v, gh.x, gh.y); dspr(ctx, { c: SP.rootkeeper.white, ax: SP.rootkeeper.ax, ay: SP.rootkeeper.ay }, q[0], q[1], S, 0.3 * (gh.t / 0.22) * alpha, flip); }
+  for (const gh of rk.ghosts || []) { const q = R.toScreen(v, gh.x, gh.y); dspr(ctx, { c: SP.rootkeeper.white, ax: SP.rootkeeper.ax, ay: SP.rootkeeper.ay }, q[0], q[1], S, 0.35 * (1 - gh.t / 0.25) * alpha, flip); }   // (the Wizard's roll afterimages)
   if (alpha >= 1) shadow(ctx, p, 30);
   const spr = rk.moving && Math.floor((rk.bob || 0) / 3) % 2 ? SP.rootkeeper2 : SP.rootkeeper, bob = rk.moving ? (Math.sin(rk.bob || 0) > 0 ? -3 : 0) : 0;
+  if (rk.roll > 0 && alpha >= 1) { R.somersault(ctx, p[0], p[1], spr, S, 1 - rk.roll / CFG.mode3.rk.rollT, rk.roll, flip, 24, 0.4, 0.9); return; }   // Root Roll: the Wizard's somersault
   const sq = rk.squash > 0 ? 1 - rk.squash : 1;
   if (alpha < 1) dspr(ctx, { c: spr.white, ax: spr.ax, ay: spr.ay }, p[0], p[1] + bob, S, alpha, flip);
   else if (sq !== 1) dsprSq(ctx, spr, p[0], p[1] + bob, S, 1 + (1 - sq) * 0.5, sq, 1, flip);
@@ -76,6 +77,7 @@ R.drawRoot = function (ctx, v, rk, alpha, t) {
   if (alpha >= 1) {   // his lantern glows (the brightest thing below)
     ctx.globalAlpha = 0.18 + 0.05 * Math.sin((t || 0) * 5); ctx.fillStyle = '#ffe36b';
     ctx.fillRect(Math.round((p[0] + (flip ? -18 : 18) - 15) / 3) * 3, Math.round((p[1] - 36) / 3) * 3, 30, 24); ctx.globalAlpha = 1;
+    R.drawCarry(ctx, p[0], p[1] - 60 + bob, rk.hands || [], rk.moving, t || 0, S);   // what he carries: the Builder's pile above his head
   }
 };
 // a planted node as it stands in a world: a stump / rock pile (below, and in the wilds until it manifests), its charge ring
@@ -201,7 +203,7 @@ R.drawUnder = function (main, dt, rect) {
   ctx.globalAlpha = 1;
   // the hoses, then the pulses running along them
   for (const [a, b] of u.hoses) { const A = M3.byId(a), Bb = M3.byId(b); if (A && Bb) hoseLine(ctx, v, A, Bb, 1); }
-  if (rk.hose) { const A = M3.byId(rk.hose); if (A) { const near = M3.near(q => q !== A, 2.4), ok = near && M3.canLink(A, near); ctx.setLineDash([9, 6]); hoseLine(ctx, v, A, rk, 0.9, ok ? '#9adf5a' : Math.hypot(rk.x - A.x, rk.y - A.y) > M3.reachOf(A) ? '#ff6a6a' : '#c8a050'); ctx.setLineDash([]); } }
+  if (rk.hose) { const A = M3.byId(rk.hose); if (A) { const tb = M3.toolTarget(), near = tb !== A ? tb : null, ok = near && M3.canLink(A, near); ctx.setLineDash([9, 6]); hoseLine(ctx, v, A, rk, 0.9, ok ? '#9adf5a' : Math.hypot(rk.x - A.x, rk.y - A.y) > M3.reachOf(A) ? '#ff6a6a' : '#c8a050'); ctx.setLineDash([]); } }
   for (const q of u.pulses) {
     const at = pulseAt(q);
     if (!at) continue;
@@ -209,7 +211,8 @@ R.drawUnder = function (main, dt, rect) {
     ctx.fillStyle = ELEM[q.el] ? ELEM[q.el].color : '#ffe36b'; ctx.fillRect(Math.round((p[0] - r) / 3) * 3, Math.round((p[1] - 6 - r) / 3) * 3, r * 2, r * 2);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.round((p[0] - 1) / 3) * 3, Math.round((p[1] - 7) / 3) * 3, 3, 3);
   }
-  // everything that stands: buildings, items, him, and the ghosts of the wilds above (when his ghost view is on)
+  // everything that stands: buildings, items, him, and the ghosts of the wilds above (when his ghost view is on). The item his pick button would take lights up (R.pickFx)
+  const foc = rc.pip ? null : M3.focus(), pickIt = foc && (foc.list.find(e => e.key === 'pick' && e.t.kind === 'floor') || {}).t;
   const objs = [], vis = (x, y, m) => { const sx = (x - y) * v.hw + v.ox, sy = (x + y) * v.hh + v.oy; return sx > left - m && sx < right + m && sy > -m && sy < CFG.H + m * 2; };
   for (const b of u.bld) if (vis(b.x, b.y, 120)) objs.push({ d: b.x + b.y, b });
   for (const it of u.items) if (vis(it.x, it.y, 60)) objs.push({ d: it.x + it.y, it });
@@ -224,8 +227,10 @@ R.drawUnder = function (main, dt, rect) {
     else if (o.it) {
       const it = o.it, p = R.toScreen(v, it.x, it.y), R0 = CFG.mode3.remains;
       const fade = ITEMS[it.k].rem && it.t > R0.life - R0.fade ? (Math.sin(t * 14) > 0 ? 0.35 : 0.85) : 1;   // its last seconds: it blinks out
+      const pk = !!pickIt && pickIt.o === it;
       if (it.z <= 0) shadow(ctx, p, 15);
-      ctx.globalAlpha = fade; dspr(ctx, itemSprite(it.k), p[0], p[1] - 3 - it.z * 30 + (Math.sin(t * 4 + it.x) > 0 ? -3 : 0), S); ctx.globalAlpha = 1;
+      if (pk) R.pickFx(ctx, p[0], p[1], t, 0.75);
+      ctx.globalAlpha = fade; dspr(ctx, itemSprite(it.k), p[0], p[1] - 3 - it.z * 30 + (pk ? (Math.sin(t * 10) > 0 ? -12 : -6) : Math.sin(t * 4 + it.x) > 0 ? -3 : 0), S); ctx.globalAlpha = 1;
     } else if (o.rk) R.drawRoot(ctx, v, rk, 1, t);
     else if (o.ge) { const e = o.ge, s = SP[e.type + (e.var ? '_' + e.var : '')] || SP[e.type] || SP.slime, p = R.toScreen(v, e.x, e.y); if (s) dspr(ctx, { c: s.white, ax: s.ax, ay: s.ay }, p[0], p[1], S * (e.sz || 1), CFG.mode3.ghostA * 0.8); }
     else if (o.gw) { const s = SP.wizard, p = R.toScreen(v, G.w.x, G.w.y); dspr(ctx, { c: s.white, ax: s.ax, ay: s.ay }, p[0], p[1], S, CFG.mode3.ghostA); R.defer.push(c => txt(c, 'WIZARD', Math.round(p[0]), Math.round(p[1]) + 26, 9, '#d8c8ff', 'center', 'd')); }
@@ -246,15 +251,26 @@ R.drawUnder = function (main, dt, rect) {
     ctx.globalAlpha = 1;
   }
   for (const q of u.pops) { const p = R.toScreen(v, q.x, q.y), a = Math.min(1, (1.1 - q.t) * 3); R.defer.push(c => R.iconRow(c, p[0], p[1] - 40 - q.t * 40, q.ic, a)); }
-  // the tool he holds: a ghost of it on the tile in front of him (red when it cannot go there), its cost
-  if (rk.tool && rk.tool !== 'hose' && rk.tool !== 'remove') {
-    const [fx, fy] = M3.front(), spr = BLD_SPR(rk.tool), c = M3.toolCost(rk.tool), ok = M3.free(fx, fy, 1.0) && M3.canPay(c) && (rk.tool !== 'hpole' || G.tree.rkpole), p = R.toScreen(v, fx, fy);
+  // the tool he holds: a ghost of it where it would go (the tile in front of him, or under the mouse), red when it cannot go there, its cost; a seed or a trap in hand shows
+  // where it would be planted the same way; the hose / remove tool rings what it would act on (remove: the Builder's demolish preview, red with the refund)
+  const top = M3.top(), plant = !rk.tool && M3.plantable(top) ? top : null, mine = !rc.pip;   // (his previews are for his own screen, not a teammate's corner picture)
+  if (mine && ((rk.tool && rk.tool !== 'hose' && rk.tool !== 'remove') || plant)) {
+    const [fx, fy] = M3.toolAt(), spr = plant ? null : BLD_SPR(rk.tool), c = plant ? {} : M3.toolCost(rk.tool), ok = M3.free(fx, fy, 1.0) && M3.canPay(c) && (rk.tool !== 'hpole' || G.tree.rkpole), p = R.toScreen(v, fx, fy);
     ctx.globalAlpha = 0.5; ctx.fillStyle = ok ? '#9adf5a' : '#ff5a5a'; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.fill(); ctx.globalAlpha = 1;
-    if (spr) dspr(ctx, spr, p[0], p[1], S, 0.55);
+    if (spr) dspr(ctx, spr, p[0], p[1], S, 0.55); else if (plant) dspr(ctx, itemSprite(plant), p[0], p[1] - 6, S, 0.55);
     if (rk.tool === 'pole' || rk.tool === 'hpole') { ctx.globalAlpha = 0.25; ctx.strokeStyle = '#c8a050'; ctx.lineWidth = 3; const r = M3.reachOf({ type: rk.tool }); diamond(ctx, p[0], p[1], r * v.hw * 1.41, r * v.hh * 1.41); ctx.stroke(); ctx.globalAlpha = 1; }
     if (Object.keys(c).length) R.defer.push(cx => R.iconRow(cx, p[0], p[1] - 70, Object.keys(c).map(k2 => ['rem_' + k2, c[k2]]), ok ? 1 : 0.6));
   }
-  if (rk.tool === 'hose' || rk.tool === 'remove') { const b = M3.near(() => true, rk.tool === 'hose' ? 2.4 : 2.2); if (b) { const p = R.toScreen(v, b.x, b.y); ctx.strokeStyle = rk.tool === 'remove' ? '#ff5a5a' : '#9adf5a'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.stroke(); } }
+  if (mine && (rk.tool === 'hose' || rk.tool === 'remove')) {
+    const b = M3.toolTarget();
+    if (b && rk.tool === 'remove' && b.type !== 'mirror') { const c = M3.refundOf(b); R.drawDemo(ctx, v, { x: b.x - 0.5, y: b.y - 0.5, refund: Object.keys(c).map(k2 => ['rem_' + k2, c[k2]]) }, t); }
+    else if (b) { const p = R.toScreen(v, b.x, b.y); ctx.strokeStyle = rk.tool === 'remove' ? '#ff5a5a' : '#9adf5a'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], v.hw, v.hh); ctx.stroke(); }
+  }
+  // the lead line while he holds remains (the Builder's R.drawAim, from G: rk.aim)
+  if (mine && rk.aim && rk.hands.length && !rk.tool) {
+    const to = rk.aim.to ? M3.byId(rk.aim.to) : null;
+    R.drawAim(ctx, v, { x: rk.aim.x, y: rk.aim.y, obj: to }, t, { x: rk.x, y: rk.y, kind: top, ok: !!to, outline: (c, col) => { const q = R.toScreen(v, to.x, to.y); c.strokeStyle = col; c.lineWidth = 6; diamond(c, q[0], q[1], v.hw * 1.04, v.hh * 1.04); c.stroke(); } }, S);
+  }
   // what the nearest thing holds / needs (only near him: show, don't tell)
   M3D.infoNear(ctx, v, t);
   // remains that landed off screen lately: a pointer on the edge (where to go next)
@@ -276,13 +292,14 @@ R.drawUnder = function (main, dt, rect) {
 const M3D = {};
 window.M3D = M3D;
 // the key caps the Rootkeeper's prompts show (a pad's letters, or his keys)
-M3D.keys = function () {
-  const pad = Net.role === 'guest' ? !!IN.pad[0] : !!(G.ctl && G.ctl.pk >= 0 && IN.pad[G.ctl.pk]);
+M3D.keys = function () {   // (on a host: what he played on last, R.padMode, as the Builder's R.key reads it; a guest: whether he has a pad)
+  const pad = Net.role === 'guest' ? !!IN.pad[0] : R.padMode;
   if (pad) return { pick: 'A', throw: 'B', use: 'X' };
   return { pick: 'LMB', throw: 'RMB', use: Keys.label('kUse') };
 };
+M3D.key = which => M3D.keys()[which];
 M3D.infoNear = function (ctx, v, t) {
-  const u = G.u, rk = u.rk, K = M3D.keys();
+  const u = G.u, rk = u.rk;
   for (const b of u.bld) {
     if (Math.hypot(b.x - rk.x, b.y - rk.y) > 3.2) continue;
     const p = R.toScreen(v, b.x, b.y);
@@ -292,16 +309,9 @@ M3D.infoNear = function (ctx, v, t) {
     else if (b.type === 'node' && !b.up) R.defer.push(c => txt(c, Math.floor(b.ch * 100) + '%', Math.round(p[0]), Math.round(p[1]) - 50, 12, '#cfe88a', 'center', 'd'));
     else if (b.type === 'mirror') R.defer.push(c => R.iconRow(c, p[0], p[1] - 100, [[b.el], ['ic_root']]));
   }
-  // one prompt for the nearest thing he can do something with (the key cap + what it does, as icons)
-  if (rk.tool) return;
-  const it = M3.nearItem(), b = M3.near(q => q.type === 'node' && !q.up || q.type === 'mirror' || q.type === 'burner' || q.type === 'rcraft' || q.type === 'tcraft' || q.type === 'pylon');
-  const x = Math.round(R.rect.x0 + 140), y = CFG.H - 150;
-  if (it) R.iprompt(ctx, x, y, K.pick, [it.k]);
-  else if (b && b.type === 'pylon' && u.blog.length) R.iprompt(ctx, x, y, K.pick, ['rem_' + u.blog[u.blog.length - 1]]);
-  else if (b && (b.type === 'rcraft' || b.type === 'tcraft')) { const ks = M3.recipesOf(b); R.iprompt(ctx, x, y, K.pick, [(b.type === 'rcraft' ? 'n_' : 't_') + ks[b.r % ks.length]]); R.iprompt(ctx, x, y - 46, K.use, ['ic_rotate']); }
-  if (b && (b.type === 'node' || b.type === 'mirror')) R.iprompt(ctx, x, y - (it ? 46 : 0), K.use, [b.type === 'mirror' ? b.el : 'ic_bolt'], null, null, true);
-  else if (b && b.type === 'burner') R.iprompt(ctx, x, y - (it ? 46 : 0), K.use, [b.el, 'ic_rotate']);
-  if (rk.hands.length) { const top = rk.hands[rk.hands.length - 1]; R.iprompt(ctx, x, y - 92, K.throw, [top, ITEMS[top].rem ? 'u_pylon' : 'ic_flag']); }
+  // the prompts: the Builder's stack at the bottom-left, from the shared resolver (so they always say what the press will do)
+  const foc = R.rect.pip ? null : M3.focus();
+  if (foc) R.drawFocus(ctx, v, foc, t, M3D.key);
 };
 
 // ---------- what of the underworld stands in the WILDS (R.drawWorld calls this in 3P) ----------
@@ -328,40 +338,10 @@ M3D.pipSel = 0;   // which of this seat's two teammates (0 / 1)
 M3D.pipRoles = () => M3.ROLE.filter(r => r !== M3.myRole());
 M3D.pipRole = () => M3D.pipRoles()[M3D.pipSel % 2];
 M3D.cyclePip = () => { M3D.pipSel = (M3D.pipSel + 1) % 2; AU.sfx('blip'); FA.fb('pip-cycle'); const sc = R.bufs.pip3; if (sc) sc.drawn = false; };
-M3D.drawPip = function (main, dt) {
+M3D.drawPip = function (main, dt) {   // (the corner picture is the 2P one, R.pipFrame: only whose world it shows and its tag differ)
   R.pipRect = null;
-  const pct = AU.settings.pip;
-  if (!(pct > 0) || !G || !G.u) return;
-  let sc = R.bufs.pip3;
-  if (!sc) { const c = document.createElement('canvas'); c.width = CFG.HALF; c.height = CFG.H; sc = R.bufs.pip3 = { c, x: c.getContext('2d') }; }
-  const role = M3D.pipRole(), rect = { x0: 0, w: CFG.HALF, pip: true };
-  sc.acc = (sc.acc || 0) + dt;
-  if (!sc.drawn || sc.acc >= Math.min(0.1, Math.max(1 / 24, (sc.cost || 0) * 8 / 1000))) {
-    const t0 = performance.now();
-    sc.x.clearRect(0, 0, CFG.HALF, CFG.H);
-    if (role === 'W') R.drawWorld(sc.x, sc.acc, rect); else if (role === 'B') R.drawFactory(sc.x, sc.acc, rect); else R.drawUnder(sc.x, sc.acc, rect);
-    sc.drawn = true; sc.acc = 0;
-    sc.cost = sc.cost ? sc.cost * 0.7 + (performance.now() - t0) * 0.3 : performance.now() - t0;
-  }
-  const v = role === 'W' ? R.wv : role === 'B' ? R.fv : R.uv;
-  const CH = 500, sy = Math.max(0, Math.min(CFG.H - CH, Math.round(v.cy - CH / 2)));
-  const W = Math.round(CFG.W * pct / 100), H = Math.round(W * CH / CFG.HALF), x = CFG.W - W - 16, y = CFG.H - H - 16;
-  main.save();
-  main.fillStyle = '#1a0f28'; main.fillRect(x - 6, y - 6, W + 12, H + 12);
-  main.fillStyle = M3.col(M3.seatOf(role)); main.fillRect(x - 2, y - 2, W + 4, H + 4);
-  main.imageSmoothingEnabled = true; main.imageSmoothingQuality = 'medium';
-  main.drawImage(sc.c, 0, sy, CFG.HALF, CH, x, y, W, H);
-  main.restore();
-  const label = M3.name(M3.seatOf(role)), kk = Keys.label('pip3');
-  main.fillStyle = 'rgba(26,15,40,0.8)'; main.fillRect(x, y, Math.min(W, 230), 22);
-  drawText(main, label + '  [' + kk + '] NEXT', x + 8, y + 17, 10, '#ffe36b', 'left', 'd');
-  if (role === 'W' && G.w) {
-    const w = G.w, mh = WZ.maxHp();
-    main.fillStyle = 'rgba(26,15,40,0.85)'; main.fillRect(x, y + H - 22, W, 22);
-    main.fillStyle = '#3a2a4a'; main.fillRect(x + 6, y + H - 17, W - 12, 7);
-    main.fillStyle = '#ff5a6a'; main.fillRect(x + 6, y + H - 17, Math.round((W - 12) * Math.max(0, w.hp) / mh), 7);
-    if (w.dead) { main.fillStyle = 'rgba(40,0,10,0.55)'; main.fillRect(x, y, W, H - 22); drawText(main, 'DOWN', x + W / 2, y + H / 2, 16, '#ff9ab0', 'center', 'd'); }
-  }
-  R.pipRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
+  if (!(AU.settings.pip > 0) || !G || !G.u) return;
+  const role = M3D.pipRole();
+  R.pipFrame(main, dt, 'pip3', role, M3.name(M3.seatOf(role)) + '  [' + Keys.label('pip3') + '] NEXT', 230, M3.col(M3.seatOf(role)));
 };
 })();

@@ -86,10 +86,11 @@ const OUT = process.env.SHOTS || '';
     const W = __wands, G = W.G, u = G.u, M3 = W.M3, o = {};
     T.step(20);   // (the roll of section 2 is over)
     const it = u.items.find(i => i.k === 'rem_water'), py = u.bld.find(b => b.type === 'pylon');
-    T.near(it.x + 0.3, it.y); T.step(2); T.K({ pick: true }); o.hand = u.rk.hands.slice();
-    const it2 = u.items.find(i => i.k === 'rem_fire'); T.near(it2.x + 0.3, it2.y); T.step(2); T.K({ pick: true }); o.hand2 = u.rk.hands.length;
+    T.near(it.x + 0.3, it.y); u.rk.fx = -1; u.rk.fy = 0; T.step(2); T.K({ pick: true }); o.hand = u.rk.hands.slice();   // (facing it: the shared resolver, like the Builder's, prefers what he faces)
+    const it2 = u.items.find(i => i.k === 'rem_fire'); T.near(it2.x + 0.3, it2.y); u.rk.fx = -1; u.rk.fy = 0; T.step(2); T.K({ pick: true }); o.hand2 = u.rk.hands.length;
     const bu0 = u.bld.find(b => b.type === 'burner'), dx = py.x - bu0.x, dy = py.y - bu0.y, dm = Math.hypot(dx, dy) || 1;
     const at = () => { T.near(py.x + dx / dm * 1.5, py.y + dy / dm * 1.5); u.rk.fx = -dx / dm; u.rk.fy = -dy / dm; };   // (beside the pylon, on the far side from the burner, facing it)
+    o.held = u.rk.hands.slice();   // (what he actually picked: the shared resolver weighs the way he faces, not only the distance)
     at(); T.step(2); at();
     T.K({ throw: true }); T.step(4); at(); T.K({ throw: true }); T.step(30);
     o.bank = Object.assign({}, u.bank); o.blog = u.blog.slice(); o.empty = u.rk.hands.length;
@@ -100,7 +101,7 @@ const OUT = process.env.SHOTS || '';
     return o;
   });
   ok(r.hand[0] === 'rem_water' && r.hand2 === 2, 'he picks remains up into his hands', JSON.stringify(r.hand));
-  ok(r.bank.water === 1 && r.bank.fire === 1 && r.empty === 0, 'thrown at the Storage Pylon they are banked by type', JSON.stringify(r.bank));
+  ok(r.held.length === 2 && r.held.every(k => r.bank[k.slice(4)] === r.held.filter(q => q === k).length) && Object.values(r.bank).reduce((x, y) => x + y, 0) === 2 && r.empty === 0, 'thrown at the Storage Pylon they are banked by type', JSON.stringify([r.held, r.bank]));
   ok(r.pulled[0] === 'rem_' + r.blog[r.blog.length - 1] && r.bank2[r.blog[r.blog.length - 1]] === 0, 'picking at a pylon pulls the LAST banked one back out (last in, first out)', JSON.stringify([r.blog, r.pulled]));
   ok(r.fb[0] > 0, 'banking is a ledger cue (remain-bank)');
 

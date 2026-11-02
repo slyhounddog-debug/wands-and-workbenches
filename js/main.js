@@ -392,6 +392,11 @@ function handleMouseFactory(dt) {
 }
 
 
+// the Builder's side of the shared pick / use buttons (FA.pressPre / FA.pressPick)
+Main.builderAd = () => ({
+  interact: FA.interact, building: G.selected !== 'hand' || G.demolish, place: placeInFront, actionFor: FA.actionFor, n: () => G.hands.length,
+  again: () => (G.hands.length ? FA.sweepTarget(FA.topKind()) : FA.findTarget('pick')),
+});
 // returns true if it did something; quiet = don't complain yet (the input buffer will retry)
 function placeInFront(quiet) {
   const [tx, ty] = frontTile(), sel = G.selected;
@@ -555,43 +560,14 @@ Main.controls = function (dt) {
       else if (FA.throwOne(G.bd.burstAim.x, G.bd.burstAim.y, CFG.throwStackGap)) G.bd.burst--;
     }
     // pick / use presses are buffered: if nothing is in reach yet (still walking up to it), keep trying for
-    // CFG.inputBuffer seconds before giving up and showing why
-    const press = mode => {
-      const a = FA.interact(mode, true);
-      G.ibuf = a && a.fn ? null : { mode, t: CFG.inputBuffer };
-      return a;
-    };
-    const building = G.selected !== 'hand' || G.demolish;
-    if (G.ibuf && G.ibuf.mode === 'place') {   // a place-in-front that hit a taken tile retries while the Builder settles
-      G.ibuf.t -= dt;
-      if (placeInFront(G.ibuf.t > 0) || G.ibuf.t <= 0) G.ibuf = null;
-    } else if (G.ibuf && !use && !pick) {
-      const b = G.ibuf;
-      b.t -= dt;
-      if (b.mode === 'pick' && building) G.ibuf = null;
-      else {
-        const a = FA.interact(b.mode, b.t > 0);
-        if ((a && a.fn) || b.t <= 0) {
-          G.ibuf = null;
-          if (b.mode === 'pick' && a && a.fn) G.pRepeat = a.rep ? CFG.pickRepeat * 1.5 : 0;
-        }
-      }
-    }
-    if (use) press('use');
+    // CFG.inputBuffer seconds before giving up and showing why (FA.pressPre / pressPick: the same buttons every role has)
+    const ad = Main.builderAd();
+    FA.pressPre(dt, G, ad, pick, use);
     Main.carryTick(dt, carryKey, (IN.mouse.lp && Main.mouseB()) || IN.hit('Escape') || !!(p0 && p0.a));   // (carrying: the button is still held, so left click / Esc / A cancels and letting go sets it down)
     if (apTog) Main.toggleAutoPick();
     if (swapEl) { const hb = FA.harnessNear(); if (hb) FA.cycleElem(hb, IN.shift() ? -1 : 1); else AU.sfx('error'); }
     // A / . picks up one item (holding keeps grabbing); with a building selected it places in front instead
-    if (pick) {
-      if (building) { if (!placeInFront(true)) G.ibuf = { mode: 'place', t: CFG.inputBuffer }; }
-      else { const a = press('pick'); G.pRepeat = a && a.fn && a.rep ? CFG.pickRepeat * 1.5 : 0; }
-    } else if (pickHeld && !building && G.pRepeat > 0) {
-      G.pRepeat -= dt;
-      if (G.pRepeat <= 0) {
-        const t = G.hands.length ? FA.sweepTarget(FA.topKind()) : FA.findTarget('pick'), a = t && FA.actionFor(t, 'pick');
-        if (a && a.rep && a.fn) { a.fn(); G.pRepeat = G.hands.length ? CFG.sweepRepeat : CFG.pickRepeat; }
-      }
-    } else if (!pickHeld) G.pRepeat = 0;
+    FA.pressPick(dt, G, ad, pick, pickHeld);
     if (throwHeld && !(G.bd.burst > 0) && !(p0 && p0.ltHeld)) throwAlongAim();
     if (IN.hit('Enter') && !placeInFront(true)) G.ibuf = { mode: 'place', t: CFG.inputBuffer };
     if (p0 && p0.aHeld && G.selected === 'belt' && !G.demolish) {
@@ -631,26 +607,10 @@ Main.remoteB = function (dt, p) {
     if (p.cyc) FA.cycleLock(p.cyc);
     if (stackThrow && G.hands.length && !G.noThrow) { const a = R.aim || aimNow(); if (a) { G.bd.burst = G.hands.length; G.bd.burstAim = { x: a.x, y: a.y }; } }
     if (G.bd.burst > 0) { if (!G.hands.length) G.bd.burst = 0; else if (FA.throwOne(G.bd.burstAim.x, G.bd.burstAim.y, CFG.throwStackGap)) G.bd.burst--; }
-    const press = mode => { const a = FA.interact(mode, true); G.ibuf = a && a.fn ? null : { mode, t: CFG.inputBuffer }; return a; };
-    const building = G.selected !== 'hand' || G.demolish;
-    if (G.ibuf && G.ibuf.mode === 'place') { G.ibuf.t -= dt; if (placeInFront(G.ibuf.t > 0) || G.ibuf.t <= 0) G.ibuf = null; }
-    else if (G.ibuf && !use && !pick) {
-      const b = G.ibuf; b.t -= dt;
-      if (b.mode === 'pick' && building) G.ibuf = null;
-      else { const a = FA.interact(b.mode, b.t > 0); if ((a && a.fn) || b.t <= 0) { G.ibuf = null; if (b.mode === 'pick' && a && a.fn) G.pRepeat = a.rep ? CFG.pickRepeat * 1.5 : 0; } }
-    }
-    if (use) press('use');
+    const ad = Main.builderAd();
+    FA.pressPre(dt, G, ad, pick, use);
     if (p.x && lt) { const hb = FA.harnessNear(); if (hb) FA.cycleElem(hb, 1); else AU.sfx('error'); }
-    if (pick) {
-      if (building) { if (!placeInFront(true)) G.ibuf = { mode: 'place', t: CFG.inputBuffer }; }
-      else { const a = press('pick'); G.pRepeat = a && a.fn && a.rep ? CFG.pickRepeat * 1.5 : 0; }
-    } else if (pickHeld && !building && G.pRepeat > 0) {
-      G.pRepeat -= dt;
-      if (G.pRepeat <= 0) {
-        const t = G.hands.length ? FA.sweepTarget(FA.topKind()) : FA.findTarget('pick'), a = t && FA.actionFor(t, 'pick');
-        if (a && a.rep && a.fn) { a.fn(); G.pRepeat = G.hands.length ? CFG.sweepRepeat : CFG.pickRepeat; }
-      }
-    } else if (!pickHeld) G.pRepeat = 0;
+    FA.pressPick(dt, G, ad, pick, pickHeld);
     if (throwHeld && !(G.bd.burst > 0) && !lt) throwAlongAim();
     if (p.aHeld && G.selected === 'belt' && !G.demolish) {   // hold A with the Belt tool: lay belts as he walks
       const tx = Math.floor(G.bd.x), ty = Math.floor(G.bd.y), key = tx + ',' + ty;
@@ -715,6 +675,8 @@ Main.step = function (dt, ctl) {
     const bd = G.bd, wz = G.w, st = Main.stride || (Main.stride = { b: 0, w: 0 });
     if (!facHalt && bd.moving) { st.b -= dt; if (st.b <= 0) { st.b = 0.3; AU.sfx('step_b'); } } else st.b = 0.08;
     if (wz.moving && !wz.dead && !(wz.roll > 0)) { st.w -= dt; if (st.w <= 0) { st.w = 0.27; AU.sfx('step_w'); } } else st.w = 0.08;
+    const rk = G.m3 && G.u && M3.myRole() === 'K' ? G.u.rk : null;   // 3P: the Rootkeeper's own steps on his own screen (the Builder's footstep: not a wilds sound, so nobody else hears it)
+    if (rk && rk.moving && !(rk.roll > 0)) { st.k = (st.k || 0) - dt; if (st.k <= 0) { st.k = 0.3; AU.sfx('step_b'); } } else st.k = 0.08;
   }
   if (G.m4) M4.deadFlow(dt);
   else if (G.w.dead && !G.w.deadHandled) {
@@ -914,10 +876,7 @@ Main.updateFocus = function () {
     else tp = FA.findTarget('pick');
   }
   const t = bd.gather ? { kind: 'bld', o: bd.gather.b, x: bd.gather.b.x + 0.5, y: bd.gather.b.y + 0.5 } : FA.findTarget('use');
-  const ap = tp && FA.actionFor(tp, 'pick'), au = t && FA.actionFor(t, 'use'), list = [];
-  if (ap && ap.fn) list.push({ t: tp, a: ap, key: 'pick' });
-  if (au && au.fn) list.push({ t, a: au, key: 'use' });
-  if (!list.length) { if (ap && ap.label) list.push({ t: tp, a: ap }); else if (au && au.label) list.push({ t, a: au }); }
+  const list = FA.focusOf(tp, tp && FA.actionFor(tp, 'pick'), t, t && FA.actionFor(t, 'use'));
   const hn = G.selected === 'hand' && !G.demolish ? FA.harnessNear() : null;   // a third prompt: switch the Harvester's element
   if (hn && hn.type === 'cauldron') list.push({ t: { kind: 'bld', o: hn, x: hn.x + 0.5, y: hn.y + 0.5 }, a: { label: 'Change mode', fn: null, ic: [hn.mode === 'hp' ? 'potion' : 'armor', 'ic_swap', hn.mode === 'hp' ? 'armor' : 'potion'] }, key: 'cycle' });
   else if (hn) { const o = CFG.harness.order; list.push({ t: { kind: 'bld', o: hn, x: hn.x + 0.5, y: hn.y + 0.5 }, a: { label: 'Change element', fn: null, ic: [hn.el, 'ic_swap', o[(o.indexOf(hn.el) + 1) % o.length]] }, key: 'cycle' }); }

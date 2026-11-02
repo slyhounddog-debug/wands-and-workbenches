@@ -36,7 +36,7 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 
 // ---------- the state ----------
 M3.rkFresh = () => ({ x: SPAWN.x - 2.5, y: SPAWN.y - 2.5, vx: 0, vy: 0, fx: 1, fy: 1, moving: false, bob: 0, roll: 0, rollCd: 0, rdx: 1, rdy: 0, squash: 0, ghosts: [],
-  hands: [], tool: null, hose: null, mashT: 0, throwCd: 0, pickCd: 0 });
+  hands: [], tool: null, hose: null, mashT: 0, throwCd: 0, rollBuf: 0, ibuf: null, pRepeat: 0, burst: 0, burstAim: null, at: null, aim: null });
 M3.fresh = () => ({ v: 1, t: 0, rk: M3.rkFresh(), items: [], bld: [], hoses: [], pulses: [], fly: [], fx: [], pops: [], bank: { air: 0, water: 0, fire: 0, earth: 0 }, blog: [], bend: {},
   ghost: { W: false, K: false }, idN: 1, mirN: 0, ready: false,
   st: { picked: 0, burned: 0, planted: 0, manifest: 0, traps: 0, sent: 0, banked: 0, ash: 0, trapHits: 0 } });
@@ -196,8 +196,15 @@ M3.itemsTick = function (dt) {
 };
 
 // ---------- the Rootkeeper ----------
-// his input (k): ix, iy (screen directions like every character), and the presses: pick, throw, use, roll, tool (slot index | 'clear' | 'prev' | 'next'), ghost, mash held
-M3.zeroK = () => ({ ix: 0, iy: 0, pick: false, throw: false, use: false, roll: false, tool: null, ghost: false });
+// He speaks the game's one grammar of verbs, through the SAME implementations as the other roles: walking and rolling are the Wizard's (WZ.rollBuffer / rollStart / rollMove /
+// steer / stepOn), the pick / use buttons are the Builder's (FA.pressPre / pressPick: the input buffer, hold-to-repeat, sweeping; FA.bestTarget: what a press reaches; FA.doAct:
+// why not), throwing is the Builder's (FA.aimFrom: auto-aim, the mouse aims a host; FA.throwJuice; the catch grace; hold to keep throwing, the stack throw), and so are the
+// prompts, the lead line and the carried pile (R.drawFocus / drawAim / drawCarry). Only what he does them TO is his own: his world's candidates and actions (M3.cands /
+// M3.actionFor) and the numbers in CFG.mode3.rk.
+// his input (k): ix, iy (screen directions like every character), the presses pick / throw / use / roll / ghost / stack (the whole pile), held pickHeld / throwHeld,
+// tool (slot index | 'clear' | 'prev' | 'next'), at (the mouse's point in his world when a host plays on the mouse, else null)
+M3.zeroK = () => ({ ix: 0, iy: 0, pick: false, pickHeld: false, throw: false, throwHeld: false, stack: false, use: false, roll: false, tool: null, ghost: false, at: null });
+M3.slide = (o, nx, ny, r) => WZ.slide(o, nx, ny, r, M3.blockedU);   // (the underworld's ground: the raw terrain)
 M3.moveRk = function (dt, k) {
   const rk = G.u.rk, Cr = C().rk;
   let dx = 0, dy = 0;
@@ -205,41 +212,29 @@ M3.moveRk = function (dt, k) {
   const m = Math.hypot(dx, dy);
   if (m > 0) { dx /= m; dy /= m; rk.fx = dx; rk.fy = dy; }
   if (rk.rollCd > 0) rk.rollCd -= dt;
-  if (k.roll && G.tree.rkroll && rk.roll <= 0 && rk.rollCd <= 0) {
-    rk.roll = Cr.rollT; rk.rollCd = Cr.rollCd; rk.rdx = m > 0 ? dx : rk.fx; rk.rdy = m > 0 ? dy : rk.fy;
-    const rm = Math.hypot(rk.rdx, rk.rdy) || 1; rk.rdx /= rm; rk.rdy /= rm; AU.sfx('roll'); FA.fb('rk-roll');
+  if (WZ.rollBuffer(rk, !!(k.roll && G.tree.rkroll), dt) && rk.rollCd <= 0 && rk.roll <= 0) {   // (Root Roll: a press a moment too early is kept, as the Wizard's is)
+    WZ.rollStart(rk, m, dx, dy, Cr.rollT, Cr.rollCd); AU.sfx('roll'); FA.fb('rk-roll');
   }
   let sp = M3.speed();
   const t = WZ.terrain[Math.floor(rk.y) * CFG.WW + Math.floor(rk.x)] >> 3;
   if (t === T_BOG) sp *= CFG.world.slowTerrain;
-  if (rk.roll > 0) { rk.roll -= dt; rk.vx = rk.rdx * sp * Cr.rollSpeed; rk.vy = rk.rdy * sp * Cr.rollSpeed; if ((rk.ghostT = (rk.ghostT || 0) - dt) <= 0) { rk.ghostT = 0.04; rk.ghosts.push({ x: rk.x, y: rk.y, t: 0.22 }); } }
-  else {
-    const wx = dx * sp, wy = dy * sp, ex = wx - rk.vx, ey = wy - rk.vy, el = Math.hypot(ex, ey), rate = (m > 0 ? CFG.wizard.accel : CFG.wizard.friction) * dt;
-    if (el <= rate) { rk.vx = wx; rk.vy = wy; } else { rk.vx += ex / el * rate; rk.vy += ey / el * rate; }
-  }
-  for (let i = rk.ghosts.length - 1; i >= 0; i--) if ((rk.ghosts[i].t -= dt) <= 0) rk.ghosts.splice(i, 1);
-  const nx = rk.x + rk.vx * dt, ny = rk.y + rk.vy * dt, r = Cr.radius, inside = M3.blockedU(rk.x, rk.y, r);   // (already inside water, say after a load: he may walk out)
-  if (inside || !M3.blockedU(nx, rk.y, r)) rk.x = Math.max(0.6, Math.min(CFG.WW - 0.6, nx)); else rk.vx = 0;
-  if (inside || !M3.blockedU(rk.x, ny, r)) rk.y = Math.max(0.6, Math.min(CFG.WH - 0.6, ny)); else rk.vy = 0;
+  if (rk.roll > 0) WZ.rollMove(rk, dt, sp, Cr.rollSpeed, 0.05);
+  else WZ.steer(rk, dx * sp, dy * sp, (m > 0 ? CFG.wizard.accel : CFG.wizard.friction) * dt);
+  WZ.ghostAge(rk, dt);
   const spd = Math.hypot(rk.vx, rk.vy);
   rk.moving = spd > 0.3;
-  if (rk.moving) rk.bob += dt * 11 * Math.min(1, spd / Math.max(0.1, sp));
+  if (spd > 0.01) WZ.stepOn(rk, dt, spd, sp, Cr.radius, M3.slide);
   if (rk.squash > 0) rk.squash -= dt;
   if (rk.throwCd > 0) rk.throwCd -= dt;
   if (rk.mashT > 0) rk.mashT -= dt;
 };
-// the tile in front of him (where a building, a seed or a trap goes)
+// the tile in front of him, and where a tool acts: the tile under the mouse (a host playing on the mouse), else the one in front of him (the Builder's placeInFront / hoverTile)
 M3.front = () => { const rk = G.u.rk, m = Math.hypot(rk.fx, rk.fy) || 1; return [Math.floor(rk.x + rk.fx / m * 1.4) + 0.5, Math.floor(rk.y + rk.fy / m * 1.4) + 0.5]; };
+M3.toolAt = () => { const at = G.u.rk.at; return at ? [Math.floor(at[0]) + 0.5, Math.floor(at[1]) + 0.5] : M3.front(); };
 M3.near = function (pred, r) {
   const rk = G.u.rk;
   let best = null, bd = r === undefined ? C().rk.reach : r;
   for (const b of G.u.bld) { if (!pred(b)) continue; const d = dist(b, rk); if (d < bd) { bd = d; best = b; } }
-  return best;
-};
-M3.nearItem = function () {
-  const rk = G.u.rk;
-  let best = null, bd = C().rk.reach;
-  for (const it of G.u.items) { if (it.z > 0.3) continue; const d = dist(it, rk); if (d < bd) { bd = d; best = it; } }
   return best;
 };
 M3.canPay = c => Object.keys(c).every(k => (G.u.bank[k] || 0) >= c[k]);
@@ -252,96 +247,197 @@ M3.pay = function (c) {
 };
 M3.short = c => Object.keys(c).filter(k => (G.u.bank[k] || 0) < c[k]).map(k => ['rem_' + k, c[k] - (G.u.bank[k] || 0)]);
 M3.say = (ic) => { const rk = G.u.rk; M3.pop(rk.x, rk.y - 0.5, ic); AU.sfx('error'); };
+M3.sayA = a => { const rk = G.u.rk; M3.pop(rk.x, rk.y - 0.5, a.row || (a.ic || []).map(k => [k])); };   // (FA.doAct: why a press can't happen, over him; the error sound is FA.doAct's)
+M3.burst = (x, y, col, n) => M3.fx('spark', x, y, { col, n });   // (his world's particles, for the shared juice)
 M3.toolCost = t => (C().bld[t] || {}).cost || {};
-// pick (A / left click / .): the tool in hand places, the hose tool links, the remove tool removes; with no tool: the nearest item, else the pull-out of a pylon, else craft at a crafter
-M3.pick = function () {
-  const u = G.u, rk = u.rk, tool = rk.tool;
-  if (tool === 'hose') return M3.hoseAt();
-  if (tool === 'remove') return M3.removeAt();
-  if (tool) return M3.place(tool);
-  // the nearest of: a loose item, a pylon to pull from, a crafter (whichever is closest gets the press)
-  const it0 = M3.nearItem(), py = M3.near(b => b.type === 'pylon'), cr = M3.near(b => b.type === 'rcraft' || b.type === 'tcraft');
-  const dd = o => (o ? dist(o, rk) : 1e9), best = Math.min(dd(it0), dd(py), dd(cr));
-  const it = it0 && dd(it0) === best ? it0 : null;
-  if (it) {
-    if (rk.hands.length >= M3.cap()) { M3.say([['ic_full']]); return; }
-    u.items.splice(u.items.indexOf(it), 1); rk.hands.push(it.k); AU.sfx('pickup'); u.st.picked += ITEMS[it.k].rem ? 1 : 0;
-    M3.fx('spark', it.x, it.y, { col: ITEMS[it.k].color }); return;
-  }
-  if (py && dd(py) === best) {
-    if (!u.blog.length) { M3.say([['ic_x']]); return; }
-    if (rk.hands.length >= M3.cap()) { M3.say([['ic_full']]); return; }
-    const el = u.blog.pop();   // last in, first out
-    u.bank[el] = Math.max(0, u.bank[el] - 1); rk.hands.push('rem_' + el); AU.sfx('pickup'); M3.pop(py.x, py.y - 1, [['rem_' + el]]); return;
-  }
-  if (cr) return M3.craft(cr);
-  M3.say([['ic_x']]);
+// ---------- the hands: one pile, last in first out, at most M3.cap() (the Builder's rule) ----------
+M3.top = () => { const h = G.u.rk.hands; return h.length ? h[h.length - 1] : null; };
+M3.canHold = () => G.u.rk.hands.length < M3.cap();
+// ---------- what his pick / use buttons reach (the shared resolver's candidates and actions, FA.act shape) ----------
+M3.cands = function () {
+  const u = G.u, r = C().rk.reach, out = [];
+  for (const it of u.items) if (!(it.z > 0.3)) out.push({ kind: 'floor', o: it, x: it.x, y: it.y, r });   // a loose item (the factory's floor items: same kind, same bonus)
+  for (const b of u.bld) out.push({ kind: 'bld', o: b, x: b.x, y: b.y, r });
+  return out;
 };
+M3.itemOf = c => (c.kind === 'floor' ? c.o.k : c.o.type === 'pylon' && G.u.blog.length ? 'rem_' + G.u.blog[G.u.blog.length - 1] : null);
 M3.recipesOf = b => Object.keys(b.type === 'rcraft' ? C().nodes : C().traps);
+M3.recipeOf = b => { const ks = M3.recipesOf(b); return ks[b.r % ks.length]; };
+M3.productOf = (b, k) => (b.type === 'rcraft' ? 'n_' : 't_') + (k || M3.recipeOf(b));
+M3.recipeCost = b => (b.type === 'rcraft' ? C().nodes : C().traps)[M3.recipeOf(b)].cost;
+M3.isCraft = b => b.type === 'rcraft' || b.type === 'tcraft';
+M3.actionFor = function (c, mode) {
+  const u = G.u, A = FA.act, pick = mode === 'pick';
+  if (c.kind === 'floor') {
+    const it = c.o;
+    if (!pick || u.items.indexOf(it) < 0) return FA.none();
+    return M3.canHold() ? A('Pick up ' + itemName(it.k), () => M3.takeItem(it), true, [it.k]) : FA.full();
+  }
+  const b = c.o;
+  if (pick) {
+    if (b.type === 'pylon') {   // (the Builder's Stockpile: take the last banked one back out)
+      if (!u.blog.length) return A('The pylon is empty', null, false, ['u_pylon', 'ic_x']);
+      return M3.canHold() ? A('Take ' + itemName('rem_' + u.blog[u.blog.length - 1]), () => M3.pullPylon(b), true, ['rem_' + u.blog[u.blog.length - 1]]) : FA.full();
+    }
+    if (M3.isCraft(b)) {
+      if (b.busy) return A('Still crafting', null, false, ['ic_clock']);
+      const cost = M3.recipeCost(b);
+      if (!M3.canPay(cost)) { const a = A('Not enough remains banked', null, false, [M3.productOf(b), 'ic_x']); a.row = M3.short(cost); return a; }
+      return A('Craft ' + itemName(M3.productOf(b)), () => M3.craft(b), false, [M3.productOf(b)]);
+    }
+    return FA.none();
+  }
+  if ((b.type === 'node' && !b.up) || b.type === 'mirror') { const a = A('Mash', () => M3.mash(b), false, [b.type === 'mirror' ? b.el : 'ic_bolt']); a.mash = true; return a; }
+  if (b.type === 'burner') return A('Set what it burns', () => M3.setBurner(b), false, [b.el, 'ic_swap', ELS[(ELS.indexOf(b.el) + 1) % 4]]);   // (the Builder's Harvester switch: now, swap, next)
+  if (M3.isCraft(b)) { const ks = M3.recipesOf(b), nx = ks[(b.r + 1) % ks.length]; return A('Switch recipe', () => M3.nextRecipe(b), false, ['ic_swap', M3.productOf(b, nx)]); }
+  return FA.none();
+};
+M3.findTarget = mode => FA.bestTarget(G.u.rk, M3.cands(), mode, M3.actionFor, M3.top(), M3.itemOf);
+M3.interact = function (mode, quiet) { const t = M3.findTarget(mode); return t ? FA.doAct(M3.actionFor(t, mode), quiet, M3.sayA) : null; };
+M3.ad = () => ({   // his side of the shared buttons (FA.pressPre / pressPick): a tool in hand makes the pick button act with it
+  interact: M3.interact, building: !!G.u.rk.tool, place: M3.toolAct, actionFor: M3.actionFor, n: () => G.u.rk.hands.length,
+  again: () => { const h = M3.top(); return h ? FA.sweepFrom(G.u.rk, M3.cands(), h, M3.actionFor, M3.itemOf) : M3.findTarget('pick'); },
+});
+// the prompts (R.drawFocus): built like the Builder's (FA.focusOf); none while a tool is out (its ghost is the preview) or while rolling
+M3.focus = function () {
+  const rk = G.u.rk;
+  if (rk.tool || rk.roll > 0) return null;
+  const tp = M3.findTarget('pick'), tu = M3.findTarget('use'), list = FA.focusOf(tp, tp && M3.actionFor(tp, 'pick'), tu, tu && M3.actionFor(tu, 'use'));
+  return list.length ? { list } : null;
+};
+// ---------- the actions themselves ----------
+M3.takeItem = function (it) {   // one item per press (hold to keep grabbing)
+  const u = G.u, rk = u.rk, i = u.items.indexOf(it);
+  if (i < 0 || !M3.canHold()) return;
+  u.items.splice(i, 1); rk.hands.push(it.k); u.st.picked += ITEMS[it.k].rem ? 1 : 0;
+  FA.pickJuice(it.k, it.x, it.y, rk, M3.burst);
+};
+M3.pullPylon = function (py) {
+  const u = G.u, rk = u.rk;
+  if (!u.blog.length || !M3.canHold()) return;
+  const el = u.blog.pop();   // last in, first out
+  u.bank[el] = Math.max(0, u.bank[el] - 1); rk.hands.push('rem_' + el); M3.pop(py.x, py.y - 1, [['rem_' + el]]);
+  FA.pickJuice('rem_' + el, py.x, py.y, rk, M3.burst);
+};
 M3.craft = function (b) {
   if (b.busy) { M3.say([['ic_clock']]); return; }
-  const k = M3.recipesOf(b)[b.r % M3.recipesOf(b).length], c = (b.type === 'rcraft' ? C().nodes : C().traps)[k].cost;
+  const c = M3.recipeCost(b);
   if (!M3.canPay(c)) { M3.say(M3.short(c)); return; }
-  M3.pay(c); b.busy = (b.type === 'rcraft' ? 'n_' : 't_') + k; b.prog = 0; b.pop = 0.3; AU.sfx('craft');
+  M3.pay(c); b.busy = M3.productOf(b); b.prog = 0; b.pop = 0.3; AU.sfx('craft');
 };
-M3.place = function (tool) {
-  const u = G.u, [x, y] = M3.front(), type = tool;
-  if (type === 'hpole' && !G.tree.rkpole) { M3.say([['ic_lock']]); return; }
-  if (!M3.free(x, y, 1.0)) { M3.pop(x, y - 0.4, [['ic_x']]); AU.sfx('error'); return; }
+M3.nextRecipe = b => { b.r = (b.r + 1) % M3.recipesOf(b).length; b.pop = 0.2; AU.sfx('blip'); };
+M3.setBurner = b => { b.el = ELS[(ELS.indexOf(b.el) + 1) % 4]; b.pop = 0.3; AU.sfx('el_' + b.el); M3.pop(b.x, b.y - 1.2, [[b.el]]); };
+M3.mash = function (b) {   // a tap fills the meter (the Builder's crank: he squashes, sparks of what it makes, the crank sound)
+  const rk = G.u.rk;
+  rk.mashT = 0.15; rk.squash = 0.15; b.mashT = 0.2; b.pop = 0.12;
+  if (b.type === 'node') { b.ch = Math.min(1, b.ch + C().nodes[b.nk].mash * M3.mashK()); AU.sfx('crank'); M3.fx('spark', b.x, b.y, { col: '#cfe88a' }); if (b.ch >= 1) M3.manifest(b); }
+  else { b.ch += C().mirror.mash * M3.mashK(); AU.sfx('crank'); M3.fx('spark', b.x, b.y, { col: ELEM[b.el].color }); M3.mirrorSend(b); }
+  FA.fb('rk-mash');
+};
+// ---------- the tools (the pick button with a tool out): place, lay a hose, remove. Each returns whether it did something; quiet = the input buffer will retry, say nothing yet ----------
+M3.toolAct = function (quiet) {
+  const tool = G.u.rk.tool;
+  if (tool === 'hose') return M3.hoseAt(quiet);
+  if (tool === 'remove') return M3.removeAt(quiet);
+  return !!M3.place(tool, quiet);
+};
+// the building a hose / remove tool acts on: the one under the mouse (a host on the mouse), else the shared resolver's pick in reach (the way he faces counts)
+M3.toolAction = c => (G.u.rk.tool === 'remove' && c.o.type === 'mirror' ? FA.act('A mirror Harvester goes with its Harvester', null, false, ['ic_lock']) : FA.act('', () => {}));
+M3.toolTarget = function () {
+  const u = G.u, rk = u.rk, r = rk.tool === 'hose' ? 2.4 : 2.2;
+  if (rk.at) { let best = null, bd = 0.9; for (const b of u.bld) { const d = Math.hypot(b.x - rk.at[0], b.y - rk.at[1]); if (d < bd) { bd = d; best = b; } } return best; }
+  const t = FA.bestTarget(rk, u.bld.map(b => ({ kind: 'bld', o: b, x: b.x, y: b.y, r })), 'tool', M3.toolAction, null, () => null);
+  return t ? t.o : null;
+};
+M3.place = function (tool, quiet) {
+  const [x, y] = M3.toolAt(), type = tool;
+  const no = ic => { if (!quiet) { M3.pop(x, y - 0.4, ic); AU.sfx('error'); } return null; };   // (the Builder's placeInFront: the reason pops on the tile)
+  if (type === 'hpole' && !G.tree.rkpole) return no([['ic_lock']]);
+  if (!M3.free(x, y, 1.0)) return no([['ic_x']]);
   const c = M3.toolCost(type);
-  if (!M3.canPay(c)) { M3.say(M3.short(c)); return; }
+  if (!M3.canPay(c)) return no(M3.short(c));
   M3.pay(c);
   const b = M3.make(type, x, y);
   M3.fx('dust', b.x, b.y, { col: '#cdbf9a', n: 12 }); AU.sfx('place'); FA.fb('rk-build');
   return b;
 };
-M3.hoseAt = function () {
-  const u = G.u, rk = u.rk, b = M3.near(() => true, 2.4);
-  if (!b) { if (rk.hose) { rk.hose = null; AU.sfx('blip'); } else M3.say([['ic_x']]); return; }
-  if (!rk.hose) { rk.hose = b.id; AU.sfx('blip'); return; }
+M3.hoseAt = function (quiet) {
+  const u = G.u, rk = u.rk, b = M3.toolTarget();
+  if (!b) { if (rk.hose) { rk.hose = null; AU.sfx('blip'); return true; } if (!quiet) M3.say([['ic_x']]); return false; }
+  if (!rk.hose) { rk.hose = b.id; AU.sfx('blip'); return true; }
   const a = M3.byId(rk.hose);
-  if (!a || a === b) { rk.hose = null; AU.sfx('blip'); return; }
-  if (M3.linked(a.id, b.id)) { M3.unlink(a.id, b.id); rk.hose = null; AU.sfx('menu_close'); return; }
-  if (!M3.canLink(a, b)) { M3.pop(b.x, b.y - 1, [['ic_target'], ['ic_x']]); AU.sfx('error'); return; }   // too far: a pole between them doubles it
-  M3.link(a, b); rk.hose = b.id; AU.sfx('place'); FA.fb('rk-hose');   // (the hose carries on from here: click the next building to keep laying)
+  if (!a || a === b) { rk.hose = null; AU.sfx('blip'); return true; }
+  if (M3.linked(a.id, b.id)) { M3.unlink(a.id, b.id); rk.hose = null; AU.sfx('menu_close'); return true; }
+  if (!M3.canLink(a, b)) { if (!quiet) { M3.pop(b.x, b.y - 1, [['ic_target'], ['ic_x']]); AU.sfx('error'); } return false; }   // too far: a pole between them doubles it
+  M3.link(a, b); rk.hose = b.id; AU.sfx('place'); FA.fb('rk-hose');   // (the hose carries on from here: pick the next building to keep laying)
+  return true;
 };
-M3.removeAt = function () {
-  const b = M3.near(() => true, 2.2);
-  if (!b) { M3.say([['ic_x']]); return; }
-  if (b.type === 'mirror') { M3.pop(b.x, b.y - 1, [['ic_lock']]); AU.sfx('error'); return; }   // a mirror Harvester is the Builder's: it goes when its Harvester goes
-  const u = G.u, c = b.type === 'node' ? C().nodes[b.nk].cost : b.type === 'trap' ? C().traps[b.tk].cost : M3.toolCost(b.type);
+M3.refundOf = b => (b.type === 'node' ? C().nodes[b.nk].cost : b.type === 'trap' ? C().traps[b.tk].cost : M3.toolCost(b.type));
+M3.removeAt = function (quiet) {
+  const b = M3.toolTarget();
+  if (!b) { if (!quiet) M3.say([['ic_x']]); return false; }
+  if (b.type === 'mirror') { if (!quiet) { M3.pop(b.x, b.y - 1, [['ic_lock']]); AU.sfx('error'); } return false; }   // a mirror Harvester is the Builder's: it goes when its Harvester goes
+  const u = G.u, c = M3.refundOf(b);
   for (const k in c) { u.bank[k] += c[k]; for (let i = 0; i < c[k]; i++) u.blog.push(k); }
   if (b.type === 'burner') for (const el of ELS) for (let i = 0; i < b.hop[el]; i++) M3.addItem('rem_' + el, b.x + rnd(-0.6, 0.6), b.y + rnd(-0.6, 0.6));
   M3.pop(b.x, b.y - 0.6, Object.keys(c).map(k => ['rem_' + k, c[k]]));
   M3.fx('puff', b.x, b.y, { col: '#b0a080' }); AU.sfx('drop');
   M3.unbuild(b);
+  return true;
 };
-// throw (B / right click / ,): remains fly into the nearest Storage Pylon or Burner within reach of the throw, else land in front; a seed or trap is planted in front of him
-M3.throwOne = function () {
+// ---------- throwing (the Builder's): remains go to a Storage Pylon or a Burner; a seed or a trap is planted where a tool would act ----------
+// every receiver in range that takes kind k, the FA.throwList shape (the auto-aim cone, FA.aimFrom, picks among them)
+M3.throwList = function (k) {
+  const rk = G.u.rk, R = C().rk.throwR, out = [];
+  if (!ITEMS[k] || !ITEMS[k].rem) return out;
+  for (const b of G.u.bld) { if (b.type !== 'pylon' && b.type !== 'burner') continue; const d = Math.hypot(b.x - rk.x, b.y - rk.y); if (d >= 0.4 && d <= R) out.push({ x: b.x, y: b.y, obj: b, prio: 1, d }); }
+  return out;
+};
+// where a throw lands: at the mouse (a host on the mouse; clamped to his range, onto the receiver under it), else auto-aim
+M3.throwTarget = function () {
+  const rk = G.u.rk, k = M3.top();
+  if (!k) return null;
+  if (rk.at) {
+    const R = C().rk.throwR;
+    let dx = rk.at[0] - rk.x, dy = rk.at[1] - rk.y;
+    const d = Math.hypot(dx, dy) || 1;
+    if (d > R) { dx *= R / d; dy *= R / d; }
+    const tx = rk.x + dx, ty = rk.y + dy, hit = M3.throwList(k).find(c => Math.hypot(c.x - tx, c.y - ty) < 0.9);
+    return hit ? { x: hit.x, y: hit.y, obj: hit.obj } : { x: tx, y: ty, obj: null };
+  }
+  return FA.aimFrom(rk, M3.throwList(k), CFG.WW, CFG.WH);
+};
+M3.plantable = k => !!(k && (ITEMS[k].seed || ITEMS[k].trap));
+// one throw (cd: the gap before the next; aim: a fixed point, the stack throw's; quiet: a held button repeating, so a seed that cannot go in says nothing)
+M3.throwOne = function (cd, aim, quiet) {
   const u = G.u, rk = u.rk;
-  if (!rk.hands.length || rk.throwCd > 0) return;
-  const k = rk.hands[rk.hands.length - 1], I = ITEMS[k];
+  if (!rk.hands.length || rk.throwCd > 0) return false;
+  const k = M3.top(), I = ITEMS[k];
   if (I.seed || I.trap) {
-    const [x, y] = M3.front();
-    if (!M3.free(x, y, 1.0)) { M3.pop(x, y - 0.4, [['ic_x']]); AU.sfx('error'); return; }
-    rk.hands.pop(); rk.throwCd = C().rk.throwGap;
+    const [x, y] = M3.toolAt();
+    if (!M3.free(x, y, 1.0)) { if (!quiet) { M3.pop(x, y - 0.4, [['ic_x']]); AU.sfx('error'); } return false; }
+    rk.hands.pop(); rk.throwCd = cd || C().rk.throwGap;
     if (I.seed) { const b = M3.make('node', x, y, { nk: I.seed }); u.st.planted++; FA.fb('node-plant'); M3.fx('dust', b.x, b.y, { col: '#8a6a3c', n: 10 }); AU.sfx('dig'); }
     else { const b = M3.make('trap', x, y, { tk: I.trap }); u.st.traps++; FA.fb('trap-set'); M3.fx('dust', b.x, b.y, { col: '#c8a050', n: 10 }); AU.sfx('place'); }
-    return;
+    rk.squash = 0.18;
+    return true;
   }
-  const R = C().rk.throwR, fm = Math.hypot(rk.fx, rk.fy) || 1;
-  let to = null, bs = 1e9;   // the pylon or burner he faces most, nearer ones first (a target behind him counts 3x as far)
-  for (const b of u.bld) {
+  const tg = aim ? { x: aim.x, y: aim.y, obj: aim.to ? M3.byId(aim.to) : null } : M3.throwTarget(), R = C().rk.throwR;
+  rk.hands.pop(); rk.throwCd = cd || C().rk.throwGap;
+  const d = Math.hypot(tg.x - rk.x, tg.y - rk.y);
+  u.fly.push({ k, x0: rk.x, y0: rk.y, x1: tg.x, y1: tg.y, t: 0, T: C().rk.throwT * (0.6 + Math.min(1, d / R) * 0.6), to: tg.obj ? tg.obj.id : null });
+  FA.throwJuice(rk, tg.x, tg.y, k, M3.burst);
+  return true;
+};
+// a throw comes down: into what it was aimed at, else (the Builder's catch grace, CFG.catchR) into a pylon or burner it lands right beside, else on the ground
+M3.catchNear = function (x, y) {
+  let best = null, bd = CFG.catchR;
+  for (const b of G.u.bld) {
     if (b.type !== 'pylon' && b.type !== 'burner') continue;
-    const d = dist(b, rk);
-    if (d > R) continue;
-    const cos = d > 0.01 ? ((b.x - rk.x) * rk.fx + (b.y - rk.y) * rk.fy) / (d * fm) : 1, s = d * (2 - cos);
-    if (s < bs) { bs = s; to = b; }
+    const d = Math.hypot(Math.max(Math.abs(b.x - x) - 0.5, 0), Math.max(Math.abs(b.y - y) - 0.5, 0));
+    if (d <= bd) { bd = d; best = b; }
   }
-  rk.hands.pop(); rk.throwCd = C().rk.throwGap;
-  const [fx, fy] = to ? [to.x, to.y] : M3.front();
-  u.fly.push({ k, x0: rk.x, y0: rk.y, x1: fx, y1: fy, t: 0, T: C().rk.throwT * (0.6 + Math.min(1, Math.hypot(fx - rk.x, fy - rk.y) / R) * 0.6), to: to ? to.id : null });
-  AU.sfx('throw'); rk.squash = 0.1;
+  return best;
 };
 M3.flyTick = function (dt) {
   const u = G.u;
@@ -350,47 +446,48 @@ M3.flyTick = function (dt) {
     f.t += dt;
     if (f.t < f.T) continue;
     u.fly.splice(i, 1);
-    const b = f.to ? M3.byId(f.to) : null, el = ITEMS[f.k].el;
+    const el = ITEMS[f.k].el, b = (f.to ? M3.byId(f.to) : null) || (el ? M3.catchNear(f.x1, f.y1) : null);
     if (b && b.type === 'pylon' && el) {
       u.bank[el]++; u.blog.push(el); if (u.blog.length > 400) u.blog.shift(); u.st.banked++;
       M3.pop(b.x, b.y - 1.2, [['rem_' + el]]); M3.fx('ring', b.x, b.y, { col: ELEM[el].color }); AU.sfx('bank'); FA.fb('remain-bank');
     } else if (b && b.type === 'burner' && el) {
       b.hop[el]++; M3.fx('ring', b.x, b.y, { col: ELEM[el].color }); AU.sfx('drop');
-    } else M3.addItem(f.k, f.x1, f.y1);
+    } else { M3.addItem(f.k, f.x1, f.y1); AU.sfx('thud'); }
   }
 };
-// use (X / E): mash the node or mirror Harvester in reach, set the Burner's type, switch a crafter's recipe
-M3.use = function () {
-  const u = G.u, rk = u.rk, b = M3.near(q => q.type === 'node' && !q.up || q.type === 'mirror' || q.type === 'burner' || q.type === 'rcraft' || q.type === 'tcraft');
-  if (!b) { M3.say([['ic_x']]); return; }
-  if (b.type === 'burner') { b.el = ELS[(ELS.indexOf(b.el) + 1) % 4]; b.pop = 0.3; AU.sfx('el_' + b.el); M3.pop(b.x, b.y - 1.2, [[b.el]]); return; }
-  if (b.type === 'rcraft' || b.type === 'tcraft') { b.r = (b.r + 1) % M3.recipesOf(b).length; b.pop = 0.2; AU.sfx('blip'); return; }
-  rk.mashT = 0.15; b.mashT = 0.2; b.pop = 0.12;
-  if (b.type === 'node') { b.ch = Math.min(1, b.ch + C().nodes[b.nk].mash * M3.mashK()); AU.sfx('crank'); M3.fx('spark', b.x, b.y, { col: '#cfe88a' }); if (b.ch >= 1) M3.manifest(b); }
-  else { b.ch += C().mirror.mash * M3.mashK(); AU.sfx('crank'); M3.fx('spark', b.x, b.y, { col: ELEM[b.el].color }); M3.mirrorSend(b); }
-  FA.fb('rk-mash');
-};
+// ---------- the toolbar: the Builder's hotbar rules (UI.select / UI.cycle / UI.pickSlot) ----------
+// a slot's key picks it (pressed again it stays; on the pole slot, a family once the heavy pole is bought, it switches the pole inside); prev / next go slot to slot (from an empty
+// hand: the first / the last); clear puts the tool away (the empty hand)
 M3.cycleTool = function (k) {
   const rk = G.u.rk, T = M3.TOOLS;
-  if (k === 'clear') { rk.tool = null; rk.hose = null; return; }
-  if (k === 'prev' || k === 'next') {   // round the toolbar, through the empty hand
-    const L = [null].concat(T), i = L.indexOf(rk.tool === 'hpole' ? 'pole' : rk.tool);
-    rk.tool = L[(Math.max(0, i) + (k === 'next' ? 1 : -1) + L.length) % L.length]; rk.hose = null; AU.sfx('blip'); return;
+  if (k === 'clear') { if (rk.tool || rk.hose) AU.sfx('blip'); rk.tool = null; rk.hose = null; rk.ibuf = null; return; }
+  if (k === 'prev' || k === 'next') {
+    const n = T.length, i = T.indexOf(rk.tool === 'hpole' ? 'pole' : rk.tool), dir = k === 'next' ? 1 : -1;
+    rk.tool = T[i < 0 ? (dir > 0 ? 0 : n - 1) : ((i + dir) % n + n) % n]; rk.hose = null; rk.ibuf = null; AU.sfx('blip'); return;
   }
   const want = T[k];
   if (!want) return;
-  if (want === 'pole' && (rk.tool === 'pole' || rk.tool === 'hpole') && G.tree.rkpole) { rk.tool = rk.tool === 'pole' ? 'hpole' : 'pole'; AU.sfx('blip'); return; }   // (the pole slot: press it again for the heavy pole)
-  rk.tool = rk.tool === want ? null : want; rk.hose = null; AU.sfx('blip');
+  if (want === 'pole' && (rk.tool === 'pole' || rk.tool === 'hpole')) { if (G.tree.rkpole) rk.tool = rk.tool === 'pole' ? 'hpole' : 'pole'; AU.sfx('blip'); return; }
+  if (rk.tool !== want) { rk.hose = null; rk.ibuf = null; }
+  rk.tool = want; AU.sfx('blip');
 };
 M3.input = function (dt, k) {
   const u = G.u, rk = u.rk;
+  rk.at = k.at || null;
   M3.moveRk(dt, k);
   if (k.tool !== null && k.tool !== undefined) M3.cycleTool(k.tool);
   if (k.ghost) { u.ghost.K = !u.ghost.K; AU.sfx(u.ghost.K ? 'menu_open' : 'menu_close'); FA.fb('ghost-view'); }
+  // the lead line (drawn from G: R.drawAim): where a throw would land now, while he holds remains with no tool out
+  const top = M3.top(), tg = top && !rk.tool && !M3.plantable(top) ? M3.throwTarget() : null;
+  rk.aim = tg ? { x: tg.x, y: tg.y, to: tg.obj ? tg.obj.id : null } : null;
   if (rk.roll > 0) return;
-  if (k.pick) M3.pick();
-  if (k.throw) M3.throwOne();
-  if (k.use) M3.use();
+  const ad = M3.ad();
+  FA.pressPre(dt, rk, ad, !!k.pick, !!k.use);
+  FA.pressPick(dt, rk, ad, !!k.pick, !!k.pickHeld);
+  // throw: a press throws one and holding keeps throwing; the stack button sends the whole pile at one aim point, one every CFG.throwStackGap (the Builder's Shift + throw)
+  if (k.stack && rk.hands.length) { const a = M3.throwTarget(); if (a) { rk.burst = rk.hands.length; rk.burstAim = { x: a.x, y: a.y, to: a.obj ? a.obj.id : null }; } }
+  if (rk.burst > 0) { if (!rk.hands.length) rk.burst = 0; else if (M3.throwOne(CFG.throwStackGap, rk.burstAim, true)) rk.burst--; }
+  else if (k.throw || k.throwHeld) M3.throwOne(undefined, undefined, !k.throw);
 };
 
 // ---------- burners, hoses and pulses ----------
@@ -608,23 +705,12 @@ M3.update = function (dt, k) {
   const B = CFG.bend;
   for (const key in u.bend) if ((u.bend[key].t += dt) > B.life) delete u.bend[key];
   const w = G.w;
-  if (w && !w.dead) M3.bendAt(u.bend, w.x, w.y, w.vx, w.vy, CFG.wizard.radius);
+  if (w && !w.dead) WZ.bendAt(w.x, w.y, w.vx, w.vy, CFG.wizard.radius, u.bend);
   if (w && !w.dead && (u.chT = (u.chT || 0) - dt) <= 0) {   // the Wizard is near a node that is charging: he sees its % (R.drawWorld); counted for the ledger
     u.chT = 0.5;
     if (u.bld.some(b => b.type === 'node' && !b.up && b.ch > 0 && Math.hypot(b.x - w.x, b.y - w.y) < CFG.mode3.chargeR)) FA.fb('node-charge');
   }
-  M3.bendAt(u.bend, u.rk.x, u.rk.y, u.rk.vx, u.rk.vy, 0.35);   // (and his own, in his own world)
-};
-// the grass a body pushes through leans (the same as WZ.bendAt, into any bend map)
-M3.bendAt = function (bend, x, y, vx, vy, r) {
-  const sp = Math.hypot(vx, vy);
-  if (sp < 0.6) return;
-  const B = CFG.bend, WW = CFG.WW, d = (vx - vy) / (sp * 1.414) * Math.min(1, sp / 5), reach = r + B.r;
-  for (let ty = Math.floor(y - 1); ty <= Math.floor(y + 1); ty++) for (let tx = Math.floor(x - 1); tx <= Math.floor(x + 1); tx++) {
-    if (tx < 0 || ty < 0 || tx >= WW || ty >= CFG.WH) continue;
-    const i = ty * WW + tx, b = WZ.bucket[i];
-    if (b) for (let j = 0; j < b.length && j < 32; j++) { const o = b[j]; if (o.deco && BENDY.has(o.spr) && Math.hypot(o.x - x, o.y - y) < reach) bend[i * 32 + j] = { t: 0, d }; }
-  }
+  WZ.bendAt(u.rk.x, u.rk.y, u.rk.vx, u.rk.vy, 0.35, u.bend);   // (and his own, in his own world: the wilds' bending, into the underworld's map)
 };
 
 // ---------- hooks into the wilds (each does nothing outside 3P) ----------

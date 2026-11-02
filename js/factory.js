@@ -629,9 +629,10 @@ FA.stash = function () {       // what the Stockpile can hold goes back into it 
   FA.dropHands(); AU.sfx('drop');
 };
 // what picking something up does: a pop of sparks in its colour where it was, the Builder's squash and the pickup sound (x, y = where it was; the Builder's own spot when not given)
-FA.pickJuice = function (kind, x, y) {
-  const bd = G.bd;
-  FA.burst(x === undefined ? bd.x : x, y === undefined ? bd.y : y, ITEMS[kind] && ITEMS[kind].color || '#ffffff', 4);
+// (o, burst: who picked it and his world's particles: the Rootkeeper passes his own; the Builder's are the default)
+FA.pickJuice = function (kind, x, y, o, burst) {
+  const bd = o || G.bd;
+  (burst || FA.burst)(x === undefined ? bd.x : x, y === undefined ? bd.y : y, ITEMS[kind] && ITEMS[kind].color || '#ffffff', 4);
   bd.squash = 0.2; AU.sfx('pickup');
 };
 FA.pickFloor = function (it) {   // one item per press (hold to keep grabbing)
@@ -1699,16 +1700,21 @@ FA.throwTarget = function (aimX, aimY) {
   }
   const lk = FA.lockValid('throw');
   if (lk) return { x: lk.x, y: lk.y, obj: lk.obj };   // the pad player picked this one on purpose
-  const fm = Math.hypot(bd.fx, bd.fy) || 1, fx = bd.fx / fm, fy = bd.fy / fm;
+  return FA.aimFrom(bd, FA.throwList(k), G.fac.w, G.fac.h);
+};
+// AUTO-AIM, one implementation for every role that throws (the Builder; the Rootkeeper, js/mode3.js): the receiver in a cone round the way he faces, nearer and straighter
+// ahead first (list = { x, y, obj, prio, d }, as FA.throwList builds it); nothing there: the throw lands 2.6 tiles ahead (kept inside w x h)
+FA.aimFrom = function (o, list, w, h) {
+  const fm = Math.hypot(o.fx, o.fy) || 1, fx = o.fx / fm, fy = o.fy / fm;
   let best = null, bs = 1e9;
-  for (const c of FA.throwList(k)) {
-    const dx = c.x - bd.x, dy = c.y - bd.y, cos = (dx * fx + dy * fy) / c.d;
+  for (const c of list) {
+    const dx = c.x - o.x, dy = c.y - o.y, cos = (dx * fx + dy * fy) / c.d;
     if (cos < 0.45) continue;
     const sc = c.d * (1.7 - cos) * c.prio;
     if (sc < bs) { bs = sc; best = c; }
   }
   if (best) return { x: best.x, y: best.y, obj: best.obj };
-  return { x: Math.max(0.3, Math.min(G.fac.w - 0.3, bd.x + fx * 2.6)), y: Math.max(0.3, Math.min(G.fac.h - 0.3, bd.y + fy * 2.6)), obj: null };
+  return { x: Math.max(0.3, Math.min(w - 0.3, o.x + fx * 2.6)), y: Math.max(0.3, Math.min(h - 0.3, o.y + fy * 2.6)), obj: null };
 };
 FA.throwOne = function (aimX, aimY, cd) {
   const bd = G.bd;
@@ -1717,11 +1723,17 @@ FA.throwOne = function (aimX, aimY, cd) {
   const it = FA.takeOne();
   const d = Math.hypot(tg.x - bd.x, tg.y - bd.y);
   G.fac.flying.push({ kind: it.kind, sx: bd.x, sy: bd.y, x: bd.x, y: bd.y, z: 0.8, tx: tg.x, ty: tg.y, t: 0, T: 0.28 + d * 0.045, h: 0.9 + d * 0.22, fromBuilder: true });
-  bd.throwCd = FA.throwGap(cd || CFG.throwRepeat); bd.squash = 0.18;
-  bd.fx = tg.x - bd.x || bd.fx; bd.fy = tg.y - bd.y || bd.fy;
-  FA.burst(bd.x + (tg.x - bd.x) / (d || 1) * 0.35, bd.y + (tg.y - bd.y) / (d || 1) * 0.35, ITEMS[it.kind].color || '#ffffff', 3);   // a few sparks of its colour off the hands
-  AU.sfx('throw');
+  bd.throwCd = FA.throwGap(cd || CFG.throwRepeat);
+  FA.throwJuice(bd, tg.x, tg.y, it.kind, FA.burst);
   return true;
+};
+// what letting go of a throw does, for every role that throws: he squashes, turns to face where it goes, a few sparks of its colour fly off his hands, the throw sound
+FA.throwJuice = function (o, tx, ty, kind, burst) {
+  const d = Math.hypot(tx - o.x, ty - o.y);
+  o.squash = 0.18;
+  o.fx = tx - o.x || o.fx; o.fy = ty - o.y || o.fy;
+  burst(o.x + (tx - o.x) / (d || 1) * 0.35, o.y + (ty - o.y) / (d || 1) * 0.35, ITEMS[kind].color || '#ffffff', 3);
+  AU.sfx('throw');
 };
 // the portal (cell) nearest to (x, y) that takes this kind and is within CFG.portalCatch tiles of it, else null
 FA.portalNear = function (x, y, kind) {
@@ -1936,36 +1948,42 @@ FA.candidates = function () {
 // the kind of item a pick target would hand over (for sweeping and same-kind priority)
 FA.itemOf = c => (c.kind === 'floor' ? c.o.kind : c.kind === 'pile' ? c.o : c.kind === 'belt' ? c.o.item && c.o.item.kind : c.kind === 'bld' && c.o.cn > 0 ? c.o.ck : c.kind === 'bld' && c.o.out && c.o.out.length ? c.o.out[0].kind : null);
 // holding pick sweeps: the nearest thing in reach that hands over the same kind as the stack in hand
-FA.sweepTarget = function (kind) {
-  const bd = G.bd;
+FA.sweepTarget = kind => FA.sweepFrom(G.bd, FA.candidates(), kind, FA.actionFor, FA.itemOf);
+// ONE resolver for every role's pick / use buttons (the Builder here; the Rootkeeper hands in his own candidates and actions, js/mode3.js): o = who presses (x, y, fx, fy),
+// cands = { kind, o, x, y, r } in reach r, actionFor(c, mode) = { label, fn, rep, ic }, hk = the kind on top of his hands, itemOf(c) = the kind c would hand over
+FA.sweepFrom = function (o, cands, kind, actionFor, itemOf) {
   let best = null, bs = 1e9;
-  for (const c of FA.candidates()) {
-    const d = Math.hypot(c.x - bd.x, c.y - bd.y);
-    if (d > c.r + 0.5 || d >= bs || FA.itemOf(c) !== kind) continue;
-    const a = FA.actionFor(c, 'pick');
+  for (const c of cands) {
+    const d = Math.hypot(c.x - o.x, c.y - o.y);
+    if (d > c.r + 0.5 || d >= bs || itemOf(c) !== kind) continue;
+    const a = actionFor(c, 'pick');
     if (a.fn && a.rep) { bs = d; best = c; }
   }
   return best;
 };
-FA.findTarget = function (mode) {
-  const lk = FA.lockValid(mode);
-  if (lk) return lk.c;
-  const bd = G.bd, fm = Math.hypot(bd.fx, bd.fy) || 1, hk = FA.topKind();
+FA.bestTarget = function (o, cands, mode, actionFor, hk, itemOf) {
+  const fm = Math.hypot(o.fx, o.fy) || 1;
   let best = null, bs = 1e9, info = null, is = 1e9;
-  for (const c of FA.candidates()) {
-    const dx = c.x - bd.x, dy = c.y - bd.y, d = Math.hypot(dx, dy);
+  for (const c of cands) {
+    const dx = c.x - o.x, dy = c.y - o.y, d = Math.hypot(dx, dy);
     if (d > c.r) continue;
-    const cos = d > 0.01 ? (dx * bd.fx + dy * bd.fy) / (d * fm) : 1;
-    const s = d - cos * 0.45 - (c.kind === 'floor' ? 0.3 : 0) - (hk && FA.itemOf(c) === hk ? 0.5 : 0), a = FA.actionFor(c, mode);
+    const cos = d > 0.01 ? (dx * o.fx + dy * o.fy) / (d * fm) : 1;
+    const s = d - cos * 0.45 - (c.kind === 'floor' ? 0.3 : 0) - (hk && itemOf(c) === hk ? 0.5 : 0), a = actionFor(c, mode);
     if (a.fn) { if (s < bs) { bs = s; best = c; } }
     else if (a.label && s < is) { is = s; info = c; }
   }
   return best || info;
 };
+FA.findTarget = function (mode) {
+  const lk = FA.lockValid(mode);
+  if (lk) return lk.c;
+  return FA.bestTarget(G.bd, FA.candidates(), mode, FA.actionFor, FA.topKind(), FA.itemOf);
+};
 // label, function, and whether holding the button repeats it (single pickups)
 // ic = sprite keys the prompt shows instead of the label (the label is kept for anything that still wants words)
 const A = (label, fn, rep, ic) => ({ label, fn, rep: !!rep, ic });
 const NONE = A('', null), FULL = A('Hands full: right-click to throw', null, false, ['ic_hand', 'ic_x']);
+FA.act = A; FA.none = () => NONE; FA.full = () => FULL;   // (every role's actions are this shape: the Rootkeeper's too. Functions, not fields: a renderer may ask)
 FA.actionFor = function (t, mode) {
   const h = FA.top(), k = h && h.kind, f = G.fac, pick = mode === 'pick';
   switch (t.kind) {
@@ -2093,9 +2111,55 @@ FA.interact = function (mode, quiet) {
   if (mode !== 'pick' && G.bd.gather) { FA.crank(); return A('Crank!', FA.crank, false, [G.bd.gather.el]); }
   const t = FA.findTarget(mode);
   if (!t) return null;
-  const a = FA.actionFor(t, mode);
-  if (a.fn) a.fn(); else if (a.label && !quiet) { FA.say(a); AU.sfx('error'); }
+  return FA.doAct(FA.actionFor(t, mode), quiet, FA.say);
+};
+// the prompt list (R.drawFocus) for every role with pick / use buttons: what each button would do now, else the one reason it can't
+FA.focusOf = function (tp, ap, t, au) {
+  const list = [];
+  if (ap && ap.fn) list.push({ t: tp, a: ap, key: 'pick' });
+  if (au && au.fn) list.push({ t, a: au, key: 'use' });
+  if (!list.length) { if (ap && ap.label) list.push({ t: tp, a: ap }); else if (au && au.label) list.push({ t, a: au }); }
+  return list;
+};
+// run an action, or say why not (say(a): the icons over whoever pressed)
+FA.doAct = function (a, quiet, say) {
+  if (a.fn) a.fn(); else if (a.label && !quiet) { say(a); AU.sfx('error'); }
   return a;
+};
+// ---------- the pick / use BUTTONS, one implementation for every role that has them (the Builder: Main.controls / Main.remoteB; the Rootkeeper: M3.input) ----------
+// A press that finds nothing to do is kept for CFG.inputBuffer seconds and retried quietly (still walking up to it); a held pick repeats single pickups (rep) and,
+// with something in hand, sweeps up the same kind nearby. S holds the state (ibuf, pRepeat: G for the Builder, his own record for the Rootkeeper);
+// ad = { interact(mode, quiet), building (a tool is in hand: pick places), place(quiet) (did it place?), again() (what a held pick takes next), actionFor, n() (items in hand) }.
+FA.pressPre = function (dt, S, ad, pick, use) {
+  const press = mode => { const a = ad.interact(mode, true); S.ibuf = a && a.fn ? null : { mode, t: CFG.inputBuffer }; return a; };
+  if (S.ibuf && S.ibuf.mode === 'place') {   // a place-in-front that hit a taken tile retries while he settles
+    S.ibuf.t -= dt;
+    if (ad.place(S.ibuf.t > 0) || S.ibuf.t <= 0) S.ibuf = null;
+  } else if (S.ibuf && !use && !pick) {
+    const b = S.ibuf;
+    b.t -= dt;
+    if (b.mode === 'pick' && ad.building) S.ibuf = null;
+    else {
+      const a = ad.interact(b.mode, b.t > 0);
+      if ((a && a.fn) || b.t <= 0) {
+        S.ibuf = null;
+        if (b.mode === 'pick' && a && a.fn) S.pRepeat = a.rep ? CFG.pickRepeat * 1.5 : 0;
+      }
+    }
+  }
+  if (use) press('use');
+};
+FA.pressPick = function (dt, S, ad, pick, pickHeld) {
+  if (pick) {
+    if (ad.building) { if (!ad.place(true)) S.ibuf = { mode: 'place', t: CFG.inputBuffer }; }
+    else { const a = ad.interact('pick', true); S.ibuf = a && a.fn ? null : { mode: 'pick', t: CFG.inputBuffer }; S.pRepeat = a && a.fn && a.rep ? CFG.pickRepeat * 1.5 : 0; }
+  } else if (pickHeld && !ad.building && S.pRepeat > 0) {
+    S.pRepeat -= dt;
+    if (S.pRepeat <= 0) {
+      const t = ad.again(), a = t && ad.actionFor(t, 'pick');
+      if (a && a.rep && a.fn) { a.fn(); S.pRepeat = ad.n() ? CFG.sweepRepeat : CFG.pickRepeat; }
+    }
+  } else if (!pickHeld) S.pRepeat = 0;
 };
 // click-to-interact: find what's under a tile
 FA.thingAt = function (tx, ty, fx, fy) {

@@ -1243,19 +1243,24 @@ R.drawFly = function (ctx, v, o, t) {
   R.item(ctx, o.kind, p[0], p[1] - o.z * 44 + 6, 4, t);
 };
 
+// THE ROLL as drawn, for every character that rolls (the Wizard, the Builder's Tumble, the Rootkeeper's Root Roll): a somersault in 8 chunky frames (fr 0..1 of the roll),
+// strobing between see-through (a0) and a white silhouette (a1) on the roll's own clock; lift = how far above his feet he turns; more(ghost) draws worn layers in the same turn
+R.somersault = function (ctx, x, y, spr, S, fr, roll, flip, lift, a0, a1, more) {
+  const step = Math.floor(fr * 8) / 8, ghost = Math.floor(roll * 30) % 2 === 0;
+  ctx.save(); ctx.translate(snap(x), y - lift); ctx.rotate(step * 6.283 * (flip ? -1 : 1));
+  ctx.globalAlpha = ghost ? a0 : a1;
+  ctx.drawImage(ghost ? spr.c : spr.white, -spr.ax * S, -spr.ay * S + lift, spr.c.width * S, spr.c.height * S);
+  if (more) more(ghost);
+  ctx.restore(); ctx.globalAlpha = 1;
+};
 R.drawBuilder = function (ctx, v, bd, t) {
   const p = R.toScreenLocked(v, bd.x, bd.y), S = 4;
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(Math.round((p[0] - 20) / 4) * 4, Math.round(p[1] / 4) * 4 - 4, 40, 12);
   const hands = bd === G.bd ? G.hands : G.bs2 ? G.bs2.hands : [], carrying = hands.length > 0;   // (4P: the other Builder's pile is G.bs2.hands)
   if (G.m4) R.seatTag(ctx, v, p, bd === G.bd ? M4.seatB(G.bi || 0) : M4.seatB(1 - (G.bi || 0)));
   for (const gh of bd.ghosts || []) { const q = R.toScreen(v, gh.x, gh.y); dspr(ctx, { c: SP.builder.white, ax: SP.builder.ax, ay: SP.builder.ay }, q[0], q[1], S, 0.35 * (1 - gh.t / 0.25)); }   // Tumble's afterimages
-  if (bd.roll > 0) {   // Tumble: a somersault in 8 chunky frames, strobing see-through / white like the Wizard's roll
-    const fr = 1 - bd.roll / (bd.rollT0 || CFG.builder.roll.time), step = Math.floor(fr * 8) / 8, ghost = Math.floor(bd.roll * 30) % 2 === 0, spr0 = carrying ? SP.builderC : SP.builder;
-    const fl = (bd.fx - bd.fy) < -0.05;
-    ctx.save(); ctx.translate(snap(p[0]), p[1] - 40); ctx.rotate(step * 6.283 * (fl ? -1 : 1));
-    ctx.globalAlpha = ghost ? 0.5 : 0.95;
-    ctx.drawImage(ghost ? spr0.c : spr0.white, -spr0.ax * S, -spr0.ay * S + 40, spr0.c.width * S, spr0.c.height * S);
-    ctx.restore(); ctx.globalAlpha = 1;
+  if (bd.roll > 0) {   // Tumble: the Wizard's somersault, strobing see-through / white
+    R.somersault(ctx, p[0], p[1], carrying ? SP.builderC : SP.builder, S, 1 - bd.roll / (bd.rollT0 || CFG.builder.roll.time), bd.roll, (bd.fx - bd.fy) < -0.05, 40, 0.5, 0.95);
     return;
   }
   if (bd.rollCd > 0 && FA.hasRoll()) R.bar(ctx, p[0], p[1] + 14, 36, 1 - bd.rollCd / (bd.rollCdMax || FA.rollCd()), '#ffffff', 4);   // the roll recharging
@@ -1277,11 +1282,15 @@ R.drawBuilder = function (ctx, v, bd, t) {
   ctx.scale((1 + sq) * (1 - stretch * 0.45) * (flip ? -1 : 1), (1 - sq) * (1 + stretch));
   ctx.drawImage(spr.c, -spr.ax * S, -spr.ay * S + pv, spr.c.width * S, spr.c.height * S);
   ctx.restore();
-  // what he carries: one pile above his head, the last thing grabbed on top (that is the one a throw sends first). No numbers: each item is drawn.
-  const n = hands.length, y0 = p[1] - 72 - hop;
+  R.drawCarry(ctx, p[0], p[1] - 72 - hop, hands.map(h => h.kind), bd.moving, t, 4);
+};
+// what a character carries (the Builder, the Rootkeeper): one pile above his head, the last thing grabbed on top (that is the one a throw sends first). No numbers: each item
+// is drawn. kinds = bottom first; S = the sprite scale of his world (the steps are in sprite pixels)
+R.drawCarry = function (ctx, x, y0, kinds, moving, t, S) {
+  const n = kinds.length;
   for (let i = 0; i < n; i++) {
-    const wob = bd.moving && i > 1 ? (Math.sin(t * 6 + i * 0.7) > 0 ? 4 : 0) : 0;
-    R.item(ctx, hands[i].kind, p[0] + wob + (i % 2 ? 4 : -4), y0 - i * 12, 4, t, i === n - 1);
+    const wob = moving && i > 1 ? (Math.sin(t * 6 + i * 0.7) > 0 ? S : 0) : 0;
+    R.item(ctx, kinds[i], x + wob + (i % 2 ? S : -S), y0 - i * 3 * S, S, t, i === n - 1);
   }
 };
 // The placement preview in three parts so it reads against the green floor and sits correctly among the objects:
@@ -1414,20 +1423,23 @@ R.drawDemo = function (ctx, v, g, t) {
   dspr(ctx, SP.ic_x, p[0], p[1] - 24, 4);
   if (g.refund) R.defer.push(c => R.iconRow(c, p[0], p[1] - 70, g.refund));   // what demolishing gives back
 };
-R.drawAim = function (ctx, v, a, t) {
-  const bd = G.bd, s = R.toScreen(v, bd.x, bd.y), e = R.toScreen(v, a.x, a.y);
+// THE LEAD LINE, for every role that throws: from the thrower (o: the Builder unless given) to where the throw lands, the receiver outlined green (takes it) or red (will
+// bounce), a ghost of the item where it lands. o = { x, y, kind, ok, outline(ctx, col) } for a thrower in another world (the Rootkeeper); S = that world's sprite scale
+R.drawAim = function (ctx, v, a, t, o, S) {
+  const bd = o || G.bd, s = R.toScreen(v, bd.x, bd.y), e = R.toScreen(v, a.x, a.y), px = R.px, sc = S || 4;
   const d = Math.hypot(e[0] - s[0], e[1] - s[1]);
   const h = 40 + d * 0.25, off = Math.floor(t * 8) % 3;
   ctx.fillStyle = '#ffffff';
   for (let i = off; i <= 24; i += 3) {
     const k = i / 24, x = s[0] + (e[0] - s[0]) * k, y = s[1] - 70 + (e[1] - s[1] + 70) * k - Math.sin(k * Math.PI) * h;
-    ctx.fillRect(Math.round(x / 4) * 4 - 4, Math.round(y / 4) * 4 - 4, 8, 8);
+    ctx.fillRect(Math.round(x / px) * px - px, Math.round(y / px) * px - px, 2 * px, 2 * px);
   }
-  const hd = FA.top(), ok = !!(hd && a.obj && FA.accepts(a.obj, hd.kind)), col = !a.obj ? '#ffffff' : ok ? '#9dff9d' : '#ff6a6a';
-  if (a.obj && a.obj.type !== 'belt') R.outlineObj(ctx, v, a.obj, col, t, 1.04);
+  const hk = o ? o.kind : FA.topKind(), ok = o ? !!(a.obj && o.ok) : !!(hk && a.obj && FA.accepts(a.obj, hk)), col = !a.obj ? '#ffffff' : ok ? '#9dff9d' : '#ff6a6a';
+  if (o) { if (a.obj) o.outline(ctx, col); else { ctx.strokeStyle = col; ctx.lineWidth = 2 * px; diamond(ctx, e[0], e[1], 24, 12); ctx.stroke(); } }
+  else if (a.obj && a.obj.type !== 'belt') R.outlineObj(ctx, v, a.obj, col, t, 1.04);
   else { ctx.strokeStyle = col; ctx.lineWidth = 6; diamond(ctx, e[0], e[1], 24, 12); ctx.stroke(); }
-  if (hd) dspr(ctx, itemSprite(hd.kind), e[0], e[1] - 10 + (Math.sin(t * 6) > 0 ? 0 : 4), 4, 0.5);   // where it will land
-  if (a.obj && !ok) dspr(ctx, SP.ic_x, e[0], e[1] - 40, 4);
+  if (hk) dspr(ctx, itemSprite(hk), e[0], e[1] - 10 + (Math.sin(t * 6) > 0 ? 0 : px), sc, 0.5);   // where it will land
+  if (a.obj && !ok) dspr(ctx, SP.ic_x, e[0], e[1] - 40, sc);
 };
 // a pad / Tab-picked target: cyan corner brackets, plus the cycle key while there's more than one choice
 R.drawLock = function (ctx, v, t) {
@@ -1444,14 +1456,16 @@ R.drawLock = function (ctx, v, t) {
 R.key = which => { const alt = Main.kbShared() && G.swapped; if (which === 'cycle') return R.padMode ? 'LT+X' : Keys.label('element'); return which === 'pick' ? (R.padMode ? 'A' : alt ? Keys.label('pick') : 'LMB') : (R.padMode ? 'X' : Keys.label('use')); };
 // f.list: up to two prompts ({t, a, key}); a second prompt over the same target stacks above the first
 // the Builder's button prompts live in a stack at the bottom-left, just above the hotbar (the first one lowest); the target itself only gets a ring
-R.drawFocus = function (ctx, v, f, t) {
+// (keyOf: the key cap for a button, R.key unless given: the Rootkeeper's are his own; an action with mash set bounces its key cap, like a crank)
+R.drawFocus = function (ctx, v, f, t, keyOf) {
   let row = 0;
+  const K = keyOf || R.key;
   f.list.forEach(e => {
     const tg = e.t, a = e.a;
     if (tg.kind === 'floor' || tg.kind === 'pile') return;   // no prompt for loose items or the Stockpile: the item itself lights up (R.pickFx)
     const y = CFG.H - 134 - (f.inspH ? f.inspH + 2 : 0) - row * 46;   // the building note sits under the prompts, just above the hotbar
-    if (a.ic) R.iprompt(ctx, 0, y, e.key ? R.key(e.key) : null, a.ic, CFG.HALF, 16, e.key === 'use' && !!G.bd.gather);
-    else R.prompt(ctx, 0, y, e.key ? R.key(e.key) : null, a.label, CFG.HALF, 16);
+    if (a.ic) R.iprompt(ctx, 0, y, e.key ? K(e.key) : null, a.ic, CFG.HALF, 16, !!a.mash || (e.key === 'use' && !!G.bd.gather));
+    else R.prompt(ctx, 0, y, e.key ? K(e.key) : null, a.label, CFG.HALF, 16);
     row++;
     if (tg.kind === 'bld' || tg.kind === 'belt') {
       const p = R.toScreen(v, tg.x, tg.y);
@@ -1694,18 +1708,25 @@ R.drawWorld = function (main, dt, rect) {
 R.pipRect = null;
 R.drawPip = function (main, dt) {
   R.pipRect = null;
+  if (!(AU.settings.pip > 0) || !G) return;
+  const wilds = G.m4 ? M4.ROLE[M4.me()] === 'B' : Net.role === 'host';
+  const label = G.m4 ? M4.name(wilds ? M4.seatW(G.wi || 0) : M4.seatB(G.bi || 0)) : wilds ? 'WIZARD' : 'FACTORY';
+  R.pipFrame(main, dt, 'pip', wilds ? 'W' : 'B', label, 150, '#ffc94a');
+};
+// the corner picture itself, for every mode (2P / 4P: the partner, R.drawPip; 3P: the teammate this seat cycled to, M3D.drawPip). role = whose world ('B' factory, 'W' wilds,
+// 'K' the underworld), key = its scratch buffer, label / lw = the name tag and its width, col = the frame colour
+R.pipFrame = function (main, dt, key, role, label, lw, col) {
   const pct = AU.settings.pip;
-  if (!(pct > 0) || !G) return;
-  let sc = R.bufs.pip;
-  if (!sc) { const c = document.createElement('canvas'); c.width = CFG.HALF; c.height = CFG.H; sc = R.bufs.pip = { c, x: c.getContext('2d') }; }
-  const wilds = G.m4 ? M4.ROLE[M4.me()] === 'B' : Net.role === 'host', v = wilds ? R.wv : R.fv, rect = { x0: 0, w: CFG.HALF, pip: true };
+  let sc = R.bufs[key];
+  if (!sc) { const c = document.createElement('canvas'); c.width = CFG.HALF; c.height = CFG.H; sc = R.bufs[key] = { c, x: c.getContext('2d') }; }
+  const wilds = role === 'W', v = wilds ? R.wv : role === 'B' ? R.fv : R.uv, rect = { x0: 0, w: CFG.HALF, pip: true };
   sc.acc = (sc.acc || 0) + dt;
   // a whole second world is the most expensive thing on screen: redraw the small picture ~24 times a second, not every frame, and slower still when it is costly (a big fight in
   // it): never more than about an eighth of the time, down to 10 pictures a second
   if (!sc.drawn || sc.acc >= Math.min(0.1, Math.max(1 / 24, (sc.cost || 0) * 8 / 1000))) {
     const t0 = performance.now();
     sc.x.clearRect(0, 0, CFG.HALF, CFG.H);
-    if (wilds) R.drawWorld(sc.x, sc.acc, rect); else R.drawFactory(sc.x, sc.acc, rect);
+    if (wilds) R.drawWorld(sc.x, sc.acc, rect); else if (role === 'B') R.drawFactory(sc.x, sc.acc, rect); else R.drawUnder(sc.x, sc.acc, rect);
     sc.drawn = true; sc.acc = 0;
     sc.cost = sc.cost ? sc.cost * 0.7 + (performance.now() - t0) * 0.3 : performance.now() - t0;
   }
@@ -1713,12 +1734,11 @@ R.drawPip = function (main, dt) {
   const W = Math.round(CFG.W * pct / 100), H = Math.round(W * CH / CFG.HALF), x = CFG.W - W - 16, y = CFG.H - H - 16;
   main.save();
   main.fillStyle = '#1a0f28'; main.fillRect(x - 6, y - 6, W + 12, H + 12);
-  main.fillStyle = '#ffc94a'; main.fillRect(x - 2, y - 2, W + 4, H + 4);
+  main.fillStyle = col; main.fillRect(x - 2, y - 2, W + 4, H + 4);
   main.imageSmoothingEnabled = true; main.imageSmoothingQuality = 'medium';
   main.drawImage(sc.c, 0, sy, CFG.HALF, CH, x, y, W, H);
   main.restore();
-  const label = G.m4 ? M4.name(wilds ? M4.seatW(G.wi || 0) : M4.seatB(G.bi || 0)) : wilds ? 'WIZARD' : 'FACTORY';
-  main.fillStyle = 'rgba(26,15,40,0.8)'; main.fillRect(x, y, Math.min(W, 150), 22);
+  main.fillStyle = 'rgba(26,15,40,0.8)'; main.fillRect(x, y, Math.min(W, lw), 22);
   drawText(main, label, x + 8, y + 17, 10, '#ffe36b', 'left', 'd');
   if (wilds && G.w) {   // the Wizard's health and armour under the picture
     const w = G.w, mh = WZ.maxHp();
@@ -2248,14 +2268,8 @@ R.drawWizard = function (ctx, v, w) {
   if (w.ride) R.drawRide(ctx, v, w, p, tt);
   if (w.fireT > 0) { ctx.fillStyle = 'rgba(255,122,48,0.16)'; diamond(ctx, p[0], p[1] + 3, 27, 13); ctx.fill(); for (let i = 0; i < 5; i++) { const a = tt * 5 + i * 1.257, k = (tt * 2.2 + i * 0.2) % 1; ctx.fillStyle = i % 2 ? '#ffe36b' : '#ff7a30'; ctx.fillRect(snap(p[0] + Math.cos(a) * 18 - 3), Math.round((p[1] - 6 - k * 36) / 3) * 3, 6, 6); } }
   if (w.invisT > 0) { ctx.strokeStyle = '#e6f8ff'; ctx.lineWidth = 3; ctx.globalAlpha = 0.5; ctx.setLineDash([9, 9]); ctx.lineDashOffset = -Math.floor(tt * 10) * 3; diamond(ctx, p[0], p[1] + 3, 24, 11); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
-  if (w.roll > 0) {
-    const fr = 1 - w.roll / CFG.wizard.rollTime, step = Math.floor(fr * 8) / 8;   // somersault in 8 chunky frames
-    // i-frames: he strobes between see-through and a white silhouette, so it's clear he can't be hit
-    const ghost = Math.floor(w.roll * 30) % 2 === 0;
-    ctx.save(); ctx.translate(snap(p[0]), p[1] - 24); ctx.rotate(step * 6.283 * (flip ? -1 : 1));
-    ctx.globalAlpha = (ghost ? 0.4 : 0.9) * ia;
-    ctx.drawImage(ghost ? spr.c : spr.white, -spr.ax * S, -spr.ay * S + 24, spr.c.width * S, spr.c.height * S); wearRot(ghost); ctx.restore();
-    ctx.globalAlpha = 1;
+  if (w.roll > 0) {   // i-frames: he strobes between see-through and a white silhouette, so it's clear he can't be hit
+    R.somersault(ctx, p[0], p[1], spr, S, 1 - w.roll / CFG.wizard.rollTime, w.roll, flip, 24, 0.4 * ia, 0.9 * ia, wearRot);
     return;
   }
   if (w.jump) {   // a geyser has him: high in the air (his shadow shrinks below) in one somersault

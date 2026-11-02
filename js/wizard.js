@@ -346,13 +346,49 @@ WZ.moveOn = function (o, nx, ny, r) {
   const was = WZ.pass.water; WZ.pass.water = true;
   try { return WZ.slide(o, nx, ny, r); } finally { WZ.pass.water = was; }
 };
-// move a body with axis sliding; water can't be entered at all
-WZ.slide = function (o, nx, ny, r) {
-  const inside = WZ.blocked(o.x, o.y, r);
+// move a body with axis sliding; water can't be entered at all (blk: what blocks, WZ.blocked unless given: the underworld passes its own ground)
+WZ.slide = function (o, nx, ny, r, blk) {
+  const B = blk || WZ.blocked, inside = B(o.x, o.y, r);
   let hitX = false, hitY = false;
-  if (inside || !WZ.blocked(nx, o.y, r)) o.x = nx; else hitX = true;
-  if (inside || !WZ.blocked(o.x, ny, r)) o.y = ny; else hitY = true;
+  if (inside || !B(nx, o.y, r)) o.x = nx; else hitX = true;
+  if (inside || !B(o.x, ny, r)) o.y = ny; else hitY = true;
   return hitX || hitY;
+};
+// ---------- THE WALK: one implementation for every character on foot in the wilds' terrain (the Wizard, and the Rootkeeper in the underworld below: js/mode3.js) ----------
+// a roll pressed a moment too early (still rolling / cooling down) is kept for CFG.inputBuffer seconds; returns whether the roll goes now
+WZ.rollBuffer = function (o, pressed, dt) {
+  if (pressed && (o.rollCd > 0 || o.roll > 0)) { o.rollBuf = CFG.inputBuffer; return false; }
+  if (o.rollBuf > 0) { o.rollBuf -= dt; if (o.rollCd <= 0 && o.roll <= 0) { o.rollBuf = 0; return true; } }
+  return pressed;
+};
+// the roll starts: along the stick (m > 0) or the way he faces
+WZ.rollStart = function (o, m, dx, dy, T, cd) {
+  o.roll = T; o.rollCd = cd;
+  o.rdx = m > 0 ? dx : o.fx; o.rdy = m > 0 ? dy : o.fy;
+  const rm = Math.hypot(o.rdx, o.rdy) || 1; o.rdx /= rm; o.rdy /= rm;
+};
+// the roll ignores acceleration: a committed burst, leaving afterimages every gap seconds
+WZ.rollMove = function (o, dt, sp, k, gap) {
+  o.roll -= dt;
+  o.vx = o.rdx * sp * k; o.vy = o.rdy * sp * k;
+  o.ghostT = (o.ghostT || 0) - dt;
+  if (o.ghostT <= 0) { o.ghostT = gap; o.ghosts.push({ x: o.x, y: o.y, t: 0 }); }
+};
+// acceleration / friction toward the wanted velocity (rate = the step's change this frame)
+WZ.steer = function (o, wx, wy, rate) {
+  const ex = wx - o.vx, ey = wy - o.vy, el = Math.hypot(ex, ey);
+  if (el <= rate) { o.vx = wx; o.vy = wy; } else { o.vx += ex / el * rate; o.vy += ey / el * rate; }
+};
+WZ.ghostAge = function (o, dt) { for (const gh of o.ghosts) gh.t += dt; o.ghosts = o.ghosts.filter(gh => gh.t < 0.25); };
+// the step itself: the walk cycle, then the move (slide = how this body slides), a blocked axis stops; returns true if he did not move at all
+WZ.stepOn = function (o, dt, spd, sp, r, slide) {
+  o.bob += dt * 11 * Math.min(1, spd / sp);
+  const nx = Math.max(0.5, Math.min(CFG.WW - 0.5, o.x + o.vx * dt)), ny = Math.max(0.5, Math.min(CFG.WH - 0.5, o.y + o.vy * dt));
+  const ox = o.x, oy = o.y;
+  slide(o, nx, ny, r);
+  if (o.x === ox) o.vx = 0;
+  if (o.y === oy) o.vy = 0;
+  return o.x === ox && o.y === oy;
 };
 WZ.dryNear = function (x, y, tries, spread) {   // a random dry spot near (x,y)
   for (let i = 0; i < tries; i++) {
@@ -729,11 +765,11 @@ WZ.launch = function (J) {
   WZ.ring(w.x, w.y, 1.6, '#7ad0ff', 0.4); WZ.epuff(w.x, w.y, 'water', 14);
   AU.sfx('launch');
 };
-// grass, flowers and bushes a body pushes through lean the way it moves (G.w.bend: bucket slot -> { t, d }), then spring back (R.drawWorld)
-WZ.bendAt = function (x, y, vx, vy, r) {
+// grass, flowers and bushes a body pushes through lean the way it moves (G.w.bend: bucket slot -> { t, d }; map: another bend map on the same layout, the underworld's), then spring back (R.drawWorld)
+WZ.bendAt = function (x, y, vx, vy, r, map) {
   const sp = Math.hypot(vx, vy);
   if (sp < 0.6) return;
-  const B = CFG.bend, WW = CFG.WW, bend = G.w.bend, d = (vx - vy) / (sp * 1.414) * Math.min(1, sp / 5), reach = r + B.r;
+  const B = CFG.bend, WW = CFG.WW, bend = map || G.w.bend, d = (vx - vy) / (sp * 1.414) * Math.min(1, sp / 5), reach = r + B.r;
   for (let ty = Math.floor(y - 1); ty <= Math.floor(y + 1); ty++) for (let tx = Math.floor(x - 1); tx <= Math.floor(x + 1); tx++) {
     if (tx < 0 || ty < 0 || tx >= WW || ty >= CFG.WH) continue;
     const i = ty * WW + tx, b = WZ.bucket[i];
@@ -1727,13 +1763,9 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   w.dig = w.roll > 0 || w.ride ? null : WZ.forageAt(w.x, w.y);
   const sgBusy = !!w.sg, sgStarted = WZ.shrineTick(dt, !!A.mash && !w.ride);
   if (A.mash && !w.ride) { WZ.unseen(); if (!sgBusy && !sgStarted && w.dig) { WZ.mash(w.dig); w.mashAt = w.t; } }
-  // a roll pressed a moment too early (still rolling / cooling down) is kept for CFG.inputBuffer seconds
-  if (rollPressed && (w.rollCd > 0 || w.roll > 0)) { w.rollBuf = CFG.inputBuffer; rollPressed = false; }
-  else if (w.rollBuf > 0) { w.rollBuf -= dt; if (w.rollCd <= 0 && w.roll <= 0) { rollPressed = true; w.rollBuf = 0; } }
+  rollPressed = WZ.rollBuffer(w, rollPressed, dt);   // (a press a moment too early is kept)
   if (rollPressed && w.rollCd <= 0 && w.roll <= 0) {
-    w.roll = CFG.wizard.rollTime; w.rollCd = WZ.rollCd();
-    w.rdx = m > 0 ? dx : w.fx; w.rdy = m > 0 ? dy : w.fy;
-    const rm = Math.hypot(w.rdx, w.rdy) || 1; w.rdx /= rm; w.rdy /= rm;
+    WZ.rollStart(w, m, dx, dy, CFG.wizard.rollTime, WZ.rollCd());
     AU.sfx(WZ.has('gale') && WZ.blinkStart() ? 'dodge' : 'roll');   // the Gale Circlet: the roll is a short blink instead
   }
   let sp = WZ.speed();
@@ -1753,16 +1785,10 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
   } else if (w.ride) {   // Riding Wave: a straight run along the aim (WZ.rideSet), the wave parts the foes it meets (WZ.rideTick)
     WZ.rideSet(dt);
   } else if (w.roll > 0) {
-    // the roll ignores acceleration: a committed burst
-    w.roll -= dt;
-    w.vx = w.rdx * sp * CFG.wizard.rollSpeed; w.vy = w.rdy * sp * CFG.wizard.rollSpeed;
-    w.ghostT = (w.ghostT || 0) - dt;
-    if (w.ghostT <= 0) { w.ghostT = 0.05; w.ghosts.push({ x: w.x, y: w.y, t: 0 }); }
+    WZ.rollMove(w, dt, sp, CFG.wizard.rollSpeed, 0.05);
   } else {
-    const wx = dx * sp * slowK, wy = dy * sp * slowK, ex = wx - w.vx, ey = wy - w.vy, el = Math.hypot(ex, ey);
     const heavy = w.statT > 0;   // the Statue: a heavy boulder, slow to get going, slow to turn, slow to stop
-    const rate = (m > 0 ? (heavy ? CFG.wand.earth.accel : CFG.wizard.accel) : (heavy ? CFG.wand.earth.friction : CFG.wizard.friction)) * dt;
-    if (el <= rate) { w.vx = wx; w.vy = wy; } else { w.vx += ex / el * rate; w.vy += ey / el * rate; }
+    WZ.steer(w, dx * sp * slowK, dy * sp * slowK, (m > 0 ? (heavy ? CFG.wand.earth.accel : CFG.wizard.accel) : (heavy ? CFG.wand.earth.friction : CFG.wizard.friction)) * dt);
   }
   if (w.kick) {   // a short shove (the Altar's shockwaves; spells no longer recoil) (it slides along water like any move)
     const K = w.kick, s = K.d / CFG.wizard.kickT;
@@ -1770,8 +1796,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     else WZ.slideW(w, w.x + K.x * s * dt, w.y + K.y * s * dt, CFG.wizard.radius);
   }
   if (w.squashT > 0) w.squashT -= dt;
-  for (const gh of w.ghosts) gh.t += dt;
-  w.ghosts = w.ghosts.filter(gh => gh.t < 0.25);
+  WZ.ghostAge(w, dt);
   if (w.shake > 0) w.shake = Math.max(0, w.shake - dt);
   const spd = Math.hypot(w.vx, w.vy);
   w.moving = spd > 0.3;
@@ -1780,15 +1805,7 @@ WZ.update = function (dt, ix, iy, rollPressed, rx, ry, act) {   // act = { mash,
     w.trailT = (w.trailT || 0) - dt;
     if (w.trailT <= 0) { w.trailT = 0.07; const tc = Players.trailCol('wizard'); if (tc) G.w.fx_.push({ type: 'spark', x: w.x, y: w.y, vx: rand(-0.8, 0.8), vy: rand(-0.8, 0.8), z: 0.15, vz: rand(1.2, 2.6), g: 4, col: tc, t: 0, dur: 0.6 }); }
   }
-  if (spd > 0.01) {
-    w.bob += dt * 11 * Math.min(1, spd / sp);
-    const nx = Math.max(0.5, Math.min(CFG.WW - 0.5, w.x + w.vx * dt)), ny = Math.max(0.5, Math.min(CFG.WH - 0.5, w.y + w.vy * dt));
-    const ox = w.x, oy = w.y;
-    WZ.slideW(w, nx, ny, CFG.wizard.radius);
-    if (w.x === ox) w.vx = 0;
-    if (w.y === oy) w.vy = 0;
-    if (w.target && w.x === ox && w.y === oy) w.target = null;
-  }
+  if (spd > 0.01 && WZ.stepOn(w, dt, spd, sp, CFG.wizard.radius, WZ.slideW) && w.target) w.target = null;
   WZ.wandTick(dt);   // the wand's clocks: Flame Trail speed, Vanishing Puff, Statue and its burst, the Riding Wave
   WZ.emoteTick(dt);  // the dance beat and the Builder's sticker
   WZ.augTick(dt);   // augment cooldowns, washing ashore, the keeps' doors, boulders

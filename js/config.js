@@ -530,7 +530,7 @@ const CFG = {
     craftT: 3,      // seconds a Resource / Trap Crafter takes
     bld: {          // his toolbar: name and cost in banked remains (an even spread of the four)
       hose:      { name: 'Hose',           cost: {}, desc: 'Pick a building, then the next one: a hose carries a Burner\'s pulses to it. A pole in between doubles the reach. Pick a linked pair again to take the hose off.' },
-      burner:    { name: 'Burner',          cost: { air: 2, water: 2, fire: 2, earth: 2 }, desc: 'Burns the remains you throw into it and sends the heat down its hoses. Use sets what it burns.' },
+      burner:    { name: 'Burner',          cost: { air: 2, water: 2, fire: 2, earth: 2 }, desc: 'Burns the remains you throw into it, ONE type at a time (another type bounces back), and sends the heat down its hoses. Use sets what it burns.' },
       tcraft:    { name: 'Trap Crafter',    cost: { air: 2, water: 2, fire: 2, earth: 2 }, desc: 'Pick it to craft a trap from banked remains; use switches the recipe. Throw the trap to plant it, and hose it up.' },
       rcraft:    { name: 'Resource Crafter', cost: { air: 2, water: 2, fire: 2, earth: 2 }, desc: 'Pick it to craft a Tree, Rock or Iron seed; use switches the recipe. Throw the seed to plant it, then charge it.' },
       collector: { name: 'Collector',       cost: { air: 1, water: 1, fire: 1, earth: 1 }, desc: 'Hose it to a Burner: it lifts the Burner\'s ash into the skill bank.' },

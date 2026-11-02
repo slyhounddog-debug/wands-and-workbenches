@@ -13,6 +13,7 @@ task(() => {
   reg('rootkeeper2', mapSprite(step, P), 6.5, 17);
   const ic = (name, rows, pal) => reg('ic_' + name, mapSprite(rows, pal), Math.max.apply(null, rows.map(r => r.length)) / 2, rows.length);
   ic('root', ['...g...', '..ggg..', '...b...', '..bbb..', '.b.b.b.', 'b..b..b', '..b.b..'], { g: '#9adf5a', b: '#8a5a2a' });
+  ic('hose', ['.bbbbb.', 'b.ggg.b', 'b.g.g.b', 'b.ggg.b', 'b.....b', '.bbbbb.'], { g: '#9adf5a', b: '#8a5a2a' });   // a coil of hose: "no hose" when crossed
   ic('ghost', ['.wwww.', 'wwwwww', 'wkwwkw', 'wwwwww', 'wwwwww', 'w.ww.w'], { w: '#e8f0ff', k: '#3a2a5a' });
   // remains (what a kill leaves below) and ash (what burning leaves), one per element
   for (const el of ['air', 'water', 'fire', 'earth']) {
@@ -95,6 +96,7 @@ const drawTrap = function (ctx, v, b, t, alpha, wilds) {
   if (b.fire > 0) { ctx.globalAlpha = Math.min(1, b.fire * 2) * alpha; ctx.strokeStyle = b.tk === 'slow' ? '#9ad0ff' : '#ffe36b'; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], T3.r * v.hw * 1.4 * (1.4 - b.fire), T3.r * v.hh * 1.4 * (1.4 - b.fire)); ctx.stroke(); ctx.globalAlpha = 1; }
   if (!wilds || alpha >= 1) bar(ctx, p[0], p[1] + 9, 30, b.fuel / T3.store, armed ? '#e8c060' : '#7a6a5a');
   if (b.wrongT > 0 && Math.sin(t * 8) > 0) R.defer.push(c => R.iconRow(c, p[0] + 26, p[1] - 20, [[M3.pref(b)], ['ic_x']], 0.85));
+  if (b.dryT > 0 && Math.sin(t * 7) > -0.2) R.defer.push(c => R.iconRow(c, p[0], p[1] - 44, [[M3.pref(b)], ['ic_starve']], Math.min(1, b.dryT * 2)));   // a foe walked through it and it had nothing to fire with: what it wants (the Wizard sees it too)
 };
 // a burner's fire is in the colour of what it burns
 const flame = function (ctx, x, y, el, t, k) {
@@ -120,7 +122,9 @@ R.drawUBld = function (ctx, v, b, t, alpha, wilds) {
   if (b.type === 'burner') {
     if (b.st === 'burn') flame(ctx, p[0], p[1] - 30 + lift, b.bel, t, 1);
     else if (b.st === 'ash') { ctx.fillStyle = '#8a8494'; ctx.fillRect(Math.round((p[0] - 12) / 3) * 3, Math.round((p[1] - 33) / 3) * 3, 24, 6); }
-    if (b.st === 'starve' && b.stT > 1.5) R.defer.push(c => R.iconRow(c, p[0], p[1] - 90, [[b.el], ['ic_starve']]));   // starved of its set type: say which
+    if (b.no && b.no.t > 0) R.defer.push(c => R.iconRow(c, p[0], p[1] - 90, [['rem_' + b.no.cur], ['ic_flame']], Math.min(1, b.no.t * 2)));   // it turned a remain away: THIS is what it burns
+    else if (b.open && b.st === 'burn' && b.openT > 1.5 && Math.sin(t * 5) > -0.3) R.defer.push(c => R.iconRow(c, p[0], p[1] - 90, [['ic_hose'], ['ic_x']]));   // burning with no hose on it: the heat goes nowhere
+    else if (b.st === 'starve' && b.stT > 1.5) R.defer.push(c => R.iconRow(c, p[0], p[1] - 90, [[b.el], ['ic_starve']]));   // starved of its set type: say which
     else if (b.st === 'ash' && b.stT > 1) R.defer.push(c => R.iconRow(c, p[0], p[1] - 90, [['ash_' + (ELS.find(e => b.ash[e] > 0) || 'air')], ['ic_full']]));   // its ash tray is full: hose a Collector to it
     else R.defer.push(c => R.iconRow(c, p[0] + 24, p[1] - 70, [[b.el]], 0.9));
   }
@@ -238,7 +242,7 @@ R.drawUnder = function (main, dt, rect) {
     else if (o.gw) { const s = SP.wizard, p = R.toScreen(v, G.w.x, G.w.y); dspr(ctx, { c: s.white, ax: s.ax, ay: s.ay }, p[0], p[1], S, CFG.mode3.ghostA); R.defer.push(c => txt(c, 'WIZARD', Math.round(p[0]), Math.round(p[1]) + 26, 9, '#d8c8ff', 'center', 'd')); }
   }
   // thrown remains in the air, the effects, the icons popping over things
-  for (const f of u.fly) { const q = FA.flightPos(f, { kind: f.kind, t: f.t }); R.drawFly(ctx, v, q, t, S, v.hh * 2.2); }   // (the Builder's flight, drawn by the Builder's code: shadow on the ground, the item on its lob)
+  for (const f of u.fly) { const q = FA.flightPos(f, { kind: f.kind, t: f.t, T: f.T, sx: f.sx, tx: f.tx, boing: f.boing }); R.drawFly(ctx, v, q, t, S, v.hh * 2.2); }   // (the Builder's flight, drawn by the Builder's code: shadow on the ground, the item on its lob)
   for (const f of u.fx) {
     const p = R.toScreen(v, f.x, f.y), k = f.t / (f.type === 'lift' ? 1.1 : 0.7);
     if (f.type === 'ring') { ctx.globalAlpha = 1 - k; ctx.strokeStyle = f.col; ctx.lineWidth = 3; diamond(ctx, p[0], p[1], 20 + k * (f.big ? 90 : 40), 10 + k * (f.big ? 45 : 20)); ctx.stroke(); }
@@ -268,7 +272,7 @@ R.drawUnder = function (main, dt, rect) {
   // the lead line while he holds remains (the Builder's R.drawAim, from G: rk.aim)
   if (mine && rk.aim && rk.hands.length && !rk.tool) {
     const to = rk.aim.to ? M3.byId(rk.aim.to) : null;
-    R.drawAim(ctx, v, { x: rk.aim.x, y: rk.aim.y, obj: to }, t, { x: rk.x, y: rk.y, kind: top, ok: !!to, outline: (c, col) => { const q = R.toScreen(v, to.x, to.y); c.strokeStyle = col; c.lineWidth = 6; diamond(c, q[0], q[1], v.hw * 1.04, v.hh * 1.04); c.stroke(); } }, S);
+    R.drawAim(ctx, v, { x: rk.aim.x, y: rk.aim.y, obj: to }, t, { x: rk.x, y: rk.y, kind: top, ok: !!to && rk.aim.ok !== false, outline: (c, col) => { const q = R.toScreen(v, to.x, to.y); c.strokeStyle = col; c.lineWidth = 6; diamond(c, q[0], q[1], v.hw * 1.04, v.hh * 1.04); c.stroke(); } }, S);
   }
   // what the nearest thing holds / needs (only near him: show, don't tell)
   M3D.infoNear(ctx, v, t);
@@ -307,6 +311,7 @@ M3D.infoNear = function (ctx, v, t) {
     else if (b.type === 'rcraft' || b.type === 'tcraft') { const ks = M3.recipesOf(b), kk = ks[b.r % ks.length], c0 = (b.type === 'rcraft' ? CFG.mode3.nodes : CFG.mode3.traps)[kk].cost; R.defer.push(c => R.iconRow(c, p[0], p[1] - 100, [[(b.type === 'rcraft' ? 'n_' : 't_') + kk]].concat(Object.keys(c0).map(e => ['rem_' + e, c0[e]])), M3.canPay(c0) ? 1 : 0.6)); }
     else if (b.type === 'node' && !b.up) R.defer.push(c => txt(c, Math.floor(b.ch * 100) + '%', Math.round(p[0]), Math.round(p[1]) - 50, 12, '#cfe88a', 'center', 'd'));
     else if (b.type === 'mirror') R.defer.push(c => R.iconRow(c, p[0], p[1] - 100, [[b.el], ['ic_root']]));
+    else if (b.type === 'collector' && b.idle) R.defer.push(c => R.iconRow(c, p[0], p[1] - 100, [['ic_hose'], ['ic_x']]));   // hosed to no Burner: nothing to lift
   }
   // the prompts: the Builder's stack at the bottom-left, from the shared resolver (so they always say what the press will do)
   const foc = R.rect.pip ? null : M3.focus();

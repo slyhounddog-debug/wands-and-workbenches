@@ -438,6 +438,141 @@ const OUT = process.env.SHOTS || '';
   ok(Math.abs(r.k1 - 0.2) < 1e-9 && r.k2 < r.k1, 'his camera kick decays', JSON.stringify([r.k1, r.k2]));
   await shot('k_hotbar');
 
+  // ================= 17. when his world says NO: every refusal has a voice (FEEDBACK.md "3-player mode": burner-busy, rk-bounce, rk-nope, burner-open, trap-dry, trap-full, mirror-blocked, collector-idle, burner-ash-throw) =================
+  r = await run(() => {
+    const W = __wands; W.start3(1, { me: 2 }); W.UI.help(false); W.G.helpT = 0; W.CFG.world.cap = 0;
+    const G = W.G, u = G.u, M3 = W.M3, FA = W.FA, WZ = W.WZ, CFG = W.CFG, rk = u.rk, C = CFG.mode3, o = {};
+    const T = { step: n => W.step3(0.05, n) };
+    const ELSum = h => h.air + h.water + h.fire + h.earth;
+    G.fb = {};
+    const bu = u.bld.find(b => b.type === 'burner'), py = u.bld.find(b => b.type === 'pylon'), tree = u.bld.find(b => b.type === 'node' && b.nk === 'tree');
+    const farPy = { x: bu.x, y: bu.y + 40 };
+    const pyHome = [py.x, py.y]; py.x = farPy.x; py.y = farPy.y;   // (out of the way: only the burner is a receiver in reach)
+    const stand = (x, y) => { rk.x = x; rk.y = y; rk.fx = 1; rk.fy = 0; rk.vx = rk.vy = 0; rk.roll = 0; rk.throwCd = 0; rk.tool = null; rk.at = null; };
+    const clearHop = b => { for (const e in b.hop) b.hop[e] = 0; };
+    const total = () => u.items.length + rk.hands.length + u.fly.length + ['air', 'water', 'fire', 'earth'].reduce((a, e) => a + u.bank[e] + bu.hop[e], 0);
+    const icons = p => p.ic.map(i => i[0]).join('+');
+    // ---- the calibration case: a Burner burns ONE type at a time
+    clearHop(bu); bu.el = 'water'; bu.burn = 9; bu.bel = 'fire';
+    o.type1 = M3.burnerType(bu); o.acc = [M3.accepts(bu, 'rem_water'), M3.accepts(bu, 'rem_fire'), M3.accepts(py, 'rem_water'), M3.accepts(tree, 'rem_water'), M3.accepts(bu, 'n_tree')];
+    clearHop(bu); bu.burn = 0; o.idle = [M3.burnerType(bu), M3.accepts(bu, 'rem_earth')];
+    bu.hop.fire = 2; o.hopper = [M3.burnerType(bu), M3.accepts(bu, 'rem_water'), M3.accepts(bu, 'rem_fire')];
+    bu.hop.air = 1; bu.el = 'fire'; o.mixed = M3.burnerType(bu); clearHop(bu);
+    stand(bu.x - 3, bu.y); bu.burn = 9; bu.bel = 'fire'; rk.hands = ['rem_water'];
+    T.step(1); o.lead = rk.aim ? { to: rk.aim.to === bu.id, ok: rk.aim.ok } : null;
+    o.list = M3.throwList('rem_water').map(c => [c.obj.type, c.prio]);
+    u.items.length = 0;   // (so every remain counted below is one of ours)
+    const before = total(), fb0 = G.fb['burner-busy'] || 0;
+    W.UI.cueUntil = [0, 0, 0, 0];
+    M3.throwOne(undefined, { x: bu.x, y: bu.y, to: bu.id });
+    T.step(10);   // (it lands)
+    o.hop1 = ELSum(bu.hop); o.boing = u.fly.some(f => f.boing); o.no = bu.no ? { cur: bu.no.cur, k: bu.no.k, t: bu.no.t > 0 } : null;
+    o.pops = u.pops.map(icons);
+    o.fbBusy = (G.fb['burner-busy'] || 0) - fb0;
+    o.cueLevel = W.UI.cueLevel();
+    T.step(16);
+    const back = u.items.filter(i => i.k === 'rem_water' && Math.hypot(i.x - rk.x, i.y - rk.y) < 4);
+    o.back = back.length; o.conserved = total() === before; o.onBurner = u.items.some(i => Math.hypot(i.x - bu.x, i.y - bu.y) < 0.6);
+    // the type it burns is taken as before
+    rk.hands = ['rem_fire']; rk.throwCd = 0; M3.throwOne(undefined, { x: bu.x, y: bu.y, to: bu.id }); T.step(14);
+    o.fireIn = bu.hop.fire;
+    // an idle, empty Burner takes whatever comes
+    clearHop(bu); bu.burn = 0; bu.no = null; rk.hands = ['rem_earth']; rk.throwCd = 0; M3.throwOne(undefined, { x: bu.x, y: bu.y, to: bu.id }); T.step(14);
+    o.idleTook = bu.hop.earth + (bu.bel === 'earth' && bu.burn > 0 ? 1 : 0);
+    // ---- a throw at a building that takes no remains, and at water
+    const pole = M3.make('pole', bu.x - 6, bu.y + 3); stand(pole.x - 3, pole.y);
+    let f = FA.flightOf('rem_air', rk.x, rk.y, pole.x, pole.y, { to: null }); f.t = f.T; u.fly.push(f); const b0 = total(); const fbb = G.fb['rk-bounce'] || 0; M3.flyTick(0.05);
+    o.poleBounce = u.fly.some(q => q.boing) && (G.fb['rk-bounce'] || 0) === fbb + 1; o.poleIcons = icons(u.pops[u.pops.length - 1]);
+    T.step(16); o.poleBack = !u.items.some(i => Math.hypot(i.x - pole.x, i.y - pole.y) < 0.6) && total() === b0;
+    let wet = null; for (let y = 20; y < 180 && !wet; y += 1) for (let x = 20; x < 180 && !wet; x += 1) if (M3.wetU(x + 0.5, y + 0.5) && !M3.blockedU(x - 2.5, y + 0.5, 0.4) && !M3.blockedU(x - 3.5, y + 0.5, 0.4) && M3.free(x - 3, y + 0.5, 3)) wet = [x + 0.5, y + 0.5];
+    o.wet = !!wet;
+    if (wet) { stand(wet[0] - 3, wet[1]); f = FA.flightOf('rem_air', rk.x, rk.y, wet[0], wet[1], { to: null }); f.t = f.T; u.fly.push(f); const b1 = total(); const fb1 = G.fb['rk-bounce'] || 0; M3.flyTick(0.05); o.wetBounce = u.fly.some(q => q.boing) && (G.fb['rk-bounce'] || 0) === fb1 + 1; T.step(16); o.wetBack = total() === b1 && !u.items.some(i => M3.blockedU(i.x, i.y, 0.1)); }
+    // ---- presses and placements that cannot happen say why (and what is in the way)
+    for (const k of ['air', 'water', 'fire', 'earth']) u.bank[k] = 20;
+    py.x = pyHome[0]; py.y = pyHome[1];
+    stand(py.x - 1.4, py.y); rk.tool = 'burner'; const n0 = G.fb['rk-nope'] || 0; u.pops.length = 0;
+    o.placed = !!M3.place('burner'); o.nopeIc = u.pops.length ? icons(u.pops[u.pops.length - 1]) : null; o.nope1 = (G.fb['rk-nope'] || 0) - n0;
+    if (wet) { stand(wet[0] - 1.4, wet[1]); rk.tool = 'burner'; u.pops.length = 0; o.placedWet = !!M3.place('burner'); o.wetIc = u.pops.length ? icons(u.pops[u.pops.length - 1]) : null; }
+    rk.tool = null;
+    // a grown node: the use button says so
+    tree.up = true; o.grown = (a => ({ label: /Grown/.test(a.label), fn: !!a.fn, ic: (a.ic || []).join('+') }))(M3.actionFor({ kind: 'bld', o: tree }, 'use')); o.grownPick = !!M3.actionFor({ kind: 'bld', o: tree }, 'pick').label; tree.up = false;
+    return o;
+  });
+  ok(r.type1 === 'fire' && r.acc[0] === false && r.acc[1] === true && r.acc[2] === true && r.acc[3] === false && r.acc[4] === false, 'a Burner burns ONE type: burning fire it turns water away, takes fire; a pylon takes any; nothing else takes remains', JSON.stringify([r.type1, r.acc]));
+  ok(r.idle[0] === null && r.idle[1] === true && r.hopper[0] === 'fire' && r.hopper[1] === false && r.hopper[2] === true && r.mixed === 'fire', 'idle and empty it takes any type; a waiting hopper commits it to that type (its set type first)', JSON.stringify([r.idle, r.hopper, r.mixed]));
+  ok(r.lead && r.lead.to && r.lead.ok === false, 'the lead line shows the busy Burner as a receiver that will bounce (red)', JSON.stringify(r.lead));
+  ok(r.list.length === 1 && r.list[0][0] === 'burner' && r.list[0][1] === 3, 'a Burner that would turn it away is still a target but a poorer one (auto-aim prefers receivers that take it)', JSON.stringify(r.list));
+  ok(r.hop1 === 0 && r.boing && r.fbBusy === 1, 'a wrong-type remain thrown at an active Burner is REJECTED: not in the hopper, it springs back (the Builder\'s boing flight)', JSON.stringify([r.hop1, r.boing, r.fbBusy]));
+  ok(r.no && r.no.cur === 'fire' && r.no.k === 'water' && r.no.t, 'the Burner says what it IS burning (its tag: fire) and what was refused', JSON.stringify(r.no));
+  ok(r.pops.some(p => p === 'rem_water+ic_x'), 'an icon row where it came down: the refused remain + x', JSON.stringify(r.pops));
+  ok(r.cueLevel >= 1, 'the refusal raises the resource-loss cue tier (on the Rootkeeper\'s machine)', r.cueLevel);
+  ok(r.back === 1 && r.conserved && !r.onBurner, 'the bounced remain lands back by him and nothing is consumed or lost', JSON.stringify([r.back, r.conserved, r.onBurner]));
+  ok(r.fireIn >= 1, 'the type it burns is taken as before', r.fireIn);
+  ok(r.idleTook >= 1, 'an idle empty Burner takes any type', r.idleTook);
+  ok(r.poleBounce && r.poleIcons === 'rem_air+u_pole+ic_x' && r.poleBack, 'a remain thrown at a building that takes none bounces back, with that building\'s picture and x', JSON.stringify([r.poleBounce, r.poleIcons, r.poleBack]));
+  ok(r.wet && r.wetBounce && r.wetBack, 'a remain thrown into water or a chasm bounces back (no ground to lie on) instead of being moved silently', JSON.stringify([r.wet, r.wetBounce, r.wetBack]));
+  ok(!r.placed && r.nopeIc === 'u_pylon+ic_x' && r.nope1 === 1, 'a placement blocked by a building names it (its picture + x) and counts rk-nope', JSON.stringify([r.placed, r.nopeIc, r.nope1]));
+  ok(!r.placedWet && r.wetIc === 'ic_x', 'a placement on water is a bare x', r.wetIc);
+  ok(r.grown.label && !r.grown.fn && /ic_check/.test(r.grown.ic) && !r.grownPick, 'the use button on a grown node says it is grown (instead of doing nothing)', JSON.stringify([r.grown, r.grownPick]));
+
+  // ---- state cues: burning with no hose, a dry trap, a full trap, a blocked mirror, an idle collector, a full ash tray
+  r = await run(() => {
+    const W = __wands, G = W.G, u = G.u, M3 = W.M3, FA = W.FA, WZ = W.WZ, CFG = W.CFG, rk = u.rk, C = CFG.mode3, o = {};
+    const T = { step: n => W.step3(0.05, n) };
+    const icons = p => p.ic.map(i => i[0]).join('+');
+    const bu = u.bld.find(b => b.type === 'burner'), col = u.bld.find(b => b.type === 'collector'), mir = u.bld.find(b => b.type === 'mirror');
+    const spot = (x0, y0) => { for (let d = 3; d < 30; d += 0.7) for (let a = 0; a < 6.28; a += 0.4) { const x = Math.floor(x0 + Math.cos(a) * d) + 0.5, y = Math.floor(y0 + Math.sin(a) * d) + 0.5; if (!M3.blockedU(x, y, 0.5) && M3.free(x, y, 3.2)) return [x, y]; } return null; };
+    G.fb = {}; rk.x = bu.x; rk.y = bu.y + 3; rk.vx = rk.vy = 0;
+    // burner-open
+    let s = spot(bu.x, bu.y); const nb = M3.make('burner', s[0], s[1], { el: 'air' }); nb.hop.air = 3; u.pops.length = 0;
+    T.step(44);
+    o.open = [nb.open, nb.openT > 1.5, G.fb['burner-open'] || 0, u.pops.some(p => icons(p) === 'ic_hose+ic_x')];
+    const node = M3.make('node', nb.x + 2, nb.y + 1, { nk: 'tree' }); M3.link(nb, node); T.step(30); o.openGone = [nb.open, nb.openSeen];
+    // a Burner that feeds only a Collector is connected
+    const cl = M3.make('collector', nb.x - 2, nb.y - 1); M3.unlink(nb.id, node.id); M3.link(nb, cl); T.step(30); o.openCol = nb.open;
+    // a dry trap: a foe walks through it
+    s = spot(bu.x, bu.y); const tp = M3.make('trap', s[0], s[1], { tk: 'dmg' }); tp.fuel = 0; G.w.enemies.length = 0; u.pops.length = 0;
+    const e = WZ.makeEnemy('golem', tp.x, tp.y); e.hp = e.maxHp = 1e6; e.spd = 0; e.dazeT = 1e6;
+    T.step(12); o.dry = [tp.dryT > 0, G.fb['trap-dry'] || 0, u.pops.some(p => icons(p) === 'earth+ic_starve')];
+    const dry1 = G.fb['trap-dry']; T.step(6); o.dryThrottle = (G.fb['trap-dry'] || 0) <= dry1 + 1;
+    tp.fuel = 12; tp.arm = 0; tp.dryT = 0; const dry2 = G.fb['trap-dry']; T.step(6); o.fires = tp.fuel < 12 && (G.fb['trap-dry'] || 0) === dry2; G.w.enemies.length = 0;
+    // a full trap wastes a pulse
+    tp.fuel = C.traps.dmg.store; tp.fullT = 0; u.pops.length = 0; M3.deliver(tp, 'earth', 1); const nPop = u.pops.length; M3.deliver(tp, 'earth', 1);
+    o.full = [tp.fullT > 0, G.fb['trap-full'] || 0, nPop, u.pops.length];
+    // a mirror whose Harvester has no room
+    const h = FA.byId(mir.hid); h.out.length = 0; while (h.out.length < CFG.buffer) h.out.push({ kind: mir.el }); mir.ch = 1; u.pops.length = 0; const fl = G.fac.floor.length + G.fac.flying.length;
+    M3.mirrorSend(mir);
+    o.blocked = [G.fb['mirror-blocked'] || 0, u.pops.some(p => icons(p) === mir.el + '+ic_jam'), G.fac.floor.length + G.fac.flying.length > fl, G.fb['below-packet'] > 0];
+    // an idle Collector (hosed to no Burner) says so, near him; hosing it fixes it
+    col.ct = 0; T.step(2); o.idle0 = col.idle; rk.x = col.x + 1; rk.y = col.y + 1; G.fb['collector-idle'] = 0; T.step(14); o.idleFb = G.fb['collector-idle'] || 0;
+    const p = M3.make('pole', (bu.x + col.x) / 2, (bu.y + col.y) / 2); M3.link(bu, p); M3.link(p, col); col.ct = 0; T.step(2); o.idle1 = col.idle;
+    // a Burner whose ash tray is full takes a thrown remain but says it cannot burn it
+    for (const k in bu.hop) bu.hop[k] = 0; bu.burn = 0; bu.no = null; bu.ash.air = C.burner.ashCap; rk.x = bu.x - 3; rk.y = bu.y; rk.fx = 1; rk.fy = 0; rk.throwCd = 0; rk.hands = ['rem_water']; u.pops.length = 0;
+    M3.throwOne(undefined, { x: bu.x, y: bu.y, to: bu.id }); T.step(14);
+    o.ash = [bu.hop.water, G.fb['burner-ash-throw'] || 0, u.pops.some(p => /^ash_.*\+ic_full$/.test(icons(p)))];
+    // the tiers: a loss-tier cue holds ambient toasts back on HIS machine only
+    W.UI.cueUntil = [0, 0, 0, 0]; const role0 = M3.myRole; M3.myRole = () => 'W'; M3.fb('rk-bounce'); o.tierW = W.UI.cueLevel(); M3.myRole = () => 'K'; M3.fb('rk-bounce'); o.tierK = W.UI.cueLevel(); M3.myRole = role0;
+    // his error sound is his alone
+    const log = [], orig = AU.sfx; AU.sfx = function (n) { log.push(n); return orig.apply(AU, arguments); };
+    rk.hands = []; while (rk.hands.length < M3.cap()) rk.hands.push('rem_air'); M3.addItem('rem_fire', rk.x + 0.4, rk.y); rk.fx = 1; rk.fy = 0;
+    const play = role => { M3.myRole = () => role; log.length = 0; M3.interact('pick', false); return log.filter(n => n === 'error').length; };
+    o.errK = play('K'); o.errW = play('W'); o.errB = play('B'); M3.myRole = role0; AU.sfx = orig;
+    return o;
+  });
+  ok(r.open[0] === 1 && r.open[1] && r.open[2] === 1 && r.open[3], 'a Burner burning with nothing on its hoses says so (a coil of hose, crossed out)', JSON.stringify(r.open));
+  ok(r.openGone[0] === 0 && r.openGone[1] === 0 && r.openCol === 0, 'hosing it to a consumer (or a Collector) clears the cue', JSON.stringify([r.openGone, r.openCol]));
+  ok(r.dry[0] && r.dry[1] >= 1 && r.dry[2] && r.dryThrottle, 'a foe walking through an unfueled trap shows what it wants (its element, starved), rate limited', JSON.stringify([r.dry, r.dryThrottle]));
+  ok(r.fires, 'a fueled trap fires as before and does not complain');
+  ok(r.full[0] && r.full[1] === 1 && r.full[2] === 1 && r.full[3] === 1, 'a pulse reaching a FULL trap pops the full icon once (rate limited)', JSON.stringify(r.full));
+  ok(r.blocked[0] === 1 && r.blocked[1] && r.blocked[2] && r.blocked[3], 'a mirror packet that finds its Harvester\'s output full says so (jam), the packet falls on the floor, the Builder\'s cue still fires', JSON.stringify(r.blocked));
+  ok(r.idle0 === 1 && r.idleFb >= 1 && r.idle1 === 0, 'a Collector hosed to no Burner says so near him; hosing it clears it', JSON.stringify([r.idle0, r.idleFb, r.idle1]));
+  ok(r.ash[0] === 1 && r.ash[1] === 1 && r.ash[2], 'a remain thrown into a Burner with a full ash tray is taken but the ash + full icon pop at once', JSON.stringify(r.ash));
+  ok(r.tierW === 0 && r.tierK >= 1, 'cue tiers apply on the Rootkeeper\'s machine only (a Wizard host is not held back by what happens below)', JSON.stringify([r.tierW, r.tierK]));
+  ok(r.errK === 1 && r.errW === 0 && r.errB === 0, 'the error sound of a press that cannot happen is his alone', JSON.stringify([r.errK, r.errW, r.errB]));
+  await run(() => { const W = __wands, u = W.G.u, bu = u.bld.find(b => b.type === 'burner'); bu.no = { k: 'water', cur: 'fire', t: 2 }; bu.burn = 5; bu.bel = 'fire'; W.G.u.rk.x = bu.x - 2; W.G.u.rk.y = bu.y; });
+  await photo('the Rootkeeper\'s refusals on screen');
+  await shot('k_refusals');
+
   ok(errs.length === 0, 'no page errors', errs.slice(0, 5).join(' | '));
   await browser.close();
   console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASS');

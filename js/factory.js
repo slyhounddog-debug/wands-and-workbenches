@@ -2133,8 +2133,8 @@ FA.focusOf = function (tp, ap, t, au) {
   return list;
 };
 // run an action, or say why not (say(a): the icons over whoever pressed)
-FA.doAct = function (a, quiet, say) {
-  if (a.fn) a.fn(); else if (a.label && !quiet) { say(a); AU.sfx('error'); }
+FA.doAct = function (a, quiet, say, sfx) {   // (sfx: whose ears the error is for: the Rootkeeper's is M3.sfx)
+  if (a.fn) a.fn(); else if (a.label && !quiet) { say(a); (sfx || AU.sfx)('error'); }
   return a;
 };
 // ---------- the pick / use BUTTONS, one implementation for every role that has them (the Builder: Main.controls / Main.remoteB; the Rootkeeper: M3.input) ----------

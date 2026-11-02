@@ -671,6 +671,21 @@ const OUT = process.env.SHOTS || '';
     // building and crafting
     for (const k of ['air', 'water', 'fire', 'earth']) { u.bank[k] = 20; for (let i = 0; i < 20; i++) u.blog.push(k); }
     u.rk.x = spot[0] - 4; u.rk.y = spot[1] + 4; u.rk.fx = 1; u.rk.fy = 0; let rc = null; for (let i = 0; i < 300 && !rc; i++) { const a = Math.random() * 6.28, d = 3 + Math.random() * 20; u.rk.x = bu.x + Math.cos(a) * d; u.rk.y = bu.y + Math.sin(a) * d; u.rk.fx = 1; u.rk.fy = 0; const f = M3.front(); if (M3.free(f[0], f[1], 1.0) && !M3.blockedU(u.rk.x, u.rk.y, 0.3)) rc = M3.place('rcraft'); } M3.craft(rc); step(Math.ceil(C.craftT / 0.05) + 2);
+    // his world says NO: a wrong type at a busy burner, a throw at a pole and into water, a blocked placement, burning with no hose, a dry and a full trap, a blocked mirror, an idle collector, a full ash tray
+    {
+      const R = u.rk, spot2 = () => { for (let d = 3; d < 40; d += 0.7) for (let a = 0; a < 6.28; a += 0.4) { const x = Math.floor(bu.x + Math.cos(a) * d) + 0.5, y = Math.floor(bu.y + Math.sin(a) * d) + 0.5; if (!M3.blockedU(x, y, 0.5) && M3.free(x, y, 3.2) && M3.free(x - 3, y, 2)) return [x, y]; } return null; };
+      const s2 = spot2(), nb = M3.make('burner', s2[0], s2[1], { el: 'air' });
+      R.x = nb.x - 3; R.y = nb.y; R.fx = 1; R.fy = 0; R.vx = R.vy = 0; R.throwCd = 0; R.tool = null;
+      nb.burn = 9; nb.bel = 'fire'; R.hands = ['rem_water']; M3.throwOne(undefined, { x: nb.x, y: nb.y, to: nb.id }); step(12);   // burner-busy
+      const pl = M3.make('pole', nb.x, nb.y + 4), fl = FA.flightOf('rem_air', R.x, R.y, pl.x, pl.y, { to: null }); fl.t = fl.T; u.fly.push(fl); M3.flyTick(0.05);   // rk-bounce
+      R.x = nb.x - 1.4; R.y = nb.y; R.tool = 'burner'; M3.place('burner'); R.tool = null;   // rk-nope
+      step(40);   // burner-open (nb burns with no hose)
+      nb.burn = 0; for (const e2 in nb.hop) nb.hop[e2] = 0; nb.ash.air = C.burner.ashCap; R.x = nb.x - 3; R.y = nb.y; R.throwCd = 0; R.hands = ['rem_water']; M3.throwOne(undefined, { x: nb.x, y: nb.y, to: nb.id }); step(12);   // burner-ash-throw
+      const s3 = spot2(), tp2 = M3.make('trap', s3[0], s3[1], { tk: 'dmg' }); tp2.fuel = 0; const e3 = WZ.makeEnemy('golem', tp2.x, tp2.y); e3.hp = e3.maxHp = 1e5; e3.spd = 0; e3.dazeT = 100; step(10); G.w.enemies.length = 0;   // trap-dry
+      tp2.fuel = C.traps.dmg.store; M3.deliver(tp2, 'earth', 1);   // trap-full
+      const hv = FA.byId(mir.hid); hv.out.length = 0; while (hv.out.length < W.CFG.buffer) hv.out.push({ kind: mir.el }); mir.ch = 1; M3.mirrorSend(mir);   // mirror-blocked
+      const s4 = spot2(), cl2 = M3.make('collector', s4[0], s4[1]); R.x = cl2.x + 1; R.y = cl2.y + 1; cl2.ct = 0; step(14);   // collector-idle
+    }
     // dropping out and back (the host hooks), the game over
     W.Main.hostHooks3.lost({ id: 'g1' }); W.Main.hostHooks3.back({ id: 'g1' });
     G.w.hp = 1; WZ.damage(500, false, WZ.HAZ.unknown); step(30); W.UI.showResults();

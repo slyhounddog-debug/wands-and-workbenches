@@ -1224,6 +1224,7 @@ const CONTROLS = [
   ['DEBUG (for now)', [
     [K('F3') + ' &nbsp;or&nbsp; ' + K('`'), 'Toggle the debug overlay: XP and spells per minute, bank and portal rates, time to the next affordable skill, the next event, creature counts'],
     [K('F4') + ' &nbsp;with the overlay open', 'Dev bot: plays the Wizard (a virtual controller) so one person can test the factory solo. Press again to turn it off'],
+    [K('F8') + ' ' + K('F9'), '3-player solo test (Online > 3 PLAYER > SOLO): F8 moves you to the next role (Builder, Wizard, Rootkeeper), F9 lets the dev bot play the Wizard. Nothing is saved'],
     [K('F2') + ' &nbsp;with the overlay open', 'Snapshot photo test (dev-only): captures the game state as plain JSON, redraws a frame from that copy alone and reports every leak. Press again to cycle LIVE / SNAPSHOT / BLINK / DIFF (the game is frozen while a view is up), Esc leaves. The SNAPSHOT bar under the overlay also has SAVE (downloads the JSON)'],
     [K('F12') + ' &nbsp;console', 'In the browser console, <code>__wands</code> is the test hook:'],
     ['<code>__wands.start(slot)</code>', 'Start a new game in slot 1-3'],

@@ -58,7 +58,7 @@ const Keys = { map: {}, list: [], by: {} };
   act('help', 'S', 'BOTH PLAYERS', 'Controls card', ['KeyH']);
   act('book', 'S', 'BOTH PLAYERS', 'Collection Book', ['KeyC']);
 
-  Keys.RESERVED = new Set(['Escape', 'Enter', 'NumpadEnter', 'F1', 'F2', 'F3', 'F4', 'F5', 'F11', 'F12', 'Backquote', 'ShiftLeft', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'ContextMenu', 'CapsLock']);
+  Keys.RESERVED = new Set(['Escape', 'Enter', 'NumpadEnter', 'F1', 'F2', 'F3', 'F4', 'F5', 'F8', 'F9', 'F11', 'F12', 'Backquote', 'ShiftLeft', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'ContextMenu', 'CapsLock']);
   try { const o = JSON.parse(localStorage.getItem(K) || '{}'); for (const id in o) if (Keys.by[id] && (o[id] === null || typeof o[id] === 'string')) Keys.map[id] = o[id]; } catch (e) { /* no saved keys */ }
   Keys.save = () => { try { localStorage.setItem(K, JSON.stringify(Keys.map)); } catch (e) { /* storage full / blocked */ } };
 

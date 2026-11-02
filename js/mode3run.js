@@ -19,7 +19,7 @@ Main.newGame3 = function (slot, opts) {
   G = blankState(slot);
   G.flags.startEl = ELEMS[Math.floor(Math.random() * ELEMS.length)];
   if (opts.el) G.flags.startEl = opts.el;
-  G.m3 = true; G.vi = opts.me || 0;
+  G.m3 = true; G.vi = opts.me || 0; if (opts.solo) G.solo3 = true;
   G.seats = opts.seats || M3.defaultSeats();
   G.w = WZ.fresh(); G.ev = WZ.evFresh(0);
   FA.initial();
@@ -87,6 +87,7 @@ M3.padK = function (p) {
   return k;
 };
 M3.controls = function (dt) {
+  if (G.solo3 && !Main.modal()) M3.soloKeys();
   const me = M3.me(), role = M3.ROLE[me];
   let B = { bix: 0, biy: 0, broll: false }, W = { wix: 0, wiy: 0, roll: false, wrx: 0, wry: 0, act: {} }, K = M3.zeroK();
   if (role === 'K') {
@@ -105,7 +106,7 @@ M3.controls = function (dt) {
   }
   for (let s = 0; s < 3; s++) {
     if (s === me) continue;
-    const q = G.seats[s], p = q && q.pad >= 0 ? IN.pad[q.pad] : null;
+    const q = G.seats[s], pi = G.solo3 && M3.ROLE[s] === 'W' && DevBot.on && DevBot.st && DevBot.st.slot !== undefined ? DevBot.st.slot : q && q.pad, p = pi >= 0 ? IN.pad[pi] : null;   // (the solo test: the dev bot's pad plays the Wizard when he is not your seat)
     if (M3.ROLE[s] === 'B') B = Main.remoteB(dt, p);
     else if (M3.ROLE[s] === 'W') { W = M4.wizPad(p); if (p && p.rt) M3.ghostW(); }
     else K = M3.padK(p);
@@ -115,6 +116,50 @@ M3.controls = function (dt) {
 };
 M3.ghostW = function () { const u = G.u; u.ghost.W = !u.ghost.W; AU.sfx(u.ghost.W ? 'menu_open' : 'menu_close'); FA.fb('ghost-view'); };
 
+// ---------- the solo test (Online > 3 PLAYER > SOLO): one person, offline, plays every seat in turn ----------
+// F8 moves this machine to the next seat (Builder > Wizard > Rootkeeper), F9 lets the dev bot play the Wizard (so kills drop remains while you are another role).
+// The seats you are not in stand still. Nothing is saved (Main.save skips G.solo3), and your RESTART readies everybody.
+const SOLO_NAME = { B: 'BUILDER', W: 'WIZARD', K: 'ROOTKEEPER' }, SOLO_IC = { B: 'ic_wrench', W: 'ic_hat', K: 'ic_root' };
+M3.soloStart = function () {
+  const seats = M3.defaultSeats().map((q, i) => Object.assign(q, { pad: i === 1 ? 1 : -1 }));   // (the Wizard's seat reads pad 2: a second pad, or the dev bot)
+  Net.on = false; Net.mode = 3;
+  Main.newGame3(0, { el: ELS[Math.floor(Math.random() * 4)], seats, me: 0, solo: true });
+  IN.squelch();
+  UI.toast('SOLO TEST: F8 switches role, F9 lets the bot play the Wizard', 'L', 'ic_root');
+};
+M3.soloSwitch = function (role) {
+  const s = role ? M3.ROLE.indexOf(role) : (G.vi + 1) % 3;
+  if (s < 0 || s === G.vi) return;
+  role = M3.ROLE[s];
+  UI.openTree('L', false); UI.openTree('R', false); Book.close(true); UI.help(false);
+  const bot = !!DevBot.on;
+  if (bot) DevBot.unplug();
+  G.vi = s; G.ctl = Object.assign({}, G.ctl, M3.ctlFor(role));
+  if (bot) DevBot.plug();
+  G.drag = null; G.carry = null; G.carryHold = null; G.ibuf = null; G.lock = null;
+  R.focus = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null; R.rot = null;
+  R.fcam.x = G.bd.x; R.fcam.y = G.bd.y; R.wcam.x = G.w.x; R.wcam.y = G.w.y; R.ucam.x = G.u.rk.x; R.ucam.y = G.u.rk.y;
+  IN.squelch();
+  M3.netUi(role); UI.resetCache(); UI.buildHotbar(); M3.hudSig = '';
+  if (G.w.dead) UI.showResults3();
+  AU.sfx('tab');
+  UI.toast('SOLO TEST: you are the ' + SOLO_NAME[role], role === 'B' ? 'L' : role === 'W' ? 'R' : 'K', SOLO_IC[role]);
+};
+M3.soloKeys = function () {
+  if (IN.hit('F8')) M3.soloSwitch();
+  if (IN.hit('F9')) DevBot.toggle();
+};
+M3.soloSig = '';
+M3.soloChip = function () {
+  const el = $('solo3');
+  if (!el) return;
+  const on = !!(G && G.m3 && G.solo3 && STATE === 'play');
+  el.classList.toggle('hidden', !on);
+  if (!on) return;
+  const r = M3.myRole(), h = '<div>' + UI.img(SOLO_IC[r], 16) + '<b>SOLO TEST</b> YOU: <b style="color:' + M3.col(G.vi) + '">' + SOLO_NAME[r] + '</b></div><div><kbd>F8</kbd> next role</div><div><kbd>F9</kbd> bot plays the Wizard: <b>' + (DevBot.on ? 'ON' : 'OFF') + '</b></div>';
+  if (h !== M3.soloSig) { M3.soloSig = h; el.innerHTML = h; }
+};
+
 // ---------- the game over: the Wizard down ends the run (as in 2P); every connected player readies on his own screen ----------
 M3.deadFlow = function (dt) {
   const w = G.w;
@@ -122,7 +167,7 @@ M3.deadFlow = function (dt) {
   w.deadT = (w.deadT || 0) + dt;
   const rd = w.ready || (w.ready = { B: false, W: false, K: false });
   if (w.deadT > 1) for (let s = 0; s < 3; s++) { if (s === M3.me()) continue; const q = G.seats[s], p = q && q.pad >= 0 ? IN.pad[q.pad] : null; if (p && p.a) rd[M3.ROLE[s]] = true; }   // a guest's RESTART (his A)
-  const all = M3.ROLE.every(r => rd[r] || !M3.conn(r));
+  const all = M3.ROLE.every(r => rd[r] || !M3.conn(r)) || (G.solo3 && rd[M3.myRole()]);   // (the solo test: your RESTART is everybody's)
   if (all) { WZ.reenter(); R.wcam.x = G.w.x; R.wcam.y = G.w.y; AU.sfx('buy'); UI.show('results', false); }
   else UI.resultsSync();
 };
@@ -229,6 +274,7 @@ M3.ashOf = function (n, L) {
   const hud0 = UI.updateHud;
   UI.updateHud = function (dt) {
     hud0(dt);
+    M3.soloChip();
     if (!(G && G.m3 && G.u)) { const e = $('rootHud'); if (e && !e.classList.contains('hidden')) e.classList.add('hidden'); const a = $('tAsh'); if (a && a.innerHTML) a.innerHTML = ''; return; }
     M3.hud();
   };

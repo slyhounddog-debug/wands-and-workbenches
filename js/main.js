@@ -179,7 +179,7 @@ Main.stockSaved = function () {
 };
 Main.facSaved = () => FA.toJSON();
 Main.save = function () {
-  if (!G || Net.role === 'guest') return;   // (the guest holds a copy of the host's state: it writes no save)
+  if (!G || Net.role === 'guest' || G.solo3) return;   // (the guest holds a copy of the host's state: it writes no save; nor does the 3P solo test)
   const key = 'wands2_save_slot' + G.slot;
   try {
     // shards still lying in the wilds count as banked in the save, so quitting mid-run never loses them

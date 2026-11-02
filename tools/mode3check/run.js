@@ -364,6 +364,37 @@ const OUT = process.env.SHOTS || '';
   ok(r.waitK && r.restarted, 'the run restarts only when the Rootkeeper is ready too', JSON.stringify([r.waitK, r.restarted]));
   await shot('k_end');
 
+  // ================= 15. the solo test (Online > 3 PLAYER > SOLO): one person plays every seat in turn, nothing is saved =================
+  r = await run(() => {
+    const W = __wands, o = {};
+    localStorage.removeItem('wands2_save_slot0');
+    W.M3.soloStart(); W.UI.help(false); W.G.helpT = 0;
+    o.solo = !!W.G.solo3 && W.G.m3 && W.G.vi === 0;
+    return o;
+  });
+  await page.waitForTimeout(300); r.chip = await run(() => !document.getElementById('solo3').classList.contains('hidden'));   // (the chip follows the HUD's next frame)
+  await page.keyboard.press('F8'); await page.waitForTimeout(400);
+  const s1 = await run(() => [__wands.M3.myRole(), document.getElementById('game').classList.contains('onGuest')]);
+  await page.keyboard.press('F8'); await page.waitForTimeout(400);
+  const s2 = await run(() => [__wands.M3.myRole(), document.getElementById('game').classList.contains('onRoot'), !document.getElementById('rootHud').classList.contains('hidden')]);
+  await page.keyboard.press('F9'); await page.waitForTimeout(300);
+  const b0 = await run(() => [__wands.G.w.x, __wands.G.w.y, __wands.DevBot.on]);
+  await page.waitForTimeout(3000);
+  const b1 = await run(() => { const G = __wands.G; __wands.DevBot.set(null); return [G.w.x, G.w.y, G.u.rk.x, G.u.rk.y]; });
+  await page.keyboard.press('F8'); await page.waitForTimeout(400);
+  const s3 = await run(() => {
+    const W = __wands, G = W.G, o = { role: W.M3.myRole() };
+    G.w.hp = 1; W.WZ.damage(500, false, W.WZ.HAZ.unknown); W.step3(0.05, 30);
+    W.UI.showResults(); document.getElementById('rRe3').click(); W.step3(0.05, 3); o.restarted = !G.w.dead;
+    W.Main.save(); o.saved = !!localStorage.getItem('wands2_save_slot0');
+    W.Main.toTitle(true); o.chipGone = document.getElementById('solo3').classList.contains('hidden') || !W.G.solo3;
+    return o;
+  });
+  ok(r.solo && r.chip, 'solo test: a 3P game on this machine, starting as the Builder, with its chip', JSON.stringify(r));
+  ok(s1[0] === 'W' && s1[1] && s2[0] === 'K' && s2[1] && s2[2] && s3.role === 'B', 'solo test: F8 walks the seats Builder > Wizard > Rootkeeper > Builder, each with its own view and HUD', JSON.stringify([s1, s2, s3.role]));
+  ok(b0[2] && Math.hypot(b1[0] - b0[0], b1[1] - b0[1]) > 0.5, 'solo test: F9 lets the dev bot play the Wizard while you are the Rootkeeper', Math.hypot(b1[0] - b0[0], b1[1] - b0[1]).toFixed(2));
+  ok(s3.restarted && !s3.saved, 'solo test: your RESTART is everybody\'s, and nothing is saved', JSON.stringify(s3));
+
   ok(errs.length === 0, 'no page errors', errs.slice(0, 5).join(' | '));
   await browser.close();
   console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASS');

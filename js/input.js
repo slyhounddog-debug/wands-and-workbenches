@@ -10,7 +10,7 @@ const IN = {
 };
 
 (function () {
-  const BLOCK = new Set(['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Slash', 'Space', 'Period', 'Comma', 'Quote', 'F3']);
+  const BLOCK = new Set(['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Slash', 'Space', 'Period', 'Comma', 'Quote', 'F3', 'F8', 'F9']);
   window.addEventListener('keydown', e => {
     if (BLOCK.has(e.code) && !(e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) e.preventDefault();
     if (!e.repeat) { IN.pressed.add(e.code); IN.order.push(e.code); IN.anyKey = true; }

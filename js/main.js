@@ -179,7 +179,7 @@ Main.stockSaved = function () {
 };
 Main.facSaved = () => FA.toJSON();
 Main.save = function () {
-  if (!G || Net.role === 'guest' || G.solo3) return;   // (the guest holds a copy of the host's state: it writes no save; nor does the 3P solo test)
+  if (!G || Net.role === 'guest' || G.solo3 || G.solo4) return;   // (the guest holds a copy of the host's state: it writes no save; nor do the 3P / 4P solo tests)
   const key = 'wands2_save_slot' + G.slot;
   try {
     // shards still lying in the wilds count as banked in the save, so quitting mid-run never loses them
@@ -475,7 +475,7 @@ Main.controls = function (dt) {
   if ((!Net.on || G.m4 || G.m3) && (Keys.hit('treeW') || (p1 && p1.back))) UI.openTree('R');   // (online the Wizard's tree is on the guest's screen) Back / Select on his pad: Y is the wand's Cycle now
   if (Keys.hit('help')) { UI.help(); G.helpT = 0; }
   if (Keys.hit('book') && !frozenNow() && !UI.splitB && !UI.askB) Book.open();   // the Collection Book: every spell and creature
-  if ((Keys.hit('pin') || (p0 && p0.l3)) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
+  if ((Keys.hit('pin') || (p0 && p0.l3 && !(G.m4 && p0.ltHeld))) && !frozenNow()) { G.pinBp = !G.pinBp; AU.sfx('blip'); UI.pinT = 0; UI.changed(); }   // pin the unfinished buildings' needs on the Builder's side
   if (IN.hit('F3') || IN.hit('Backquote')) { UI.debugOn = !UI.debugOn; AU.sfx('blip'); }
   if (IN.hit('F4') && UI.debugOn) DevBot.toggle();   // dev-only: only while the F3 overlay is open
   if (G.helpT > 0) { G.helpT -= dt; if (G.helpT <= 0) UI.help(false); }
@@ -1017,7 +1017,7 @@ function frame(ts) {
       if (!G.paused && !(Net.role === 'host' && Net.state !== 'live')) Main.step(dt);   // (online, the host waits while the guest is away)
       else AU.hum(0);
       if (Net.role === 'host') { Net.hostTick(dt); Main.netBannerTick(); Main.pausedBanner(); }
-      if (G && (Net.on || G.m3)) {   // online the Builder's world fills the stage (a 3P game always draws one seat's view: offline it is a test) with the Wizard's in a corner; nothing is ever frozen, so nothing is skipped
+      if (G && (Net.on || G.m3 || G.solo4)) {   // online the Builder's world fills the stage (a 3P game, or the 4P solo test, always draws one seat's view: offline it is a test) with the Wizard's in a corner; nothing is ever frozen, so nothing is skipped
         ctx.clearRect(0, 0, CFG.W, CFG.H);
         const pd = G.paused ? 0 : dt;   // (a pause menu on either machine holds the picture too)
         if (G.m4) M4.draw(ctx, pd);   // 4P: this seat's world fills the stage, the buddy's is the picture-in-picture

@@ -233,7 +233,8 @@ Menu.specs = function (page, o) {
       wp('go:create', 'CREATE GAME', 98.6, NE, { ic: 'ic_factory', word: 'HOST', key: 'create' }),
       wp('go:join', 'JOIN GAME', 101.8, NE, { ic: 'ic_hat', word: 'JOIN', key: 'join' }),
       wp('net:test', 'CHECK THIS COMPUTER', 105.0, NE, { ic: 'ic_chart', word: 'TEST', key: 'test' }),
-    ].concat(m.mode === 3 ? [wp('go:solo3', 'SOLO TEST: play every role yourself (offline, F8 switches role, nothing is saved)', CORNER, NE + STEP, { ic: 'ic_root', word: 'SOLO', key: 'solo3' })] : []);
+    ].concat(m.mode === 3 ? [wp('go:solo3', 'SOLO TEST: play every role yourself (offline, F8 switches role, nothing is saved)', CORNER, NE + STEP, { ic: 'ic_root', word: 'SOLO', key: 'solo3' })] :
+      m.mode === 4 ? [wp('go:solo4', 'SOLO TEST: sit in every seat yourself (offline, F8 switches seat, nothing is saved)', CORNER, NE + STEP, { ic: 'ic_globe', word: 'SOLO', key: 'solo4' })] : []);
     case 'host': return [back(), wp('none', 'CREATE GAME', 98.6, NE, { ic: 'ic_factory', word: 'HOST', key: 'create', kind: 'anchor' })];
     case 'join': return [back(), wp('none', 'JOIN GAME', 101.8, NE, { ic: 'ic_hat', word: 'JOIN', key: 'join', kind: 'anchor' })].concat(m.mode === 3 ? [   // 3P: the role you join as (a role already in the room is refused)
       wp('jrole:B', 'JOIN AS THE BUILDER', 97.0, NE + 3.4, { ic: 'ic_wrench', word: 'BLD', key: 'jroleB', r: 0.9 }), wp('jrole:W', 'JOIN AS THE WIZARD', 97.0, NE + 5.6, { ic: 'ic_hat', word: 'WIZ', key: 'jroleW', r: 0.9 }),
@@ -278,6 +279,7 @@ const ACT = {
     else if (page === 'online') Menu.go('mode');   // the 2 PLAYER / 4 PLAYER choice sits right after the Online plate
     else if (page === 'join') Menu.go('join');
     else if (page === 'solo3') setTimeout(M3.soloStart, 0);   // (3P on this machine alone: started between frames, not from inside the menu world's own step)
+    else if (page === 'solo4') setTimeout(M4.soloStart, 0);   // (4P likewise)
     else Menu.go(page);
   },
   doc(p, who, id) { Menu.go(id); },

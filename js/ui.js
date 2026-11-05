@@ -1148,6 +1148,7 @@ const CONTROLS = [
     [K('CLICK') + ' &nbsp;/&nbsp; ' + K('ENTER'), 'Place the selected building / belt (Enter: on the tile in front). Drag to lay belts'],
     [K('B') + ' &nbsp;/&nbsp; ' + K('DELETE'), 'Demolish mode (full refund)'],
     [K('P') + ' &nbsp;/&nbsp; pad L3 (left stick click)', 'Pin blueprints: a card on the Builder side lists what every unfinished building still needs (red = the Stockpile is short)'],
+    [K('J') + ' &nbsp;/&nbsp; pad LT + L3', '4-player Builder: the corner picture swaps to the other Wizard (the one not shown rides above it as a headshot with his health)'],
     [K('TAB') + ' &nbsp;(' + K('SHIFT') + ' back)', 'Cycle through nearby targets'],
     [K('ESC'), 'Close / cancel the tool, then pause'],
   ]],
@@ -1225,6 +1226,7 @@ const CONTROLS = [
     [K('F3') + ' &nbsp;or&nbsp; ' + K('`'), 'Toggle the debug overlay: XP and spells per minute, bank and portal rates, time to the next affordable skill, the next event, creature counts'],
     [K('F4') + ' &nbsp;with the overlay open', 'Dev bot: plays the Wizard (a virtual controller) so one person can test the factory solo. Press again to turn it off'],
     [K('F8') + ' ' + K('F9'), '3-player solo test (Online > 3 PLAYER > SOLO): F8 moves you to the next role (Builder, Wizard, Rootkeeper), F9 lets the dev bot play the Wizard. Nothing is saved'],
+    [K('F8') + ' ' + K('F9'), '4-player solo test (Online > 4 PLAYER > SOLO): F8 moves you to the next seat (Builder 1, Builder 2, Wizard 1, Wizard 2), F9 lets the dev bot play the Wizards you are not. Nothing is saved'],
     [K('F2') + ' &nbsp;with the overlay open', 'Snapshot photo test (dev-only): captures the game state as plain JSON, redraws a frame from that copy alone and reports every leak. Press again to cycle LIVE / SNAPSHOT / BLINK / DIFF (the game is frozen while a view is up), Esc leaves. The SNAPSHOT bar under the overlay also has SAVE (downloads the JSON)'],
     [K('F12') + ' &nbsp;console', 'In the browser console, <code>__wands</code> is the test hook:'],
     ['<code>__wands.start(slot)</code>', 'Start a new game in slot 1-3'],
@@ -1248,7 +1250,7 @@ UI.keysPage = function (box, back) {
   const stop = () => { if (listen) { window.removeEventListener('keydown', listen.fn, true); listen = null; } };
   const draw = () => {
     const groups = [];
-    for (const a of Keys.list) { if (a.m3 && !(G && G.m3)) continue; let g = groups.find(x => x.t === a.group); if (!g) groups.push(g = { t: a.group, rows: [] }); g.rows.push(a); }   // (the Rootkeeper's keys and the 3P view keys only show in a 3P game)
+    for (const a of Keys.list) { if (a.m3 && !(G && (G.m3 || (a.m4 && G.m4)))) continue; let g = groups.find(x => x.t === a.group); if (!g) groups.push(g = { t: a.group, rows: [] }); g.rows.push(a); }   // (the Rootkeeper's keys and the 3P view keys only show in a 3P game)
     box.innerHTML = '<h2>KEYS</h2><p class="keyNote">Click a key, then press the new one (Esc cancels). If another action of the same player had that key, the two swap. Mouse buttons and the pad are fixed.' +
       (note ? '<br><b>' + note + '</b>' : '') + '</p><div class="ctlBody keyBody">' +
       groups.map(g => '<div class="ctlSec"><h3>' + g.t + '</h3>' + g.rows.map(a => '<div class="keyRow"><span>' + a.label + '</span><button class="keyBtn' + (Keys.custom(a.id) ? ' on' : '') + (listen && listen.id === a.id ? ' wait' : '') + '" data-id="' + a.id + '">' +

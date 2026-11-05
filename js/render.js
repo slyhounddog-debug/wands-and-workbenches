@@ -1714,6 +1714,7 @@ R.drawPip = function (main, dt) {
   const wilds = G.m4 ? M4.ROLE[M4.me()] === 'B' : Net.role === 'host';
   const label = G.m4 ? M4.name(wilds ? M4.seatW(G.wi || 0) : M4.seatB(G.bi || 0)) : wilds ? 'WIZARD' : 'FACTORY';
   R.pipFrame(main, dt, 'pip', wilds ? 'W' : 'B', label, 150, '#ffc94a');
+  if (G.m4 && wilds && G.w2) R.drawPipHead(main, 1 - (G.wi || 0));   // 4P Builder: the other Wizard's headshot + health above the picture (J swaps them)
 };
 // the corner picture itself, for every mode (2P / 4P: the partner, R.drawPip; 3P: the teammate this seat cycled to, M3D.drawPip). role = whose world ('B' factory, 'W' wilds,
 // 'K' the underworld), key = its scratch buffer, label / lw = the name tag and its width, col = the frame colour

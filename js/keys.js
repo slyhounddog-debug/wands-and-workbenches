@@ -53,7 +53,7 @@ const Keys = { map: {}, list: [], by: {} };
   m3(act('kGhost', 'K', KG, 'Ghost view: the wilds above (foes, the Wizard)', ['KeyG']));
   m3(act('treeK', 'K', KG, 'Rootkeeper skill tree', ['KeyT']));
   m3(act('wGhost', 'W', WG, 'Ghost view: the underworld below (3-player)', ['KeyG']));
-  m3(act('pip3', 'S', 'BOTH PLAYERS', 'Corner picture: the next teammate (3-player)', ['KeyJ']));
+  m3(act('pip3', 'S', 'BOTH PLAYERS', 'Corner picture: the next teammate (3-player) / the other Wizard (4-player Builder)', ['KeyJ'])).m4 = true;
   act('swapHold', 'S', 'BOTH PLAYERS', 'Swap jobs (hold)', ['KeyX']);
   act('help', 'S', 'BOTH PLAYERS', 'Controls card', ['KeyH']);
   act('book', 'S', 'BOTH PLAYERS', 'Collection Book', ['KeyC']);

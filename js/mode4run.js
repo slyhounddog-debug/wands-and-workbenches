@@ -16,7 +16,8 @@ Main.newGame4 = function (slot, opts) {
   opts = opts || {};
   M4.sel0();
   G = blankState(slot);
-  G.m4 = true; G.vi = opts.me || 0;
+  G.m4 = true; G.vi = opts.me || 0; if (opts.solo) G.solo4 = true;
+  M4.pipW = null;   // (the corner picture starts on the buddy)
   G.seats = opts.seats || M4.defaultSeats();
   G.w = WZ.fresh(); G.w2 = WZ.fresh2();
   G.wand2 = WZ.wandFresh(); G.aug2 = { worn: WZ.augFresh().worn, cd: { phoenix: 0 } };
@@ -41,10 +42,12 @@ M4.wizPad = function (p) {
   return { wix: p.ix || 0, wiy: p.iy || 0, wrx: p.rx || 0, wry: p.ry || 0, roll: !!p.a, act: { mash: !!p.x, cast: !!p.b, cycle: !!(p.y && !p.ltHeld), back: !!(p.y && p.ltHeld), emote: !!p.rb } };
 };
 M4.controls = function (dt) {
+  if (G.solo4 && !Main.modal()) M4.soloKeys();
   const me = M4.me(), out = [null, null, null, null];
   for (let s = 0; s < 4; s++) {
     const q = G.seats[s];
     if (s === me) {
+      if (M4.ROLE[s] === 'B' && !Main.modal()) M4.pipKeys(Main.padB());
       const bi = M4.bi(s), c = M4.ROLE[s] === 'B' ? FA.asB(bi, () => (Main.modal() ? Main.wizardOnly() : Main.controls(dt))) : (Main.modal() ? Main.wizardOnly() : Main.controls(dt));
       out[s] = M4.ROLE[s] === 'B' ? { bix: c.bix, biy: c.biy, broll: c.broll } : { wix: c.wix, wiy: c.wiy, roll: c.roll, wrx: c.wrx, wry: c.wry, act: c.act };
     } else if (M4.inject && M4.inject[s]) out[s] = M4.inject[s];
@@ -68,6 +71,66 @@ M4.wizard2 = function (dt, ctl) {
   M4.spellTick();
   M4.worldTick(dt);   // (burning foes)
 };
+
+// ---------- the solo test (Online > 4 PLAYER > SOLO): one person, offline, sits in each of the four seats in turn ----------
+// F8 moves this machine to the next seat (Builder 1 > Builder 2 > Wizard 1 > Wizard 2), F9 lets the dev bot play both Wizards (the one you are not, when you are one). The seats
+// you are not in stand still (or are the bot). Each seat sees exactly what that player would: its own world full screen, its buddy's in the corner, its own HUD. Nothing is saved
+// (Main.save skips G.solo4), and your READY on the game over screen is everybody's.
+const SOLO4_IC = { B: 'ic_wrench', W: 'ic_hat' };
+M4.soloCtl = role => {
+  const pad = IN.padList && IN.padList.length ? 0 : -1;
+  return { kbB: role === 'B', kbW: role === 'W', pb: role === 'B' ? pad : -1, pw: role === 'W' ? pad : -1 };
+};
+M4.soloStart = function () {
+  const els = ELEMS.slice().sort(() => Math.random() - 0.5);   // (the two Wizards' attunements: two elements each, all four used)
+  const seats = M4.defaultSeats().map((q, i) => Object.assign(q, { who: i === 0 ? 'host' : 'solo' + i, pad: i === 0 ? -1 : i + 1, att: i === 2 ? els.slice(0, 2) : i === 3 ? els.slice(2) : null }));   // (pads 2-4: the slots a guest's pad would use; the bot writes the Wizards' 3 and 4)
+  Net.on = false; Net.mode = 4;
+  Main.newGame4(0, { seats, me: 0, solo: true });
+  M4.soloSwitch(0, true);
+  IN.squelch();
+  UI.toast('SOLO TEST: F8 switches seat, F9 lets the bot play the Wizards', 'L', 'ic_globe');
+};
+M4.soloSwitch = function (s, quiet) {
+  if (s == null) s = (G.vi + 1) % 4;
+  if (s === G.vi && !quiet) return;
+  const role = M4.ROLE[s];
+  UI.openTree('L', false); UI.openTree('R', false); Book.close(true); UI.help(false);
+  G.vi = s; G.ctl = Object.assign({}, G.ctl, M4.soloCtl(role)); M4.pipW = null;
+  if (G.seats[s].pad >= 0) IN.pad[G.seats[s].pad] = null;   // (a pad the bot pressed for this seat would otherwise stay held)
+  M4.asSeat(s, () => {
+    G.drag = null; G.carry = null; G.carryHold = null; G.ibuf = null; G.lock = null;
+    R.fcam.x = G.bd.x; R.fcam.y = G.bd.y; R.wcam.x = G.w.x; R.wcam.y = G.w.y;
+  });
+  R.focus = null; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null; R.rot = null;
+  IN.squelch();
+  Main.netUi(role === 'B' ? 'host' : 'guest');   // (the same HUD layout a 4P seat of that role has online)
+  UI.resetCache(); if (role === 'B') UI.buildHotbar();
+  if (G.over) UI.showResults();
+  if (quiet) return;
+  AU.sfx('tab');
+  UI.toast('SOLO TEST: you are ' + M4.label(s), role === 'B' ? 'L' : 'R', SOLO4_IC[role]);
+};
+M4.soloKeys = function () {
+  if (IN.hit('F8')) M4.soloSwitch();
+  if (IN.hit('F9')) DevBot.toggle();
+};
+M4.soloSig = '';
+M4.soloChip = function () {
+  const el = $('solo4');
+  if (!el) return;
+  const on = !!(G && G.m4 && G.solo4 && STATE === 'play');
+  el.classList.toggle('hidden', !on);
+  const bc = $('botChip'); if (bc) bc.style.display = on ? 'none' : '';   // (the 2P BOT chip sits over the toasts here; this chip says it)
+  if (!on) return;
+  const s = M4.me(), q = G.seats[s], att = q.att ? ' ' + q.att.map(e => UI.img(e, 14)).join('') : '';
+  const h = '<div>' + UI.img(SOLO4_IC[q.role], 16) + '<b>SOLO TEST</b> YOU: <b style="color:' + q.col + '">' + q.name + '</b> (' + (q.role === 'B' ? 'Builder ' : 'Wizard ') + q.n + ')' + att + '</div>' +
+    '<div><kbd>F8</kbd> next seat</div><div><kbd>F9</kbd> bot plays the Wizards: <b>' + (DevBot.on ? 'ON' : 'OFF') + '</b></div>';
+  if (h !== M4.soloSig) { M4.soloSig = h; el.innerHTML = h; }
+};
+{
+  const hud0 = UI.updateHud;
+  UI.updateHud = function (dt) { hud0(dt); M4.soloChip(); };
+}
 
 // ---------- a fallen Wizard, the game over ----------
 M4.revive = function (i) {
@@ -95,7 +158,7 @@ M4.deadFlow = function (dt) {
   G.overT = (G.overT || 0) + dt;
   if (G.overT > 1) G.seats.forEach((q, s) => { const p = q.pad >= 0 ? IN.pad[q.pad] : null; if (p && p.a) G.rdy[s] = true; });   // a guest's A button readies him
   // restart needs every CONNECTED player ready (RESTART button, or A / the roll button on a pad)
-  const ready = G.seats.every((q, i) => G.rdy[i] || q.conn === false);
+  const ready = G.seats.every((q, i) => G.rdy[i] || q.conn === false) || (G.solo4 && G.rdy[M4.me()]);   // (the solo test: your READY is everybody's)
   if (ready) { G.over = false; G.overT = 0; WZ.reenter(); R.wcam.x = G.w.x; R.wcam.y = G.w.y; AU.sfx('buy'); UI.show('results', false); }
   else UI.resultsSync();
 };
@@ -111,10 +174,23 @@ M4.draw = function (ctx, dt) {
     if (G.w) AU.setEar(G.w.x, G.w.y);   // (heard from this seat's Wizard, or his buddy's when this seat is a Builder)
   });
 };
+// a Builder seat's corner picture shows one Wizard; J (the pip3 action) or pad LT + L3 swaps it to the other, whose headshot and health ride above the picture (R.drawPipHead)
+M4.swapPip = function () {
+  const s = M4.me();
+  if (M4.ROLE[s] !== 'B' || !G.w2) return;
+  M4.pipW = 1 - M4.pairW(s);
+  const w = WZ.pw(M4.pipW); R.wcam.x = w.x; R.wcam.y = w.y;   // (the wilds' camera only serves this seat's corner picture: jump, don't glide across the map)
+  const sc = R.bufs.pip; if (sc) sc.drawn = false;
+  AU.sfx('blip');
+};
+M4.pipKeys = function (p) {
+  if (M4.ROLE[M4.me()] === 'B' && G.w2 && (Keys.hit('pip3') || (p && p.l3 && p.ltHeld))) M4.swapPip();
+};
 M4.guestSeat = () => { const i = G.seats.findIndex(q => q.who === Net.me); return i < 0 ? 0 : i; };
 // the guest's frame, from its seat (called by Main.guestFrame after the snapshot is in and the keys are read)
 M4.guestView = function (dt) {
   const s = G.vi, role = M4.ROLE[s];
+  if (role === 'B' && !(Main.menuUp || Book.isOpen || UI.treeOpen.L)) M4.pipKeys(IN.pad[0]);   // (a local view choice: the guest swaps his own corner picture, nothing goes to the host)
   M4.asSeat(s, () => {
     const bh = Main.hintFor(QUESTS.B[G.quest.B]), wh = Main.hintFor(QUESTS.W[G.quest.W]);
     R.hint = bh.f; R.whint = wh.w; R.aim = null; R.ghost = null; R.demo = null; R.hoverB = null; R.rot = null;
@@ -175,7 +251,7 @@ Main.loadGame4 = function (slot, opts) {
   M4.sel0();
   Main.applySave(slot, s);
   const d = s.m4;
-  G.m4 = true; G.vi = opts.me || 0;
+  G.m4 = true; G.vi = opts.me || 0; M4.pipW = null;
   G.seats = opts.seats || M4.defaultSeats();
   if (d.atts) G.seats.forEach((q, i) => { if (d.atts[i]) q.att = d.atts[i].slice(); });   // (the attunements are fixed for the save)
   G.w2 = WZ.fresh2(); G.wand2 = WZ.wandFix ? WZ.wandFix(d.wand2) : WZ.wandFresh(); G.aug2 = { worn: Object.assign(WZ.augFresh().worn, (d.aug2 && d.aug2.worn) || {}), cd: { phoenix: 0 } };

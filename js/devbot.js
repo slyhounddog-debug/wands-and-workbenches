@@ -13,22 +13,24 @@ const DevBot = { on: null, st: null, stats: null };
   const rot = (v, a) => [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a)];
   const NEUTRAL = () => ({ ix: 0, iy: 0, cyc: 0, a: false, b: false, x: false, y: false, lb: false, rb: false, rt: false, xHeld: false, aHeld: false, bHeld: false, ltHeld: false, startHeld: false, back: false, any: false });
 
+  // one brain's memory (the 4P solo test runs one per Wizard it plays: DevBot.st4)
+  const newSt = w => ({
+    g: G, now: 0, acc: 0, dir: [0, 0], mash: false, mashT: 0, rollReq: false, mode: 'idle',
+    strafe: 1, strafeT: 0, duty: 0, side: 1, goal: null, wander: null, wanderT: 0, skip: new Map(), visited: {},
+    pos: [0, 0], posT: 0, tryTicks: 0, stuckUntil: 0, stuckSide: 1, stuckN: 0, still: 0, lastPos: null, deadSeen: !!(w && w.dead), dwell: 0,   // (already down when switched on: not the bot's death)
+  });
   DevBot.reset = function () {
-    DevBot.st = {
-      g: G, now: 0, acc: 0, dir: [0, 0], mash: false, mashT: 0, rollReq: false, mode: 'idle',
-      strafe: 1, strafeT: 0, duty: 0, side: 1, goal: null, wander: null, wanderT: 0, skip: new Map(), visited: {},
-      pos: [0, 0], posT: 0, tryTicks: 0, stuckUntil: 0, stuckSide: 1, stuckN: 0, still: 0, lastPos: null, deadSeen: false, dwell: 0,
-    };
+    DevBot.st = newSt(G && G.w);
+    DevBot.st4 = null;
     const s = G && G.stats;
     DevBot.stats = { t: 0, deaths: 0, firstDeath: null, lifetimes: [], xp0: s ? s.xpEarned : 0, kills0: s ? s.kills : 0 };
-    DevBot.st.deadSeen = !!(G && G.w && G.w.dead);   // already down when switched on: not the bot's death
   };
 
   DevBot.set = function (who) {
     const was = DevBot.on;
     DevBot.on = who === 'wizard' ? 'wizard' : null;
     if (DevBot.on && !was) DevBot.reset();
-    if (!DevBot.on && was) DevBot.unplug();
+    if (!DevBot.on && was) { DevBot.unplug(); DevBot.unplug4(); }
     DevBot.chip();
     return DevBot.info();
   };
@@ -46,6 +48,12 @@ const DevBot = { on: null, st: null, stats: null };
     if (G && G.ctl && st.g === G && G.ctl.pw === st.slot) G.ctl.pw = st.pwOrig;
     IN.pad[st.slot] = null; IN.prevBtn[st.slot] = [];
     st.slot = undefined;
+  };
+  // the 4P solo test: the bot's pads are the Wizard seats' own pad slots (G.seats[s].pad); switched off, they go neutral so nobody keeps walking
+  DevBot.unplug4 = function () {
+    if (!(G && G.m4 && G.seats)) return;
+    for (let i = 0; i < 2; i++) { const q = G.seats[M4.seatW(i)]; if (q && q.pad >= 0) { IN.pad[q.pad] = null; IN.prevBtn[q.pad] = []; } }
+    DevBot.st4 = null;
   };
   DevBot.toggle = function () { DevBot.set(DevBot.on ? null : 'wizard'); if (window.AU) AU.sfx('blip'); };
 
@@ -216,15 +224,34 @@ const DevBot = { on: null, st: null, stats: null };
   DevBot.drive = function (dt) {
     if (!DevBot.on || STATE !== 'play' || !G) return;
     if (!DevBot.st || DevBot.st.g !== G) DevBot.reset();
-    const st = DevBot.st, w = G.w, s = DevBot.stats, c = C();
+    if (G.m4) return DevBot.drive4(dt);
+    IN.pad[DevBot.plug()] = brain(DevBot.st, G.w, dt, true);
+  };
+  // 4P (the solo test only: online the other seats are real players): one brain per Wizard that is not this machine's seat, each thinking AS that Wizard (WZ.as) and
+  // pressing that seat's pad, which M4.controls reads exactly like a guest's
+  DevBot.drive4 = function (dt) {
+    if (!G.solo4) return;
+    const S = DevBot.st4 && DevBot.st4.g === G ? DevBot.st4 : (DevBot.st4 = { g: G, b: [newSt(WZ.pw(0)), newSt(WZ.pw(1))] }), me = M4.me();
+    let clock = true;
+    for (let i = 0; i < 2; i++) {
+      const s = M4.seatW(i), q = G.seats[s];
+      if (s === me || !q || q.pad < 0) continue;
+      IN.pad[q.pad] = WZ.as(i, () => brain(S.b[i], G.w, dt, clock));
+      clock = false;   // (the driven time counts once a frame)
+    }
+    DevBot.st.mode = S.b.map((b, i) => (M4.seatW(i) === me ? 'you' : b.mode)).join(' / ');
+  };
+  // one frame of one brain: the pad it presses (clock: this brain advances the shared driven-time counter)
+  function brain(st, w, dt, clock) {
+    const s = DevBot.stats, c = C();
     if (w.dead && !st.deadSeen) {   // the headline measurement
       st.deadSeen = true; s.deaths++; s.lifetimes.push(Math.round(w.time));
       if (s.firstDeath === null) s.firstDeath = s.t;
     } else if (!w.dead) st.deadSeen = false;
     const pad = NEUTRAL();
     const idle = G.paused || w.dead || UI.treeOpen.L || UI.treeOpen.R || Main.graceT > 0;
-    if (idle) { st.dir = [0, 0]; st.mash = false; st.rollReq = false; st.mode = w.dead ? 'dead' : 'waiting'; IN.pad[DevBot.plug()] = pad; return; }
-    st.now += dt; s.t += dt;
+    if (idle) { st.dir = [0, 0]; st.mash = false; st.rollReq = false; st.mode = w.dead ? 'dead' : 'waiting'; return pad; }
+    st.now += dt; if (clock) s.t += dt;
     st.acc -= dt;
     if (st.acc <= 0) { st.acc = c.tick; think(st, w); }
     // world direction -> the stick: WZ.update turns (ix, iy) into world (ix + iy, iy - ix)
@@ -235,6 +262,6 @@ const DevBot = { on: null, st: null, stats: null };
     if (st.mash) { st.mashT -= dt; if (st.mashT <= 0) { st.mashT = c.mashGap; pad.x = true; } } else st.mashT = 0;   // (Mash is the pad's X now)
     if (st.rollReq) { pad.a = true; st.rollReq = false; }
     pad.any = pad.a || pad.x;
-    IN.pad[DevBot.plug()] = pad;
-  };
+    return pad;
+  }
 })();

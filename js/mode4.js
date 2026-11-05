@@ -120,7 +120,10 @@ M4.asSeat = function (s, fn) {
   try { return fn(); } finally { WZ.sel(pw); FA.selB(pb); }
 };
 // the buddy of a seat: B1 and W1 are a pair, B2 and W2 are a pair (the picture-in-picture shows your buddy's world)
-M4.pairW = s => (s === 1 || s === 3 ? 1 : 0);
+// M4.pipW: which Wizard a BUILDER seat's corner picture shows when he swapped it (J / pad LT + L3, M4.swapPip; null = his buddy). A local view choice of this machine like
+// M3D.pipSel: never in G, never synced (the other machines do not care which world this Builder watches)
+M4.pipW = null;
+M4.pairW = s => (s < 2 && M4.pipW != null && G && G.w2 ? M4.pipW : s === 1 || s === 3 ? 1 : 0);
 M4.pairB = s => (s === 1 || s === 3 ? 1 : 0);
 M4.pairSeat = s => (s < 2 ? M4.seatW(s) : M4.seatB(s - 2));
 
